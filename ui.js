@@ -41,6 +41,12 @@ const queueRender = () => {
   renderPending = requestAnimationFrame(() => { renderPending = 0; render(); });
 };
 
+/** Keep a slider's --val custom property (0-100%) in sync with its value, so styles.css can paint the filled portion of the custom track. Call on init and on every 'input'. */
+function syncSliderFill(input) {
+  const pct = (input.value - input.min) / (input.max - input.min) * 100;
+  input.style.setProperty('--val', pct + '%');
+}
+
 (function buildSliders() {
   let currentGroup = null;
   CFG.forEach(c => {
@@ -60,7 +66,7 @@ const queueRender = () => {
     currentGroup.appendChild(row);
 
     const slider = row.querySelector('input'), output = row.querySelector('output');
-    const showValue = () => { output.textContent = (+slider.value).toFixed(c.d) + (c.u ? ' ' + c.u : ''); };
+    const showValue = () => { output.textContent = (+slider.value).toFixed(c.d) + (c.u ? ' ' + c.u : ''); syncSliderFill(slider); };
     showValue();
     slider.addEventListener('input', () => { P[c.k] = +slider.value; showValue(); queueRender(); });
   });
@@ -146,18 +152,28 @@ function viewA() {
   view.innerHTML = `
     <div class="status" id="st"></div>
     <canvas id="ca" role="img" aria-label="Animation of slurry metering under the fixed blade onto the moving fibre"></canvas>
-    <div class="acl">
+
+    <div class="playback-bar">
       <button id="ap"></button>
       <button id="ar">Restart</button>
-      <label>Time <input type="range" id="at" min="0" max="58" step="0.1"><output id="ato"></output></label>
-      <label>Position across web <input type="range" id="az" min="0" max="300" step="1"><output id="azo"></output></label>
-      <label>Feed pulse depth <input type="range" id="fa" min="0" max="100" step="5"><output id="fao"></output></label>
-      <label>Pulse period <input type="range" id="fp" min="2" max="20" step="0.5"><output id="fpo"></output></label>
-      <label>Pulse length <input type="range" id="fd" min="10" max="80" step="5"><output id="fdo"></output></label>
-      <label>Playback speed <input type="range" id="rt" min="0.1" max="1" step="0.05"><output id="rto"></output></label>
-      <label>Pool depth at start <input type="range" id="pl0" min="2.5" max="8" step="0.5"><output id="pl0o"></output></label>
-      <label>Pool length upstream <input type="range" id="plp" min="20" max="300" step="10"><output id="plpo"></output></label>
+      <div class="sl"><label for="at"><span class="lt">Time</span><output id="ato"></output></label><input type="range" id="at" min="0" max="58" step="0.1"></div>
     </div>
+
+    <div class="anim-params">
+      <div class="section-label">Feed pulsing</div>
+      <div class="sl"><label for="fa"><span class="lt">Feed pulse depth</span><output id="fao"></output></label><input type="range" id="fa" min="0" max="100" step="5"></div>
+      <div class="sl"><label for="fp"><span class="lt">Pulse period</span><output id="fpo"></output></label><input type="range" id="fp" min="2" max="20" step="0.5"></div>
+      <div class="sl"><label for="fd"><span class="lt">Pulse length</span><output id="fdo"></output></label><input type="range" id="fd" min="10" max="80" step="5"></div>
+
+      <div class="section-label">Pool setup</div>
+      <div class="sl"><label for="pl0"><span class="lt">Pool depth at start</span><output id="pl0o"></output></label><input type="range" id="pl0" min="2.5" max="8" step="0.5"></div>
+      <div class="sl"><label for="plp"><span class="lt">Pool length upstream</span><output id="plpo"></output></label><input type="range" id="plp" min="20" max="300" step="10"></div>
+
+      <div class="section-label">View</div>
+      <div class="sl"><label for="az"><span class="lt">Position across web</span><output id="azo"></output></label><input type="range" id="az" min="0" max="300" step="1"></div>
+      <div class="sl"><label for="rt"><span class="lt">Playback speed</span><output id="rto"></output></label><input type="range" id="rt" min="0.1" max="1" step="0.05"><span class="h">1× = real time</span></div>
+    </div>
+
     <canvas id="cb" role="img" aria-label="Separate magnified animation of the downstream meniscus" style="margin-top:14px"></canvas>
     <p class="cap"><b>Separate view:</b> the downstream meniscus, magnified, driven by the same simulation and the same clock as the view above.</p>
     <details class="cap-toggle"><summary>How this view works</summary><p class="cap"><b>Fixed blade, fibre moves left to right.</b> The animation is driven by the same model and the same inputs as the other tabs. Web speed, machine height, fibre thickness, viscosity, yield stress, shear thinning, bead pressure, land length, surface tension and contact angle set the flow and the meniscus. The across-web inputs act through the position slider, which picks the local gap and wetting at that point. Edge, ripple and oven inputs act in the other tabs. The blade diameter is 100 mm (from you); the notch size is assumed. Bead height scales with bead pressure for display. <b>The downstream liquid surface is solved live</b> (thin-film equation with viscous flow, surface tension and the moving fibre, in real time). The run starts from a developed steady film. <b>How it works.</b> The run starts with the fibre stopped and a pool of slurry already deeper than the gap. The fibre starts at 3 s and reaches full speed 1.5 s later (assumed). The nozzle tip sits at the pool surface and feeds in pulses, at an average rate equal to the flow leaving through the gap. The pool level comes from a volume balance (feed in minus gap flow out), and the gap flow comes from the fibre speed and the bead pressure, which is taken as proportional to pool depth. The pool depth at start and its length upstream of the blade are assumed, not measured. The liquid surface downstream is solved live (thin-film equation with viscous flow, surface tension and the moving fibre). Change any input while it runs and the surface relaxes to the new state. The contact-line position on the face still comes from the static balance used in the other tabs.</p></details>
@@ -170,12 +186,13 @@ function viewA() {
     az = document.getElementById('az'), azo = document.getElementById('azo');
   const syncPlayButton = () => { ap.textContent = ANIM.playing ? 'Pause' : 'Play'; ap.setAttribute('aria-pressed', ANIM.playing); };
   syncPlayButton();
-  az.value = ANIM.z; azo.textContent = ANIM.z + ' mm';
+  az.value = ANIM.z; azo.textContent = ANIM.z + ' mm'; syncSliderFill(az);
+  syncSliderFill(at);
 
   ap.onclick = () => { ANIM.playing = !ANIM.playing; syncPlayButton(); };
   document.getElementById('ar').onclick = () => { ANIM.seek(0); };
-  at.oninput = () => { ANIM.seek(+at.value); ANIM.playing = false; syncPlayButton(); };
-  ANIM.onTime = t => { if (document.activeElement !== at) at.value = t; ato.textContent = t.toFixed(0) + ' s'; };
+  at.oninput = () => { ANIM.seek(+at.value); ANIM.playing = false; syncPlayButton(); syncSliderFill(at); };
+  ANIM.onTime = t => { if (document.activeElement !== at) { at.value = t; syncSliderFill(at); } ato.textContent = t.toFixed(0) + ' s'; };
 
   const fa = document.getElementById('fa'), fp = document.getElementById('fp'),
     fao = document.getElementById('fao'), fpo = document.getElementById('fpo'),
@@ -185,19 +202,20 @@ function viewA() {
     fao.textContent = fa.value + ' %';
     fpo.textContent = (+fp.value).toFixed(1) + ' s';
     fdo.textContent = fd.value + ' % of period';
+    syncSliderFill(fa); syncSliderFill(fp); syncSliderFill(fd);
   };
   syncFeedLabels();
 
   const rt = document.getElementById('rt'), rto = document.getElementById('rto');
-  rt.value = ANIM.rate;
-  const syncRateLabel = () => { rto.textContent = (+rt.value).toFixed(2) + '× (1× = real time)'; };
+  rt.value = ANIM.rate; syncSliderFill(rt);
+  const syncRateLabel = () => { rto.textContent = (+rt.value).toFixed(2) + '×'; syncSliderFill(rt); };
   syncRateLabel();
   rt.oninput = () => { ANIM.rate = +rt.value; syncRateLabel(); };
 
   const p0 = document.getElementById('pl0'), pp = document.getElementById('plp'),
     p0o = document.getElementById('pl0o'), ppo = document.getElementById('plpo');
   p0.value = ANIM.L0; pp.value = ANIM.Lp;
-  const syncPoolLabels = () => { p0o.textContent = (+p0.value).toFixed(1) + ' mm'; ppo.textContent = pp.value + ' mm'; };
+  const syncPoolLabels = () => { p0o.textContent = (+p0.value).toFixed(1) + ' mm'; ppo.textContent = pp.value + ' mm'; syncSliderFill(p0); syncSliderFill(pp); };
   syncPoolLabels();
 
   fa.oninput = fp.oninput = fd.oninput = () => {
@@ -208,7 +226,7 @@ function viewA() {
     ANIM.L0 = +p0.value; ANIM.Lp = +pp.value;
     syncPoolLabels(); ANIM.reinit();
   };
-  az.oninput = () => { ANIM.z = +az.value; azo.textContent = ANIM.z + ' mm'; ANIM.refresh(); fillA(); };
+  az.oninput = () => { ANIM.z = +az.value; azo.textContent = ANIM.z + ' mm'; syncSliderFill(az); ANIM.refresh(); fillA(); };
 
   fillA();
   updateScope(ANIM.limited ? ' <strong>Pool outlet is currently supply-limited.</strong>' : '');
