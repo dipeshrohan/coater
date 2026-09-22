@@ -5,11 +5,86 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status: Phase 1a and 1b complete and validated. A first "CFD Analysis"
-## tab is live in the app (one location, the web centreline, Newtonian-
-## equivalent viscosity) -- visible now under Run gap flow. Still open:
-## the other 3 lateral locations, free-surface/meniscus, porous fibre,
-## non-Newtonian Picard extension, Web Workers, localStorage, export.
+## Status: Phase 1 complete and validated, including the non-Newtonian
+## extension (Picard iteration, real shear-thinning/yield-stress fields,
+## not just a single representative viscosity) and Web Workers (brought
+## forward from Phase 4 once measured solve times made it a real
+## requirement, not a nice-to-have). Live in the app's "CFD Analysis" tab
+## now, one location (the web centreline). Still open: the other 3
+## lateral locations and their comparison view, free-surface/meniscus,
+## porous fibre coupling, localStorage persistence, export.
+
+### Non-Newtonian extension (Phase 1, completed after 1a/1b)
+
+`solveChannelNSNonNewtonian()` in `cfd-solver.js` Picard-iterates the
+open-channel solver: solve with the viscosity field frozen, recompute it
+from the resulting local shear-rate field via the same Herschel-Bulkley
+formula as `physics.js`'s `muEff()` (mirrored, not imported -- this file
+stays standalone/Node-testable), repeat to convergence. Diffusion uses a
+conservative (divergence-form) variable-coefficient discretization that
+reduces algebraically to the original constant-nu formula when the field
+is uniform -- verified as an exact regression (max diff 3.2e-4 of U
+against the Phase 1b solver on the same case).
+
+The inlet condition and the initial viscosity-field guess both come from
+`solveFullyDeveloped1D()`: an exact 1D generalized-Newtonian channel
+profile via a shear-stress shooting method (the total shear stress is
+linear in y for any rheology, from the y-momentum balance alone; gd
+inverts pointwise from the stress via the same Herschel-Bulkley formula,
+with gd=0 below yield -- a real unyielded plug, not an approximation).
+Reduces to the closed-form Couette-Poiseuille profile at n=1,ty=0,
+verified analytically (matching coefficients) and numerically (error
+~1e-9 of U).
+
+Validation:
+- 1D solver: exact Newtonian-limit reduction (PASS), correct qualitative
+  direction (shear-thinning gives a flatter core, PASS), real unyielded
+  plug appears when expected (PASS).
+- 2D solver: Newtonian-limit regression against the Phase 1b solver
+  (PASS, diff 3.2e-4 of U); grid convergence of the Picard-converged
+  field against the 1D reference at increasing resolution (1.75e-2 ->
+  8.5e-3 -> 5.8e-3 as fraction of U, 41x21 -> 81x41 -> 121x61); the live
+  2D solve's own outlet flow rate matches its own 1D reference to 0.12%
+  for a representative shear-thinning+yield case -- confirms the 2D
+  solver is self-consistent, independent of whether the naive single-
+  viscosity lubrication formula agrees (it doesn't have to, and often
+  won't for strongly non-Newtonian fluids -- that gap is real physics,
+  not error).
+- Parameter battery across the full rheology slider range (n, ty) x two
+  flow conditions: found one real robustness issue (a mild-shear-
+  thinning case took 54s at the live grid before optimization) --
+  fixed via Picard warm-starting (reuse the previous outer iteration's
+  field instead of re-seeding from scratch) and inner-tolerance staging
+  (loose while the viscosity field is still moving, tight once it's
+  nearly settled): same case now solves in 163ms, no accuracy cost
+  (final iteration always re-solved at full tolerance before returning).
+
+### Web Workers (brought forward from Phase 4)
+
+`cfd-worker.js` runs the solve via `importScripts('cfd-solver.js')`,
+triggered because the non-Newtonian solve measured up to ~3s for some
+rheology combinations -- long enough to visibly freeze the single-
+threaded page, which the spec's "do not freeze the GUI" rules out. The
+main thread's own `cfd-solver.js` `<script>` tag was removed since
+nothing on the main thread calls it directly anymore. Cancel
+(`worker.terminate()` + a fresh worker for the next run) is implemented
+as a real hard stop, verified in a headless browser: Cancel button
+appears immediately on Run, Run is disabled while solving, Cancel
+resets state correctly and a subsequent Run still works.
+
+### UI note: apparent-viscosity display and the unyielded plug
+
+The apparent-viscosity chart initially broke (axis scaled to millions of
+Pa·s) because `mu = ty/gd` formally diverges as gd -> 0 in a real
+unyielded plug core -- confirmed not a bug by inspecting the field
+directly (a genuine, physically-correct near-constant-velocity plug
+region, not numerical noise). A percentile-based axis cap failed too,
+since the plug can be a large enough fraction of the gap (~23% in the
+case that surfaced this) to contaminate even a 90th-percentile estimate.
+Fixed by using the exact 1D reference's gd (which is exactly 0 in its
+unyielded region, not just small) to identify plug rows definitively,
+scaling the axis off the flowing rows only, and pinning plug points to
+the capped edge with a labeled line.
 
 ### Phase 1b result: open-channel (real gap) geometry validated
 
