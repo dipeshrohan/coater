@@ -69,7 +69,7 @@ const ANIM = (function () {
   // through scene()/ANIM's public getters, never directly.
   // ------------------------------------------------------------------
   const SIM = {
-    cl: 0, x0: 0, dx: 0.05, h: new Float64Array(2), t: 0,
+    cl: 0, x0: 0, dx: 0.05, h: new Float64Array(2), t: 0, hc0: 0.02,
     V: 0, L: 4, Uf: 0, s: 0, qg: 0, feed: 0, safe: true, limited: false,
   };
   const HP = 0.02;       // floor film height, mm — keeps the solver away from h=0
@@ -100,7 +100,7 @@ const ANIM = (function () {
   };
 
   function simReset() {
-    SIM.h.fill(HP); SIM.t = 0; SIM.Uf = 0; SIM.s = 0; SIM.qg = 0; SIM.feed = 0;
+    SIM.h.fill(HP); SIM.hc0 = HP; SIM.t = 0; SIM.Uf = 0; SIM.s = 0; SIM.qg = 0; SIM.feed = 0;
     SIM.safe = true; SIM.limited = false;
     SIM.V = areaOf(AN.L0); SIM.L = AN.L0;
   }
@@ -176,9 +176,28 @@ const ANIM = (function () {
     SIM.L = Math.max(levelOf(SIM.V), 0.3);
     SIM.s += Uf * dt;
 
-    // where the contact line currently sits, in grid-index terms
+    // Where the contact line currently sits, in grid-index terms. hc0Target
+    // is where it's ultimately headed (gated by the web speed ramp); SIM.hc0
+    // is rate-limited to reach it at no more than a tenth of a grid cell per
+    // step (a quarter cell was enough for default and most single-slider
+    // extremes, but a worst-case combination of four extreme sliders at once
+    // still broke through it, so this leaves more margin). Without this
+    // limiter, hc0Target can swing tens of mm/s during
+    // the web start-up ramp (it goes from ~HP to past GAP in well under a
+    // second), far faster than the dx=0.05mm grid can track — the pinned
+    // region (k0 below) would engage abruptly with the just-pinned boundary
+    // height completely disconnected from what the free-evolving field next
+    // to it had actually reached, producing a severe local discontinuity
+    // that the implicit solve can't absorb in one step (confirmed by
+    // instrumenting a failing step: h0 was 2.10mm against an adjacent
+    // free-field value of 0.86mm, a huge jump over a single 0.05mm cell).
+    // That discontinuity was the actual cause of the animation freezing
+    // (SIM.safe = false) early in nearly every run at default settings.
     const Hc = MEN[0][1];
-    const hc0 = HP + (Math.min(Hc, SIM.L) - HP) * smoothstep(0.05, 0.5, Uf / UN);
+    const hc0Target = HP + (Math.min(Hc, SIM.L) - HP) * smoothstep(0.05, 0.5, Uf / UN);
+    if (SIM.hc0 === undefined) SIM.hc0 = HP;
+    SIM.hc0 += clamp(hc0Target - SIM.hc0, -SIM.dx * 0.1, SIM.dx * 0.1);
+    const hc0 = SIM.hc0;
     const Nall = SIM.h.length - 1;
     const k0 = Math.max(0, Math.min(Math.ceil((hc0 - GAP) / SIM.dx), Nall - 4));
     const h0mm = k0 > 0 ? GAP + k0 * SIM.dx : hc0;
