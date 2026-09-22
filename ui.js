@@ -428,7 +428,7 @@ function view3() {
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
 let tab = 0;
-const TABS = ['Slurry animation', 'Contact line at the blade', 'Web edge', 'Film surface'];
+const TABS = ['Slurry animation', 'Contact line at the blade', 'Web edge', 'Film surface', 'CFD Analysis'];
 const tabsEl = document.getElementById('tabs');
 TABS.forEach((t, i) => {
   const b = document.createElement('button');
@@ -449,7 +449,7 @@ const view = document.getElementById('view');
 function render() {
   [...tabsEl.children].forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
   ANIM.stop();
-  [viewA, view1, view2, view3][tab]();
+  [viewA, view1, view2, view3, viewCFD][tab]();
   updateScope();
 }
 
