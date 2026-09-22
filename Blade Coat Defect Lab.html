@@ -1,479 +1,62 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Blade Coat Defect Lab</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<meta name="description" content="Interactive thin-film model of slurry metering under a coating blade: film thickness, contact-line position, web-edge scalloping and film levelling, with live model-validity checks.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f4fd8'/%3E%3Ccircle cx='8' cy='8.7' r='4.6' fill='none' stroke='white' stroke-width='1.4'/%3E%3Cpath d='M8 8.7 6.3 6.2M8 5.4v1M10.8 8.7h-1M5.2 8.7h1' stroke='white' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
-:root{--bg:#eef1f6;--surface:#fff;--ink:#131821;--muted:#586172;--line:#dde2ea;--line-soft:#e8ebf1;--accent:#1f4fd8;--accent-ink:#fff;--ok:#1a7f37;--bad:#d1242f;--warn:#a86a00;--slurry:#12151a;--blade:#c5cbd4;--fibre:#d9d3c2;--soft:#eaeef5;
---shadow:0 1px 2px rgba(20,24,34,.04),0 6px 16px -4px rgba(20,24,34,.08);--shadow-sm:0 1px 2px rgba(20,24,34,.05);--radius:10px;
---sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0d12;--surface:#161b22;--ink:#e7ebf1;--muted:#98a2b1;--line:#2a313c;--line-soft:#232933;--accent:#7b98ff;--accent-ink:#0b0d12;--ok:#4cc27a;--bad:#ff7b72;--warn:#e3a93a;--slurry:#000;--blade:#4b5361;--fibre:#6a6455;--soft:#1e252f;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 20px -6px rgba(0,0,0,.5);--shadow-sm:0 1px 2px rgba(0,0,0,.3)}}
-:root[data-theme="dark"]{--bg:#0b0d12;--surface:#161b22;--ink:#e7ebf1;--muted:#98a2b1;--line:#2a313c;--line-soft:#232933;--accent:#7b98ff;--accent-ink:#0b0d12;--ok:#4cc27a;--bad:#ff7b72;--warn:#e3a93a;--slurry:#000;--blade:#4b5361;--fibre:#6a6455;--soft:#1e252f;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 20px -6px rgba(0,0,0,.5);--shadow-sm:0 1px 2px rgba(0,0,0,.3)}
-*{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;padding-inline:16px;padding-block:28px 56px;-webkit-font-smoothing:antialiased}
-.wrap{max-width:1080px;margin:0 auto;display:grid;gap:24px}
-h1{font-size:27px;margin:0;letter-spacing:-.015em;font-weight:600;text-wrap:balance}
-.sub{color:var(--muted);margin:6px 0 0;max-width:70ch;line-height:1.6}
-h2{font-size:12.5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 14px;font-weight:500}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
-.grid{display:grid;grid-template-columns:minmax(0,342px) minmax(0,1fr);gap:20px;align-items:start}
-.grid>aside{grid-column:1;grid-row:1}
-.grid>main{grid-column:2;grid-row:1}
-@media (max-width:820px){.grid{grid-template-columns:1fr}.grid>aside,.grid>main{grid-column:1;grid-row:auto}}
-.sl{display:grid;gap:5px;margin-bottom:14px}
-.sl label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px}
-.sl .lt{display:flex;align-items:center;gap:7px;min-width:0}
-.sl .ic{flex:0 0 auto;width:14px;height:14px;color:var(--muted);fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.sl output{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:500}
-.sl .h{font-size:11.5px;color:var(--muted);opacity:.85}
-input[type=range]{width:100%;accent-color:var(--accent);height:20px;margin:2px 0}
-.grp{font-family:var(--mono);font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:18px 0 12px;padding-top:16px;border-top:1px solid var(--line-soft)}
-.grp:first-of-type{border-top:0;padding-top:0;margin-top:0}
-.tabs{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:18px;border-bottom:1px solid var(--line-soft)}
-.tabs button{font:inherit;font-size:13.5px;padding:9px 4px;margin-right:18px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer;transition:color .15s,border-color .15s}
-.tabs button:hover{color:var(--ink)}
-.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
-.tabs button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.status{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-.pill{font-family:var(--mono);font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid var(--line-soft);background:var(--soft);color:var(--muted)}
-.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line));background:color-mix(in srgb,var(--ok) 8%,var(--soft))}
-.pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line));background:color-mix(in srgb,var(--bad) 8%,var(--soft))}
-.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,var(--line));background:color-mix(in srgb,var(--warn) 8%,var(--soft))}
-canvas{width:100%;display:block;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:inset 0 1px 3px rgba(20,24,34,.05)}
-.cap{font-size:13px;color:var(--muted);margin:10px 0 18px;max-width:75ch;line-height:1.6}
-.cap b{color:var(--ink);font-weight:500}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
-.stat{background:var(--soft);border:1px solid var(--line-soft);border-radius:8px;padding:10px 12px}
-.stat span{display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px}
-.stat strong{font-family:var(--mono);font-weight:500;font-size:17px;letter-spacing:-.01em}
-.note{font-size:13px;color:var(--muted);line-height:1.65}.note li{margin-bottom:6px}
-details>summary{cursor:pointer;list-style:none;user-select:none}
-details>summary::-webkit-details-marker{display:none}
-.panel>details>summary{font-size:12.5px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
-.panel>details>summary::before{content:'';width:0;height:0;border-left:4px solid var(--muted);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transition:transform .15s}
-.panel>details[open]>summary::before{transform:rotate(90deg)}
-.panel>details[open]>summary{margin-bottom:12px}
-.cap-toggle{margin:2px 0 16px}
-.cap-toggle summary{font-size:13px;color:var(--accent);display:inline-flex;align-items:center;gap:6px;font-weight:500}
-.cap-toggle summary::before{content:'';width:0;height:0;border-left:4px solid var(--accent);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transition:transform .15s}
-.cap-toggle[open] summary::before{transform:rotate(90deg)}
-.cap-toggle .cap{margin-top:10px;margin-bottom:0}
-.acl{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;margin:10px 0}
-.acl button{font:inherit;font-size:13.5px;font-weight:500;padding:7px 14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:7px;cursor:pointer;transition:background .15s,box-shadow .15s}
-.acl button:hover{background:var(--soft)}
-.acl button#ap{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);box-shadow:var(--shadow-sm)}
-.acl button#ap:hover{filter:brightness(1.08)}
-.acl label{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
-.acl input{width:150px}
-.acl output{font-family:var(--mono);font-size:13px;color:var(--accent);min-width:56px;font-weight:500}
-.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.toolbar button{font:inherit;font-weight:500;padding:7px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}.toolbar button:hover{background:var(--soft)}
-.scope{margin:0;padding:11px 13px;border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:7px;background:var(--soft);font-size:13px;color:var(--muted)}.scope.warn{border-left-color:var(--warn)}.scope.bad{border-left-color:var(--bad)}.scope strong{color:var(--ink)}
-@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  /* Minimal pre-paint styling so the page doesn't flash unstyled before styles.css loads. */
+  :root { color-scheme: light; box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; padding: 0; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; background: #faf9f5; color: #141413; }
+  img { max-width: 100%; }
+  [hidden]:not([hidden=until-found i]) { display: none !important; }
 </style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
 <div class="wrap">
-<header><h1>Blade Coat Defect Lab</h1>
-<p class="sub">Explore slurry flow under the scraper with a thin-film model. Change one input at a time, then check the model-validity message before interpreting a result. Starting values are yours: 0.28 m/min, 1.90 mm machine height, 0.20 mm fibre, 10.5 Pa·s.</p><div class="toolbar"><button id="reset" type="button">Reset process inputs</button></div></header>
-<div class="grid">
-<main class="panel">
-<div class="tabs" role="tablist" id="tabs"></div>
-<div id="view"></div>
-</main>
-<aside class="panel" aria-label="Process inputs"><h2>Inputs</h2><p class="scope" id="scope" role="status" aria-live="polite"></p><div id="params"></div></aside>
+
+  <header class="app-header">
+    <div class="app-header-text">
+      <h1>Blade Coat Defect Lab</h1>
+      <p class="sub">Explore slurry flow under the scraper with a thin-film model. Change one input at a time, then check the model-validity message before interpreting a result. Starting values are yours: 0.28 m/min, 1.90 mm machine height, 0.20 mm fibre, 10.5 Pa·s.</p>
+    </div>
+    <button id="reset" class="btn-reset" type="button">Reset process inputs</button>
+  </header>
+
+  <div class="grid">
+    <main class="panel">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <p class="scope" id="scope" role="status" aria-live="polite"></p>
+      <div id="view"></div>
+    </main>
+    <aside class="panel" aria-label="Process inputs">
+      <h2>Inputs</h2>
+      <div id="params"></div>
+    </aside>
+  </div>
+
+  <section class="panel">
+    <details>
+      <summary>What is measured and what is assumed</summary>
+      <ul class="note">
+        <li><b>Yours:</b> speed, machine height, fibre thickness, viscosity 10.5 Pa·s, design wet film 1.45 mm (the pressure default is back-calculated so the model returns 1.45 mm; it is not a measurement).</li>
+        <li><b>Assumed until you measure them:</b> surface tension (0.07 N/m, water-like), contact angle on the blade, yield stress, shear-thinning index, bead pressure, land length, notch face length, density 1020 kg/m³.</li>
+        <li><b>Model limits:</b> the film thickness uses lubrication theory with an effective viscosity. The contact-line height is the static gravity-plus-capillary meniscus (Young–Laplace), so dynamic wetting is not included. The web-edge and levelling results are order-of-magnitude indicators. Use them to see which lever matters, not to predict exact millimetres.</li>
+        <li><b>Conservation:</b> the animation advances the pool with a volume balance. If the pool cannot supply the requested outlet flow, the outlet is supply-limited rather than allowing a negative liquid volume. Numerical failures stop the evolving surface and are reported; they are never displayed as a valid physical prediction.</li>
+      </ul>
+    </details>
+  </section>
+
 </div>
-<section class="panel"><details><summary>What is measured and what is assumed</summary>
-<ul class="note">
-<li><b>Yours:</b> speed, machine height, fibre thickness, viscosity 10.5 Pa·s, design wet film 1.45 mm (the pressure default is back-calculated so the model returns 1.45 mm; it is not a measurement).</li>
-<li><b>Assumed until you measure them:</b> surface tension (0.07 N/m, water-like), contact angle on the blade, yield stress, shear-thinning index, bead pressure, land length, notch face length, density 1020 kg/m³.</li>
-<li><b>Model limits:</b> the film thickness uses lubrication theory with an effective viscosity. The contact-line height is the static gravity-plus-capillary meniscus (Young–Laplace), so dynamic wetting is not included. The web-edge and levelling results are order-of-magnitude indicators. Use them to see which lever matters, not to predict exact millimetres.</li>
-<li><b>Conservation:</b> the animation advances the pool with a volume balance. If the pool cannot supply the requested outlet flow, the outlet is supply-limited rather than allowing a negative liquid volume. Numerical failures stop the evolving surface and are reported; they are never displayed as a valid physical prediction.</li></ul></details></section>
-</div>
-<script>
-const CFG=[
-{g:'Process',k:'U',l:'Web speed',min:0.1,max:1.0,step:0.01,u:'m/min',d:2,v:0.28,ic:'speed'},
-{k:'Hm',l:'Machine scraper height',min:1.5,max:2.3,step:0.01,u:'mm',d:2,v:1.90,ic:'height'},
-{k:'tf',l:'Fibre thickness',min:0.05,max:0.4,step:0.01,u:'mm',d:2,v:0.20,ic:'layers'},
-{k:'oven',l:'Distance to oven',min:0.1,max:2,step:0.05,u:'m',d:2,v:0.5,ic:'distance'},
-{g:'Slurry',k:'mu',l:'Apparent viscosity at 2.7 1/s',min:2,max:30,step:0.5,u:'Pa·s',d:1,v:10.5,ic:'droplet'},
-{k:'n',l:'Shear-thinning index n',min:0.3,max:1,step:0.05,u:'',d:2,v:1,h:'1 = Newtonian (assumed)',ic:'curve'},
-{k:'ty',l:'Yield stress',min:0,max:40,step:0.5,u:'Pa',d:1,v:5,h:'assumed, not measured',ic:'gauge'},
-{k:'g',l:'Surface tension',min:0.03,max:0.08,step:0.005,u:'N/m',d:3,v:0.07,h:'assumed, water-like',ic:'droplet'},
-{g:'Blade and bead',k:'Pup',l:'Bead pressure over the land',min:0,max:3,step:0.02,u:'kPa',d:2,v:0.72,h:'set to give 1.45 mm at default',ic:'gauge'},
-{k:'L',l:'Land length',min:3,max:25,step:0.5,u:'mm',d:1,v:10,h:'assumed',ic:'ruler'},
-{k:'th',l:'Contact angle on blade',min:5,max:120,step:1,u:'°',d:0,v:35,h:'assumed',ic:'angle'},
-{k:'face',l:'Notch face length to corner',min:2,max:12,step:0.5,u:'mm',d:1,v:8,h:'assumed, measure on the blade',ic:'ruler'},
-{g:'Variation across the web',k:'dH',l:'Blade gap waviness (amplitude)',min:0,max:100,step:1,u:'µm',d:0,v:20,ic:'wave'},
-{k:'lw',l:'Waviness wavelength',min:20,max:300,step:5,u:'mm',d:0,v:120,ic:'wave'},
-{k:'dt',l:'Fibre thickness variation',min:0,max:60,step:1,u:'µm',d:0,v:10,ic:'scatter'},
-{k:'dth',l:'Wetting variation on blade',min:0,max:20,step:0.5,u:'°',d:1,v:4,h:'contamination, residue',ic:'scatter'},
-{g:'Web edge and film',k:'a0e',l:'Edge irregularity at exit',min:5,max:200,step:5,u:'µm',d:0,v:30,ic:'edge'},
-{k:'lam',l:'Ripple wavelength on film',min:2,max:40,step:0.5,u:'mm',d:1,v:8,ic:'wave'},
-{k:'vib',l:'Vibration ripple on film',min:0,max:80,step:1,u:'µm',d:0,v:10,ic:'wave'}];
-const ICON={
-speed:'<path d="M2.5 12.5a5.5 5.5 0 0 1 11 0"/><path d="M8 12.5 10.8 6"/><circle cx="8" cy="12.5" r="1"/>',
-height:'<path d="M3 3h10M3 13h10M8 4v8M6.2 6l1.8-2 1.8 2M6.2 10l1.8 2 1.8-2"/>',
-layers:'<rect x="2.5" y="2.8" width="11" height="2.6" rx="0.8"/><rect x="2.5" y="6.7" width="11" height="2.6" rx="0.8"/><rect x="2.5" y="10.6" width="11" height="2.6" rx="0.8"/>',
-distance:'<path d="M2 8h12M2 8l2.4-2.2M2 8l2.4 2.2M14 8l-2.4-2.2M14 8l-2.4 2.2"/>',
-droplet:'<path d="M8 2.2c2.8 3.6 4.6 5.9 4.6 8.1A4.6 4.6 0 0 1 3.4 10.3C3.4 8.1 5.2 5.8 8 2.2Z"/>',
-curve:'<path d="M2.5 4.5c2 0 2 3.5 5.5 3.5S11 11.5 13 11.5"/>',
-gauge:'<circle cx="8" cy="8.5" r="5.3"/><path d="M8 8.5 6.1 5.6M8 5v1.1M11.3 8.5h-1.1M4.7 8.5h1.1"/>',
-ruler:'<rect x="2.3" y="6.8" width="11.4" height="4.2" rx="0.6"/><path d="M5 6.8v1.6M7.5 6.8v1.6M10 6.8v1.6M12.3 6.8v1.6"/>',
-angle:'<path d="M3 13h10M3 13 12 4"/><path d="M6.3 13a3.9 3.9 0 0 1 1.2-2.7"/>',
-wave:'<path d="M2 9c1.4-3 2.4-3 3.8 0s2.4 3 3.8 0 2.4-3 3.8 0"/>',
-scatter:'<circle cx="4.2" cy="5.2" r="1"/><circle cx="9.3" cy="4.2" r="1"/><circle cx="12.2" cy="8.4" r="1"/><circle cx="6" cy="10.4" r="1"/><circle cx="10.6" cy="12.2" r="1"/>',
-edge:'<path d="M2 12.5 4.8 6l2 4 2-5 2 4 3.2-5"/>'};
-const P={};const pr=document.getElementById('params');
-let renderPending=0;const queueRender=()=>{cancelAnimationFrame(renderPending);renderPending=requestAnimationFrame(()=>{renderPending=0;render()})};
-CFG.forEach(c=>{P[c.k]=c.v;if(c.g){const g=document.createElement('div');g.className='grp';g.textContent=c.g;pr.appendChild(g)}
-const d=document.createElement('div');d.className='sl';d.innerHTML=`<label for="s_${c.k}"><span class="lt"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${ICON[c.ic]}</svg>${c.l}</span><output id="o_${c.k}"></output></label><input type="range" id="s_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}">${c.h?`<span class="h">${c.h}</span>`:''}`;pr.appendChild(d);
-const s=d.querySelector('input'),o=d.querySelector('output');const sh=()=>{o.textContent=(+s.value).toFixed(c.d)+(c.u?' '+c.u:'')};sh();
-s.addEventListener('input',()=>{P[c.k]=+s.value;sh();queueRender()})});
-const RHO=1020,G=9.81,S2=Math.SQRT1_2;
-function muEff(gd){gd=Math.max(gd,1e-6);const ref=P.mu,ty=P.ty;const base=Math.max(ref-ty/2.7,0.05*ref);return ty/gd+base*Math.pow(gd/2.7,P.n-1)}
-function hf(Hmm){const U=P.U/60,H=Hmm/1000,gd=U/H,m=muEff(gd);const dp=P.Pup*1000/(P.L/1000);return 1000*H*(0.5+H*H*dp/(12*m*U))}
-const lc=()=>Math.sqrt(P.g/(RHO*G))*1000;
-function modelScope(){const H=Hn()/1000,U=P.U/60,mu=muEff(U/H),h=contact(Hn(),P.th).h/1000;const Re=RHO*U*H/mu,Ca=mu*U/P.g,aspect=H/(P.L/1000);const issues=[];
- if(aspect>0.2)issues.push('gap/land ratio is too large for lubrication theory');if(Re>1)issues.push('inertia is no longer negligible');if(Ca>0.1)issues.push('the static contact-line model omits important dynamic wetting');if(h<=0||!Number.isFinite(h))issues.push('no finite positive film solution');
- return{Re,Ca,aspect,issues}}
-function updateScope(extra=''){const el=document.getElementById('scope');if(!el)return;const q=modelScope(),hard=q.issues.some(x=>x.includes('no finite'));el.className='scope '+(hard?'bad':q.issues.length?'warn':'');el.innerHTML=q.issues.length?`<strong>${hard?'Result withheld':'Use with caution'}.</strong> ${q.issues.join('; ')}. Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`:`<strong>Within the thin-film checks.</strong> Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`}
-function contact(Hmm,th){const h=hf(Hmm),L=lc();const phi=Math.min(Math.max(135-th,0),180)*Math.PI/180;const hc=2*L*Math.sin(phi/2);const Qy=h+hc;
- if(Qy<=Hmm){const hce=Math.max(Hmm-h,0);return{h,s:0,pinned:true,phi:2*Math.asin(Math.min(1,hce/(2*L))),hc:hce}}
- return{h,s:(Qy-Hmm)/S2,pinned:false,phi,hc}}
-const Hn=()=>P.Hm-P.tf;
-const nz=(z,s)=>(Math.sin(z/13.1+s)+0.6*Math.sin(z/5.3+2.1*s)+0.35*Math.sin(z/2.7+3.3*s))/1.95;
-function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
-function setup(cv,ratio){const w=cv.parentElement.clientWidth||600,r=window.devicePixelRatio||1;cv.style.height=(w*ratio)+'px';cv.width=w*r;cv.height=w*ratio*r;const c=cv.getContext('2d');c.setTransform(r,0,0,r,0,0);return{c,w,h:w*ratio}}
-function meniscus(c0,xq,hfm,phic){const L=lc(),pts=[];const N=240,pm=0.03;let x=xq;pts.push([x,hfm+2*L*Math.sin(phic/2)]);
- for(let i=1;i<=N;i++){const a=phic+(pm-phic)*(i-1)/N,b=phic+(pm-phic)*i/N,m=(a+b)/2;x+=Math.cos(m)*L/(2*Math.sin(m/2))*(a-b);pts.push([x,hfm+2*L*Math.sin(b/2)])}return pts}
-function tx(c,t,x,y,col){c.lineJoin='round';c.lineWidth=3;c.strokeStyle=css('--surface');c.strokeText(t,x,y);c.fillStyle=col;c.fillText(t,x,y)}
-function drawSection(cv){const{c,w,h}=setup(cv,0.66);const H=Hn(),st=contact(H,P.th);const sc=w/16,x0=4,y0=h-70;
- const X=x=>(x+x0)*sc,Y=y=>y0-y*sc;c.clearRect(0,0,w,h);
- const ink=css('--ink'),mut=css('--muted'),bl=css('--blade'),fb=css('--fibre'),sl=css('--slurry'),line=css('--line'),bad=css('--bad'),acc=css('--accent');
- c.save();c.beginPath();c.rect(0,0,w,h);c.clip();
- c.fillStyle=fb;c.fillRect(0,Y(0),w,P.tf*sc);c.fillStyle=css('--soft');c.fillRect(0,Y(-P.tf),w,60);c.strokeStyle=ink;c.lineWidth=1.2;c.strokeRect(0,Y(0),w,P.tf*sc);
- const Q=st.s*S2,E=[0,H],Qp=[Q,H+st.s*S2];const V=[P.face*S2,H+P.face*S2],D=[V[0]+P.face*0.55*S2,V[1]-P.face*0.55*S2];const R=15;
- const under=x=>H+x*x/(2*R);
- // slurry
- const men=meniscus(0,Qp[0],st.h,st.phi);
- c.beginPath();c.moveTo(X(-x0),Y(0));c.lineTo(X(-x0),Y(under(-x0)));for(let x=-x0;x<=0;x+=0.25)c.lineTo(X(x),Y(under(x)));c.lineTo(X(0),Y(H));c.lineTo(X(Qp[0]),Y(Qp[1]));men.forEach(p=>c.lineTo(X(p[0]),Y(p[1])));c.lineTo(X(12),Y(st.h));c.lineTo(X(12),Y(0));c.closePath();c.fillStyle=sl;c.fill();c.strokeStyle=mut;c.lineWidth=1;c.stroke();
- // blade
- c.beginPath();c.moveTo(X(-x0),Y(11));c.lineTo(X(-x0),Y(under(-x0)));for(let x=-x0;x<=0;x+=0.25)c.lineTo(X(x),Y(under(x)));c.lineTo(X(V[0]),Y(V[1]));c.lineTo(X(D[0]),Y(D[1]));c.lineTo(X(D[0]+1),Y(11));c.closePath();c.fillStyle=bl;c.fill();c.strokeStyle=ink;c.lineWidth=1.6;c.stroke();
- // contact line marker
- c.fillStyle=st.s>P.face?bad:acc;c.beginPath();c.arc(X(Qp[0]),Y(Qp[1]),5,0,7);c.fill();
- c.fillStyle=ink;[[E,'metering edge',-4,20],[V,'notch corner',6,-8],[D,'dry edge',6,6]].forEach(([p,t,dx,dy])=>{c.beginPath();c.arc(X(p[0]),Y(p[1]),4,0,7);c.fill();c.font='12px '+css('--mono');tx(c,t,X(p[0])+dx+8,Y(p[1])+dy,ink)});
- c.fillStyle=mut;c.font='12px '+css('--mono');tx(c,'gap H = '+H.toFixed(2)+' mm',X(-3.8),Y(H/2)+4,mut);tx(c,'film '+st.h.toFixed(2)+' mm',X(8),Y(st.h)-8,mut);
- c.strokeStyle=mut;c.setLineDash([3,3]);c.beginPath();c.moveTo(X(-0.7),Y(0));c.lineTo(X(-0.7),Y(H));c.stroke();c.setLineDash([]);
- tx(c,st.pinned?'contact line pinned at the edge':'contact line '+st.s.toFixed(1)+' mm up the face',X(Qp[0])+12,Y(Qp[1])-12,acc);
- c.restore()}
-function plot(cv,ratio,o){const{c,w,h}=setup(cv,ratio);const m={l:52,r:16,t:26,b:36},pw=w-m.l-m.r,ph=h-m.t-m.b;const X=x=>m.l+(x-o.x0)/(o.x1-o.x0)*pw,Y=y=>m.t+ph-(y-o.y0)/(o.y1-o.y0)*ph;
- const ink=css('--ink'),mut=css('--muted'),line=css('--line');c.font='12px '+css('--mono');c.fillStyle=mut;c.strokeStyle=line;c.lineWidth=1;
- for(let i=0;i<=4;i++){const v=o.y0+(o.y1-o.y0)*i/4,y=Y(v);c.beginPath();c.moveTo(m.l,y);c.lineTo(w-m.r,y);c.stroke();c.textAlign='right';c.fillText(v.toFixed(o.yd??1),m.l-6,y+4)}
- for(let i=0;i<=4;i++){const v=o.x0+(o.x1-o.x0)*i/4;c.textAlign='center';c.fillText(v.toFixed(o.xd??0),X(v),h-m.b+16)}
- c.textAlign='left';c.fillText(o.yl,4,14);c.textAlign='right';c.fillText(o.xl,w-m.r,h-4);
- (o.hl||[]).forEach(l=>{c.strokeStyle=l.c;c.setLineDash([5,4]);c.beginPath();c.moveTo(m.l,Y(l.y));c.lineTo(w-m.r,Y(l.y));c.stroke();c.setLineDash([]);c.fillStyle=l.c;c.textAlign='right';c.fillText(l.t,w-m.r-4,Y(l.y)-5)});
- (o.vl||[]).forEach(l=>{c.strokeStyle=l.c;c.setLineDash([5,4]);c.beginPath();c.moveTo(X(l.x),m.t);c.lineTo(X(l.x),m.t+ph);c.stroke();c.setLineDash([]);c.fillStyle=l.c;c.textAlign='left';c.fillText(l.t,X(l.x)+4,m.t+12)});
- o.s.forEach(s=>{c.strokeStyle=s.c;c.lineWidth=s.w||2;c.setLineDash(s.dash||[]);c.beginPath();s.p.forEach((p,i)=>{const x=X(p[0]),y=Math.min(Math.max(Y(p[1]),m.t),m.t+ph);i?c.lineTo(x,y):c.moveTo(x,y)});c.stroke();c.setLineDash([])});return{X,Y}}
-const pill=(t,k)=>`<span class="pill ${k}">${t}</span>`;
-const ANIM=(function(){
-let cv,W=0,Hh=0,DPR=1,ctx,cv2=null,MAG=null;
-const XMIN=-16,XMAX=9,YMIN=-1.0,YMAX=9.6,SC=()=>W/(XMAX-XMIN);
-let GAP=1.70,HF=1.45,U=4.667,Q=U*HF,LFIN=3.8,S1=5,WET=false,ST={s:0,pinned:true};const FT=0.20,RB=50,S2=Math.SQRT1_2;let NX=-12;
-let E,CX,CY,V,Dd,MEN=[[0,0]],TH=35;
-const under=x=>CY-Math.sqrt(Math.max(RB*RB-(x-CX)*(x-CX),0));
-// ---- helpers
-const clamp=(x,a,b)=>Math.min(Math.max(x,a),b),ss=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t)};
-const win=(t,a,b,f)=>ss(a,a+f,t)*(1-ss(b-f,b,t));   // fade in at a, out at b
-const T=58;
-let CL={};function colors(){CL.surface=css('--surface');CL.ink=css('--ink');CL.muted=css('--muted');CL.line=css('--line');CL.blue=css('--accent');CL.red=css('--bad');CL.green=css('--ok');CL.blade=css('--blade');CL.fibre=css('--fibre');CL.backing=css('--soft');CL.sfill='0.16';CL.sans=css('--sans')}
-function resize(){const w=cv.parentElement.clientWidth||900;DPR=window.devicePixelRatio||1;W=w;Hh=w*(YMAX-YMIN)/(XMAX-XMIN);cv.style.height=Hh+'px';cv.width=Math.round(W*DPR);cv.height=Math.round(Hh*DPR);ctx=cv.getContext('2d');ctx.setTransform(DPR,0,0,DPR,0,0)}
-const X=x=>(x-XMIN)*SC(),Y=y=>Hh-(y-YMIN)*SC();
 
-const SIM={cl:0,x0:0,dx:0.05,h:new Float64Array(2),t:0,V:0,L:4,Uf:0,s:0,qg:0,feed:0,safe:true,limited:false};const HP=0.02;
-const TS=3,TR=1.5;let UN=4.667,AT=[];
-function buildA(){AT=[];const XL=CX-RB;for(let L=0;L<=10.0001;L+=0.05){let a=L*Math.max(AN.Lp+XL,0);for(let x=XL;x<=0;x+=0.05)a+=Math.min(L,under(x))*0.05;AT.push(a)}}
-const areaOf=L=>{const f=clamp(L,0,10)/0.05,i=Math.min(Math.floor(f),AT.length-2);return AT[i]+(AT[i+1]-AT[i])*(f-i)};
-const levelOf=Vv=>{let lo=0,hi=AT.length-1;if(Vv<=AT[0])return 0;if(Vv>=AT[hi])return 10;while(hi-lo>1){const m=(lo+hi)>>1;AT[m]<Vv?lo=m:hi=m}return (lo+(Vv-AT[lo])/(AT[hi]-AT[lo]))*0.05};
-function simReset(){SIM.h.fill(HP);SIM.t=0;SIM.Uf=0;SIM.s=0;SIM.qg=0;SIM.feed=0;SIM.safe=true;SIM.limited=false;SIM.V=areaOf(AN.L0);SIM.L=AN.L0}
-const pulseAmp=tau=>{if(tau<TF)return 0;const D=AN.fd,per=AN.fp,dep=AN.fa,k=Math.floor((tau-TF)/per),ph=(tau-TF)-k*per,w=ss(0,0.25,ph)*(1-ss(D*per-0.25,D*per,ph));const on=1-dep+dep/D,off=1-dep;return (off+(on-off)*w)/on};
-const XF=-6.9,TF=1.0;
-function qgap(Uf,L){const pe=P.Pup*(L/AN.L0),H=GAP*1e-3,u=Uf*1e-3,gd=Math.max(Uf/GAP,1e-3),m=Math.max(muEff(gd),0.05),dp=pe*1000/(P.L*1e-3);
- const q=(u*H/2+H*H*H*dp/(12*m))*1e6;return Math.max(0,q)}
-function simGrid(){const xc=0,N=Math.max(20,Math.round((XMAX-xc)/0.05)),dx=(XMAX-xc)/N;const old=SIM.h,ox=SIM.x0,od=SIM.dx,on=old.length;const nh=new Float64Array(N+1);
- for(let i=0;i<=N;i++){const x=xc+i*dx;const f=(x-ox)/od;if(on<3){nh[i]=HP;continue}if(f<0){nh[i]=old[0];continue}const k=Math.min(Math.floor(f),on-2);nh[i]=old[k]+(old[k+1]-old[k])*Math.min(f-k,1)}
- SIM.h=nh;SIM.x0=xc;SIM.dx=dx}
-function simStep(dt){const tn=SIM.t,dx=SIM.dx*1e-3;
- const Uf=UN*ss(TS,TS+TR,tn);SIM.Uf=Uf;const Um=Uf*1e-3;
- const shape=tn<TS?0:pulseAmp(tn-TS+TF);SIM.feed=shape;const Qf=UN*HF*shape*(1-AN.fa+AN.fa/AN.fd);
- const requested=qgap(Uf,SIM.L),Vmin=areaOf(0.3),qg=Math.min(requested,Qf+Math.max(SIM.V-Vmin,0)/dt);SIM.qg=qg;SIM.limited=qg+1e-9<requested;
- SIM.V=Math.max(Vmin,SIM.V+(Qf-qg)*dt);SIM.L=Math.max(levelOf(SIM.V),0.3);SIM.s+=Uf*dt;
- const Hc=MEN[0][1],hc0=HP+(Math.min(Hc,SIM.L)-HP)*ss(0.05,0.5,Uf/UN);
- const Nall=SIM.h.length-1,k0=Math.max(0,Math.min(Math.ceil((hc0-GAP)/SIM.dx),Nall-4));
- const h0mm=k0>0?GAP+k0*SIM.dx:hc0,h0=h0mm*1e-3,qin=qg*1e-6;SIM.cl=k0*SIM.dx;
- for(let i=0;i<k0;i++)SIM.h[i]=GAP+i*SIM.dx;
- const h=SIM.h.subarray(k0),N=h.length-1;
- const mu=Math.max(muEff(Math.max(UN/GAP,1e-3)),0.05);const gam=P.g,rg=RHO*G;
- const M=N-1,A=new Array(M),b=new Float64Array(M),x=new Float64Array(M);
- for(let j=0;j<M;j++){A[j]=[0,0,0,0,0];b[j]=h[j+1]*1e-3/dt}
- const hm=i=>(i===0?h0:h[Math.min(i,N)]*1e-3);
- const mob=i=>{const q=(hm(i)+hm(i+1))/2;return q*q*q/(3*mu)};
- const add=(i,idx,c)=>{const j=i-1;if(idx===0){b[j]-=c*h0;return}if(idx>N-1)idx=N-1;A[j][idx-i+2]+=c};
- for(let i=1;i<=N-1;i++){
-  const m1=mob(i),a=m1*gam/(dx*dx*dx),g1=m1*rg/dx;
-  const inv=1/dx;
-  add(i,i+2,a*inv);add(i,i+1,(-3*a-g1)*inv);add(i,i,(3*a+Um+g1)*inv);add(i,i-1,(-a)*inv);
-  if(i===1){b[0]+=qin*inv}else{
-   const m0=mob(i-1),bb=m0*gam/(dx*dx*dx),g0=m0*rg/dx;
-   add(i,i+1,-bb*inv);add(i,i,(3*bb+g0)*inv);add(i,i-1,(-3*bb-Um-g0)*inv);add(i,i-2,bb*inv)}
-  A[i-1][2]+=1/dt}
- for(let j=0;j<M;j++){const p=A[j][2];if(!Number.isFinite(p)||Math.abs(p)<1e-14){SIM.safe=false;SIM.t+=dt;return}for(let r=1;r<=2&&j+r<M;r++){const f=A[j+r][2-r]/p;if(!f)continue;for(let c=0;c<=2;c++)A[j+r][2+c-r]-=f*A[j][2+c];b[j+r]-=f*b[j]}}
- for(let j=M-1;j>=0;j--){let sm=b[j];for(let c=1;c<=2&&j+c<M;c++)sm-=A[j][2+c]*x[j+c];x[j]=sm/A[j][2]}
- if(x.some(v=>!Number.isFinite(v)||v<=0||v*1e3>YMAX)){SIM.safe=false;SIM.t+=dt;return}SIM.safe=true;
- for(let j=0;j<M;j++)h[j+1]=Math.max(x[j]*1e3,HP*0.5);
- h[N]=h[N-1];h[0]=h0mm;SIM.t+=dt}
-function simSync(t){if(t<SIM.t-1e-6||!SIM.init){SIM.init=1;simReset()}const dt=0.02;let g=0;while(SIM.safe&&SIM.t+dt<=t+1e-9&&g++<4000)simStep(dt)}
-function setModel(){
- const z=AN.z;const H=Hn()+(P.dH*Math.sin(2*Math.PI*z/P.lw)-P.dt*nz(z,1.7))/1000;const th=P.th+P.dth*nz(z,4.1);
- const st=contact(H,th);ST=st;GAP=H;UN=P.U/60*1000;U=UN;HF=st.h;Q=U*HF;
- S1=Math.min(P.face,9.5);const k=1;
- E=[0,GAP];CX=E[0]+RB*50/190;CY=E[1]+RB*183.3/190;
- V=[E[0]+S1*S2,E[1]+S1*S2];
- {const d1=S2,c=(V[0]-CX)**2+(V[1]-CY)**2-RB*RB,A=2*d1*d1,B=2*((V[0]-CX)*d1-(V[1]-CY)*d1);const t=(-B+Math.sqrt(B*B-4*A*c))/(2*A);Dd=[V[0]+t*d1,V[1]-t*d1]}
- WET=st.s>=P.face;const sd=Math.min(st.s*k,S1);const xq=sd*S2;
- MEN=[[xq,GAP+xq]];NX=Math.max(XMIN+1.6,CX-Math.sqrt(Math.max(RB*RB-(CY-(AN.L0+2.5))**2,0))-0.5);simGrid();buildA();if(SIM.init)SIM.L=Math.max(levelOf(SIM.V),0.3);
- initP();TH=th;AN.info={H,th,st,WET}}
-function scene(t){
- const Lc=SIM.L;U=SIM.Uf;Q=SIM.qg;
- const bead=Lc>GAP+0.02;
- const xb=bead?CX-Math.sqrt(Math.max(RB*RB-(CY-Lc)*(CY-Lc),0)):0;
- const ys=x=>Lc;
- const xq=SIM.cl,xc=SIM.x0,dxm=SIM.dx,hh=SIM.h,n=hh.length,h0=hh[0];
- const mp=new Array(n);for(let i=0;i<n;i++)mp[i]=[xc+i*dxm,hh[i]];
- const Hc=MEN[0][1];let xm=Math.min(xq+4,XMAX);for(let i=1;i<n;i++){if(hh[i]<HF+0.03*Math.max(Hc-HF,0.05)){xm=Math.max(mp[i][0],xq+0.6);break}}
- const kx=1-ss(0.05,0.3,SIM.Uf/UN),EXD=0.5;const exitY=x=>(x<0||x>=EXD)?0:GAP*Math.sqrt(1-x/EXD);
- const menY=x=>{if(x<=0)return GAP;let s;if(x>=XMAX)s=hh[n-1];else{const f=(x-xc)/dxm,i=Math.min(Math.floor(f),n-2);s=hh[i]+(hh[i+1]-hh[i])*(f-i)}return Math.max(s,kx*exitY(x))};
- const top=x=>{if(x<=0)return bead?(x<xb?Lc:under(x)):Math.min(Lc,under(x));return menY(x)};
- return{L:Lc,xb,ys,xq,xm,mp,menY,top,bead}}
-// lubrication stream function, blended between free-surface and no-slip profiles
-function psi(sc,x,y){const h=sc.top(x);if(h<=1e-6)return 0;
- const qf=Math.min(Q,U*h),a=6*(U*h/2-Q)/(h*h*h),g=3*(U*h-qf)/(2*h*h*h);
- const ns=U*(y-y*y/(2*h))-a*(y*y*h/2-y*y*y/3);const fs=U*y+g*(y*y*y/3-h*y*y);
- let w;if(x<0)w=sc.bead?ss(sc.xb-0.3,sc.xb+0.7,x):0;else w=1-ss(0,1.3,x);
- return (1-w)*fs+w*ns}
-function vort(sc,x,y){if(!sc.bead)return 0;const h=sc.top(x);if(h<=0.05)return 0;const b=ss(sc.xb-2.2,sc.xb+0.2,x)*(1-ss(-1.6,-0.5,x));if(b<=0)return 0;const s=y/h;if(s<=0||s>=1)return 0;
- return 0.16*Math.max(U*sc.L,0.05)*b*s*s*(1-s)*(1-s)*16}
-function psi2(sc,x,y){return psi(sc,x,y)+vort(sc,x,y)}
-function vel(sc,x,y){const e=0.012;return[(psi2(sc,x,y+e)-psi2(sc,x,y-e))/(2*e),-(psi2(sc,x+e,y)-psi2(sc,x-e,y))/(2*e)]}
-function traceSL(sc,x0,y0,dir,maxn,closed){const pts=[[x0,y0]];let x=x0,y=y0;const p0=psi2(sc,x0,y0),ds=0.05;
- for(let i=0;i<maxn;i++){let v=vel(sc,x,y);let m=Math.hypot(v[0],v[1]);if(m<1e-4)break;const mx=x+dir*ds*0.5*v[0]/m,my=y+dir*ds*0.5*v[1]/m;const v2=vel(sc,mx,my),m2=Math.hypot(v2[0],v2[1]);if(m2<1e-4)break;
-  x+=dir*ds*v2[0]/m2;y+=dir*ds*v2[1]/m2;const vv=vel(sc,x,y);if(Math.abs(vv[0])>0.02){y-=(psi2(sc,x,y)-p0)/vv[0]}
-  const h=sc.top(x);if(x>XMAX||x<XMIN||h<0.05||y<0.003||y>h)break;pts.push([x,y]);
-  if(closed&&i>25&&Math.hypot(x-x0,y-y0)<ds*1.2){pts.push([x0,y0]);break}}return pts}
-function getSL(sc){if(sc.__sl)return sc.__sl;const L=[];const N=11;
- for(let k=1;k<N;k++){const p=Q*k/N;const h=sc.top(XMIN+0.01);let lo=0,hi=h;for(let i=0;i<22;i++){const m=(lo+hi)/2;psi(sc,XMIN+0.01,m)<p?lo=m:hi=m}L.push(traceSL(sc,XMIN+0.01,(lo+hi)/2,1,900,false))}
- if(sc.bead){const cx=(sc.xb-1)*0.5+(-1.1)*0.5+0.2;const h=sc.top(cx);for(const f of[0.25,0.5,0.75])L.push(traceSL(sc,cx,h*f,1,900,true))}
- sc.__sl=L;return L}
-function yOf(sc,x,p){const h=sc.top(x);let lo=0,hi=h;for(let i=0;i<22;i++){const m=(lo+hi)/2;psi(sc,x,m)<p?lo=m:hi=m}return (lo+hi)/2}
-function uAt(sc,x,y){const e=0.01;const h=sc.top(x);const y1=Math.max(y-e,0),y2=Math.min(y+e,h);return (psi(sc,x,y2)-psi(sc,x,y1))/(y2-y1)}
-// ---- particles carried by the field
-let PT=[];function initP(){PT=[];const sc=SIM.init?scene(0):null;for(let i=0;i<220;i++){const x=XMIN+Math.random()*(-XMIN),h=sc?sc.top(x):1;PT.push({x,y:Math.random()*Math.max(h,0.05),tr:[]})}}
-let PP=[];function initPP(){PP=[];for(let i=0;i<40;i++)PP.push({x:0.3+Math.random()*7.8,y:-Math.random()*FT,a:Math.random()})}
-function stepP(sc,dt){for(const q of PT){const n=4;const h0=sc.top(q.x);
-  for(let k=0;k<n;k++){const h=sc.top(q.x);if(h<0.05){q.x+=U*dt/n;q.y=Math.min(q.y,0.01);continue}const v=vel(sc,q.x,q.y);const mx=q.x+v[0]*dt/n/2,my=q.y+v[1]*dt/n/2;const v2=vel(sc,mx,my);q.x+=Math.max(v2[0],-U*3)*dt/n;q.y+=v2[1]*dt/n;const h2=sc.top(q.x);q.y=clamp(q.y,0,Math.max(h2-0.01,0.005))}
-  q.tr.push([q.x,q.y]);if(q.tr.length>14)q.tr.shift();
-  if(q.x>XMAX||q.x<XMIN-1){q.x=XMIN+Math.random()*2;const h=sc.top(q.x);q.y=Math.random()*h;q.tr=[]}}
- for(const q of PP){q.y-=0.16*dt;q.a-=0.5*dt;if(q.y<-FT||q.a<=0){q.x=0.3+Math.random()*7.8;q.y=0;q.a=1}}}
-// ---- drawing primitives
-function path(pts){ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])))}
-function arrow(x1,y1,x2,y2,col,lw,al,head){ctx.save();ctx.globalAlpha=al;ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=lw;ctx.lineCap='round';const a=Math.atan2(Y(y2)-Y(y1),X(x2)-X(x1)),hd=head||9;
- ctx.beginPath();ctx.moveTo(X(x1),Y(y1));ctx.lineTo(X(x2)-Math.cos(a)*hd*0.6,Y(y2)-Math.sin(a)*hd*0.6);ctx.stroke();
- ctx.beginPath();ctx.moveTo(X(x2),Y(y2));ctx.lineTo(X(x2)-hd*Math.cos(a-0.4),Y(y2)-hd*Math.sin(a-0.4));ctx.lineTo(X(x2)-hd*Math.cos(a+0.4),Y(y2)-hd*Math.sin(a+0.4));ctx.closePath();ctx.fill();ctx.restore()}
-function label(txt,x,y,col,size,al,align,bold){ctx.save();ctx.globalAlpha=al;ctx.font=(bold?'600 ':'500 ')+size+'px '+CL.sans;ctx.textAlign=align||'left';ctx.lineJoin='round';ctx.lineWidth=4;ctx.strokeStyle=CL.surface;ctx.strokeText(txt,x,y);ctx.fillStyle=col;ctx.fillText(txt,x,y);ctx.restore()}
-function dot(x,y,r,col,al){ctx.save();ctx.globalAlpha=al;ctx.fillStyle=col;ctx.beginPath();ctx.arc(X(x),Y(y),r,0,7);ctx.fill();ctx.restore()}
-// ---- one frame
-function draw(t,sc){
- const fs=Math.max(11,W/80);ctx.clearRect(0,0,W,Hh);
- // backing and porous fibre, weave scrolls with the web
- ctx.fillStyle=CL.backing;ctx.fillRect(0,Y(-FT),W,(YMIN-(-FT))*-SC());
- ctx.fillStyle=CL.fibre;ctx.fillRect(0,Y(0),W,FT*SC());
- ctx.save();ctx.beginPath();ctx.rect(0,Y(0),W,FT*SC());ctx.clip();ctx.strokeStyle=CL.muted;ctx.globalAlpha=.6;ctx.lineWidth=1;const off=SIM.s%0.4;
- for(let x=XMIN-1+off;x<XMAX+1;x+=0.4){ctx.beginPath();ctx.moveTo(X(x),Y(0));ctx.lineTo(X(x+0.18),Y(-FT));ctx.stroke()}ctx.restore();
- ctx.strokeStyle=CL.ink;ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(0,Y(0));ctx.lineTo(W,Y(0));ctx.moveTo(0,Y(-FT));ctx.lineTo(W,Y(-FT));ctx.stroke();
- label('fibre moves →',X(XMIN+0.3),Y(-0.6),CL.muted,fs,1,'left');
- // slurry outline
- const pts=[];{const xs=[];for(let x=XMIN;x<=XMAX;x+=0.04)xs.push([x,sc.top(x)]);let i0=xs.findIndex(p=>p[1]>0.03);if(i0<0)i0=xs.length;let i1=xs.length-1;while(i1>i0&&xs[i1][1]<=0.03)i1--;if(i0<=i1){pts.push([xs[i0][0],0]);for(let i=i0;i<=i1;i++)pts.push(xs[i]);pts.push([xs[i1][0],0])}}
- path(pts);ctx.closePath();ctx.save();ctx.globalAlpha=+CL.sfill;ctx.fillStyle=CL.blue;ctx.fill();ctx.restore();
- // streamlines and particles inside the slurry
- const sa=win(t,5,60,3);
- ctx.save();path(pts);ctx.closePath();ctx.clip();
- if(sa>0){const SL=getSL(sc);ctx.strokeStyle=CL.ink;ctx.globalAlpha=0.28*sa;ctx.lineWidth=1;for(const l of SL){ctx.beginPath();l.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke()}
-  ctx.globalAlpha=.9*sa;ctx.strokeStyle=CL.ink;ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';for(const q of PT){if(q.tr.length<2||sc.top(q.x)<0.08)continue;ctx.beginPath();q.tr.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.stroke()}}
- // feed stream falls into the bead
- const fa=win(t,0,12,2.5);if(fa>0){}
- ctx.restore();
- // blade (fixed)
- const bp=[];for(let x=XMIN-0.3;x<=0;x+=0.1)bp.push([x,under(x)]);bp.push(E);bp.push(V);bp.push(Dd);
- for(let x=Dd[0];x<=XMAX;x+=0.1)bp.push([x,under(x)]);bp.push([XMAX,YMAX+3]);bp.push([XMIN-0.3,YMAX+3]);
- path(bp);ctx.closePath();ctx.fillStyle=CL.blade;ctx.fill();ctx.strokeStyle=CL.ink;ctx.lineWidth=2;ctx.stroke();
- // feed nozzle, tip just under the pool surface; slurry enters in pulses
- const px=NX,tip=Math.max(sc.L-0.3,0.4),fon=SIM.feed;
- ctx.fillStyle=CL.blade;ctx.strokeStyle=CL.ink;ctx.lineWidth=2;ctx.beginPath();ctx.rect(X(px-0.35),Y(YMAX),0.7*SC(),(YMAX-tip)*SC());ctx.fill();ctx.stroke();
- if(fon>0.02){ctx.save();ctx.globalAlpha=0.6*fon;ctx.fillStyle=CL.blue;ctx.fillRect(X(px-0.2),Y(YMAX),0.4*SC(),(YMAX-tip)*SC());ctx.restore();
-  for(let k=0;k<4;k++){const yy=tip+(YMAX-tip)*(1-((t*0.8+k/4)%1));if(yy>tip+0.4&&yy<YMAX-0.4)arrow(px,yy+0.4,px,yy-0.3,CL.ink,2,fon,7)}}
- for(let k=0;k<3;k++){const ph=(t*0.9+k/3)%1;ctx.save();ctx.globalAlpha=(1-ph)*0.8*fon;ctx.strokeStyle=CL.blue;ctx.lineWidth=1.5+2*fon;ctx.beginPath();ctx.ellipse(X(px),Y(sc.L),(0.3+ph*1.1)*SC(),(0.06+ph*0.12)*SC(),0,0,7);ctx.stroke();ctx.restore()}
- label('slurry feed nozzle'+(AN.fa>0?' (pulses, T = '+AN.fp.toFixed(1)+' s)':''),X(px)+0.55*SC(),Y(Math.min(YMAX-0.8,7.5)),CL.ink,fs*1.05,1,'left',true);
- // outline of slurry on top of blade contact (drawn last so the attachment is visible)
- path(pts);ctx.strokeStyle=CL.blue;ctx.lineWidth=2.4;ctx.stroke();
- // dry second edge + active edge markers
- dot(Dd[0],Dd[1],5,CL.ink,1);dot(E[0],E[1],6,CL.ink,1);
- // bead label
- label('upstream bead',X(-10.8),Y(sc.L-0.6),CL.blue,fs*1.05,win(t,3,60,2),'left',true);
- // ---- overlays, sequenced
- const cyc=t;
- // P_up (bead pressure), stage 9-16
- const pa=win(t,9,17,1.5);if(pa>0){for(const [x,y] of [[-9.6,GAP*0.25],[-9.6,GAP*0.5],[-9.6,GAP*0.75]])arrow(x,y,x+1.8,y,CL.blue,3.2,pa,11);label('P_up',X(-8.7),Y(GAP*1.25),CL.blue,fs*1.25,pa,'center',true)}
- // velocity profile combs in the approach and gap, stage 15-27
- const ca=win(t,15,27,2);if(ca>0){for(const x of [-10,-4.5,-1.2]){const h=sc.top(x);ctx.save();ctx.globalAlpha=ca*.5;ctx.strokeStyle=CL.ink;ctx.setLineDash([3,3]);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(X(x),Y(0));ctx.lineTo(X(x),Y(h));ctx.stroke();ctx.restore();
-   for(let k=1;k<=7;k++){const y=h*k/8,u=uAt(sc,x,y);arrow(x,y,x+u*0.22,y,CL.ink,2.2,ca,8)}}
-
-
-  label('wide bead: slow',X(-10),Y(sc.top(-10))-14,CL.ink,fs,ca,'center');
-  label('gap narrows: faster',X(-5.2),Y(GAP*1.3),CL.ink,fs*1.05,ca,'center',true);
-  // gap dimension
-  const gx=-1.4;arrow(gx,0.02,gx,GAP-0.02,CL.ink,1.6,ca,7);arrow(gx,GAP-0.02,gx,0.02,CL.ink,1.6,ca,7);label('gap H = '+GAP.toFixed(2)+' mm',X(gx)-8,Y(GAP*0.5)+5,CL.ink,fs,ca,'right',true)}
- // web drag shear, stage 17-27
- const ta=win(t,17,27,1.5);if(ta>0){for(let x=-7;x<=-0.6;x+=0.9)arrow(x,0.09,x+0.7,0.09,CL.red,3.4,ta,10);label('τ_web  (drag from moving fibre)',X(-7),Y(-0.45),CL.red,fs*1.1,ta,'left',true)}
- // active metering edge, stage 27-35
- const ea=win(t,27,36,1.5);if(ea>0){const ph=(t*1.2)%1;for(let k=0;k<2;k++){const p=(ph+k*0.5)%1;ctx.save();ctx.globalAlpha=ea*(1-p);ctx.strokeStyle=CL.red;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(X(E[0]),Y(E[1]),(9+p*26),0,7);ctx.stroke();ctx.restore()}
-  ctx.save();ctx.globalAlpha=ea;ctx.strokeStyle=CL.red;ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();for(let x=sc.xb;x<=0;x+=0.05){const px2=X(x),py=Y(under(x))-0;x===sc.xb?ctx.moveTo(px2,py):ctx.lineTo(px2,py)}ctx.stroke();ctx.restore();
-  label('active metering edge',X(E[0])-14,Y(E[1])+ -34 + 0,CL.red,fs*1.2,ea,'right',true);label('last blade contact',X(E[0])-14,Y(E[1])-16,CL.red,fs,ea,'right');
-  ctx.save();ctx.globalAlpha=ea;ctx.strokeStyle=CL.green;ctx.lineWidth=2.2;ctx.setLineDash([5,4]);ctx.beginPath();ctx.arc(X(Dd[0]),Y(Dd[1]),14,0,7);ctx.stroke();ctx.restore();
-  if(WET){label('slurry reached the notch corner',X(V[0])+16,Y(V[1])+4,CL.red,fs*1.15,ea,'left',true)}else{label('second edge: dry',X(Dd[0])+20,Y(Dd[1])+ 4,CL.green,fs*1.15,ea,'left',true);label('never touched by slurry',X(Dd[0])+20,Y(Dd[1])+ 4+fs*1.3,CL.green,fs,ea,'left')}
-  if(sc.xq>0.02){const xcl=sc.xq;dot(xcl,GAP+xcl,6,CL.red,ea);label('contact line lifted up the face',X(xcl)+12,Y(GAP+xcl)-8,CL.red,fs,ea,'left',true)}}
- else{label('active edge',X(E[0])+10,Y(E[1])+ (Y(0.5)-Y(0))*0 +22,CL.ink,fs,win(t,20,60,3)*(1-ea),'left');}
- // wet film dimension, stage 43-56
- const wa=win(t,43,58,2);if(wa>0){const fx=7.4;arrow(fx,0.02,fx,HF-0.02,CL.ink,1.8,wa,7);arrow(fx,HF-0.02,fx,0.02,CL.ink,1.8,wa,7);label('wet film '+HF.toFixed(2)+' mm',X(fx)-10,Y(0.75)+5,CL.ink,fs*1.1,wa,'right',true);
-  ctx.save();ctx.globalAlpha=wa*.8;ctx.strokeStyle=CL.ink;ctx.setLineDash([6,4]);ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(X(0),Y(GAP));ctx.lineTo(X(8.4),Y(GAP));ctx.stroke();ctx.restore();label('gap '+GAP.toFixed(2)+' mm is not the film thickness',X(3.2),Y(GAP)-10,CL.ink,fs,wa,'left')}
- // porous fibre penetration (secondary)
- const na=win(t,40,60,3)*0.75;if(na>0){for(const q of PP){dot(q.x,q.y-0.01,2.3,CL.blue,q.a*na)}for(const x of [1.2,2.7,4.2,5.7,7.2])arrow(x,-0.02,x,-0.17,CL.blue,1.6,na*(0.55+0.4*Math.sin(t*2+x)),6)}
- // meniscus focus: magnified inset, stage 33-47
- MAG={pts,bp,fs};
- // static small caption of atmosphere
-}
-function drawMag(t,sc){
- if(!cv2||!MAG)return;const w=cv2.parentElement.clientWidth||900,h=Math.round(w*0.46);
- if(cv2.__w!==w||cv2.__d!==DPR){cv2.__w=w;cv2.__d=DPR;cv2.style.height=h+'px';cv2.width=Math.round(w*DPR);cv2.height=Math.round(h*DPR)}
- const c=cv2.getContext('2d');c.setTransform(DPR,0,0,DPR,0,0);const c0=ctx;ctx=c;
- const fs=Math.max(11,w/62),Qx=sc.xq,Qy=GAP+sc.xq;
- const wy0=-0.35,wy1=Math.max(Qy+0.9,GAP+1.1,HF+0.9),wh=wy1-wy0,ww=wh*w/h,wx0=Math.min(0,Qx)-0.25*ww,wx1=wx0+ww;
- const mx=x=>(x-wx0)/ww*w,my=y=>h-(y-wy0)/wh*h;const K=w/ww;
- ctx.clearRect(0,0,w,h);ctx.fillStyle=CL.surface;ctx.fillRect(0,0,w,h);
- // backing and fibre
- ctx.fillStyle=CL.backing;ctx.fillRect(0,my(-FT),w,h-my(-FT));ctx.fillStyle=CL.fibre;ctx.fillRect(0,my(0),w,my(-FT)-my(0));
- ctx.save();ctx.beginPath();ctx.rect(0,my(0),w,my(-FT)-my(0));ctx.clip();ctx.strokeStyle=CL.muted;ctx.globalAlpha=.6;ctx.lineWidth=1;const off=SIM.s%0.4;for(let x=wx0-1+off;x<wx1+1;x+=0.4){ctx.beginPath();ctx.moveTo(mx(x),my(0));ctx.lineTo(mx(x+0.18),my(-FT));ctx.stroke()}ctx.restore();
- ctx.strokeStyle=CL.ink;ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(0,my(0));ctx.lineTo(w,my(0));ctx.stroke();
- // slurry region
- const xs=[];const n=Math.ceil(ww/0.02);for(let i=0;i<=n;i++){const x=wx0+i*ww/n;xs.push([x,sc.top(x)])}
- ctx.save();ctx.beginPath();ctx.moveTo(mx(xs[0][0]),my(0));xs.forEach(p=>ctx.lineTo(mx(p[0]),my(Math.max(p[1],0))));ctx.lineTo(mx(xs[n][0]),my(0));ctx.closePath();
- ctx.globalAlpha=0.16;ctx.fillStyle=CL.blue;ctx.fill();ctx.globalAlpha=1;ctx.clip();
- // streamlines and particles
- ctx.strokeStyle=CL.ink;ctx.globalAlpha=0.28;ctx.lineWidth=1;for(const l of getSL(sc)){ctx.beginPath();l.forEach((p,i)=>i?ctx.lineTo(mx(p[0]),my(p[1])):ctx.moveTo(mx(p[0]),my(p[1])));ctx.stroke()}
- ctx.globalAlpha=.9;ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';for(const q of PT){if(q.tr.length<2||q.x<wx0||q.x>wx1||sc.top(q.x)<0.08)continue;ctx.beginPath();q.tr.forEach((p,i)=>i?ctx.lineTo(mx(p[0]),my(p[1])):ctx.moveTo(mx(p[0]),my(p[1])));ctx.stroke()}
- ctx.restore();
- // blade
- const bpm=[];for(let x=wx0;x<=0;x+=0.02)bpm.push([x,under(x)]);bpm.push(E);bpm.push(V);bpm.push(Dd);
- ctx.beginPath();ctx.moveTo(mx(wx0),0);bpm.forEach(p=>ctx.lineTo(mx(p[0]),my(p[1])));ctx.lineTo(mx(Dd[0]),0);ctx.closePath();ctx.fillStyle=CL.blade;ctx.fill();ctx.strokeStyle=CL.ink;ctx.lineWidth=2.4;ctx.stroke();
- // liquid-air interface and liquid-blade contact
- ctx.beginPath();let on=false;for(let i=0;i<=n;i++){const p=xs[i];if(p[1]<0.05){on=false;continue}on?ctx.lineTo(mx(p[0]),my(p[1])):ctx.moveTo(mx(p[0]),my(p[1]));on=true}ctx.strokeStyle=CL.blue;ctx.lineWidth=3.4;ctx.lineJoin='round';ctx.stroke();
- ctx.fillStyle=CL.ink;ctx.beginPath();ctx.arc(mx(0),my(GAP),6,0,7);ctx.fill();
- label('active metering edge',mx(0)-12,my(GAP)+22,CL.ink,fs,1,'right',true);
- const xcl=sc.xq;if(xcl>0.02){ctx.fillStyle=CL.red;ctx.beginPath();ctx.arc(mx(xcl),my(GAP+xcl),6,0,7);ctx.fill();label('contact line',mx(xcl)+12,my(GAP+xcl)-6,CL.red,fs,1,'left',true)}
- // film thickness
- const fx=wx1-0.07*ww,fh=sc.top(fx);if(fh>0.1){arrow2(mx(fx),my(0.02),mx(fx),my(fh-0.02),CL.ink,1.8,1,7);arrow2(mx(fx),my(fh-0.02),mx(fx),my(0.02),CL.ink,1.8,1,7);label('film '+fh.toFixed(2)+' mm',mx(fx)-10,my(fh/2)+5,CL.ink,fs,1,'right',true)}
- // gamma and capillary pressure
- const ga=win(t,12,60,1.5),pa=win(t,16,60,1.5),xa=f=>sc.xq+(sc.xm-sc.xq)*f;
- const tangentAt=x=>{const e=(sc.xm-sc.xq)*0.03+1e-3;const x1=Math.max(x-e,sc.xq),x2=x+e;const sl=(sc.menY(x2)-sc.menY(x1))/(x2-x1);const l=Math.hypot(1,sl);return[1/l,sl/l]};
- if(ga>0&&sc.xm-sc.xq>0.1){const x=xa(0.45),y=sc.menY(x),tg=tangentAt(x),px=mx(x),py=my(y);arrow2(px,py,px+tg[0]*70,py-tg[1]*70,CL.green,4,ga,12);arrow2(px,py,px-tg[0]*70,py+tg[1]*70,CL.green,4,ga,12);label('γ  surface tension along the interface',12,h-38,CL.green,fs,ga,'left',true)}
- if(pa>0&&sc.xm-sc.xq>0.1){for(const f of [0.15,0.45,0.75]){const x=xa(f),y=sc.menY(x),tg=tangentAt(x),px=mx(x),py=my(y);arrow2(px+tg[1]*58,py+tg[0]*58,px,py,CL.blue,3.6,pa,12)}label('capillary pressure ⟂ interface',12,h-16,CL.blue,fs,pa,'left',true)}
- label('Downstream meniscus, magnified ×'+(K/SC()).toFixed(1)+' (same simulation)',12,fs*1.6,CL.ink,fs*1.05,1,'left',true);
- ctx=c0}
-function arrow2(x1,y1,x2,y2,col,lw,al,head){ctx.save();ctx.globalAlpha=al;ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=lw;ctx.lineCap='round';const a=Math.atan2(y2-y1,x2-x1);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2-Math.cos(a)*head*0.6,y2-Math.sin(a)*head*0.6);ctx.stroke();ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-head*Math.cos(a-0.4),y2-head*Math.sin(a-0.4));ctx.lineTo(x2-head*Math.cos(a+0.4),y2-head*Math.sin(a+0.4));ctx.closePath();ctx.fill();ctx.restore()}
-
-const AN={z:0,tt:0,clock:0,fa:1.0,fp:6,fd:0.3,L0:4,Lp:100,rate:1,playing:true,raf:0,last:0,info:null,
- start(canvas,canvas2){cv=canvas;cv2=canvas2||null;colors();resize();setModel();if(!PP.length)initPP();AN.stop();AN.last=0;AN.raf=requestAnimationFrame(AN.frame)},
- dbg(){return Array.from(SIM.h)},
- dbgT(){const sc=scene(AN.tt);const r=[];for(let x=-1;x<=9.5;x+=0.5)r.push([x,+sc.top(x).toFixed(3)]);return r},
- dbgS(){return [SIM.t,SIM.s,SIM.Uf,UN]},
- dbgP(){const sc=scene(AN.tt);return PT.filter(q=>sc.top(q.x)>0.08).map(q=>{const v=vel(sc,q.x,q.y);return [q.x,q.y,v[0],sc.top(q.x),v[1]]})},
- stop(){cancelAnimationFrame(AN.raf);AN.raf=0},
- refresh(){setModel();colors();if(cv&&!AN.raf)AN.paint()},
- seek(t){AN.tt=t;simSync(t)},
- reinit(){setModel();SIM.init=0;simSync(AN.tt)},
- paint(){const sc=scene(AN.tt);draw(AN.tt,sc);drawMag(AN.tt,sc)},
- frame(ts){AN.raf=requestAnimationFrame(AN.frame);if(!AN.last)AN.last=ts;const dt=Math.min((ts-AN.last)/1000,0.08)*AN.rate;AN.last=ts;
-  if(AN.playing&&document.visibilityState==='visible'){AN.tt=(AN.tt+dt)%T;simSync(AN.tt);const sc=scene(AN.tt);stepP(sc,dt)}
-  const sc=scene(AN.tt);draw(AN.tt,sc);drawMag(AN.tt,sc);if(AN.onTime)AN.onTime(AN.tt)},
- resize(){if(cv){resize();colors()}}};
-
-return AN})();
-
-function viewA(){view.innerHTML=`<div class="status" id="st"></div><canvas id="ca" role="img" aria-label="Animation of slurry metering under the fixed blade onto the moving fibre"></canvas>
-<div class="acl"><button id="ap"></button><button id="ar">Restart</button><label>Time <input type="range" id="at" min="0" max="58" step="0.1"><output id="ato"></output></label><label>Position across web <input type="range" id="az" min="0" max="300" step="1"><output id="azo"></output></label><label>Feed pulse depth <input type="range" id="fa" min="0" max="100" step="5"><output id="fao"></output></label><label>Pulse period <input type="range" id="fp" min="2" max="20" step="0.5"><output id="fpo"></output></label><label>Pulse length <input type="range" id="fd" min="10" max="80" step="5"><output id="fdo"></output></label><label>Playback speed <input type="range" id="rt" min="0.1" max="1" step="0.05"><output id="rto"></output></label><label>Pool depth at start <input type="range" id="pl0" min="2.5" max="8" step="0.5"><output id="pl0o"></output></label><label>Pool length upstream <input type="range" id="plp" min="20" max="300" step="10"><output id="plpo"></output></label></div>
-<canvas id="cb" role="img" aria-label="Separate magnified animation of the downstream meniscus" style="margin-top:14px"></canvas><p class="cap"><b>Separate view:</b> the downstream meniscus, magnified, driven by the same simulation and the same clock as the view above.</p><details class="cap-toggle"><summary>How this view works</summary><p class="cap"><b>Fixed blade, fibre moves left to right.</b> The animation is driven by the same model and the same inputs as the other tabs. Web speed, machine height, fibre thickness, viscosity, yield stress, shear thinning, bead pressure, land length, surface tension and contact angle set the flow and the meniscus. The across-web inputs act through the position slider, which picks the local gap and wetting at that point. Edge, ripple and oven inputs act in the other tabs. The blade diameter is 100 mm (from you); the notch size is assumed. Bead height scales with bead pressure for display. <b>The downstream liquid surface is solved live</b> (thin-film equation with viscous flow, surface tension and the moving fibre, in real time). The run starts from a developed steady film. <b>How it works.</b> The run starts with the fibre stopped and a pool of slurry already deeper than the gap. The fibre starts at 3 s and reaches full speed 1.5 s later (assumed). The nozzle tip sits at the pool surface and feeds in pulses, at an average rate equal to the flow leaving through the gap. The pool level comes from a volume balance (feed in minus gap flow out), and the gap flow comes from the fibre speed and the bead pressure, which is taken as proportional to pool depth. The pool depth at start and its length upstream of the blade are assumed, not measured. The liquid surface downstream is solved live (thin-film equation with viscous flow, surface tension and the moving fibre). Change any input while it runs and the surface relaxes to the new state. The contact-line position on the face still comes from the static balance used in the other tabs.</p></details><div class="stats" id="ss"></div>`;
- const cv=document.getElementById('ca');ANIM.start(cv,document.getElementById('cb'));
- const ap=document.getElementById('ap'),at=document.getElementById('at'),ato=document.getElementById('ato'),az=document.getElementById('az'),azo=document.getElementById('azo');
- const pl=()=>{ap.textContent=ANIM.playing?'Pause':'Play';ap.setAttribute('aria-pressed',ANIM.playing)};pl();az.value=ANIM.z;azo.textContent=ANIM.z+' mm';
- ap.onclick=()=>{ANIM.playing=!ANIM.playing;pl()};document.getElementById('ar').onclick=()=>{ANIM.seek(0)};
- at.oninput=()=>{ANIM.seek(+at.value);ANIM.playing=false;pl()};
- ANIM.onTime=t=>{if(document.activeElement!==at)at.value=t;ato.textContent=t.toFixed(0)+' s'};
- const fa=document.getElementById('fa'),fp=document.getElementById('fp'),fao=document.getElementById('fao'),fpo=document.getElementById('fpo');fa.value=ANIM.fa*100;fp.value=ANIM.fp;const fd=document.getElementById('fd'),fdo=document.getElementById('fdo');fd.value=ANIM.fd*100;const fs2=()=>{fao.textContent=fa.value+' %';fpo.textContent=(+fp.value).toFixed(1)+' s';fdo.textContent=fd.value+' % of period'};const rt=document.getElementById('rt'),rto=document.getElementById('rto');rt.value=ANIM.rate;const fr=()=>{rto.textContent=(+rt.value).toFixed(2)+'× (1× = real time)'};fr();rt.oninput=()=>{ANIM.rate=+rt.value;fr()};const p0=document.getElementById('pl0'),pp=document.getElementById('plp'),p0o=document.getElementById('pl0o'),ppo=document.getElementById('plpo');p0.value=ANIM.L0;pp.value=ANIM.Lp;const fs3=()=>{p0o.textContent=(+p0.value).toFixed(1)+' mm';ppo.textContent=pp.value+' mm'};fs3();fs2();fa.oninput=fp.oninput=fd.oninput=()=>{ANIM.fa=+fa.value/100;ANIM.fp=+fp.value;ANIM.fd=+fd.value/100;fs2();ANIM.refresh()};p0.oninput=pp.oninput=()=>{ANIM.L0=+p0.value;ANIM.Lp=+pp.value;fs3();ANIM.reinit()};
- az.oninput=()=>{ANIM.z=+az.value;azo.textContent=ANIM.z+' mm';ANIM.refresh();fillA()};
- fillA();updateScope(SIM.limited?' <strong>Pool outlet is currently supply-limited.</strong>':'')}
-function fillA(){const i=ANIM.info,st=i.st;let s;
- if(i.WET)s=pill('Slurry reaches the notch corner: the dry edge gets wet','bad');else if(st.s>0.05)s=pill('Contact line lifted '+st.s.toFixed(1)+' mm up the face','warn');else s=pill('Detaches at the active metering edge','ok');
- s+=pill('local gap '+i.H.toFixed(2)+' mm','')+pill('contact angle '+i.th.toFixed(0)+'°','');document.getElementById('st').innerHTML=s;
- document.getElementById('ss').innerHTML=[['Gap at this position',i.H.toFixed(2)+' mm'],['Wet film',st.h.toFixed(2)+' mm'],['Film / gap',(st.h/i.H).toFixed(3)],['Shear rate U/H',(P.U/60/(i.H/1000)).toFixed(1)+' 1/s'],['Numerical state',SIM.safe?'physical bounds passed':'surface solve stopped']].map(a=>`<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}
-let tab=0;const TABS=['Slurry animation','Contact line at the blade','Web edge','Film surface'];
-const tabsEl=document.getElementById('tabs');TABS.forEach((t,i)=>{const b=document.createElement('button');b.textContent=t;b.setAttribute('role','tab');b.onclick=()=>{tab=i;render()};b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();tab=e.key==='Home'?0:e.key==='End'?TABS.length-1:(tab+(e.key==='ArrowRight'?1:-1)+TABS.length)%TABS.length;render();tabsEl.children[tab].focus()};tabsEl.appendChild(b)});
-const view=document.getElementById('view');
-function render(){[...tabsEl.children].forEach((b,i)=>{b.setAttribute('aria-selected',i===tab);b.tabIndex=i===tab?0:-1});ANIM.stop();[viewA,view1,view2,view3][tab]();updateScope()}
-function view1(){view.innerHTML=`<div class="status" id="st"></div><canvas id="c1" role="img" aria-label="Cross-section of blade, slurry and meniscus"></canvas><p class="cap"><b>Cross-section at the web centre.</b> The meniscus is the Young–Laplace profile from the contact line down to the flat film. It is pinned at the sharp edge when the contact angle is large, and climbs the flat face when it is small.</p><canvas id="c2" role="img" aria-label="Contact line position across the web"></canvas><p class="cap"><b>Top view, across the web.</b> Each point is where the contact line sits on the face, from the sharp edge (0) to the notch corner. Gap waviness, fibre thickness and wetting changes push it up and down. Compare photos 1, 3 and 5: an uneven line.</p><div class="stats" id="ss"></div>`;
- drawSection(document.getElementById('c1'));
- const N=300,W=300,pts=[],hs=[];let mx=0,mn=1e9,over=0,hmn=1e9,hmx=0;
- for(let i=0;i<N;i++){const z=i/(N-1)*W;const H=Hn()+(P.dH*Math.sin(2*Math.PI*z/P.lw)-P.dt*nz(z,1.7))/1000;const th=P.th+P.dth*nz(z,4.1);const r=contact(H,th);pts.push([z,r.s]);hs.push(r.h);mx=Math.max(mx,r.s);mn=Math.min(mn,r.s);if(r.s>P.face)over++;hmn=Math.min(hmn,r.h);hmx=Math.max(hmx,r.h)}
- plot(document.getElementById('c2'),0.4,{x0:0,x1:W,y0:0,y1:Math.max(P.face*1.3,mx*1.1),yl:'contact line up the face (mm)',xl:'position across web (mm)',s:[{p:pts,c:css('--accent'),w:2.2}],hl:[{y:P.face,c:css('--bad'),t:'notch corner: slurry reaches the dry edge'}]});
- const pp=mx-mn,frac=over/N*100,dev=(hmx-hmn)/((hmx+hmn)/2)*100;
- let st='';if(over)st=pill('Slurry reaches the notch corner over '+frac.toFixed(0)+'% of the width','bad');else if(pp>0.5)st=pill('Uneven contact line: '+pp.toFixed(1)+' mm peak to peak','warn');else if(mx===0)st=pill('Pinned at the sharp edge everywhere','ok');else st=pill('Contact line steady','ok');
- st+=pill('Ca = '+(muEff(P.U/60/(Hn()/1000))*P.U/60/P.g).toFixed(2),'');st+=pill('capillary length '+lc().toFixed(2)+' mm','');document.getElementById('st').innerHTML=st;
- document.getElementById('ss').innerHTML=[['Wet film, centre',contact(Hn(),P.th).h.toFixed(2)+' mm'],['Film range across web',hmn.toFixed(2)+' to '+hmx.toFixed(2)+' mm'],['Film variation',dev.toFixed(1)+' %'],['Contact line range',mn.toFixed(1)+' to '+mx.toFixed(1)+' mm']].map(a=>`<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}
-function edgeCalc(){const H=Hn(),h=contact(H,P.th).h/1000,R=h/2,gd=0.1;const m=muEff(gd)*1;const mu=Math.max(P.mu-P.ty/2.7,0.05*P.mu)*Math.pow(gd/2.7,P.n-1);const sig=P.g/(6*mu*R),lam=9*R*1000,pc=P.g/R,arrest=pc<P.ty;return{h,R,mu,sig,lam,pc,arrest}}
-function view2(){const e=edgeCalc(),U=P.U/60,Lm=P.oven*1000;const A=x=>Math.min(P.a0e/1000*Math.exp(e.sig*x/1000/U),e.lam/4);
- view.innerHTML=`<div class="status" id="st"></div><canvas id="c1" role="img" aria-label="Edge amplitude versus distance"></canvas><p class="cap"><b>Edge growth.</b> The wet edge is a ridge of slurry along the fibre margin. Surface tension pulls it into beads (Rayleigh–Plateau), and viscosity slows that down. A yield stress larger than the capillary pressure freezes it.</p><canvas id="c2" role="img" aria-label="Top view of the wet edge"></canvas><p class="cap"><b>Top view of the edge</b> at the oven entrance, machine direction left to right. Compare photo 4: a scalloped boundary against the white margin.</p><div class="stats" id="ss"></div>`;
- const pts=[];for(let i=0;i<=100;i++){const x=Lm*i/100;pts.push([x,e.arrest?P.a0e/1000:A(x)])}
- plot(document.getElementById('c1'),0.36,{x0:0,x1:Lm,y0:0,y1:Math.max(e.lam/4*1.1,0.5),yl:'edge scallop amplitude (mm)',xl:'distance from blade (mm)',yd:2,s:[{p:pts,c:css('--accent'),w:2.2}],hl:[{y:0.2,c:css('--warn'),t:'visible'}]});
- const end=e.arrest?P.a0e/1000:A(Lm);const vis=end>0.2;
- document.getElementById('st').innerHTML=(e.arrest?pill('Yield stress freezes the edge','ok'):vis?pill('Scalloped edge at the oven: '+(end*2).toFixed(1)+' mm peak to peak','bad'):pill('Edge stays straight to the oven','ok'))+pill('capillary pressure '+e.pc.toFixed(0)+' Pa vs yield '+P.ty.toFixed(1)+' Pa','');
- const{c,w,h}=setup(document.getElementById('c2'),0.32);const win=Math.max(e.lam*3.2,12),sc=w/win;c.clearRect(0,0,w,h);
- const bl=css('--fibre'),sl=css('--slurry'),ink=css('--ink');c.fillStyle=css('--surface');c.fillRect(0,0,w,h);const mid=h*0.55;
- c.fillStyle=sl;c.beginPath();c.moveTo(0,0);c.lineTo(w,0);c.lineTo(w,mid);for(let x=w;x>=0;x-=2){const a=e.arrest?P.a0e/1000:end;c.lineTo(x,mid+a*sc*Math.sin(2*Math.PI*(x/sc)/e.lam)*(-1))}c.closePath();c.fill();
- c.fillStyle=bl;c.beginPath();c.moveTo(0,h);c.lineTo(w,h);c.lineTo(w,mid);for(let x=w;x>=0;x-=2){const a=e.arrest?P.a0e/1000:end;c.lineTo(x,mid+a*sc*Math.sin(2*Math.PI*(x/sc)/e.lam)*(-1))}c.closePath();c.fill();
- c.strokeStyle=ink;c.lineWidth=1.4;c.beginPath();for(let x=0;x<=w;x+=2){const a=e.arrest?P.a0e/1000:end;const y=mid-a*sc*Math.sin(2*Math.PI*(x/sc)/e.lam);x?c.lineTo(x,y):c.moveTo(x,y)}c.stroke();
- c.fillStyle=css('--muted');c.font='12px '+css('--mono');c.fillText('slurry',10,20);c.fillText('white fibre margin',10,h-10);c.fillText('scallop wavelength '+e.lam.toFixed(1)+' mm',w-190,20);
- document.getElementById('ss').innerHTML=[['Edge bead radius',(e.R*1000).toFixed(2)+' mm'],['Growth time constant',(1/e.sig).toFixed(2)+' s'],['Time to oven',(Lm/1000/U).toFixed(0)+' s'],['Amplitude at oven',end.toFixed(2)+' mm']].map(a=>`<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}
-function view3(){const H=Hn(),h=contact(H,P.th).h/1000;const dh=(hf(H+0.01)-hf(H-0.01))/0.02;const a0=(Math.abs(dh)*P.dH+P.vib)/1e6;const k=2*Math.PI/(P.lam/1000);const gd=0.5;const mu=P.ty/gd*0+Math.max(P.mu-P.ty/2.7,0.05*P.mu)*Math.pow(gd/2.7,P.n-1);
- const tau=3*mu/(h*h*h*(P.g*k**4+RHO*G*k*k)),ares=P.ty/(h*(P.g*k**3+RHO*G*k));const ar=Math.min(a0,ares);const tRes=P.oven/(P.U/60);const aEnd=ar+(a0-ar)*Math.exp(-tRes/tau);
- view.innerHTML=`<div class="status" id="st"></div><canvas id="c1" role="img" aria-label="Film surface ripple before and after levelling"></canvas><p class="cap"><b>Film surface across the web</b> (deviation from the mean, in µm). Dashed: just after the blade. Solid: at the oven entrance. Compare the fine streaks in photos 2 and 4.</p><canvas id="c2" role="img" aria-label="Ripple amplitude versus time"></canvas><p class="cap"><b>Levelling in time.</b> Surface tension smooths the film. A yield stress stops levelling at a residual amplitude that stays into the oven. The ripple source is the gap wobble (through the film sensitivity dh/dH = ${dh.toFixed(2)}) plus vibration.</p><div class="stats" id="ss"></div>`;
- const win=Math.max(P.lam*3,20),p0=[],p1=[];for(let i=0;i<=200;i++){const z=win*i/200,s=Math.sin(2*Math.PI*z/P.lam);p0.push([z,a0*1e6*s]);p1.push([z,aEnd*1e6*s])}
- const ym=Math.max(a0*1e6*1.3,10);plot(document.getElementById('c1'),0.34,{x0:0,x1:win,y0:-ym,y1:ym,yl:'film deviation (µm)',xl:'across web (mm)',s:[{p:p0,c:css('--muted'),dash:[5,4]},{p:p1,c:css('--accent'),w:2.4}]});
- const tp=[];const T=Math.max(tRes*1.4,1);for(let i=0;i<=100;i++){const t=T*i/100;tp.push([t,(ar+(a0-ar)*Math.exp(-t/tau))*1e6])}
- plot(document.getElementById('c2'),0.34,{x0:0,x1:T,y0:0,y1:Math.max(a0*1e6*1.1,5),yl:'ripple amplitude (µm)',xl:'time after the blade (s)',s:[{p:tp,c:css('--accent'),w:2.2}],vl:[{x:tRes,c:css('--warn'),t:'oven'}]});
- const remain=aEnd*1e6,rel=remain/(h*1e6)*100;
- const Ca=muEff(P.U/60/(Hn()/1000))*P.U/60/P.g;
- document.getElementById('st').innerHTML=(remain>5?pill('Ripple survives to the oven: '+remain.toFixed(0)+' µm','bad'):remain>1?pill('Small ripple remains: '+remain.toFixed(1)+' µm','warn'):pill('Film levels out before the oven','ok'))+pill(P.ty>0&&ares>=a0?'Yield stress blocks levelling completely':P.ty>0?'Levels down to a yield-limited residual':'Levelling limited by viscosity only','')+pill('Ca '+Ca.toFixed(2)+' (ribbing watch above about 0.5, roll-coating value)',Ca>0.5?'warn':'');
- document.getElementById('ss').innerHTML=[['Starting ripple',(a0*1e6).toFixed(0)+' µm'],['Levelling time',tau.toFixed(2)+' s'],['Residual from yield',(Math.min(ares,1)*1e6).toFixed(0)+' µm'],['At oven, share of film',rel.toFixed(2)+' %']].map(a=>`<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}
-window.addEventListener('resize',render);
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
-new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-document.getElementById('reset').onclick=()=>{CFG.forEach(c=>{P[c.k]=c.v;const s=document.getElementById('s_'+c.k);s.value=c.v;s.dispatchEvent(new Event('input'))})};
-if(matchMedia('(prefers-reduced-motion: reduce)').matches)ANIM.playing=false;
-render();
-</script>
-
-
-</body></html>
+<script src="physics.js"></script>
+<script src="draw.js"></script>
+<script src="simulation.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
