@@ -64,22 +64,26 @@ details>summary::-webkit-details-marker{display:none}
 .acl label{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
 .acl input{width:150px}
 .acl output{font-family:var(--mono);font-size:13px;color:var(--accent);min-width:56px;font-weight:500}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.toolbar button{font:inherit;font-weight:500;padding:7px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}.toolbar button:hover{background:var(--soft)}
+.scope{margin:0;padding:11px 13px;border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:7px;background:var(--soft);font-size:13px;color:var(--muted)}.scope.warn{border-left-color:var(--warn)}.scope.bad{border-left-color:var(--bad)}.scope strong{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 <div class="wrap">
 <header><h1>Blade Coat Defect Lab</h1>
-<p class="sub">Slurry flow under the scraper, from a thin-film (lubrication) model. Move a slider and watch when the contact line, the web edge or the film surface goes wrong. Starting values are yours: 0.28 m/min, 1.90 mm machine height, 0.20 mm fibre, 10.5 Pa·s.</p></header>
+<p class="sub">Explore slurry flow under the scraper with a thin-film model. Change one input at a time, then check the model-validity message before interpreting a result. Starting values are yours: 0.28 m/min, 1.90 mm machine height, 0.20 mm fibre, 10.5 Pa·s.</p><div class="toolbar"><button id="reset" type="button">Reset process inputs</button></div></header>
 <div class="grid">
 <main class="panel">
 <div class="tabs" role="tablist" id="tabs"></div>
 <div id="view"></div>
 </main>
-<aside class="panel" aria-label="Process inputs"><h2>Inputs</h2><div id="params"></div></aside>
+<aside class="panel" aria-label="Process inputs"><h2>Inputs</h2><p class="scope" id="scope" role="status" aria-live="polite"></p><div id="params"></div></aside>
 </div>
 <section class="panel"><details><summary>What is measured and what is assumed</summary>
 <ul class="note">
 <li><b>Yours:</b> speed, machine height, fibre thickness, viscosity 10.5 Pa·s, design wet film 1.45 mm (the pressure default is back-calculated so the model returns 1.45 mm; it is not a measurement).</li>
 <li><b>Assumed until you measure them:</b> surface tension (0.07 N/m, water-like), contact angle on the blade, yield stress, shear-thinning index, bead pressure, land length, notch face length, density 1020 kg/m³.</li>
-<li><b>Model limits:</b> the film thickness uses lubrication theory with an effective viscosity. The contact-line height is the static gravity-plus-capillary meniscus (Young–Laplace), so dynamic effects at Ca ≈ 0.7 are not included. The web-edge and levelling results are order-of-magnitude indicators. Use them to see which lever matters, not to predict exact millimetres.</li></ul></details></section>
+<li><b>Model limits:</b> the film thickness uses lubrication theory with an effective viscosity. The contact-line height is the static gravity-plus-capillary meniscus (Young–Laplace), so dynamic wetting is not included. The web-edge and levelling results are order-of-magnitude indicators. Use them to see which lever matters, not to predict exact millimetres.</li>
+<li><b>Conservation:</b> the animation advances the pool with a volume balance. If the pool cannot supply the requested outlet flow, the outlet is supply-limited rather than allowing a negative liquid volume. Numerical failures stop the evolving surface and are reported; they are never displayed as a valid physical prediction.</li></ul></details></section>
 </div>
 <script>
 const CFG=[
@@ -116,14 +120,19 @@ wave:'<path d="M2 9c1.4-3 2.4-3 3.8 0s2.4 3 3.8 0 2.4-3 3.8 0"/>',
 scatter:'<circle cx="4.2" cy="5.2" r="1"/><circle cx="9.3" cy="4.2" r="1"/><circle cx="12.2" cy="8.4" r="1"/><circle cx="6" cy="10.4" r="1"/><circle cx="10.6" cy="12.2" r="1"/>',
 edge:'<path d="M2 12.5 4.8 6l2 4 2-5 2 4 3.2-5"/>'};
 const P={};const pr=document.getElementById('params');
+let renderPending=0;const queueRender=()=>{cancelAnimationFrame(renderPending);renderPending=requestAnimationFrame(()=>{renderPending=0;render()})};
 CFG.forEach(c=>{P[c.k]=c.v;if(c.g){const g=document.createElement('div');g.className='grp';g.textContent=c.g;pr.appendChild(g)}
 const d=document.createElement('div');d.className='sl';d.innerHTML=`<label for="s_${c.k}"><span class="lt"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${ICON[c.ic]}</svg>${c.l}</span><output id="o_${c.k}"></output></label><input type="range" id="s_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}">${c.h?`<span class="h">${c.h}</span>`:''}`;pr.appendChild(d);
 const s=d.querySelector('input'),o=d.querySelector('output');const sh=()=>{o.textContent=(+s.value).toFixed(c.d)+(c.u?' '+c.u:'')};sh();
-s.addEventListener('input',()=>{P[c.k]=+s.value;sh();render()})});
+s.addEventListener('input',()=>{P[c.k]=+s.value;sh();queueRender()})});
 const RHO=1020,G=9.81,S2=Math.SQRT1_2;
-function muEff(gd){const ref=P.mu,ty=P.ty;const base=Math.max(ref-ty/2.7,0.05*ref);return ty/gd+base*Math.pow(gd/2.7,P.n-1)}
+function muEff(gd){gd=Math.max(gd,1e-6);const ref=P.mu,ty=P.ty;const base=Math.max(ref-ty/2.7,0.05*ref);return ty/gd+base*Math.pow(gd/2.7,P.n-1)}
 function hf(Hmm){const U=P.U/60,H=Hmm/1000,gd=U/H,m=muEff(gd);const dp=P.Pup*1000/(P.L/1000);return 1000*H*(0.5+H*H*dp/(12*m*U))}
 const lc=()=>Math.sqrt(P.g/(RHO*G))*1000;
+function modelScope(){const H=Hn()/1000,U=P.U/60,mu=muEff(U/H),h=contact(Hn(),P.th).h/1000;const Re=RHO*U*H/mu,Ca=mu*U/P.g,aspect=H/(P.L/1000);const issues=[];
+ if(aspect>0.2)issues.push('gap/land ratio is too large for lubrication theory');if(Re>1)issues.push('inertia is no longer negligible');if(Ca>0.1)issues.push('the static contact-line model omits important dynamic wetting');if(h<=0||!Number.isFinite(h))issues.push('no finite positive film solution');
+ return{Re,Ca,aspect,issues}}
+function updateScope(extra=''){const el=document.getElementById('scope');if(!el)return;const q=modelScope(),hard=q.issues.some(x=>x.includes('no finite'));el.className='scope '+(hard?'bad':q.issues.length?'warn':'');el.innerHTML=q.issues.length?`<strong>${hard?'Result withheld':'Use with caution'}.</strong> ${q.issues.join('; ')}. Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`:`<strong>Within the thin-film checks.</strong> Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`}
 function contact(Hmm,th){const h=hf(Hmm),L=lc();const phi=Math.min(Math.max(135-th,0),180)*Math.PI/180;const hc=2*L*Math.sin(phi/2);const Qy=h+hc;
  if(Qy<=Hmm){const hce=Math.max(Hmm-h,0);return{h,s:0,pinned:true,phi:2*Math.asin(Math.min(1,hce/(2*L))),hc:hce}}
  return{h,s:(Qy-Hmm)/S2,pinned:false,phi,hc}}
@@ -176,24 +185,24 @@ let CL={};function colors(){CL.surface=css('--surface');CL.ink=css('--ink');CL.m
 function resize(){const w=cv.parentElement.clientWidth||900;DPR=window.devicePixelRatio||1;W=w;Hh=w*(YMAX-YMIN)/(XMAX-XMIN);cv.style.height=Hh+'px';cv.width=Math.round(W*DPR);cv.height=Math.round(Hh*DPR);ctx=cv.getContext('2d');ctx.setTransform(DPR,0,0,DPR,0,0)}
 const X=x=>(x-XMIN)*SC(),Y=y=>Hh-(y-YMIN)*SC();
 
-const SIM={cl:0,x0:0,dx:0.05,h:new Float64Array(2),t:0,V:0,L:4,Uf:0,s:0,qg:0,feed:0};const HP=0.02;
+const SIM={cl:0,x0:0,dx:0.05,h:new Float64Array(2),t:0,V:0,L:4,Uf:0,s:0,qg:0,feed:0,safe:true,limited:false};const HP=0.02;
 const TS=3,TR=1.5;let UN=4.667,AT=[];
 function buildA(){AT=[];const XL=CX-RB;for(let L=0;L<=10.0001;L+=0.05){let a=L*Math.max(AN.Lp+XL,0);for(let x=XL;x<=0;x+=0.05)a+=Math.min(L,under(x))*0.05;AT.push(a)}}
 const areaOf=L=>{const f=clamp(L,0,10)/0.05,i=Math.min(Math.floor(f),AT.length-2);return AT[i]+(AT[i+1]-AT[i])*(f-i)};
 const levelOf=Vv=>{let lo=0,hi=AT.length-1;if(Vv<=AT[0])return 0;if(Vv>=AT[hi])return 10;while(hi-lo>1){const m=(lo+hi)>>1;AT[m]<Vv?lo=m:hi=m}return (lo+(Vv-AT[lo])/(AT[hi]-AT[lo]))*0.05};
-function simReset(){SIM.h.fill(HP);SIM.t=0;SIM.Uf=0;SIM.s=0;SIM.qg=0;SIM.feed=0;SIM.V=areaOf(AN.L0);SIM.L=AN.L0}
+function simReset(){SIM.h.fill(HP);SIM.t=0;SIM.Uf=0;SIM.s=0;SIM.qg=0;SIM.feed=0;SIM.safe=true;SIM.limited=false;SIM.V=areaOf(AN.L0);SIM.L=AN.L0}
 const pulseAmp=tau=>{if(tau<TF)return 0;const D=AN.fd,per=AN.fp,dep=AN.fa,k=Math.floor((tau-TF)/per),ph=(tau-TF)-k*per,w=ss(0,0.25,ph)*(1-ss(D*per-0.25,D*per,ph));const on=1-dep+dep/D,off=1-dep;return (off+(on-off)*w)/on};
 const XF=-6.9,TF=1.0;
 function qgap(Uf,L){const pe=P.Pup*(L/AN.L0),H=GAP*1e-3,u=Uf*1e-3,gd=Math.max(Uf/GAP,1e-3),m=Math.max(muEff(gd),0.05),dp=pe*1000/(P.L*1e-3);
- const q=(u*H/2+H*H*H*dp/(12*m))*1e6;return Math.max(0,Math.min(q,Uf*L))}
+ const q=(u*H/2+H*H*H*dp/(12*m))*1e6;return Math.max(0,q)}
 function simGrid(){const xc=0,N=Math.max(20,Math.round((XMAX-xc)/0.05)),dx=(XMAX-xc)/N;const old=SIM.h,ox=SIM.x0,od=SIM.dx,on=old.length;const nh=new Float64Array(N+1);
  for(let i=0;i<=N;i++){const x=xc+i*dx;const f=(x-ox)/od;if(on<3){nh[i]=HP;continue}if(f<0){nh[i]=old[0];continue}const k=Math.min(Math.floor(f),on-2);nh[i]=old[k]+(old[k+1]-old[k])*Math.min(f-k,1)}
  SIM.h=nh;SIM.x0=xc;SIM.dx=dx}
 function simStep(dt){const tn=SIM.t,dx=SIM.dx*1e-3;
  const Uf=UN*ss(TS,TS+TR,tn);SIM.Uf=Uf;const Um=Uf*1e-3;
  const shape=tn<TS?0:pulseAmp(tn-TS+TF);SIM.feed=shape;const Qf=UN*HF*shape*(1-AN.fa+AN.fa/AN.fd);
- const qg=qgap(Uf,SIM.L);SIM.qg=qg;
- SIM.V+=(Qf-qg)*dt;SIM.L=Math.max(levelOf(SIM.V),0.3);SIM.s+=Uf*dt;
+ const requested=qgap(Uf,SIM.L),Vmin=areaOf(0.3),qg=Math.min(requested,Qf+Math.max(SIM.V-Vmin,0)/dt);SIM.qg=qg;SIM.limited=qg+1e-9<requested;
+ SIM.V=Math.max(Vmin,SIM.V+(Qf-qg)*dt);SIM.L=Math.max(levelOf(SIM.V),0.3);SIM.s+=Uf*dt;
  const Hc=MEN[0][1],hc0=HP+(Math.min(Hc,SIM.L)-HP)*ss(0.05,0.5,Uf/UN);
  const Nall=SIM.h.length-1,k0=Math.max(0,Math.min(Math.ceil((hc0-GAP)/SIM.dx),Nall-4));
  const h0mm=k0>0?GAP+k0*SIM.dx:hc0,h0=h0mm*1e-3,qin=qg*1e-6;SIM.cl=k0*SIM.dx;
@@ -213,11 +222,12 @@ function simStep(dt){const tn=SIM.t,dx=SIM.dx*1e-3;
    const m0=mob(i-1),bb=m0*gam/(dx*dx*dx),g0=m0*rg/dx;
    add(i,i+1,-bb*inv);add(i,i,(3*bb+g0)*inv);add(i,i-1,(-3*bb-Um-g0)*inv);add(i,i-2,bb*inv)}
   A[i-1][2]+=1/dt}
- for(let j=0;j<M;j++){const p=A[j][2];for(let r=1;r<=2&&j+r<M;r++){const f=A[j+r][2-r]/p;if(!f)continue;for(let c=0;c<=2;c++)A[j+r][2+c-r]-=f*A[j][2+c];b[j+r]-=f*b[j]}}
+ for(let j=0;j<M;j++){const p=A[j][2];if(!Number.isFinite(p)||Math.abs(p)<1e-14){SIM.safe=false;SIM.t+=dt;return}for(let r=1;r<=2&&j+r<M;r++){const f=A[j+r][2-r]/p;if(!f)continue;for(let c=0;c<=2;c++)A[j+r][2+c-r]-=f*A[j][2+c];b[j+r]-=f*b[j]}}
  for(let j=M-1;j>=0;j--){let sm=b[j];for(let c=1;c<=2&&j+c<M;c++)sm-=A[j][2+c]*x[j+c];x[j]=sm/A[j][2]}
+ if(x.some(v=>!Number.isFinite(v)||v<=0||v*1e3>YMAX)){SIM.safe=false;SIM.t+=dt;return}SIM.safe=true;
  for(let j=0;j<M;j++)h[j+1]=Math.max(x[j]*1e3,HP*0.5);
  h[N]=h[N-1];h[0]=h0mm;SIM.t+=dt}
-function simSync(t){if(t<SIM.t-1e-6||!SIM.init){SIM.init=1;simReset()}const dt=0.02;let g=0;while(SIM.t+dt<=t+1e-9&&g++<4000)simStep(dt)}
+function simSync(t){if(t<SIM.t-1e-6||!SIM.init){SIM.init=1;simReset()}const dt=0.02;let g=0;while(SIM.safe&&SIM.t+dt<=t+1e-9&&g++<4000)simStep(dt)}
 function setModel(){
  const z=AN.z;const H=Hn()+(P.dH*Math.sin(2*Math.PI*z/P.lw)-P.dt*nz(z,1.7))/1000;const th=P.th+P.dth*nz(z,4.1);
  const st=contact(H,th);ST=st;GAP=H;UN=P.U/60*1000;U=UN;HF=st.h;Q=U*HF;
@@ -408,21 +418,21 @@ function viewA(){view.innerHTML=`<div class="status" id="st"></div><canvas id="c
 <canvas id="cb" role="img" aria-label="Separate magnified animation of the downstream meniscus" style="margin-top:14px"></canvas><p class="cap"><b>Separate view:</b> the downstream meniscus, magnified, driven by the same simulation and the same clock as the view above.</p><details class="cap-toggle"><summary>How this view works</summary><p class="cap"><b>Fixed blade, fibre moves left to right.</b> The animation is driven by the same model and the same inputs as the other tabs. Web speed, machine height, fibre thickness, viscosity, yield stress, shear thinning, bead pressure, land length, surface tension and contact angle set the flow and the meniscus. The across-web inputs act through the position slider, which picks the local gap and wetting at that point. Edge, ripple and oven inputs act in the other tabs. The blade diameter is 100 mm (from you); the notch size is assumed. Bead height scales with bead pressure for display. <b>The downstream liquid surface is solved live</b> (thin-film equation with viscous flow, surface tension and the moving fibre, in real time). The run starts from a developed steady film. <b>How it works.</b> The run starts with the fibre stopped and a pool of slurry already deeper than the gap. The fibre starts at 3 s and reaches full speed 1.5 s later (assumed). The nozzle tip sits at the pool surface and feeds in pulses, at an average rate equal to the flow leaving through the gap. The pool level comes from a volume balance (feed in minus gap flow out), and the gap flow comes from the fibre speed and the bead pressure, which is taken as proportional to pool depth. The pool depth at start and its length upstream of the blade are assumed, not measured. The liquid surface downstream is solved live (thin-film equation with viscous flow, surface tension and the moving fibre). Change any input while it runs and the surface relaxes to the new state. The contact-line position on the face still comes from the static balance used in the other tabs.</p></details><div class="stats" id="ss"></div>`;
  const cv=document.getElementById('ca');ANIM.start(cv,document.getElementById('cb'));
  const ap=document.getElementById('ap'),at=document.getElementById('at'),ato=document.getElementById('ato'),az=document.getElementById('az'),azo=document.getElementById('azo');
- const pl=()=>{ap.textContent=ANIM.playing?'Pause':'Play'};pl();az.value=ANIM.z;azo.textContent=ANIM.z+' mm';
+ const pl=()=>{ap.textContent=ANIM.playing?'Pause':'Play';ap.setAttribute('aria-pressed',ANIM.playing)};pl();az.value=ANIM.z;azo.textContent=ANIM.z+' mm';
  ap.onclick=()=>{ANIM.playing=!ANIM.playing;pl()};document.getElementById('ar').onclick=()=>{ANIM.seek(0)};
  at.oninput=()=>{ANIM.seek(+at.value);ANIM.playing=false;pl()};
  ANIM.onTime=t=>{if(document.activeElement!==at)at.value=t;ato.textContent=t.toFixed(0)+' s'};
  const fa=document.getElementById('fa'),fp=document.getElementById('fp'),fao=document.getElementById('fao'),fpo=document.getElementById('fpo');fa.value=ANIM.fa*100;fp.value=ANIM.fp;const fd=document.getElementById('fd'),fdo=document.getElementById('fdo');fd.value=ANIM.fd*100;const fs2=()=>{fao.textContent=fa.value+' %';fpo.textContent=(+fp.value).toFixed(1)+' s';fdo.textContent=fd.value+' % of period'};const rt=document.getElementById('rt'),rto=document.getElementById('rto');rt.value=ANIM.rate;const fr=()=>{rto.textContent=(+rt.value).toFixed(2)+'× (1× = real time)'};fr();rt.oninput=()=>{ANIM.rate=+rt.value;fr()};const p0=document.getElementById('pl0'),pp=document.getElementById('plp'),p0o=document.getElementById('pl0o'),ppo=document.getElementById('plpo');p0.value=ANIM.L0;pp.value=ANIM.Lp;const fs3=()=>{p0o.textContent=(+p0.value).toFixed(1)+' mm';ppo.textContent=pp.value+' mm'};fs3();fs2();fa.oninput=fp.oninput=fd.oninput=()=>{ANIM.fa=+fa.value/100;ANIM.fp=+fp.value;ANIM.fd=+fd.value/100;fs2();ANIM.refresh()};p0.oninput=pp.oninput=()=>{ANIM.L0=+p0.value;ANIM.Lp=+pp.value;fs3();ANIM.reinit()};
  az.oninput=()=>{ANIM.z=+az.value;azo.textContent=ANIM.z+' mm';ANIM.refresh();fillA()};
- fillA()}
+ fillA();updateScope(SIM.limited?' <strong>Pool outlet is currently supply-limited.</strong>':'')}
 function fillA(){const i=ANIM.info,st=i.st;let s;
  if(i.WET)s=pill('Slurry reaches the notch corner: the dry edge gets wet','bad');else if(st.s>0.05)s=pill('Contact line lifted '+st.s.toFixed(1)+' mm up the face','warn');else s=pill('Detaches at the active metering edge','ok');
  s+=pill('local gap '+i.H.toFixed(2)+' mm','')+pill('contact angle '+i.th.toFixed(0)+'°','');document.getElementById('st').innerHTML=s;
- document.getElementById('ss').innerHTML=[['Gap at this position',i.H.toFixed(2)+' mm'],['Wet film',st.h.toFixed(2)+' mm'],['Film / gap',(st.h/i.H).toFixed(3)],['Shear rate U/H',(P.U/60/(i.H/1000)).toFixed(1)+' 1/s']].map(a=>`<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}
+ document.getElementById('ss').innerHTML=[['Gap at this position',i.H.toFixed(2)+' mm'],['Wet film',st.h.toFixed(2)+' mm'],['Film / gap',(st.h/i.H).toFixed(3)],['Shear rate U/H',(P.U/60/(i.H/1000)).toFixed(1)+' 1/s'],['Numerical state',SIM.safe?'physical bounds passed':'surface solve stopped']].map(a=>`<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}
 let tab=0;const TABS=['Slurry animation','Contact line at the blade','Web edge','Film surface'];
-const tabsEl=document.getElementById('tabs');TABS.forEach((t,i)=>{const b=document.createElement('button');b.textContent=t;b.setAttribute('role','tab');b.onclick=()=>{tab=i;render()};tabsEl.appendChild(b)});
+const tabsEl=document.getElementById('tabs');TABS.forEach((t,i)=>{const b=document.createElement('button');b.textContent=t;b.setAttribute('role','tab');b.onclick=()=>{tab=i;render()};b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();tab=e.key==='Home'?0:e.key==='End'?TABS.length-1:(tab+(e.key==='ArrowRight'?1:-1)+TABS.length)%TABS.length;render();tabsEl.children[tab].focus()};tabsEl.appendChild(b)});
 const view=document.getElementById('view');
-function render(){[...tabsEl.children].forEach((b,i)=>b.setAttribute('aria-selected',i===tab));ANIM.stop();[viewA,view1,view2,view3][tab]()}
+function render(){[...tabsEl.children].forEach((b,i)=>{b.setAttribute('aria-selected',i===tab);b.tabIndex=i===tab?0:-1});ANIM.stop();[viewA,view1,view2,view3][tab]();updateScope()}
 function view1(){view.innerHTML=`<div class="status" id="st"></div><canvas id="c1" role="img" aria-label="Cross-section of blade, slurry and meniscus"></canvas><p class="cap"><b>Cross-section at the web centre.</b> The meniscus is the Young–Laplace profile from the contact line down to the flat film. It is pinned at the sharp edge when the contact angle is large, and climbs the flat face when it is small.</p><canvas id="c2" role="img" aria-label="Contact line position across the web"></canvas><p class="cap"><b>Top view, across the web.</b> Each point is where the contact line sits on the face, from the sharp edge (0) to the notch corner. Gap waviness, fibre thickness and wetting changes push it up and down. Compare photos 1, 3 and 5: an uneven line.</p><div class="stats" id="ss"></div>`;
  drawSection(document.getElementById('c1'));
  const N=300,W=300,pts=[],hs=[];let mx=0,mn=1e9,over=0,hmn=1e9,hmx=0;
@@ -460,6 +470,8 @@ function view3(){const H=Hn(),h=contact(H,P.th).h/1000;const dh=(hf(H+0.01)-hf(H
 window.addEventListener('resize',render);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
 new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+document.getElementById('reset').onclick=()=>{CFG.forEach(c=>{P[c.k]=c.v;const s=document.getElementById('s_'+c.k);s.value=c.v;s.dispatchEvent(new Event('input'))})};
+if(matchMedia('(prefers-reduced-motion: reduce)').matches)ANIM.playing=false;
 render();
 </script>
 
