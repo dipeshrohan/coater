@@ -5,14 +5,58 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status: Phase 1 complete and validated, including the non-Newtonian
-## extension (Picard iteration, real shear-thinning/yield-stress fields,
-## not just a single representative viscosity) and Web Workers (brought
-## forward from Phase 4 once measured solve times made it a real
-## requirement, not a nice-to-have). Live in the app's "CFD Analysis" tab
-## now, one location (the web centreline). Still open: the other 3
-## lateral locations and their comparison view, free-surface/meniscus,
-## porous fibre coupling, localStorage persistence, export.
+## Status: Phase 1 and Phase 2 complete and validated. Live in the app's
+## "CFD Analysis" tab now, one location (the web centreline): the 2D gap
+## solve (Newtonian + non-Newtonian, Web Workers) plus the downstream
+## free-surface film development to the oven. Still open: the other 3
+## lateral locations and their comparison view, porous fibre coupling,
+## localStorage persistence, export.
+
+### Phase 2: downstream free-surface film development
+
+Per the spec's explicit instruction to reuse an existing free-surface
+method rather than invent one: `solveDownstreamFilm()` (`cfd-solver.js`)
+factors out the exact thin-film flux law already implemented in
+`simulation.js`'s `simStep()` (the live "Slurry animation" tab) --
+`dh/dt + d/dx[U*h - (h^3/3mu)(gamma*h''' - rho*g*h')] = 0`, the standard
+free-surface-film-on-a-moving-wall equation (different from the two-wall
+gap flow's Couette-Poiseuille advection term, correctly so -- downstream
+of the blade there's no second wall) -- into a standalone, SI-unit,
+headless function, driven by this run's own real outlet flow rate Q
+(from the 2D non-Newtonian solve) instead of `simulation.js`'s
+closed-form `qgap()` estimate. Time-marched at the same dt=0.02s already
+validated for this exact discretization, to steady state or a generous
+step cap.
+
+**Validation**: at steady state, far downstream where dh/dx->0, the flux
+law reduces to U*h_inf = Q exactly -- an analytic check from mass
+conservation alone, independent of this implementation. The solver hits
+it to within numerical noise (0.0000-0.0001% error) at every grid
+resolution tested (50/100/200/400 points) and across an 11-case
+parameter battery (full speed/viscosity/surface-tension/gap range). At
+the app's defaults it lands on 1.4533mm -- matching the HTML's own
+documented "design wet film 1.45 mm" almost exactly, an unplanned but
+reassuring cross-check that this is the right physics tied correctly to
+the existing app, not a coincidence (physics.js's `filmThickness()`
+computes the same h=q/U relation from its own closed-form q).
+
+One real robustness gap found and fixed: at the true worst case within
+the slider ranges (minimum web speed + maximum oven distance), the film
+hadn't fully relaxed within the initial step cap -- not a bug, since
+convergence time scales with the real physical residence time to the
+oven (Lx/U), which is genuinely long at that combination (~1200s
+simulated). Raised the step cap to comfortably cover the measured worst
+case (75,567 steps, 1.1s wall-clock, off the main thread via the
+Worker), re-verified it still lands on the exact analytic value there
+too (4.2242mm vs. 4.2240mm exact).
+
+The live tab shows the h(x) development curve with the h_inf reference
+line, plus film-at-oven, gap-to-film ratio, and a comparison against
+physics.js's own `filmThickness()` (both should agree loosely in the
+regime both models are valid in, and are independent derivations, so
+agreement is evidence, not circular -- observed 1-4% apart across the
+cases tested, the expected size of gap between a full transient
+free-surface relaxation and a closed-form single-point estimate).
 
 ### Non-Newtonian extension (Phase 1, completed after 1a/1b)
 
