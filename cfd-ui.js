@@ -26,7 +26,7 @@ function cfdGeometry() {
   const G = P.Pup * 1000 / (P.L / 1000);    // Pa/m, same sign convention as physics.js's dpdx (favorable = assists flow)
   const gdRef = U / H;                      // representative shear rate, for the reported "reference viscosity" only
   const muRef = muEff(gdRef);
-  return { U, H, L, G, muRef, ty: P.ty, n: P.n, rho: RHO };
+  return { U, H, L, G, muRef, ty: P.ty, n: P.n, rho: RHO, gamma: P.g, g: GRAVITY, ovenDistance: P.oven };
 }
 
 function cfdWorkerHandle() {
@@ -50,11 +50,8 @@ function runCFD() {
     } else {
       const r = e.data.result;
       const Re = RHO * geo.U * geo.H / geo.muRef;
-      let qOutlet = 0;
-      const iOut = r.nx - 1;
-      for (let j = 1; j < r.ny; j++) qOutlet += 0.5 * (r.u[(j - 1) * r.nx + iOut] + r.u[j * r.nx + iOut]) * r.dy;
       const qLubrication = geo.U * geo.H / 2 + geo.G * geo.H ** 3 / (12 * geo.muRef);
-      cfdResult = { r, geo, Re, elapsedMs, qOutlet, qLubrication };
+      cfdResult = { r, geo, Re, elapsedMs, qOutlet: r.qOutlet, qLubrication };
     }
     setCfdButtons('idle');
     renderCFDResult();
@@ -64,6 +61,7 @@ function runCFD() {
     nx: CFD_NX, ny: CFD_NY, Lx: geo.L, Ly: geo.H, U: geo.U, dpdxFavorable: geo.G,
     rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n,
     maxIter: 50000, tol: 1e-6, maxOuter: 60, outerTol: 1e-3,
+    gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance,
   });
   setCfdButtons('running');
 }
@@ -208,6 +206,26 @@ function drawViscosityProfile(cv, r, geo) {
   });
 }
 
+/**
+ * Downstream film development: h(x) from the gap exit toward its
+ * mass-conservation equilibrium h_inf = Q/U, driven by this run's own
+ * real outlet flow rate. The dashed horizontal line at h_inf is the
+ * independent analytic check the solve should land on (see
+ * solveDownstreamFilm's header in cfd-solver.js) -- shown here so the
+ * agreement is visible, not just asserted in the stats table.
+ */
+function drawDownstreamFilm(cv, film, geo) {
+  const pts = film.x.map((x, i) => [x * 1000, film.h[i] * 1000]);
+  let hMax = geo.H;
+  for (const [, h] of pts) hMax = Math.max(hMax, h);
+  plotChart(cv, 0.4, {
+    x0: 0, x1: film.x[film.x.length - 1] * 1000, y0: 0, y1: hMax * 1.15,
+    xl: 'distance downstream of the gap (mm)', yl: 'film height (mm)', xd: 0, yd: 2,
+    s: [{ p: pts, c: cssVar('--accent'), w: 2.2 }],
+    hl: [{ y: film.hInf * 1000, c: cssVar('--muted'), t: 'h∞ = Q/U (mass conservation)' }],
+  });
+}
+
 function renderCFDResult() {
   const statusEl = document.getElementById('cfdStatus');
   const bodyEl = document.getElementById('cfdBody');
@@ -233,6 +251,12 @@ function renderCFDResult() {
     return;
   }
 
+  if (!r.film.x) {
+    statusEl.innerHTML = pill('Converged', 'ok') + pill('Downstream film solve failed: ' + (r.film.error || 'unknown error'), 'bad');
+    bodyEl.innerHTML = '<p class="cap">The gap flow field is valid, but the downstream free-surface development could not be computed. No film result is shown.</p>';
+    return;
+  }
+
   const qDiffPct = Math.abs(qOutlet - qLubrication) / qLubrication * 100;
   const isNewtonian = geo.ty === 0 && geo.n === 1;
   const lubricationNote = qDiffPct < 5
@@ -244,7 +268,11 @@ function renderCFDResult() {
     pill('Converged', 'ok')
     + pill('Re ' + Re.toExponential(2), '')
     + pill(lubricationNote, qDiffPct < 5 ? 'ok' : 'warn')
-    + pill(isNewtonian ? 'Newtonian' : 'Non-Newtonian, ' + r.outerIterations + ' rheology passes', '');
+    + pill(isNewtonian ? 'Newtonian' : 'Non-Newtonian, ' + r.outerIterations + ' rheology passes', '')
+    + pill(r.film.converged ? 'Downstream film settled' : 'Downstream film still developing at the oven', r.film.converged ? 'ok' : 'warn');
+
+  const hAtOven = r.film.h[r.film.h.length - 1];
+  const hLub = filmThickness(geo.H * 1000) / 1000; // physics.js's own closed-form wet-film prediction, m
 
   bodyEl.innerHTML = `
     <canvas id="cfdHeat" role="img" aria-label="Velocity magnitude across the metering gap"></canvas>
@@ -253,11 +281,14 @@ function renderCFDResult() {
     <p class="cap"><b>u(y) at 3 stations</b> (near inlet, mid-channel, near outlet, solid) against the fully-developed reference profile for this gap and rheology (dashed) -- exact Couette-Poiseuille when Newtonian, the same generalized shear-stress-inversion solve otherwise. They should coincide if the flow stays fully developed -- the correctness check for the open boundary conditions.</p>
     <canvas id="cfdVisc" role="img" aria-label="Apparent viscosity across the gap at mid-channel"></canvas>
     <p class="cap"><b>Apparent viscosity across the gap</b> (mid-channel), from the local shear rate via the same rheology formula as the rest of the app. Flat when Newtonian; higher toward the low-shear core for shear-thinning or yield-stress inputs. With enough yield stress the core stops shearing entirely (an unyielded plug) -- the axis is capped just past it, since viscosity formally diverges to infinity there, and those points are pinned to the right edge rather than left to blow out the scale.</p>
+    <canvas id="cfdFilm" role="img" aria-label="Downstream film height development"></canvas>
+    <p class="cap"><b>Downstream film development,</b> from the gap exit to the oven (${(geo.ovenDistance * 1000).toFixed(0)} mm away). Reuses the same free-surface thin-film method as the "Slurry animation" tab's live simulation (viscous drag, surface tension, gravity), but driven by this run's own 2D flow rate instead of the closed-form estimate. The dashed line is where mass conservation alone says it must end up (h&infin; = Q/U) -- an independent check, not fitted to match.</p>
     <div class="stats" id="cfdStats"></div>`;
 
   drawVelocityHeatmap(document.getElementById('cfdHeat'), r);
   drawVelocityProfile(document.getElementById('cfdProfile'), r, geo);
   drawViscosityProfile(document.getElementById('cfdVisc'), r, geo);
+  drawDownstreamFilm(document.getElementById('cfdFilm'), r.film, geo);
 
   document.getElementById('cfdStats').innerHTML = [
     ['Grid', r.nx + ' × ' + r.ny],
@@ -267,14 +298,18 @@ function renderCFDResult() {
     ['Flow rate, 2D solve', (qOutlet * 1e6).toFixed(3) + ' mm²/s per mm width'],
     ['Flow rate, lubrication formula', (qLubrication * 1e6).toFixed(3) + ' mm²/s per mm width'],
     ['Reference viscosity (at U/H)', geo.muRef.toFixed(2) + ' Pa·s'],
+    ['Film at gap exit', (geo.H * 1000).toFixed(3) + ' mm (full gap opening)'],
+    ['Film at oven', (hAtOven * 1000).toFixed(3) + ' mm (' + (r.film.converged ? 'settled' : 'still relaxing') + ')'],
+    ['Gap-to-film ratio at oven', (geo.H / hAtOven).toFixed(3)],
+    ['Film at oven vs. physics.js filmThickness()', (hLub * 1000).toFixed(3) + ' mm (' + (Math.abs(hAtOven - hLub) / hLub * 100).toFixed(1) + '% diff)'],
   ].map(a => `<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
 function viewCFD() {
   view.innerHTML = `
     <div class="status" id="cfdStatus"></div>
-    <p class="cap"><b>2D Navier-Stokes solve of the metering gap</b> at the web centreline -- the same cross-section the other tabs use, now solved as a real 2D flow field (streamfunction-vorticity formulation, full nonlinear Navier-Stokes, no lubrication-theory shortcut) instead of the closed-form formula, with the same non-Newtonian rheology (yield stress, shear-thinning index) as the rest of the app applied via a shear-rate-dependent viscosity field. Validated against the published lid-driven-cavity benchmark (Ghia, Ghia &amp; Shin, 1982) and, below, against this app's own filmThickness() formula in the regime where they should agree. Runs off the main thread (a Web Worker), so the page stays responsive during the solve.</p>
-    <p class="cap"><b>Not yet built:</b> the other 3 lateral locations and their comparison view, free-surface/meniscus tracking downstream of the gap, porous-fibre coupling, and saved/persisted cases. This tab is the first validated slice of that larger feature.</p>
+    <p class="cap"><b>2D Navier-Stokes solve of the metering gap</b> at the web centreline -- the same cross-section the other tabs use, now solved as a real 2D flow field (streamfunction-vorticity formulation, full nonlinear Navier-Stokes, no lubrication-theory shortcut) instead of the closed-form formula, with the same non-Newtonian rheology (yield stress, shear-thinning index) as the rest of the app applied via a shear-rate-dependent viscosity field, followed by the downstream free-surface film development to the oven (reusing the "Slurry animation" tab's own thin-film method, driven by this run's real flow rate). Validated against the published lid-driven-cavity benchmark (Ghia, Ghia &amp; Shin, 1982) and, below, against this app's own filmThickness() formula in the regime where they should agree. Runs off the main thread (a Web Worker), so the page stays responsive during the solve.</p>
+    <p class="cap"><b>Not yet built:</b> the other 3 lateral locations and their comparison view, porous-fibre coupling, and saved/persisted cases. This tab is the first validated slice of that larger feature.</p>
     <button id="cfdRun" class="btn btn-primary" type="button">Run gap flow</button>
     <button id="cfdCancel" class="btn btn-secondary" type="button" hidden>Cancel</button>
     <div id="cfdBody"></div>`;

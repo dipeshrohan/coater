@@ -627,4 +627,123 @@ function solveChannelNSNonNewtonian(opts) {
   return { ...sol, nuField, prof1D, outerIterations, outerResidual, outerConverged };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveCavityNS, solveChannelNS, solveFullyDeveloped1D, solveChannelNSNonNewtonian, muEffLocal };
+/**
+ * Downstream free-surface film development: the film height h(x) from the
+ * gap exit (x=0, h=H0, the full gap opening) out to Lx, relaxing toward
+ * its mass-conservation-determined equilibrium under the real flow rate Q
+ * from the 2D gap solve.
+ *
+ * This is NOT new physics -- it's the same thin-film flux law already
+ * implemented in simulation.js's simStep() for the live "Slurry animation"
+ * tab (reused per the spec's explicit instruction to reuse an existing
+ * free-surface method rather than invent one), factored out into a
+ * standalone, SI-unit, headless function and driven by this solver's own
+ * real Q instead of simulation.js's closed-form qgap() estimate:
+ *
+ *   dh/dt + d/dx[ U*h - (h^3/(3*mu))*(gamma*h''' - rho*g*h') ] = 0
+ *
+ * Downstream of the gap there is no second (blade) wall -- only the web
+ * drags the film from below, with a free (shear-free) top surface, which
+ * is why the advection term is U*h (not U*h/2 as inside the two-wall gap
+ * itself): a different, correct physical regime, not an inconsistency.
+ *
+ * Time-marched at the same dt=0.02s already validated (empirically, via
+ * a real parameter battery) for this exact discretization in
+ * simulation.js, run to steady state (or maxSteps). At steady state, far
+ * downstream where dh/dx -> 0, the flux reduces to U*h_inf = Q exactly --
+ * an independent analytic check on the numerics, from mass conservation
+ * alone, not specific to this implementation.
+ *
+ * @param {object} opts
+ * @param {number} opts.H0     film height at the gap exit (m) -- Dirichlet left BC
+ * @param {number} opts.Q      real inlet flux (m^2/s) -- from the 2D gap solve's own outlet integration
+ * @param {number} opts.U      web speed (m/s)
+ * @param {number} opts.mu     representative viscosity (Pa.s)
+ * @param {number} opts.gamma  surface tension (N/m)
+ * @param {number} opts.rho    density (kg/m^3)
+ * @param {number} opts.g      gravitational acceleration (m/s^2)
+ * @param {number} opts.Lx     downstream distance to solve out to (m)
+ * @param {number} [opts.nx=200]
+ * @param {number} [opts.dt=0.02]
+ * @param {number} [opts.maxSteps=2000]
+ * @param {number} [opts.tol=1e-7]  steady-state stop: max relative change per step
+ */
+function solveDownstreamFilm(opts) {
+  const H0 = opts.H0, Q = opts.Q, U = opts.U, mu = opts.mu, gamma = opts.gamma, rho = opts.rho, g = opts.g;
+  const Lx = opts.Lx, nx = opts.nx ?? 200, dt = opts.dt ?? 0.02, maxSteps = opts.maxSteps ?? 2000, tol = opts.tol ?? 1e-7;
+  const dx = Lx / (nx - 1);
+  const hInf = Q / U; // exact mass-conservation asymptote, independent check target
+  const HP = Math.min(H0, hInf) * 0.1; // floor, keeps the solver away from h=0 (mirrors simulation.js's HP)
+
+  const h = new Float64Array(nx).fill(Math.max(hInf, HP));
+  h[0] = H0;
+
+  const N = nx - 1; // last free-field index
+  const M = N - 1;
+  const A = new Array(M), b = new Float64Array(M), x = new Float64Array(M);
+  const mobility = i => { const hh = (h[i] + h[i + 1]) / 2; return hh * hh * hh / (3 * mu); };
+  const add = (i, idx, coeff) => {
+    const j = i - 1;
+    if (idx === 0) { b[j] -= coeff * H0; return; }
+    if (idx > N - 1) idx = N - 1;
+    A[j][idx - i + 2] += coeff;
+  };
+
+  let step = 0, maxRelChange = Infinity;
+  for (step = 0; step < maxSteps; step++) {
+    for (let j = 0; j < M; j++) { A[j] = [0, 0, 0, 0, 0]; b[j] = h[j + 1] / dt; }
+
+    for (let i = 1; i <= N - 1; i++) {
+      const m1 = mobility(i), capTerm = m1 * gamma / (dx * dx * dx), gravTerm = m1 * rho * g / dx;
+      const inv = 1 / dx;
+      add(i, i + 2, capTerm * inv);
+      add(i, i + 1, (-3 * capTerm - gravTerm) * inv);
+      add(i, i, (3 * capTerm + U + gravTerm) * inv);
+      add(i, i - 1, (-capTerm) * inv);
+      if (i === 1) {
+        b[0] += Q * inv;
+      } else {
+        const m0 = mobility(i - 1), capTerm0 = m0 * gamma / (dx * dx * dx), gravTerm0 = m0 * rho * g / dx;
+        add(i, i + 1, -capTerm0 * inv);
+        add(i, i, (3 * capTerm0 + gravTerm0) * inv);
+        add(i, i - 1, (-3 * capTerm0 - U - gravTerm0) * inv);
+        add(i, i - 2, capTerm0 * inv);
+      }
+      A[i - 1][2] += 1 / dt;
+    }
+
+    for (let j = 0; j < M; j++) {
+      const p = A[j][2];
+      if (!Number.isFinite(p) || Math.abs(p) < 1e-14) return { x: null, h: null, hInf, converged: false, steps: step, error: 'singular system' };
+      for (let r = 1; r <= 2 && j + r < M; r++) {
+        const f = A[j + r][2 - r] / p;
+        if (!f) continue;
+        for (let c = 0; c <= 2; c++) A[j + r][2 + c - r] -= f * A[j][2 + c];
+        b[j + r] -= f * b[j];
+      }
+    }
+    for (let j = M - 1; j >= 0; j--) {
+      let sm = b[j];
+      for (let c = 1; c <= 2 && j + c < M; c++) sm -= A[j][2 + c] * x[j + c];
+      x[j] = sm / A[j][2];
+    }
+
+    if (x.some(v => !Number.isFinite(v) || v <= 0)) return { x: null, h: null, hInf, converged: false, steps: step, error: 'non-physical result' };
+
+    maxRelChange = 0;
+    for (let j = 0; j < M; j++) {
+      const nv = Math.max(x[j], HP * 0.5);
+      maxRelChange = Math.max(maxRelChange, Math.abs(nv - h[j + 1]) / Math.max(h[j + 1], HP));
+      h[j + 1] = nv;
+    }
+    h[N] = h[N - 1];
+
+    if (maxRelChange < tol) { step++; break; }
+  }
+
+  const xs = new Array(nx);
+  for (let i = 0; i < nx; i++) xs[i] = i * dx;
+  return { x: xs, h: Array.from(h), hInf, converged: maxRelChange < tol, steps: step };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveCavityNS, solveChannelNS, solveFullyDeveloped1D, solveChannelNSNonNewtonian, solveDownstreamFilm, muEffLocal };
