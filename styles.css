@@ -22,6 +22,7 @@
   --soft: #eaeef5;
   --shadow: 0 1px 2px rgba(20, 24, 34, .04), 0 6px 16px -4px rgba(20, 24, 34, .08);
   --shadow-sm: 0 1px 2px rgba(20, 24, 34, .05);
+  --shadow-lg: 0 2px 4px rgba(20, 24, 34, .06), 0 10px 24px -8px rgba(20, 24, 34, .16);
   --radius: 10px;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -34,6 +35,7 @@
     --blade: #4b5361; --fibre: #6a6455; --soft: #1e252f;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px -6px rgba(0, 0, 0, .5);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+    --shadow-lg: 0 2px 4px rgba(0, 0, 0, .35), 0 12px 28px -8px rgba(0, 0, 0, .6);
   }
 }
 :root[data-theme="dark"] {
@@ -43,6 +45,7 @@
   --blade: #4b5361; --fibre: #6a6455; --soft: #1e252f;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px -6px rgba(0, 0, 0, .5);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, .35), 0 12px 28px -8px rgba(0, 0, 0, .6);
 }
 
 * { box-sizing: border-box; }
@@ -62,29 +65,38 @@ body {
 .app-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px 28px;
+  align-items: center;
+  gap: 16px 28px;
   flex-wrap: wrap;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
 }
 .app-header-text { min-width: 0; }
-h1 { font-size: 27px; margin: 0; letter-spacing: -.015em; font-weight: 600; text-wrap: balance; }
-.sub { color: var(--muted); margin: 6px 0 0; max-width: 62ch; line-height: 1.6; }
-h2 { font-size: 12.5px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0 0 14px; font-weight: 500; }
+h1 { font-size: 24px; margin: 0; letter-spacing: -.015em; font-weight: 600; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; line-height: 1.5; font-size: 14px; }
 
-.btn-reset {
+/* Section-title tier, one step above the mono/uppercase group-label tier
+ * (.grp > summary, .section-label) so "Inputs" reads as a panel heading,
+ * not another group label. */
+h2 { font-size: 14px; color: var(--ink); margin: 0 0 14px; font-weight: 600; }
+
+/* ---- buttons --------------------------------------------------------
+ * One shared button language: .btn is the base, .btn-primary /
+ * .btn-secondary pick the treatment. Tabs stay a separate, deliberately
+ * different pattern (navigation, not action). */
+.btn {
   flex: 0 0 auto;
   font: inherit; font-weight: 500; font-size: 13.5px;
-  padding: 9px 16px;
-  border: 1px solid var(--line);
+  padding: 8px 15px;
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--ink);
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: background .15s, box-shadow .15s;
+  transition: background .15s, box-shadow .15s, filter .15s;
   white-space: nowrap;
 }
-.btn-reset:hover { background: var(--soft); }
+.btn-secondary { border: 1px solid var(--line); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+.btn-secondary:hover { background: var(--soft); }
+.btn-primary { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow-sm); min-width: 68px; }
+.btn-primary:hover { filter: brightness(1.08); }
 
 /* ---- panels + main layout ---------------------------------------- */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
@@ -103,7 +115,6 @@ h2 { font-size: 12.5px; font-family: var(--mono); text-transform: uppercase; let
 .sl { display: grid; gap: 5px; margin-bottom: 14px; }
 .sl label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
 .sl .lt { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.sl .ic { flex: 0 0 auto; width: 14px; height: 14px; color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .sl output { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
 .sl .h { font-size: 11.5px; color: var(--muted); opacity: .85; }
 .sl:last-child { margin-bottom: 0; }
@@ -180,12 +191,13 @@ details.grp > summary:focus-visible { outline: 2px solid var(--accent); outline-
 .scope.bad { border-left-color: var(--bad); }
 .scope strong { color: var(--ink); }
 
-/* ---- per-tab status pills ------------------------------------------ */
-.status { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-/* Light-touch metadata chips, deliberately quieter than the .scope banner
- * (that's the one thing asking for attention; these are just readouts). */
-.pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; padding: 4px 10px 4px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); }
-.pill.ok, .pill.bad, .pill.warn { padding-left: 8px; }
+/* ---- per-tab status: plain inline metadata, not boxes ---------------
+ * No background/border on the pills themselves (quieter than the .scope
+ * banner above, which is the one thing meant to ask for attention) — just
+ * a hairline separator between items so the row reads as one line. */
+.status { display: flex; flex-wrap: wrap; margin-bottom: 14px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--muted); padding-right: 14px; margin-right: 14px; border-right: 1px solid var(--line-soft); }
+.pill:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
 .pill.ok::before, .pill.bad::before, .pill.warn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
 .pill.ok { color: var(--ok); }
 .pill.ok::before { background: var(--ok); }
@@ -195,9 +207,14 @@ details.grp > summary:focus-visible { outline: 2px solid var(--accent); outline-
 .pill.warn::before { background: var(--warn); }
 
 /* ---- charts, captions, stat tiles ----------------------------------- */
-canvas { width: 100%; display: block; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: inset 0 1px 3px rgba(20, 24, 34, .05); }
-.cap { font-size: 13px; color: var(--muted); margin: 10px 0 18px; max-width: 75ch; line-height: 1.6; }
-.cap b { color: var(--ink); font-weight: 500; }
+/* The visualization is the point of the app, so it gets more visual weight
+ * than a stat tile or pill: a real shadow that lifts it off the page,
+ * instead of the same flat 1px border everything else uses. */
+canvas { width: 100%; display: block; border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-lg); }
+/* The bold lead-in is the point worth scanning for; the rest is supporting
+ * detail, so the two get more contrast than "slightly darker grey." */
+.cap { font-size: 12.5px; color: var(--muted); margin: 10px 0 18px; max-width: 75ch; line-height: 1.6; }
+.cap b { color: var(--ink); font-weight: 600; font-size: 13px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
 .stat { background: var(--soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px; }
 .stat span { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 3px; }
@@ -226,10 +243,6 @@ details > summary::-webkit-details-marker { display: none; }
  * of bare <label>s, so every slider in the app looks and behaves the
  * same way. --------------------------------------------------------- */
 .playback-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0; padding: 12px 14px; background: var(--soft); border: 1px solid var(--line-soft); border-radius: 9px; }
-.playback-bar button { font: inherit; font-size: 13.5px; font-weight: 500; padding: 7px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 7px; cursor: pointer; transition: background .15s, box-shadow .15s; flex: 0 0 auto; }
-.playback-bar button:hover { background: var(--bg); }
-.playback-bar button#ap { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: var(--shadow-sm); min-width: 68px; }
-.playback-bar button#ap:hover { filter: brightness(1.08); }
 .playback-bar .sl { flex: 1 1 220px; margin-bottom: 0; min-width: 180px; }
 
 .section-label { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 500; grid-column: 1 / -1; margin: 4px 0 -2px; }

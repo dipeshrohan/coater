@@ -20,29 +20,29 @@
 // keeps P in sync as the user drags them.
 // ---------------------------------------------------------------------
 const CFG = [
-  { g: 'Process', k: 'U', l: 'Web speed', min: 0.1, max: 1.0, step: 0.01, u: 'm/min', d: 2, v: 0.28, ic: 'speed' },
-  { k: 'Hm', l: 'Machine scraper height', min: 1.5, max: 2.3, step: 0.01, u: 'mm', d: 2, v: 1.90, ic: 'height' },
-  { k: 'tf', l: 'Fibre thickness', min: 0.05, max: 0.4, step: 0.01, u: 'mm', d: 2, v: 0.20, ic: 'layers' },
-  { k: 'oven', l: 'Distance to oven', min: 0.1, max: 2, step: 0.05, u: 'm', d: 2, v: 0.5, ic: 'distance' },
+  { g: 'Process', k: 'U', l: 'Web speed', min: 0.1, max: 1.0, step: 0.01, u: 'm/min', d: 2, v: 0.28 },
+  { k: 'Hm', l: 'Machine scraper height', min: 1.5, max: 2.3, step: 0.01, u: 'mm', d: 2, v: 1.90 },
+  { k: 'tf', l: 'Fibre thickness', min: 0.05, max: 0.4, step: 0.01, u: 'mm', d: 2, v: 0.20 },
+  { k: 'oven', l: 'Distance to oven', min: 0.1, max: 2, step: 0.05, u: 'm', d: 2, v: 0.5 },
 
-  { g: 'Slurry', k: 'mu', l: 'Apparent viscosity at 2.7 1/s', min: 2, max: 30, step: 0.5, u: 'Pa·s', d: 1, v: 10.5, ic: 'droplet' },
-  { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian (assumed)', ic: 'curve' },
-  { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'assumed, not measured', ic: 'gauge' },
-  { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'assumed, water-like', ic: 'droplet' },
+  { g: 'Slurry', k: 'mu', l: 'Apparent viscosity at 2.7 1/s', min: 2, max: 30, step: 0.5, u: 'Pa·s', d: 1, v: 10.5 },
+  { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian (assumed)' },
+  { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'assumed, not measured' },
+  { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'assumed, water-like' },
 
-  { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.02, u: 'kPa', d: 2, v: 0.72, h: 'set to give 1.45 mm at default', ic: 'gauge' },
-  { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed', ic: 'ruler' },
-  { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed', ic: 'angle' },
-  { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'assumed, measure on the blade', ic: 'ruler' },
+  { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.02, u: 'kPa', d: 2, v: 0.72, h: 'set to give 1.45 mm at default' },
+  { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed' },
+  { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed' },
+  { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'assumed, measure on the blade' },
 
-  { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20, ic: 'wave' },
-  { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120, ic: 'wave' },
-  { k: 'dt', l: 'Fibre thickness variation', min: 0, max: 60, step: 1, u: 'µm', d: 0, v: 10, ic: 'scatter' },
-  { k: 'dth', l: 'Wetting variation on blade', min: 0, max: 20, step: 0.5, u: '°', d: 1, v: 4, h: 'contamination, residue', ic: 'scatter' },
+  { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
+  { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120 },
+  { k: 'dt', l: 'Fibre thickness variation', min: 0, max: 60, step: 1, u: 'µm', d: 0, v: 10 },
+  { k: 'dth', l: 'Wetting variation on blade', min: 0, max: 20, step: 0.5, u: '°', d: 1, v: 4, h: 'contamination, residue' },
 
-  { g: 'Web edge and film', k: 'a0e', l: 'Edge irregularity at exit', min: 5, max: 200, step: 5, u: 'µm', d: 0, v: 30, ic: 'edge' },
-  { k: 'lam', l: 'Ripple wavelength on film', min: 2, max: 40, step: 0.5, u: 'mm', d: 1, v: 8, ic: 'wave' },
-  { k: 'vib', l: 'Vibration ripple on film', min: 0, max: 80, step: 1, u: 'µm', d: 0, v: 10, ic: 'wave' },
+  { g: 'Web edge and film', k: 'a0e', l: 'Edge irregularity at exit', min: 5, max: 200, step: 5, u: 'µm', d: 0, v: 30 },
+  { k: 'lam', l: 'Ripple wavelength on film', min: 2, max: 40, step: 0.5, u: 'mm', d: 1, v: 8 },
+  { k: 'vib', l: 'Vibration ripple on film', min: 0, max: 80, step: 1, u: 'µm', d: 0, v: 10 },
 ];
 
 // Live parameter values, keyed the same as CFG[i].k. Populated with defaults
