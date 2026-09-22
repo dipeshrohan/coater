@@ -5,8 +5,59 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status: Phase 1a complete and validated. Phase 1b (adapt to the actual
-## coating-gap geometry with open inlet/outlet boundaries) not started.
+## Status: Phase 1a and 1b complete and validated. A first "CFD Analysis"
+## tab is live in the app (one location, the web centreline, Newtonian-
+## equivalent viscosity) -- visible now under Run gap flow. Still open:
+## the other 3 lateral locations, free-surface/meniscus, porous fibre,
+## non-Newtonian Picard extension, Web Workers, localStorage, export.
+
+### Phase 1b result: open-channel (real gap) geometry validated
+
+`solveChannelNS()` in `cfd-solver.js` extends the same streamfunction-
+vorticity method to the actual metering-gap geometry: an open channel
+between the moving web (bottom wall) and stationary blade land (top
+wall), with a prescribed Couette-Poiseuille inflow (the exact analytic
+solution for fully-developed parallel flow between the two, derived from
+first principles to match physics.js's own filmThickness() sign
+convention exactly) and a zero-gradient outflow. `cfd-solver.channel.
+validate.js` checks it two ways, at the app's default inputs:
+
+1. **Against the exact analytic solution.** The inlet condition IS the
+   analytic profile, but the 2D solve has no knowledge that it should
+   *stay* that way -- if the open boundary conditions were wrong, the
+   field would drift with x. It doesn't:
+
+   | Grid | max \|u - analytic\|, mid-channel, as % of U |
+   |---|---|
+   | 41x21   | 0.40% |
+   | 81x41   | 0.10% |
+   | 121x61  | 0.04% |
+   | 161x81  | 0.02% |
+
+   Error shrinks monotonically with grid refinement -- the same
+   convergence signature as Phase 1a, at a different geometry.
+
+2. **Against physics.js's own filmThickness() formula.** Integrated flow
+   rate through the 2D solve's outlet vs. the app's existing lubrication
+   formula, at increasing grid resolution: 0.41% -> 0.10% -> 0.05% ->
+   0.03% -- converging toward exact agreement, as expected in the
+   low-Reynolds-number regime both models assume (Re ~ 7.7e-4 at
+   defaults). This is not circular: the two are independent derivations
+   (a full 2D field solve vs. a depth-averaged 1D formula) that happen to
+   agree where both are valid, and are expected to diverge as Re grows --
+   which would be correct behavior, not a bug.
+
+A parameter-extremes battery (11 cases spanning the full slider ranges of
+speed, viscosity, pressure, land length and gap height) converged in all
+cases, in 0-115ms each at 81x41. One case (max speed + max gap + min
+viscosity + max pressure + min land length simultaneously, H/L=0.75)
+showed 3.5% deviation from the analytic profile at 81x41 -- re-verified as
+a grid-resolution artifact, not a bug, by refining the grid (3.5% -> 0.76%
+-> 0.31% -> 0.17% at 81x41/161x81/241x121/321x161). This combination also
+already trips the existing app's own `aspect > 0.2` lubrication-validity
+warning, so a short, wide-gap channel deviating from a fully-developed
+profile is physically expected there, not just numerical noise. The live
+UI uses a 121x61 grid (measured 46-150ms across the same battery).
 
 ### Phase 1a result: core solver validated against an independent published benchmark
 
@@ -122,11 +173,15 @@ A location reads its own `overrides` first, falling back to `CFD_GLOBAL`.
 
 ## Files
 
-**New**: `cfd-solver.js` (solver, no DOM — same convention as `physics.js`),
-`cfd-model.js` (the location data model), `cfd-ui.js` (the new tab's UI,
-reusing `draw.js` utilities and existing CSS classes).
-**Touched, minimally**: entry HTML (new `<script>` tags), `ui.js` (one new
-tab entry), `styles.css` (only if a genuinely new visual pattern is needed).
+**New**: `cfd-solver.js` (solver, no DOM — same convention as `physics.js`;
+now exports both `solveCavityNS` (closed cavity, Phase 1a benchmark) and
+`solveChannelNS` (open gap channel, Phase 1b, used live)), `cfd-ui.js`
+(the new tab's UI, reusing `draw.js` utilities and existing CSS classes;
+reads `P`/`gapHeight()`/`muEff()`/`RHO` directly, no separate data model
+yet -- that's `cfd-model.js`, still to come with Phase 4's 4 locations).
+**Touched, minimally**: entry HTML (2 new `<script>` tags), `ui.js` (one
+new tab entry in `TABS` + `render()`'s dispatch array — two one-line
+edits, nothing else changed).
 **Untouched**: `physics.js`, `simulation.js`, `draw.js` — called, not modified.
 
 ## Still open
