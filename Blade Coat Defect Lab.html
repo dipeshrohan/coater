@@ -18,19 +18,19 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<nav class="topbar">
+  <div class="topbar-inner">
+    <h1 class="brand">Blade Coat Defect Lab</h1>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <button id="reset" class="btn btn-secondary" type="button">Reset process inputs</button>
+  </div>
+</nav>
 <div class="wrap">
 
-  <header class="app-header">
-    <div class="app-header-text">
-      <h1>Blade Coat Defect Lab</h1>
-      <p class="sub">Thin-film model of slurry metering under a coating blade.</p>
-    </div>
-    <button id="reset" class="btn btn-secondary" type="button">Reset process inputs</button>
-  </header>
+  <p class="sub">Thin-film model of slurry metering under a coating blade.</p>
 
   <div class="grid">
     <main class="panel">
-      <div class="tabs" role="tablist" id="tabs"></div>
       <p class="scope" id="scope" role="status" aria-live="polite"></p>
       <div id="view"></div>
     </main>
