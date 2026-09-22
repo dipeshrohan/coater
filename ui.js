@@ -7,24 +7,6 @@
  */
 
 // ---------------------------------------------------------------------
-// Slider icons (purely decorative, keyed by CFG[i].ic)
-// ---------------------------------------------------------------------
-const ICON = {
-  speed: '<path d="M2.5 12.5a5.5 5.5 0 0 1 11 0"/><path d="M8 12.5 10.8 6"/><circle cx="8" cy="12.5" r="1"/>',
-  height: '<path d="M3 3h10M3 13h10M8 4v8M6.2 6l1.8-2 1.8 2M6.2 10l1.8 2 1.8-2"/>',
-  layers: '<rect x="2.5" y="2.8" width="11" height="2.6" rx="0.8"/><rect x="2.5" y="6.7" width="11" height="2.6" rx="0.8"/><rect x="2.5" y="10.6" width="11" height="2.6" rx="0.8"/>',
-  distance: '<path d="M2 8h12M2 8l2.4-2.2M2 8l2.4 2.2M14 8l-2.4-2.2M14 8l-2.4 2.2"/>',
-  droplet: '<path d="M8 2.2c2.8 3.6 4.6 5.9 4.6 8.1A4.6 4.6 0 0 1 3.4 10.3C3.4 8.1 5.2 5.8 8 2.2Z"/>',
-  curve: '<path d="M2.5 4.5c2 0 2 3.5 5.5 3.5S11 11.5 13 11.5"/>',
-  gauge: '<circle cx="8" cy="8.5" r="5.3"/><path d="M8 8.5 6.1 5.6M8 5v1.1M11.3 8.5h-1.1M4.7 8.5h1.1"/>',
-  ruler: '<rect x="2.3" y="6.8" width="11.4" height="4.2" rx="0.6"/><path d="M5 6.8v1.6M7.5 6.8v1.6M10 6.8v1.6M12.3 6.8v1.6"/>',
-  angle: '<path d="M3 13h10M3 13 12 4"/><path d="M6.3 13a3.9 3.9 0 0 1 1.2-2.7"/>',
-  wave: '<path d="M2 9c1.4-3 2.4-3 3.8 0s2.4 3 3.8 0 2.4-3 3.8 0"/>',
-  scatter: '<circle cx="4.2" cy="5.2" r="1"/><circle cx="9.3" cy="4.2" r="1"/><circle cx="12.2" cy="8.4" r="1"/><circle cx="6" cy="10.4" r="1"/><circle cx="10.6" cy="12.2" r="1"/>',
-  edge: '<path d="M2 12.5 4.8 6l2 4 2-5 2 4 3.2-5"/>',
-};
-
-// ---------------------------------------------------------------------
 // Build the Inputs sidebar from CFG. Each CFG group becomes a
 // collapsible <details> section (the two most-adjusted groups, Process
 // and Slurry, start open; the more "assumed" groups start collapsed —
@@ -62,7 +44,7 @@ function syncSliderFill(input) {
     }
     const row = document.createElement('div');
     row.className = 'sl';
-    row.innerHTML = `<label for="s_${c.k}"><span class="lt"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${ICON[c.ic]}</svg>${c.l}</span><output id="o_${c.k}"></output></label><input type="range" id="s_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}">${c.h ? `<span class="h">${c.h}</span>` : ''}`;
+    row.innerHTML = `<label for="s_${c.k}"><span class="lt">${c.l}</span><output id="o_${c.k}"></output></label><input type="range" id="s_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}">${c.h ? `<span class="h">${c.h}</span>` : ''}`;
     currentGroup.appendChild(row);
 
     const slider = row.querySelector('input'), output = row.querySelector('output');
@@ -154,8 +136,8 @@ function viewA() {
     <canvas id="ca" role="img" aria-label="Animation of slurry metering under the fixed blade onto the moving fibre"></canvas>
 
     <div class="playback-bar">
-      <button id="ap"></button>
-      <button id="ar">Restart</button>
+      <button id="ap" class="btn btn-primary"></button>
+      <button id="ar" class="btn btn-secondary">Restart</button>
       <div class="sl"><label for="at"><span class="lt">Time</span><output id="ato"></output></label><input type="range" id="at" min="0" max="58" step="0.1"></div>
     </div>
 
@@ -239,7 +221,7 @@ function fillA() {
   if (i.WET) statusHtml = pill('Slurry reaches the notch corner: the dry edge gets wet', 'bad');
   else if (st.s > 0.05) statusHtml = pill('Contact line lifted ' + st.s.toFixed(1) + ' mm up the face', 'warn');
   else statusHtml = pill('Detaches at the active metering edge', 'ok');
-  statusHtml += pill('local gap ' + i.H.toFixed(2) + ' mm', '') + pill('contact angle ' + i.th.toFixed(0) + '°', '');
+  statusHtml += pill('Local gap ' + i.H.toFixed(2) + ' mm', '') + pill('Contact angle ' + i.th.toFixed(0) + '°', '');
   document.getElementById('st').innerHTML = statusHtml;
 
   document.getElementById('ss').innerHTML = [
@@ -289,8 +271,8 @@ function view1() {
   else if (peakToPeak > 0.5) statusHtml = pill('Uneven contact line: ' + peakToPeak.toFixed(1) + ' mm peak to peak', 'warn');
   else if (mx === 0) statusHtml = pill('Pinned at the sharp edge everywhere', 'ok');
   else statusHtml = pill('Contact line steady', 'ok');
-  statusHtml += pill('Ca = ' + (muEff(P.U / 60 / (gapHeight() / 1000)) * P.U / 60 / P.g).toFixed(2), '');
-  statusHtml += pill('capillary length ' + capillaryLength().toFixed(2) + ' mm', '');
+  // Ca is already shown in the persistent validity banner above — no need to restate it here.
+  statusHtml += pill('Capillary length ' + capillaryLength().toFixed(2) + ' mm', '');
   document.getElementById('st').innerHTML = statusHtml;
 
   document.getElementById('ss').innerHTML = [
@@ -334,7 +316,7 @@ function view2() {
     (e.arrest ? pill('Yield stress freezes the edge', 'ok')
       : visible ? pill('Scalloped edge at the oven: ' + (endAmplitude * 2).toFixed(1) + ' mm peak to peak', 'bad')
         : pill('Edge stays straight to the oven', 'ok'))
-    + pill('capillary pressure ' + e.pc.toFixed(0) + ' Pa vs yield ' + P.ty.toFixed(1) + ' Pa', '');
+    + pill('Capillary pressure ' + e.pc.toFixed(0) + ' Pa vs yield ' + P.ty.toFixed(1) + ' Pa', '');
 
   const { c, w, h } = setupCanvas(document.getElementById('c2'), 0.32);
   const plotWindow = Math.max(e.lam * 3.2, 12), sc = w / plotWindow;
@@ -431,7 +413,8 @@ function view3() {
         : pill('Film levels out before the oven', 'ok'))
     + pill(P.ty > 0 && residualFromYield >= a0 ? 'Yield stress blocks levelling completely'
       : P.ty > 0 ? 'Levels down to a yield-limited residual' : 'Levelling limited by viscosity only', '')
-    + pill('Ca ' + Ca.toFixed(2) + ' (ribbing watch above about 0.5, roll-coating value)', Ca > 0.5 ? 'warn' : '');
+    // Ca's value is already in the validity banner above; here we just flag whether it crosses the ribbing threshold.
+    + pill('Ribbing watch above Ca 0.5 (roll-coating value)', Ca > 0.5 ? 'warn' : '');
 
   document.getElementById('ss').innerHTML = [
     ['Starting ripple', (a0 * 1e6).toFixed(0) + ' µm'],
