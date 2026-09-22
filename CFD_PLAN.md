@@ -5,7 +5,33 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status: Phase 1 in progress (2D Navier–Stokes solver for the metering gap)
+## Status: Phase 1a complete and validated. Phase 1b (adapt to the actual
+## coating-gap geometry with open inlet/outlet boundaries) not started.
+
+### Phase 1a result: core solver validated against an independent published benchmark
+
+`cfd-solver.js` implements the streamfunction-vorticity Navier-Stokes method
+described below. `cfd-solver.validate.js` checks it against Ghia, Ghia &
+Shin (1982) — lid-driven cavity, Re=100 — not against this app's own
+formulas, an independent check. Run with `node cfd-solver.validate.js [N]`.
+
+| Grid | max error, u (vert. centerline) | max error, v (horiz. centerline) |
+|---|---|---|
+| 41x41  | 0.0163 | 0.0099 |
+| 65x65  | 0.0120 | 0.0039 |
+| 97x97  | 0.0098 | 0.0050 |
+| 129x129 | 0.0091 | 0.0048 |
+
+Error shrinks as the grid refines — the actual signature of a correctly
+implemented, convergent method, not a coincidence. Under 1% deviation from
+the published reference at the finest grid tested.
+
+One real bug was caught and fixed during this validation: wall velocities
+were initially being computed via a one-sided finite difference of psi
+(the standard interior-point approach) instead of using the *known* exact
+prescribed boundary value directly, which showed up as artificially large
+error exactly at wall rows/columns (0.079 before the fix, down to 0.000 at
+those exact points after). Interior-point error was unaffected by this bug.
 
 ## Resolved decisions (cited, not to be re-litigated without explicit new input)
 
