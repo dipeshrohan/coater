@@ -303,7 +303,109 @@ new tab entry in `TABS` + `render()`'s dispatch array — two one-line
 edits, nothing else changed).
 **Untouched**: `physics.js`, `simulation.js`, `draw.js` — called, not modified.
 
+## Flow Tracking / Streamline Visualization (user spec, added after Phase 2)
+
+User requirement (verbatim intent): add flow-tracking **post-processing**
+to the existing 2D CFD results -- streamlines (most important), velocity
+vectors, pathlines only if real transient data exists, seed control
+(automatic + manual), density/colour/arrow/direction controls, layer
+overlays on the base field, the same for each of the 4 lateral locations
+plus a synchronized 4-location comparison with shared scales, flow
+metrics where well-defined, export via the existing export system if one
+exists. Never re-run the solver for any visualization change. Never fake
+unsupported features or invent flow regions. Also: the user found the
+previous CFD tab layout did not look like CFD (a stretched raster with no
+axes, colorbar or geometry) -- the result view is rebuilt as a proper
+CFD post-processing view.
+
+### What exists (inspected, not assumed)
+
+| Question | Finding |
+|---|---|
+| Result structure | `solveChannelNSNonNewtonian` returns `{nx, ny, dx, dy, u, v, psi, omega, nuField, prof1D, ...}` |
+| Velocity storage | row-major `Float64Array`, node (i,j) at x=i*dx, y=j*dy, j=0 web, j=ny-1 blade land |
+| Mesh | uniform structured Cartesian grid over the metering-gap rectangle (land length x gap) |
+| Steady vs transient | steady (pseudo-time to steady state; no time history kept) |
+| Plotting library | none -- hand-written Canvas 2D (`draw.js`) |
+| Existing streamlines/particles | only in `simulation.js`, from its own analytic lubrication streamfunction (closure-private, not CFD) |
+| Contour plotting | one stretched raster, no axes/colorbar/geometry |
+| Interactive plots | none |
+| Pressure field | not computed (streamfunction-vorticity eliminates pressure) |
+| Export system | none |
+
+### Supported vs. not (and why)
+
+- **Streamlines**: RK4 integration on bilinear interpolation of the
+  structured grid (integrated in grid-index space so the step is a fixed
+  fraction of a cell regardless of the ~6:1 cell aspect ratio), stopping
+  at the domain boundary (which *is* the blade land / web / inflow /
+  outflow in this geometry -- no interior solids exist to mask), low speed
+  (< 0.1% of max), closed loop, or max length. Automatic seeds at equal
+  streamfunction spacing (so line density shows flux, the standard CFD
+  practice) plus seeds inside any detected recirculation region; manual
+  seeds by click or x-y entry.
+- **Velocity vectors**: sampled from the same interpolated field, drawn in
+  the same (possibly vertically exaggerated) screen mapping as the
+  streamlines so arrows stay tangent to them.
+- **Pathlines: not available.** The solver is steady-state; a pathline
+  needs transient data. Shown disabled with that reason, not faked.
+- **Colour by pressure: not available** (not computed). Shown disabled.
+- **Export: not built** -- no existing export system to extend, and the
+  spec says not to create a new one. Stays open under the original spec's
+  export requirement.
+- **Physically important regions**: the current CFD domain is the gap
+  channel only. Upstream bead, recirculation, converging entry under the
+  blade and the downstream meniscus are *not in the 2D domain*, so they
+  cannot be identified from the CFD result and are not labelled. Metrics
+  report recirculation/stagnation honestly (typically "none" in a
+  parallel channel with a favourable pressure gradient -- that is the
+  correct answer for this domain, not a bug).
+
+### Next step this makes visible (not done yet)
+
+Extending the 2D CFD domain upstream to include the converging region
+under the blade (and the bead) is what would make upstream recirculation
+and flow convergence into the gap real, visible CFD results. That's a
+solver-domain change (non-rectangular domain), needs its own validation,
+and is recorded here as the next piece of work rather than slipped into
+a visualization change.
+
+### Status: built and validated
+
+Files: `cfd-flowviz.js` (pure post-processing), `cfd-plot.js` (field
+renderer), `cfd-ui.js` (tab), `cfd-flowviz.validate.js` (Node checks).
+The 4 lateral locations are live: each uses the existing across-web gap
+formula at its z (numeric mm), solved in parallel Workers, with stale-result
+flagging when inputs change (never a silent re-solve).
+
+Results:
+- `node cfd-flowviz.validate.js`: 20/20 pass. On the channel, psi drifts
+  by at most 0.006% of Q along traced lines, segments stay within 0.024
+  degrees of the interpolated velocity, and every line stays in the
+  domain and ends on the outflow. On the lid-driven cavity, the detected
+  vortex centre lands 0.56 grid cells from Ghia et al.'s (0.6172, 0.7344),
+  psi_min is within 0.15% of -0.10342, and eddy streamlines close on
+  themselves.
+- Browser checklist: 19/19 pass. Opening the tab launches exactly 4
+  solves; ~35 display changes (field, density, direction, colour, width,
+  scale, vectors, locations, compare) and all seed operations launch
+  zero; manual seeds work by click and by x-y entry; pathlines are
+  disabled; the profile charts still render; zero console errors across
+  all tabs; no horizontal scroll at 390 px; dark mode flips the ramp.
+
+### Validation plan for flow tracking
+
+On the channel: psi constant along every traced streamline (to
+interpolation error), segments tangent to the interpolated velocity,
+nothing leaves the domain, forward lines end at the outflow. On the
+lid-driven cavity (an independent field with real recirculation): traced
+lines close on themselves, and the detected vortex centre matches the
+published Ghia et al. (1982) location. Browser: control changes never
+re-run the solver (worker posts counted), manual seeds work, comparison
+view shares scales, existing tabs unaffected.
+
 ## Still open
 
-1. Numeric millimeters vs. text label vs. both, for each location's lateral
-   position — not yet answered.
+(none currently -- the lateral-position format is resolved as numeric mm,
+matching the existing "Position across web" mm slider in the animation
+tab and the 0-300 mm across-web axis the other tabs already use)
