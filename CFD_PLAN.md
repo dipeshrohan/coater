@@ -11,6 +11,26 @@ drift out of sync with what's actually built.
 ## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
 
+### Item 3 (in progress): 2D free surface / meniscus beyond the edge
+
+First attempt, on the stream-function solver, did not work and is not in
+the app: the solver was generalized to any structured grid and a free-
+surface boundary (kinematic + zero shear) was added -- both validated
+(`cfd-gap-solver.validate.js` section 6: exact flat free film, exact
+stress-free wedge, second order) -- and the static meniscus came out
+right (climb height on a vertical face within 0.6-2.2% of the exact
+2 L_cap sin(phi/2)). But with flow the surface-shape iteration diverged:
+the shape responds to pressure errors of a few Pa (gamma f'' - rho g f =
+-p + tau_nn), while pressure recovered from psi (third derivatives) near
+the sharp edge and the contact line is only good to hundreds of Pa.
+
+User decision: build a new free-surface solver with velocity and
+pressure as unknowns and the surface position solved together with them
+(Galerkin finite elements, Taylor-Hood Q2-Q1, spine-parametrized surface,
+fully coupled Newton -- the standard method for coating flows), with the
+contact line on the exit face set by the contact angle and Gibbs' pinning
+inequality at the edge. Items 4-12 wait until it is done.
+
 ### Items 1-2: pressure field + round-entry domain, on a rebuilt solver
 
 User's blade: "Round entry, metering edge and the exit is flat land at a
