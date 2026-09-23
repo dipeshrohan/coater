@@ -235,15 +235,6 @@ function solveChannelNS(opts) {
   const maxIter = opts.maxIter ?? 20000;
   const tol = opts.tol ?? 1e-6;
   const sorBeta = opts.sorBeta ?? 1.7;
-  // Optional overrides for the non-Newtonian Picard driver below: a
-  // spatially-varying viscosity field (nx*ny, m^2/s) in place of the
-  // scalar nu, and a pre-solved inlet profile in place of the closed-form
-  // (Newtonian-only) Couette-Poiseuille one. Both default to the original
-  // Phase 1b behavior when omitted -- this function's existing validated
-  // path is untouched when neither is passed.
-  const nuField = opts.nuField || null;
-  const nuAt = nuField ? ((i, j) => nuField[j * nx + i]) : (() => nu);
-
   const dx = Lx / (nx - 1), dy = Ly / (ny - 1);
   const idx = (i, j) => j * nx + i;
 
@@ -253,13 +244,10 @@ function solveChannelNS(opts) {
 
   // Exact Couette-Poiseuille profile for this gap (see file header). Bc is
   // the linear coefficient of u(y) = U + Bc*y - (G/(2*mu))*y^2, fixed by
-  // u(0)=U (web) and u(Ly)=0 (land). Used as the inlet condition unless
-  // opts.inletProfile supplies a (generally non-Newtonian) alternative.
+  // u(0)=U (web) and u(Ly)=0 (land). Used as the inlet condition.
   const Bc = -U / Ly + G * Ly / (2 * mu);
-  const closedFormUIn = y => U + Bc * y - (G / (2 * mu)) * y * y;
-  const closedFormDudyIn = y => Bc - (G / mu) * y;
-  const uIn = opts.inletProfile ? (y => interp1D(opts.inletProfile.y, opts.inletProfile.u, y)) : closedFormUIn;
-  const dudyIn = opts.inletProfile ? (y => interp1D(opts.inletProfile.y, opts.inletProfile.dudy, y)) : closedFormDudyIn;
+  const uIn = y => U + Bc * y - (G / (2 * mu)) * y * y;
+  const dudyIn = y => Bc - (G / mu) * y;
 
   // Fixed boundary values. Bottom wall (web) is the psi=0 reference; the
   // inlet column's psi is the cumulative flow (trapezoidal integral of
@@ -282,21 +270,15 @@ function solveChannelNS(opts) {
     psi[idx(i, 0)] = 0;
     psi[idx(i, ny - 1)] = psiTop;
   }
-  // Seed the interior/outlet. A warm start (opts.psi0/omega0, e.g. the
-  // previous Picard outer iteration's converged field, which is close to
-  // this one's answer since only the viscosity field changed slightly)
-  // converges far faster than the cold-start default of copying the
-  // inlet profile across every column and re-relaxing from there.
+  // Seed the interior/outlet with the inlet profile copied across every column.
   for (let j = 0; j < ny; j++) {
     for (let i = 1; i < nx; i++) {
-      psi[idx(i, j)] = opts.psi0 ? opts.psi0[idx(i, j)] : psi[idx(0, j)];
-      omega[idx(i, j)] = opts.omega0 ? opts.omega0[idx(i, j)] : omega[idx(0, j)];
+      psi[idx(i, j)] = psi[idx(0, j)];
+      omega[idx(i, j)] = omega[idx(0, j)];
     }
   }
 
-  let nuMax = nu;
-  if (nuField) { nuMax = 1e-12; for (let k = 0; k < nx * ny; k++) nuMax = Math.max(nuMax, nuField[k]); }
-  const diffLimit = 0.25 / (nuMax * (1 / (dx * dx) + 1 / (dy * dy)));
+  const diffLimit = 0.25 / (nu * (1 / (dx * dx) + 1 / (dy * dy)));
   const maxSpeed = Math.max(Math.abs(U), Math.abs(uIn(0)), Math.abs(uIn(Ly / 2)), Math.abs(uIn(Ly)), 1e-9);
   const convLimit = 0.5 * Math.min(dx, dy) / maxSpeed;
   const dtau = opts.dtau ?? Math.min(diffLimit, convLimit) * 0.5;
@@ -357,22 +339,9 @@ function solveChannelNS(opts) {
           ? (omega[k] - omega[idx(i, j - 1)]) / dy
           : (omega[idx(i, j + 1)] - omega[k]) / dy;
 
-        let diffTerm;
-        if (nuField) {
-          // Conservative (divergence-form) variable-coefficient diffusion,
-          // div(nu*grad(omega)), face values by arithmetic mean -- the
-          // standard discretization for spatially-varying diffusivity.
-          // Reduces algebraically to nu*lap (the else branch) when nuField
-          // is uniform, so the original Phase 1b path is unaffected.
-          const nu0 = nuAt(i, j), nuE = 0.5 * (nu0 + nuAt(i + 1, j)), nuW = 0.5 * (nu0 + nuAt(i - 1, j)),
-                nuN = 0.5 * (nu0 + nuAt(i, j + 1)), nuS = 0.5 * (nu0 + nuAt(i, j - 1));
-          diffTerm = (nuE * (omega[idx(i + 1, j)] - omega[k]) - nuW * (omega[k] - omega[idx(i - 1, j)])) / (dx * dx)
-                   + (nuN * (omega[idx(i, j + 1)] - omega[k]) - nuS * (omega[k] - omega[idx(i, j - 1)])) / (dy * dy);
-        } else {
-          const lap = (omega[idx(i + 1, j)] - 2 * omega[k] + omega[idx(i - 1, j)]) / (dx * dx)
-                    + (omega[idx(i, j + 1)] - 2 * omega[k] + omega[idx(i, j - 1)]) / (dy * dy);
-          diffTerm = nu * lap;
-        }
+        const lap = (omega[idx(i + 1, j)] - 2 * omega[k] + omega[idx(i - 1, j)]) / (dx * dx)
+                  + (omega[idx(i, j + 1)] - 2 * omega[k] + omega[idx(i, j - 1)]) / (dy * dy);
+        const diffTerm = nu * lap;
 
         omegaNew[k] = omega[k] + dtau * (-u * dOmegaDx - v * dOmegaDy + diffTerm);
         if (Math.abs(omega[k]) > maxOmega) maxOmega = Math.abs(omega[k]);
@@ -407,17 +376,6 @@ function solveChannelNS(opts) {
   }
 
   return { nx, ny, dx, dy, psi, omega, u, v, iterations: it, converged, residual: lastResidual, uIn };
-}
-
-/** Linear interpolation of a sampled 1D function (xs strictly increasing) at x. */
-function interp1D(xs, ys, x) {
-  const nlast = xs.length - 1;
-  if (x <= xs[0]) return ys[0];
-  if (x >= xs[nlast]) return ys[nlast];
-  let lo = 0, hi = nlast;
-  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (xs[mid] <= x) lo = mid; else hi = mid; }
-  const f = (x - xs[lo]) / (xs[hi] - xs[lo]);
-  return ys[lo] + (ys[hi] - ys[lo]) * f;
 }
 
 /**
@@ -520,111 +478,6 @@ function solveFullyDeveloped1D(opts) {
   dudy[ny - 1] = Math.sign(tauLast) * gd[ny - 1];
 
   return { y: Array.from(y), u, gd, dudy, tau0, dy, ny };
-}
-
-/**
- * Non-Newtonian extension of solveChannelNS via Picard (outer fixed-point)
- * iteration: solve with the current viscosity field frozen, recompute
- * viscosity from the resulting local shear-rate field via muEffLocal
- * (mirroring physics.js's muEff()), repeat until the viscosity field
- * itself stops changing. This is the standard approach for generalized-
- * Newtonian flow with a Navier-Stokes solver built for constant
- * viscosity -- freeze-solve-update instead of deriving the (much messier,
- * second-derivative-of-viscosity) exact variable-viscosity vorticity
- * transport equation. It neglects the small viscosity-gradient cross
- * terms that the exact formulation would carry; those vanish identically
- * in the Newtonian limit (n=1, ty=0), and are small elsewhere in this
- * thin-gap/low-Re regime for the same reason physics.js's own muEff()
- * already treats the cross-gap shear rate as effectively 1D (see its own
- * docstring).
- *
- * The 1D fully-developed profile (solveFullyDeveloped1D) supplies both
- * the physically self-consistent inlet boundary condition and the
- * starting viscosity field -- already very close to the converged answer
- * in this regime, since Phase 1b's validation showed the 2D field stays
- * within a fraction of a percent of the parallel-flow profile at every x
- * station even for the constant-viscosity case.
- *
- * @param {object} opts  everything solveChannelNS takes (nx, ny, Lx, Ly,
- *   U, dpdxFavorable), plus: rho (kg/m^3), muRef, ty, n (rheology, same
- *   convention as physics.js's P.mu/P.ty/P.n), maxOuter, outerTol.
- */
-function solveChannelNSNonNewtonian(opts) {
-  const { nx, ny, Lx, Ly, U, dpdxFavorable: G, rho, muRef, ty, n } = opts;
-  const maxOuter = opts.maxOuter ?? 20;
-  const outerTol = opts.outerTol ?? 1e-3;
-
-  const prof1D = solveFullyDeveloped1D({ Ly, U, G, muRef, ty, n, ny: Math.max(ny * 4, 401) });
-  const inletProfile = { y: prof1D.y, u: Array.from(prof1D.u), dudy: Array.from(prof1D.dudy) };
-
-  const dy2D = Ly / (ny - 1);
-  let nuField = new Float64Array(nx * ny);
-  for (let j = 0; j < ny; j++) {
-    const y = j * dy2D;
-    const gd = interp1D(prof1D.y, prof1D.gd, y);
-    const nuHere = muEffLocal(gd, muRef, ty, n) / rho;
-    for (let i = 0; i < nx; i++) nuField[j * nx + i] = nuHere;
-  }
-
-  let sol = null, outerResidual = Infinity, outerIterations = 0, outerConverged = false;
-  let psi0 = null, omega0 = null;
-  for (outerIterations = 0; outerIterations < maxOuter; outerIterations++) {
-    // Early outer iterations only need a "good enough" field to compute
-    // the next viscosity estimate from -- tighten the inner tolerance
-    // only once the viscosity field itself is nearly settled. Combined
-    // with the warm start below, this is what keeps the outer loop fast:
-    // without it, every outer step re-converges the full 2D field from
-    // scratch to full precision even though only the (slightly updated)
-    // viscosity field changed.
-    const nearlyDone = outerResidual < outerTol * 10;
-    const innerTol = nearlyDone ? (opts.tol ?? 1e-6) : 1e-4;
-    sol = solveChannelNS({ ...opts, nu: muRef / rho, mu: muRef, nuField, inletProfile, dpdxFavorable: G, tol: innerTol, psi0, omega0 });
-    if (!sol.converged) break;
-    psi0 = sol.psi; omega0 = sol.omega;
-
-    const nuFieldNew = new Float64Array(nx * ny);
-    let maxRel = 0, maxNu = 1e-12;
-    for (let j = 1; j < ny - 1; j++) {
-      for (let i = 0; i < nx; i++) {
-        const k = j * nx + i;
-        const jm = j - 1, jp = j + 1;
-        const dudyLocal = (sol.u[jp * nx + i] - sol.u[jm * nx + i]) / (2 * dy2D);
-        const dvdxLocal = (i === 0 || i === nx - 1) ? 0
-          : (sol.v[j * nx + i + 1] - sol.v[j * nx + i - 1]) / (2 * (Lx / (nx - 1)));
-        const dudxLocal = (i === 0 || i === nx - 1) ? 0
-          : (sol.u[j * nx + i + 1] - sol.u[j * nx + i - 1]) / (2 * (Lx / (nx - 1)));
-        const dvdyLocal = (sol.v[jp * nx + i] - sol.v[jm * nx + i]) / (2 * dy2D);
-        const Dxx = dudxLocal, Dyy = dvdyLocal, Dxy = 0.5 * (dudyLocal + dvdxLocal);
-        const gd = Math.sqrt(2 * (Dxx * Dxx + Dyy * Dyy + 2 * Dxy * Dxy));
-        const nuNew = muEffLocal(gd, muRef, ty, n) / rho;
-        nuFieldNew[k] = nuNew;
-        maxNu = Math.max(maxNu, nuNew);
-        maxRel = Math.max(maxRel, Math.abs(nuNew - nuField[k]));
-      }
-    }
-    // wall rows (j=0, ny-1): copy the nearest interior row (no interior shear-rate estimate available there)
-    for (let i = 0; i < nx; i++) { nuFieldNew[i] = nuFieldNew[nx + i]; nuFieldNew[(ny - 1) * nx + i] = nuFieldNew[(ny - 2) * nx + i]; }
-
-    outerResidual = maxRel / maxNu;
-    // Under-relax the update (standard fix for a Picard/fixed-point loop
-    // whose raw update can overshoot and oscillate, as this one does at
-    // coarse grids where the finite-difference shear-rate estimate is
-    // noisier): blend toward the new field rather than replacing it
-    // outright.
-    const relax = opts.outerRelax ?? 0.5;
-    for (let k = 0; k < nx * ny; k++) nuField[k] = nuField[k] + relax * (nuFieldNew[k] - nuField[k]);
-    if (outerResidual < outerTol) {
-      outerConverged = true; outerIterations++;
-      // Guarantee the returned field meets the requested inner tolerance:
-      // if this step itself ran loose (nearlyDone was false going in), redo
-      // it once at full tolerance -- cheap, since it's warm-started from a
-      // field already this close to converged.
-      if (!nearlyDone) sol = solveChannelNS({ ...opts, nu: muRef / rho, mu: muRef, nuField, inletProfile, dpdxFavorable: G, tol: opts.tol ?? 1e-6, psi0, omega0 });
-      break;
-    }
-  }
-
-  return { ...sol, nuField, prof1D, outerIterations, outerResidual, outerConverged };
 }
 
 /**
@@ -746,4 +599,4 @@ function solveDownstreamFilm(opts) {
   return { x: xs, h: Array.from(h), hInf, converged: maxRelChange < tol, steps: step };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveCavityNS, solveChannelNS, solveFullyDeveloped1D, solveChannelNSNonNewtonian, solveDownstreamFilm, muEffLocal };
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveCavityNS, solveChannelNS, solveFullyDeveloped1D, solveDownstreamFilm, muEffLocal };
