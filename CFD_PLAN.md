@@ -5,31 +5,82 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Remaining feature list, in order: 3. 2D free
-## surface / meniscus downstream of the edge, 4. porous fibre coupling,
-## 5. remaining output fields, 6. independent inputs per location,
+## Status (latest first). Remaining feature list, in order: 4. porous
+## fibre coupling, 5. remaining output fields, 6. independent inputs per location,
 ## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
 
-### Item 3 (in progress): 2D free surface / meniscus beyond the edge
+### Item 3 (done): 2D free surface / meniscus beyond the edge
 
-First attempt, on the stream-function solver, did not work and is not in
-the app: the solver was generalized to any structured grid and a free-
-surface boundary (kinematic + zero shear) was added -- both validated
-(`cfd-gap-solver.validate.js` section 6: exact flat free film, exact
-stress-free wedge, second order) -- and the static meniscus came out
-right (climb height on a vertical face within 0.6-2.2% of the exact
-2 L_cap sin(phi/2)). But with flow the surface-shape iteration diverged:
-the shape responds to pressure errors of a few Pa (gamma f'' - rho g f =
--p + tau_nn), while pressure recovered from psi (third derivatives) near
-the sharp edge and the contact line is only good to hundreds of Pa.
+The CFD tab now solves the flow under the blade, over the exit face and
+into the free film, with the meniscus and its contact line, in one
+finite-element system (`cfd-fem.js`; the worker runs it, the stream-
+function solver `cfd-gap-solver.js` stays as an independent check in the
+validation files).
 
-User decision: build a new free-surface solver with velocity and
-pressure as unknowns and the surface position solved together with them
-(Galerkin finite elements, Taylor-Hood Q2-Q1, spine-parametrized surface,
-fully coupled Newton -- the standard method for coating flows), with the
-contact line on the exit face set by the contact angle and Gibbs' pinning
-inequality at the edge. Items 4-12 wait until it is done.
+Method: Galerkin FE, Taylor-Hood Q2-Q1, isoparametric; unknowns u, v, p,
+the height of every free-surface spine and the contact line's distance up
+the face, one Newton system (analytic flow Jacobian incl. the viscosity's
+shear-rate dependence; geometry columns by finite differences of the
+elements touching the moved spine). Free surface: kinematic condition +
+stress balance with surface tension (weak form); gravity a body force;
+inlet traction = bead pressure + hydrostatic; outlet plug flow at U.
+Contact line: on the face the surface leaves it at the contact angle;
+pinned at the edge while Gibbs' inequality holds.
+
+Mesh (the delicate part, all learned the hard way):
+- Every spine = cubic Hermite from its foot (vertical at the web) to its
+  top with a prescribed top slope; the edge corner's spine bisects the
+  re-entrant corner, the contact line's bisects the liquid wedge; face
+  spines take foot, top and (slope x height) linearly between those two
+  (so they can never cross them). Foot offset >= slope x height / 3, so no
+  spine bends back.
+- Free-surface nodes move along the static curve's normal, except within
+  H of the contact line where they move parallel to the face (normal
+  motion there left Newton near-singular in the thin wedge).
+- Middle nodes of every element sit at the arc midpoint of its ends: an
+  off-centre middle node made the end tangent (which carries the contact
+  angle) first-order wrong -- the static climb error went from 1.7% to
+  0.02% with that one change.
+- Rows graded toward the blade/face/surface; blade spacing graded toward
+  the edge; the fan layout is chosen by a small search maximizing the
+  worst element's min J / max J.
+
+Solution strategy (flow): pinned at the edge first (robust); if the
+surface there is flatter than Gibbs allows, the contact line climbs:
+release it on the face from a little up, starting from the pinned shape;
+if Newton does not get there, hold it at trial heights (continuation from
+the nearest solved height, halving failed steps) until the surface leaves
+it within 20 deg of the contact angle, then release. Every new mesh is
+warm-started from the previous solution interpolated onto it. Newton
+falls back to a Newton homotopy R(x) = (1 - lambda) R(x0) when it stalls.
+Once settled, the mesh is laid out again for the contact line's actual
+height and solved again.
+
+Validation (`cfd-fem.validate.js`, ALL PASS): Couette-Poiseuille exact
+(flow rate and nodal stress to 1e-14); yield-stress / shear-thinning
+channel within 0.08% of the exact 1D solution; Ghia cavity (u 0.0075,
+v 0.0079, psi_min -0.10337); static meniscus climb on faces 60-120 deg
+and contact 15-60 deg within 0.03% of the exact Young-Laplace value,
+converging (0.024% -> 0.004% with the mesh doubled); pinned angle within
+0.002 deg; coating flow: mass to 3e-5, contact angle exact, film grid-
+converged to 0.015%, contact line to 0.022 mm; round entry within 0.46%
+of the stream-function solver (the inlet treatments differ by ~0.4%);
+yield-stress coating flow converges and conserves mass.
+
+Known limits (stated in the app): pressure at the sharp edge corner is
+singular (reported as such); static contact angle only; a surface leaving
+the face within 4 deg of vertical or overhanging (face + contact <= 94
+deg) is refused; forward-leaning faces with large climbs are slow.
+
+UI: `cfd-flowviz.js` gained a curvilinear grid mode (Q2 interpolation,
+point location, index-space tracing), `cfd-plot.js` draws the face to the
+contact line, the free surface and the air; metrics add the meniscus,
+the film at the domain end, a mass check (replaces the two-route pressure
+check, which only made sense for recovered pressure); the 1D film model
+continues from the end of the 2D domain to the oven. The contact angle
+per location is the sidebar's, with its wetting variation, as the
+Contact line tab uses it.
 
 ### Items 1-2: pressure field + round-entry domain, on a rebuilt solver
 

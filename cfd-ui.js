@@ -1,9 +1,11 @@
 /*
  * cfd-ui.js — the "CFD Analysis" tab.
  *
- * Runs the 2D blade-gap solve (round entry onto the metering edge, or the
- * flat land) at four lateral locations (one Web Worker each,
- * cfd-worker.js), stores each solved field, and shows it as a CFD
+ * Runs the 2D solve -- the flow under the blade (round entry onto the
+ * metering edge, or the flat land), over the blade's exit face and into
+ * the free film, with the meniscus solved together with the flow -- at
+ * four lateral locations (one Web Worker each, cfd-worker.js), stores
+ * each solved field, and shows it as a CFD
  * post-processing view (cfd-plot.js) with flow-tracking overlays computed
  * from the stored velocity field (cfd-flowviz.js). Only the Run buttons
  * solve; every display control (field, streamlines, seeds, vectors,
@@ -14,7 +16,6 @@
  * cfd-plot.js, all loaded first.
  */
 
-const CFD_NX = 121, CFD_NY = 41;
 // Blade geometry for the CFD domain (this tab's own inputs; changing them
 // marks results out of date, like the sidebar sliders do).
 //  shape 'round': round entry of radius R (mm) converging onto the metering
@@ -23,8 +24,9 @@ const CFD_NX = 121, CFD_NY = 41;
 //  shape 'flat': the flat land of the sidebar's land length (the lubrication
 //    model's geometry).
 //  exitAngle: the blade's exit face at the metering edge, degrees from the
-//    web in the machine direction (90 = square to the web). Drawn; it bounds
-//    the downstream meniscus, which this 2D domain does not include yet.
+//    web in the machine direction (90 = square to the web). The meniscus
+//    meets it; its contact angle there is the sidebar's contact angle on the
+//    blade, varied across the web as the Contact line tab does.
 const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90 };
 const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab already uses
 const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z }));
@@ -49,13 +51,14 @@ const LINE_W = { thin: 1, normal: 1.4, thick: 2.2 };
 
 const SCALARS = {
   speed: { label: 'Velocity magnitude |V|', short: '|V|', unit: 'mm/s', scale: 1000, kind: 'seq', zeroMin: true, arr: f => f.speed },
-  pressure: { label: 'Pressure (gauge, 0 at the gap exit)', short: 'p', unit: 'Pa', scale: 1, kind: 'auto', autoTol: 0.02, arr: f => f.p },
+  pressure: { label: 'Pressure (gauge, ambient air = 0)', short: 'p', unit: 'Pa', scale: 1, kind: 'auto', autoTol: 0.02, skipCorner: true, arr: f => f.p },
   ux: { label: 'u_x, machine direction', short: 'u_x', unit: 'mm/s', scale: 1000, kind: 'auto', arr: f => f.u },
   uy: { label: 'u_y, normal to the web', short: 'u_y', unit: 'mm/s', scale: 1000, kind: 'div', floorFrac: 0.01, arr: f => f.v },
-  shear: { label: 'Shear rate', short: 'shear', unit: '1/s', scale: 1, kind: 'seq', zeroMin: true, arr: f => f.shear },
+  shear: { label: 'Shear rate', short: 'shear', unit: '1/s', scale: 1, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.shear },
   mu: { label: 'Apparent viscosity', short: 'μ', unit: 'Pa·s', scale: 1, kind: 'seq', cap: true, arr: f => f.mu },
-  omega: { label: 'Vorticity', short: 'ω', unit: '1/s', scale: 1, kind: 'div', arr: f => f.omega },
+  omega: { label: 'Vorticity', short: 'ω', unit: '1/s', scale: 1, kind: 'div', skipCorner: true, arr: f => f.omega },
 };
+// skipCorner: the colour range leaves out the metering edge corner's singular zone (values there are clamped, and the colorbar says so)
 
 // ---------------------------------------------------------------------
 // Locations and solving
@@ -66,18 +69,22 @@ function cfdLocalGapMm(z) {
   return gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) - P.dt * spatialNoise(z, 1.7)) / 1000;
 }
 
+/** Local contact angle on the blade (deg) at lateral position z (mm): the sidebar's value with its wetting variation, as the Contact line tab uses it. */
+const cfdLocalContactDeg = z => P.th + P.dth * spatialNoise(z, 4.1);
+
 function cfdGeometry(z) {
   const U = P.U / 60;                       // m/min -> m/s
   const H = cfdLocalGapMm(z) / 1000;        // mm -> m, gap at the metering edge
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
+    contactDeg: cfdLocalContactDeg(z),
     Pup: P.Pup * 1000,                      // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: P.mu,                            // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
     muRep: muEff(U / H),                    // at the representative shear rate U/H: one-viscosity estimates only
     ty: P.ty, n: P.n, rho: RHO, gamma: P.g, g: GRAVITY, ovenDistance: P.oven,
   };
 }
-const cfdInputsKey = geo => JSON.stringify([geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
+const cfdInputsKey = geo => JSON.stringify([geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(CFD_LOCS[i].z));
 
 function runLocation(i) {
@@ -109,7 +116,7 @@ function runLocation(i) {
   };
   worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; renderCFD(); };
   worker.postMessage({
-    geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, nx: CFD_NX, ny: CFD_NY,
+    geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg,
     U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
     gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance,
   });
@@ -138,8 +145,9 @@ function scalarRange(key, fields) {
     const a = d.arr(f);
     if (!a) continue;
     vref = Math.max(vref, f.vmax * 1000);
-    const cap = d.cap && f.hasPlug ? f.muCap : Infinity;
+    const cap = d.cap && f.hasPlug ? f.muCap : Infinity, skip = d.skipCorner && f.cornerZone;
     for (let k = 0; k < a.length; k++) {
+      if (skip && skip[k]) continue;
       let v = a[k] * d.scale;
       if (v > cap) { v = cap; capped = true; }
       if (v < min) min = v;
@@ -153,6 +161,7 @@ function scalarRange(key, fields) {
     min = -m; max = m;
   } else if (d.zeroMin || (d.kind === 'auto' && min < 0)) min = 0;
   if (!(max > min)) max = min + 1;
+  if (d.skipCorner) for (const f of fields) { const a = d.arr(f); if (a && f.cornerZone) for (let k = 0; k < a.length; k++) if (f.cornerZone[k] && (a[k] * d.scale > max || a[k] * d.scale < min)) capped = true; }
   return { key, label: d.label, short: d.short, unit: d.unit, scale: d.scale, kind, min, max, capped };
 }
 const scalarFor = (range, f) => range && { ...range, arr: SCALARS[range.key].arr(f) };
@@ -161,7 +170,7 @@ function streamlinesFor(run) {
   const f = run.field;
   const n = FV.density === 'custom' ? Math.max(2, Math.min(80, Math.round(FV.customN) || 16)) : DENSITY_N[FV.density];
   const manual = FV.seedMode === 'manual'
-    ? FV.manualSeeds.filter(([x, y]) => x >= 0 && x <= f.Lx && y >= 0 && y <= bladeHeightAt(f, x))
+    ? FV.manualSeeds.filter(([x, y]) => fieldInside(f, x, y))
     : null;
   const key = manual ? `m|${FV.direction}|${JSON.stringify(manual)}` : `a|${n}|${FV.direction}`;
   let hit = run.streamCache.get(key);
@@ -182,14 +191,15 @@ function viewCFD() {
   const opt = (v, t, cur, dis) => `<option value="${v}"${v === cur ? ' selected' : ''}${dis ? ' disabled' : ''}>${t}</option>`;
   view.innerHTML = `
     <div class="status" id="cfdStatus"></div>
-    <p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade</b> at four positions across the web: velocity, pressure, shear and viscosity fields. Everything below is post-processed from the stored solutions: display settings never re-run the solver.</p>
+    <p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything below is post-processed from the stored solutions: display settings never re-run the solver.</p>
     <details class="cap-toggle"><summary>Method, validation and limits</summary><p class="cap">
-      <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes for the stream function, with the viscosity varying in space exactly as the yield-stress / shear-thinning model of the other tabs says (the stress is formed from the local shear rate and then differentiated; nothing is dropped). ${CFD_NX} &times; ${CFD_NY} grid that follows the blade surface; all unknowns solved together by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The flow rate is not assumed: it is whatever makes the pressure drop from the inlet to the metering edge equal the bead pressure. Pressure is recovered from the momentum equation, and checked by integrating it along two different routes.
-      <b>Validated</b> (cfd-gap-solver.validate.js) against exact solutions: flat-gap flow of Newtonian, yield-stress and shear-thinning fluids; Stokes flow in a wedge (sloped wall, exact pressure); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; and lubrication theory for the round entry (within 0.3%), with second-order grid convergence.
-      <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Moving the pool edge 20&nbsp;mm changes the film by about 1&ndash;2%, which is physics (the web builds pressure all the way from the pool), not numerics. Flat land: the lubrication model's geometry, for comparison.
-      <b>Locations.</b> Each location's gap at the edge uses the across-web waviness and fibre-thickness variation from the sidebar, the same formula the Contact line tab uses.
+      <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the yield-stress / shear-thinning model of the other tabs says. Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
+      <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
+      <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
+      <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Flat land: the lubrication model's geometry, for comparison. The film is followed in 2D for a stretch downstream of the edge, then by the 1D thin-film model to the oven (under Profiles).
+      <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses.
       <b>Flow tracking.</b> Streamlines are integrated (RK4) through the interpolated velocity field and checked against the stream function, which is constant along a true streamline; the drift is reported under Flow metrics.
-      <b>Limits.</b> The domain ends at the metering edge: the meniscus and free surface downstream are not in it (the film beyond is the 1D thin-film model under Profiles). Upstream, the pool's own free surface is not modelled; flow that turns back leaves through the inlet. Steady solver: no pathlines.
+      <b>Limits.</b> The sharp metering edge is a corner: stresses and pressure there are singular in any continuum model, so their values right at the corner depend on the mesh (the reported lowest pressure says when it sits there). Contact angle is the static one (no contact-line hysteresis). Upstream, the pool's own free surface is not modelled; flow that turns back leaves through the inlet. Steady solver: no pathlines.
     </p></details>
 
     <section class="cfd-block">
@@ -339,7 +349,7 @@ function renderLocCards() {
   host.innerHTML = CFD_LOCS.map((loc, i) => {
     const r = cfdRuns[i];
     let cls = '', txt = 'not run';
-    if (r.status === 'running') { cls = 'run'; txt = r.progress ? `solving · step ${r.progress.it}${r.progress.s < 1 ? `, rheology ${Math.round(r.progress.s * 100)}%` : ''}` : 'solving…'; }
+    if (r.status === 'running') { cls = 'run'; txt = r.progress ? `solving · ${cfdStageText(r.progress.stage)}${r.progress.s < 1 ? `, rheology ${Math.round(r.progress.s * 100)}%` : ''}` : 'solving…'; }
     else if (r.status === 'error') { cls = 'bad'; txt = 'failed'; }
     else if (r.field && cfdIsStale(i)) { cls = 'warn'; txt = 'out of date'; }
     else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `solved · ${(r.elapsedMs / 1000).toFixed(1)} s${r.result.converged ? '' : ' · partly converged'}`; }
@@ -349,7 +359,7 @@ function renderLocCards() {
       <div class="loc-name">Location ${loc.id}</div>
       <div class="loc-state ${cls}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
       <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
-      <div class="loc-meta">gap at edge <b>${cfdLocalGapMm(loc.z).toFixed(3)}</b> mm</div>
+      <div class="loc-meta">gap at edge <b>${cfdLocalGapMm(loc.z).toFixed(3)}</b> mm · contact angle <b>${cfdLocalContactDeg(loc.z).toFixed(1)}</b>&deg;</div>
       <button class="btn btn-secondary btn-sm" type="button" data-run="${i}"${r.status === 'running' ? ' disabled' : ''}>Run</button>
     </div>`;
   }).join('');
@@ -359,6 +369,16 @@ function renderLocCards() {
     renderCFD();
   }));
   host.querySelectorAll('button[data-run]').forEach(b => { b.onclick = () => runLocation(+b.dataset.run); });
+}
+
+/** Short progress text from the solver's stage message. */
+function cfdStageText(stage) {
+  if (!stage) return 'starting';
+  if (/at the edge/.test(stage)) return 'meniscus at the edge';
+  if (/held/.test(stage)) return 'placing the contact line';
+  if (/laid out again/.test(stage)) return 'refining at the contact line';
+  if (/free on the face/.test(stage)) return 'contact line on the face';
+  return 'solving';
 }
 
 function renderViewSeg() {
@@ -423,7 +443,7 @@ function renderFlowPlots() {
   const vmax = Math.max(...fields.map(f => f.vmax));
 
   host.innerHTML = list.map(i => `
-    ${compare ? '' : `<div class="fv-caption">${locationTitle(i)} · ${CFD_NX} × ${CFD_NY} grid · <span class="fv-ex"></span>${cfdIsStale(i) ? ' · <span class="warn-text">out of date: inputs changed since this run</span>' : ''}${cfdRuns[i].result.converged ? '' : ` · <span class="warn-text">converged only to residual ${cfdRuns[i].result.residual.toExponential(1)}</span>`}</div>`}
+    ${compare ? '' : `<div class="fv-caption">${locationTitle(i)} · ${cfdRuns[i].result.mesh.nEx} × ${cfdRuns[i].result.mesh.nEy} finite elements · <span class="fv-ex"></span>${cfdIsStale(i) ? ' · <span class="warn-text">out of date: inputs changed since this run</span>' : ''}${cfdRuns[i].result.converged ? '' : ` · <span class="warn-text">converged only to residual ${cfdRuns[i].result.residual.toExponential(1)}</span>`}</div>`}
     <div class="fv-plot${compare ? ' compact' : ''}" data-i="${i}">
       <canvas class="fv-main" role="img" aria-label="${locationTitle(i)}: CFD field with flow overlays"></canvas>
       <canvas class="fv-over" aria-hidden="true"></canvas>
@@ -471,6 +491,14 @@ function wirePlotProbe(el, cv, map, run) {
     oc.beginPath(); oc.arc(px, py, 3.5, 0, 7); oc.fillStyle = cssVar('--surface'); oc.fill(); oc.strokeStyle = cssVar('--ink'); oc.stroke();
 
     const [x, y] = p, s = a => sampleField(f, a, x, y);
+    if (!fieldInside(f, x, y)) {
+      tip.innerHTML = `<b>x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm</b><span class="fv-why">outside the fluid (${f.curv && x > f.xe && y > cfdTopAt(f, x) ? 'air' : 'blade'})</span>`;
+      tip.hidden = false;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = (px + 14 + tw > cssW ? px - tw - 14 : px + 14) + 'px';
+      tip.style.top = Math.max(0, Math.min(py + 14, cssH - th)) + 'px';
+      return;
+    }
     const vfloor = f.vmax * 1e-4 * 1000; // below this a velocity component is numerical noise, not flow
     const u = s(f.u) * 1000, v = s(f.v) * 1000, mu = f.mu ? s(f.mu) : null;
     const comp = c => Math.abs(c) < vfloor ? '≈ 0' : fmtNum(c);
@@ -510,17 +538,28 @@ function renderLegend() {
   }
   if (FV.vectors) items.push(`<span class="lg"><i class="lg-vec"></i>velocity vector${FV.vectorNormalize ? ' (direction only)' : ' (length ∝ |V|)'}</span>`);
   items.push('<span class="lg"><i class="lg-edge"></i>active metering edge</span>');
+  items.push('<span class="lg"><i class="lg-line lg-surf"></i>free surface (air above)</span>');
+  if (cfdRuns.some(r => r.result && r.result.mode === 'climbed')) items.push('<span class="lg"><i class="lg-seed lg-cl"></i>contact line on the exit face</span>');
   let note = '';
   if (FV.streamlines && FV.seedMode === 'auto') note = 'Automatic seeds are spaced by equal flow rate, so lines crowd where the flow is fast. ';
   if (FV.streamlines && FV.direction !== 'forward' && FV.seedMode === 'auto') note += `Seeds sit ${FV.direction === 'backward' ? 'on the outflow' : 'mid-channel'} for ${FV.direction} tracing. `;
   host.innerHTML = items.join('') + (note ? `<p class="fv-note">${note}</p>` : '');
 }
 
+/** Where a point lies, in words: at the web, the blade, the exit face, the free surface, or inside. */
 function where(f, loc) {
-  const [x, y] = loc, hb = bladeHeightAt(f, x), cell = hb / (f.ny - 1);
-  const xs = `x ${(x * 1000).toFixed(2)}`;
-  if (y <= cell * 0.5) return `<small>at the web, ${xs}</small>`;
-  if (y >= hb - cell * 0.5) return `<small>at the blade, ${xs}</small>`;
+  const [x, y] = loc, xs = `x ${(x * 1000).toFixed(2)}`;
+  const at = f.curv ? f.locate(x, y) : null;
+  if (at) {
+    const [xi, et] = at;
+    if (et < 0.5) return `<small>at the web, ${xs}</small>`;
+    if (et > f.ny - 1.5) {
+      const i = Math.round(xi);
+      if (i <= f.iCorner) return `<small>at the blade, ${xs}</small>`;
+      if (i <= f.iCL) return `<small>on the exit face, y ${(y * 1000).toFixed(3)}</small>`;
+      return `<small>at the free surface, ${xs}</small>`;
+    }
+  }
   return `<small>at ${xs}, y ${(y * 1000).toFixed(3)}</small>`;
 }
 
@@ -533,10 +572,7 @@ function renderMetrics() {
     const f = r.field;
     if (!f.unyielded) return 0;
     let a = 0, tot = 0;
-    for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) {
-      const w = (i === 0 || i === f.nx - 1 ? 0.5 : 1) * (j === 0 || j === f.ny - 1 ? 0.5 : 1) * f.h[i];
-      tot += w; if (f.unyielded[j * f.nx + i]) a += w;
-    }
+    for (let k = 0; k < f.nx * f.ny; k++) { tot += f.nodeArea[k]; if (f.unyielded[k]) a += f.nodeArea[k]; }
     return a / tot * 100;
   };
   const pAt = (r, key) => where(r.field, r.result[key]);
@@ -548,52 +584,84 @@ function renderMetrics() {
     ['Max |V|', 'mm/s', r => `${fmtNum(r.metrics.vmax * 1000)} ${where(r.field, r.metrics.vmaxLoc)}`],
     ['Area-mean |V|', 'mm/s', r => fmtNum(r.metrics.meanSpeed * 1000)],
     ['Min |V| inside the fluid', 'mm/s', r => `${fmtNum(r.metrics.vminInterior * 1000)} ${where(r.field, r.metrics.vminLoc)}`],
-    ['Max shear rate', '1/s', r => `${fmtNum(r.metrics.gdMax)} ${where(r.field, r.metrics.gdMaxLoc)}`],
+    ['Max shear rate', '1/s', r => { const [x, y] = r.metrics.gdMaxLoc; return `${fmtNum(r.metrics.gdMax)} ${Math.hypot(x - r.result.xe, y - r.result.H) < 0.3 * r.result.H ? '<small>next to the metering edge corner, where it is singular: this value depends on the mesh</small>' : where(r.field, r.metrics.gdMaxLoc)}`; }],
+    ['Meniscus: contact line', 'on the blade', r => r.result.mode === 'climbed'
+      ? `${(r.result.sCL * 1000).toFixed(3)} mm up the exit face <small>${(r.result.clY * 1000).toFixed(3)} mm above the web</small>`
+      : 'pinned at the metering edge'],
+    ['Surface leaves the contact line at', '° from the web, machine direction', r => `${r.result.leaveDeg.toFixed(1)} <small>${r.result.mode === 'climbed' ? `= contact angle ${r.geo.contactDeg.toFixed(1)}° off the face` : `pinned: at most ${r.result.alphaMaxDeg.toFixed(1)} (Gibbs)`}</small>`],
+    ['Film at the end of the 2D domain', 'mm, ' + 'x from the edge', r => `${(r.result.hEnd * 1000).toFixed(3)} <small>at ${((r.result.xEnd - r.result.xe) * 1000).toFixed(1)} mm</small>`],
     ['Peak pressure', 'Pa, gauge', r => `${fmtNum(r.result.pMax)} ${pAt(r, 'pMaxLoc')}`],
-    ['Lowest pressure', 'Pa, gauge', r => r.result.pMin < -1e-3 * r.result.pMax ? `${fmtNum(r.result.pMin)} ${pAt(r, 'pMinLoc')} <small>below ambient</small>` : 'not below ambient'],
-    ['Pressure gradient at the metering edge, −dp/dx', 'kPa/m, along the web', r => fmtNum(-r.result.dpdxWeb[r.result.nx - 1] / 1000)],
-    ['Pressure check: two integration routes differ by', '% of pressure range', r => (r.result.pathError * 100).toFixed(2)],
+    ['Lowest pressure', 'Pa, gauge', r => r.result.pMin < 0
+      ? `${fmtNum(r.result.pMin)} ${r.result.pMinAtCorner ? '<small>next to the metering edge corner, where pressure is singular: this value depends on the mesh</small>' : pAt(r, 'pMinLoc')}`
+      : 'not below ambient'],
+    ['Pressure gradient along the web under the edge, −dp/dx', 'kPa/m', r => { const q = r.result, i = q.iCorner; return fmtNum(-(q.pWeb[i + 1] - q.pWeb[i - 1]) / (q.xWeb[i + 1] - q.xWeb[i - 1]) / 1000); }],
+    ['Mass check: outflow vs inflow', '% difference', r => (r.result.massError * 100).toFixed(3)],
     ['Reverse flow, u_x < 0', '% of area', r => r.metrics.reverseFraction > 0 ? (r.metrics.reverseFraction * 100).toFixed(2) : 'none'],
     ['Recirculation, closed streamlines', 'mm²', r => r.metrics.recircArea > 0 ? `${fmtNum(r.metrics.recircArea * 1e6)} <small>${(r.metrics.recircFraction * 100).toFixed(1)}% of area</small>` : 'none'],
     ['Stagnation, |V| < 1% of max', 'x, y in mm', r => r.metrics.stagnation.length ? r.metrics.stagnation.slice(0, 4).map(s => `${(s.x * 1000).toFixed(2)}, ${(s.y * 1000).toFixed(3)}`).join('<br>') + (r.metrics.stagnation.length > 4 ? `<br><small>+${r.metrics.stagnation.length - 4} more</small>` : '') : 'none'],
     ['Unyielded fluid, stress below yield', '% of area', r => r.geo.ty > 0 ? (unyieldedPct(r) > 0 ? unyieldedPct(r).toFixed(1) : 'none <small>stress above yield everywhere</small>') : 'none <small>no yield stress</small>'],
     ['Reynolds number ρUH/μ', '', r => (RHO * r.geo.U * r.geo.H / r.geo.muRep).toExponential(2)],
+    ['Capillary number μU/γ', '', r => (r.geo.muRep * r.geo.U / r.geo.gamma).toExponential(2)],
     ['Streamline check: ψ drift along lines', '% of ψ range', r => { const sl = FV.streamlines ? streamlinesFor(r) : null; return sl && sl.psiDev != null ? (sl.psiDev * 100).toFixed(3) : '—'; }],
     ['Solver', '', r => `${r.result.converged ? 'converged' : 'partly converged'} <small>${r.result.iterations} Newton steps, residual ${r.result.residual.toExponential(1)}, ${(r.elapsedMs / 1000).toFixed(1)} s</small>`],
   ];
   const head = compare ? `<tr><th>Metric</th>${idx.map(i => `<th>Location ${i + 1}<small>z ${CFD_LOCS[i].z} mm</small></th>`).join('')}</tr>` : '';
   const body = rows.map(([name, unit, fn]) => `<tr><th scope="row">${name}${unit ? `<small>${unit}</small>` : ''}</th>${idx.map(i => `<td>${cfdRuns[i].field ? fn(cfdRuns[i]) : '—'}</td>`).join('')}</tr>`).join('');
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table${compare ? ' cmp' : ''}">${head ? `<thead>${head}</thead>` : ''}<tbody>${body}</tbody></table></div>
-    <p class="fv-note">Pressure is gauge pressure, 0 where the gap opens to air at the metering edge, without the hydrostatic head (which does not drive this confined flow). Left out on purpose: velocity at the active metering edge (a no-slip solid corner, so 0 by definition).</p>`;
+    <p class="fv-note">Pressure is gauge pressure, ambient air = 0, including the hydrostatic head; at the free surface it balances surface tension. Left out on purpose: velocity at the active metering edge (a no-slip solid corner, so 0 by definition).</p>`;
 }
 
 // ---- profiles for one location ----
 
-/** Columns to sample profiles at: near the inlet, part way, and next to the metering edge. */
-function profileStations(f, round) {
-  const at = fr => Math.min(f.nx - 2, Math.max(1, Math.round(fr * (f.nx - 1))));
-  return round ? [at(0.35), at(0.8), f.nx - 2] : [1, Math.round((f.nx - 1) / 2), f.nx - 2];
+/** Height of the top boundary at x (m) beyond the metering edge (free surface or face); for telling air from blade. */
+function cfdTopAt(f, x) {
+  const top = (f.ny - 1) * f.nx;
+  let best = 0;
+  for (let i = f.iCorner; i < f.nx - 1; i++) {
+    const x0 = f.gx[top + i], x1 = f.gx[top + i + 1];
+    if ((x - x0) * (x - x1) <= 0) { const t = x1 === x0 ? 1 : (x - x0) / (x1 - x0); best = Math.max(best, f.gy[top + i] + t * (f.gy[top + i + 1] - f.gy[top + i])); }
+  }
+  return best;
+}
+
+/** Blade height above the web at x (m), 0 <= x <= metering edge: the mesh's top boundary there. */
+function cfdBladeAt(f, x) {
+  const top = (f.ny - 1) * f.nx;
+  let i = 0;
+  while (i < f.iCorner - 1 && f.gx[top + i + 1] < x) i++;
+  const x0 = f.gx[top + i], x1 = f.gx[top + i + 1], t = Math.min(1, Math.max(0, (x - x0) / (x1 - x0)));
+  return f.gy[top + i] + t * (f.gy[top + i + 1] - f.gy[top + i]);
+}
+
+/** A field sampled up a vertical line at x under the blade, web to blade: [[value, y], ...]. */
+function cfdColumn(f, arr, x, n = 41) {
+  const hb = cfdBladeAt(f, x), out = [];
+  for (let k = 0; k < n; k++) { const y = hb * k / (n - 1); out.push([sampleField(f, arr, x, y), y]); }
+  return out;
+}
+
+/** Stations to sample profiles at (x, m): near the inlet / part way, mid-way, and just upstream of the metering edge. */
+function profileStations(run) {
+  const xe = run.result.xe, H = run.geo.H;
+  return run.geo.shape === 'round' ? [0.35 * xe, 0.8 * xe, xe - 0.3 * H] : [0.1 * xe, 0.5 * xe, xe - 0.3 * H];
 }
 
 /**
  * u(y) across the gap at three stations (light to dark = inlet to edge).
- * Flat land: against the exact fully developed profile (dashed) -- they
- * must coincide. Round entry: the profile turns from returning flow near
- * the pool to the metered profile at the edge.
+ * Flat land: against the exact fully developed profile (dashed) for the
+ * pressure gradient the solution has at mid-land -- they must coincide
+ * there. Round entry: the profile turns from returning flow near the pool
+ * to the metered profile at the edge.
  */
 function drawVelocityProfile(cv, run) {
-  const r = run.result, f = run.field, geo = run.geo, round = geo.shape === 'round';
-  const nx = f.nx, ny = f.ny, st = profileStations(f, round);
+  const r = run.result, f = run.field, geo = run.geo, st = profileStations(run);
+  const cols = st.map(x => cfdColumn(f, f.u, x));
   let umax = geo.U, umin = 0, ymax = 0;
-  for (const i of st) { ymax = Math.max(ymax, f.h[i]); for (let j = 0; j < ny; j++) { umax = Math.max(umax, f.u[j * nx + i]); umin = Math.min(umin, f.u[j * nx + i]); } }
+  for (const col of cols) for (const [u, y] of col) { umax = Math.max(umax, u); umin = Math.min(umin, u); ymax = Math.max(ymax, y); }
   const lut = getLut('seq'), shade = k => lutColor(lut, 0.35 + 0.65 * k / (st.length - 1));
   const series = [];
   if (r.prof1D) series.push({ p: r.prof1D.y.map((y, j) => [r.prof1D.u[j] * 1000, y * 1000]), c: cssVar('--muted'), w: 4, dash: [1, 3] });
-  st.forEach((i, k) => {
-    const pts = [];
-    for (let j = 0; j < ny; j++) pts.push([f.u[j * nx + i] * 1000, j / (ny - 1) * f.h[i] * 1000]);
-    series.push({ p: pts, c: shade(k), w: 1.8 });
-  });
+  cols.forEach((col, k) => series.push({ p: col.map(([u, y]) => [u * 1000, y * 1000]), c: shade(k), w: 1.8 }));
   const ax = plotChart(cv, 0.5, {
     x0: Math.min(umin, 0) * 1000 * 1.1, x1: umax * 1000 * 1.1, y0: 0, y1: ymax * 1000,
     xl: 'velocity u (mm/s)', yl: 'height above the web y (mm)', xd: 1, yd: 2, s: series,
@@ -601,55 +669,64 @@ function drawVelocityProfile(cv, run) {
   // label each station at its top end (just under the blade)
   const c = cv.getContext('2d');
   c.font = `11px ${cssVar('--mono')}`; c.textAlign = 'left'; c.textBaseline = 'middle';
-  st.forEach((i, k) => {
-    const j = ny - 1 - Math.round((ny - 1) * 0.12), x = ax.X(f.u[j * nx + i] * 1000) + 6, y = ax.Y(j / (ny - 1) * f.h[i] * 1000);
-    labelOn(c, `x ${(i * f.dx * 1000).toFixed(1)}`, x, y, shade(k), 'left');
+  cols.forEach((col, k) => {
+    const [u, y] = col[Math.round((col.length - 1) * 0.88)];
+    labelOn(c, `x ${(st[k] * 1000).toFixed(1)}`, ax.X(u * 1000) + 6, ax.Y(y * 1000), shade(k), 'left');
   });
 }
 
 /**
- * Apparent viscosity across the gap next to the metering edge. Where the
- * stress is below the yield stress the fluid is unyielded and the solver's
- * viscosity there is its regularized (large, finite) value: those points are
- * pinned at the capped edge instead of setting the axis.
+ * Apparent viscosity across the gap just upstream of the metering edge
+ * (flat land: mid-land). Where the stress is below the yield stress the
+ * fluid is unyielded and the solver's viscosity there is its regularized
+ * (large, finite) value: those points are pinned at the capped edge instead
+ * of setting the axis.
  */
 function drawViscosityProfile(cv, run) {
-  const f = run.field, geo = run.geo, nx = f.nx, ny = f.ny, i = profileStations(f, geo.shape === 'round')[geo.shape === 'round' ? 2 : 1];
-  const muCap = f.muCap || geo.muRep;
-  const pts = [];
-  for (let j = 0; j < ny; j++) pts.push([Math.min(f.mu[j * nx + i], muCap), j / (ny - 1) * f.h[i] * 1000]);
+  const f = run.field, geo = run.geo, x = profileStations(run)[geo.shape === 'round' ? 2 : 1];
+  const muCap = f.muCap || geo.muRep, col = cfdColumn(f, f.mu, x);
   plotChart(cv, 0.4, {
-    x0: 0, x1: muCap, y0: 0, y1: f.h[i] * 1000,
+    x0: 0, x1: muCap, y0: 0, y1: col[col.length - 1][1] * 1000,
     xl: 'apparent viscosity (Pa·s)' + (f.hasPlug ? ', capped' : ''), yl: 'height above the web y (mm)', xd: 1, yd: 2,
-    s: [{ p: pts, c: cssVar('--accent'), w: 2 }],
+    s: [{ p: col.map(([m, y]) => [Math.min(m, muCap), y * 1000]), c: cssVar('--accent'), w: 2 }],
     vl: f.hasPlug ? [{ x: muCap, c: cssVar('--warn'), t: '' }] : [],
   });
 }
 
-/** Pressure along the web and along the blade surface, inlet to metering edge, with the bead pressure applied at the inlet. */
+/** Pressure along the web and along the top boundary (blade, exit face, free surface), inlet to the end of the 2D domain. */
 function drawPressureProfile(cv, run) {
   const r = run.result, f = run.field;
-  const xs = i => i * f.dx * 1000;
-  const web = Array.from(r.pWeb, (p, i) => [xs(i), p]), blade = Array.from(r.pBlade, (p, i) => [xs(i), p]);
-  const lo = Math.min(0, r.pMin), hi = Math.max(r.pMax, run.geo.Pup) * 1.08;
+  const web = r.xWeb.map((x, i) => [x * 1000, r.pWeb[i]]), top = r.xTop.map((x, i) => [x * 1000, r.pTop[i]]);
+  // axis from the pressures away from the edge corner (singular there)
+  let lo = 0, hi = run.geo.Pup;
+  const skip = (x, y) => Math.hypot(x - r.xe, y - r.H) < 0.3 * r.H;
+  for (let i = 0; i < f.nx; i++) {
+    if (!skip(r.xWeb[i], 0)) { lo = Math.min(lo, r.pWeb[i]); hi = Math.max(hi, r.pWeb[i]); }
+    if (!skip(r.xTop[i], r.yTop[i])) { lo = Math.min(lo, r.pTop[i]); hi = Math.max(hi, r.pTop[i]); }
+  }
+  const pad = 0.08 * (hi - lo || 1);
   plotChart(cv, 0.4, {
-    x0: 0, x1: f.Lx * 1000, y0: lo, y1: hi,
-    xl: 'x (mm), inlet → metering edge', yl: 'pressure (Pa, gauge)', xd: 0, yd: 0,
-    s: [{ p: blade, c: cssVar('--muted'), w: 3.5, dash: [2, 3] }, { p: web, c: cssVar('--accent'), w: 1.8 }],
+    x0: 0, x1: f.Lx * 1000, y0: lo - pad, y1: hi + pad,
+    xl: 'x (mm), inlet → metering edge → film', yl: 'pressure (Pa, gauge)', xd: 0, yd: 0,
+    s: [{ p: top, c: cssVar('--muted'), w: 3.5, dash: [2, 3] }, { p: web, c: cssVar('--accent'), w: 1.8 }],
     hl: [{ y: run.geo.Pup, c: cssVar('--muted'), t: 'bead pressure' }],
+    vl: [{ x: r.xe * 1000, c: cssVar('--line'), t: 'edge' }],
   });
 }
 
-/** Downstream film h(x) from the gap exit toward h_inf = Q/U (mass conservation, the independent check line). */
-function drawDownstreamFilm(cv, film, geo) {
-  const pts = film.x.map((x, i) => [x * 1000, film.h[i] * 1000]);
+/** Film height from the edge to the oven: the 2D free surface, then the 1D film model from the end of the 2D domain, toward h_inf = Q/U. */
+function drawDownstreamFilm(cv, run) {
+  const r = run.result, film = r.film, geo = run.geo;
+  const surf = [];
+  for (let i = r.iCL; i < r.nx; i++) surf.push([(r.xTop[i] - r.xe) * 1000, r.yTop[i] * 1000]);
+  const pts = film.x ? film.x.map((x, i) => [(x + r.filmStart) * 1000, film.h[i] * 1000]) : [];
   let hMax = geo.H;
-  for (const [, h] of pts) hMax = Math.max(hMax, h);
+  for (const [, h] of surf.concat(pts)) hMax = Math.max(hMax, h);
   plotChart(cv, 0.4, {
-    x0: 0, x1: film.x[film.x.length - 1] * 1000, y0: 0, y1: hMax * 1.15,
-    xl: 'distance downstream of the gap (mm)', yl: 'film height (mm)', xd: 0, yd: 2,
-    s: [{ p: pts, c: cssVar('--accent'), w: 2.2 }],
-    hl: [{ y: film.hInf * 1000, c: cssVar('--muted'), t: 'h∞ = Q/U (mass conservation)' }],
+    x0: 0, x1: geo.ovenDistance * 1000, y0: 0, y1: hMax * 1.15,
+    xl: 'distance downstream of the metering edge (mm)', yl: 'film height (mm)', xd: 0, yd: 2,
+    s: [{ p: surf, c: cssVar('--ink'), w: 2.2 }, { p: pts, c: cssVar('--accent'), w: 2.2 }],
+    hl: [{ y: r.Q / geo.U * 1000, c: cssVar('--muted'), t: 'h∞ = Q/U (mass conservation)' }],
   });
 }
 
@@ -661,21 +738,19 @@ function renderProfiles() {
   if (!run.field) { host.innerHTML = '<p class="cap">No result for this location yet.</p>'; return; }
   const r = run.result, geo = run.geo, round = geo.shape === 'round';
   const qDiff = (r.Q / r.qLub - 1) * 100;
-  const newtonian = geo.ty === 0 && geo.n === 1;
-  const lubNote = Math.abs(qDiff) < 1 ? `matches Reynolds lubrication theory within ${Math.abs(qDiff).toFixed(2)}%`
-    : `${Math.abs(qDiff).toFixed(1)}% ${qDiff > 0 ? 'above' : 'below'} the one-viscosity lubrication estimate: ${newtonian ? 'the 2D effects lubrication theory neglects' : 'expected, since that estimate uses one representative viscosity and this fluid\'s viscosity varies across the gap'}`;
+  const lubNote = `${Math.abs(qDiff).toFixed(1)}% ${qDiff > 0 ? 'above' : 'below'} the one-viscosity lubrication estimate for the same bead pressure and zero pressure at the edge (the meniscus sets the real edge pressure${geo.ty === 0 && geo.n === 1 ? '' : ', and this fluid\'s viscosity varies across the gap'})`;
 
   const filmOk = !!r.film.x;
   const hOven = filmOk ? r.film.h[r.film.h.length - 1] : null;
   host.innerHTML = `
     <canvas id="cfdProfile" role="img" aria-label="Velocity profiles across the gap at three stations"></canvas>
-    <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to the metering edge${r.prof1D ? ', against the exact fully developed profile for this gap and rheology (dashed); they coincide when the open boundaries are right' : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p>
-    <canvas id="cfdPress" role="img" aria-label="Pressure along the web and the blade"></canvas>
-    <p class="cap"><b>Pressure along the gap</b>: along the web (solid) and along the blade surface (dashed), from the bead pressure at the inlet to 0 where the gap opens to air.${round ? ' The web drags slurry into the narrowing gap, which builds pressure above the bead pressure before it falls to the edge.' : ' Linear on a flat land, as lubrication theory says.'}</p>
+    <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to just upstream of the metering edge${r.prof1D ? `, against the exact fully developed profile (dashed) for the pressure gradient the solution has at mid-land (${fmtNum(r.prof1D.G / 1000)} kPa/m): they must coincide at mid-land` : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p>
+    <canvas id="cfdPress" role="img" aria-label="Pressure along the web and the top boundary"></canvas>
+    <p class="cap"><b>Pressure along the flow</b>: along the web (solid) and along the top boundary (dashed: blade, exit face, then the free surface, where it balances surface tension), from the bead pressure at the inlet, through the metering edge, into the film.${round ? ' The web drags slurry into the narrowing gap, which builds pressure above the bead pressure before it falls toward the edge.' : ''} The axis leaves out the edge corner itself, where pressure is singular.</p>
     <canvas id="cfdVisc" role="img" aria-label="Apparent viscosity across the gap"></canvas>
-    <p class="cap"><b>Apparent viscosity across the gap</b> ${round ? 'next to the metering edge' : 'at mid-land'}. Flat when Newtonian; higher toward the low-shear core with shear-thinning or yield stress. Fluid whose stress is below the yield stress (unyielded) is pinned at the capped edge.</p>
-    ${filmOk ? `<canvas id="cfdFilm" role="img" aria-label="Downstream film height development"></canvas>
-    <p class="cap"><b>Downstream film to the oven</b> (${(geo.ovenDistance * 1000).toFixed(0)} mm), using the Slurry animation tab's free-surface method driven by this run's flow rate. Dashed: where mass conservation says it must end up.</p>` : `<p class="cap">The downstream film could not be computed for this run (${r.film.error || 'unknown error'}).</p>`}
+    <p class="cap"><b>Apparent viscosity across the gap</b> ${round ? 'just upstream of the metering edge' : 'at mid-land'}. Flat when Newtonian; higher toward the low-shear core with shear-thinning or yield stress. Fluid whose stress is below the yield stress (unyielded) is pinned at the capped edge.</p>
+    <canvas id="cfdFilm" role="img" aria-label="Film height from the metering edge to the oven"></canvas>
+    <p class="cap"><b>Film from the metering edge to the oven</b> (${(geo.ovenDistance * 1000).toFixed(0)} mm): the 2D free surface (dark, from the contact line), then ${filmOk ? `the Slurry animation tab's 1D free-surface method from ${(r.filmStart * 1000).toFixed(1)} mm on, driven by this run's flow rate` : `no 1D film (${r.film.error || 'unknown error'})`}. Dashed: where mass conservation says it must end up.</p>
     <div class="stats">${[
       ['Wet film, Q/U', (r.Q / geo.U * 1000).toFixed(3) + ' mm'],
       ['Film at oven', filmOk ? (hOven * 1000).toFixed(3) + ' mm' + (r.film.converged ? '' : ' (still relaxing)') : '—'],
@@ -686,5 +761,5 @@ function renderProfiles() {
   drawVelocityProfile(document.getElementById('cfdProfile'), run);
   drawPressureProfile(document.getElementById('cfdPress'), run);
   drawViscosityProfile(document.getElementById('cfdVisc'), run);
-  if (filmOk) drawDownstreamFilm(document.getElementById('cfdFilm'), r.film, geo);
+  drawDownstreamFilm(document.getElementById('cfdFilm'), run);
 }

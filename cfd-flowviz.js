@@ -16,6 +16,14 @@
  * "never enter a solid" is the same test as "never leave the grid".
  * Everything below works in grid-index space (xi = x/dx, et = y/h(x) *
  * (ny-1)) and converts to metres only for output.
+ *
+ * Curvilinear grids (r.grid === 'curvilinear', from cfd-fem.js's
+ * coaterGrid): the same (i, j) layout, but every node has its own
+ * coordinates gx, gy -- the finite-element mesh of the gap, the exit face
+ * and the free-surface film. Its top row is the blade, the face up to the
+ * contact line, then the free surface. Index space works the same way;
+ * positions are bilinear within each grid cell, and a physical point is
+ * located by inverting that map in the cell that contains it.
  */
 
 /**
@@ -26,20 +34,31 @@
  * caps it instead of letting it swamp the colour scale.
  */
 function makeFlowField(r, opts = {}) {
-  const nx = r.nx, ny = r.ny, dx = r.dx, N = nx * ny;
+  const curv = r.grid === 'curvilinear';
+  const nx = r.nx, ny = r.ny, N = nx * ny;
   const u = r.u, v = r.v;
-  const h = r.h ? Float64Array.from(r.h) : new Float64Array(nx).fill(r.dy * (ny - 1));
-  const hx = r.hx ? Float64Array.from(r.hx) : new Float64Array(nx);
-  let Ly = 0; for (let i = 0; i < nx; i++) Ly = Math.max(Ly, h[i]);
-  const flat = h.every(x => x === h[0]);
   const speed = new Float64Array(N);
   let vmax = 0;
   for (let k = 0; k < N; k++) { speed[k] = Math.hypot(u[k], v[k]); if (speed[k] > vmax) vmax = speed[k]; }
 
+  let grid;
+  if (curv) grid = curvilinearGrid(r);
+  else {
+    const dx = r.dx;
+    const h = r.h ? Float64Array.from(r.h) : new Float64Array(nx).fill(r.dy * (ny - 1));
+    const hx = r.hx ? Float64Array.from(r.hx) : new Float64Array(nx);
+    let Ly = 0; for (let i = 0; i < nx; i++) Ly = Math.max(Ly, h[i]);
+    const flat = h.every(x => x === h[0]);
+    grid = { curv: false, dx, dy: flat ? h[0] / (ny - 1) : null, h, hx, flat, Lx: dx * (nx - 1), Ly, Hedge: h[nx - 1] };
+    const nodeArea = new Float64Array(N);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) nodeArea[j * nx + i] = (i === 0 || i === nx - 1 ? 0.5 : 1) * (j === 0 || j === ny - 1 ? 0.5 : 1) * dx * h[i] / (ny - 1);
+    grid.nodeArea = nodeArea;
+  }
+
   let shear = r.gd || null;
   if (!shear) {
     // Cartesian grid (cavity check): gd = sqrt(2 ux^2 + 2 vy^2 + (uy + vx)^2)
-    const dy = h[0] / (ny - 1);
+    const dx = grid.dx, dy = grid.h[0] / (ny - 1);
     const ddx = (a, i, k) => i === 0 ? (a[k + 1] - a[k]) / dx : i === nx - 1 ? (a[k] - a[k - 1]) / dx : (a[k + 1] - a[k - 1]) / (2 * dx);
     const ddy = (a, j, k) => j === 0 ? (a[k + nx] - a[k]) / dy : j === ny - 1 ? (a[k] - a[k - nx]) / dy : (a[k + nx] - a[k - nx]) / (2 * dy);
     shear = new Float64Array(N);
@@ -63,10 +82,170 @@ function makeFlowField(r, opts = {}) {
 
   const psi = r.psi || null;
   return {
-    nx, ny, dx, dy: flat ? h[0] / (ny - 1) : null, h, hx, flat, Lx: dx * (nx - 1), Ly, Hedge: h[nx - 1],
+    nx, ny, ...grid,
     u, v, speed, vmax, shear, mu, muCap, hasPlug, unyielded, psi, omega: r.omega || null, p: r.p || null,
     psiWeb: psi ? psi[0] : null, psiLand: psi ? psi[(ny - 1) * nx] : null,
   };
+}
+
+/**
+ * Grid API of a curvilinear field: node coordinates, cell-wise bilinear
+ * positions, point location (bins over the bounding box, then Newton
+ * inversion of the containing cell's bilinear map), node (dual) areas.
+ */
+function curvilinearGrid(r) {
+  const nx = r.nx, ny = r.ny, gx = r.gx, gy = r.gy, N = nx * ny, ncx = nx - 1, ncy = ny - 1;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let k = 0; k < N; k++) { x0 = Math.min(x0, gx[k]); x1 = Math.max(x1, gx[k]); y0 = Math.min(y0, gy[k]); y1 = Math.max(y1, gy[k]); }
+  const corner = (i, j) => j * nx + i;
+  // cell bilinear coefficients: P(s, t) = a + b s + c t + d s t
+  const nc = ncx * ncy, cf = new Float64Array(nc * 8), bb = new Float64Array(nc * 4), nodeArea = new Float64Array(N);
+  for (let j = 0; j < ncy; j++) for (let i = 0; i < ncx; i++) {
+    const c = j * ncx + i, k00 = corner(i, j), k10 = corner(i + 1, j), k01 = corner(i, j + 1), k11 = corner(i + 1, j + 1);
+    cf[c * 8] = gx[k00]; cf[c * 8 + 1] = gy[k00];
+    cf[c * 8 + 2] = gx[k10] - gx[k00]; cf[c * 8 + 3] = gy[k10] - gy[k00];
+    cf[c * 8 + 4] = gx[k01] - gx[k00]; cf[c * 8 + 5] = gy[k01] - gy[k00];
+    cf[c * 8 + 6] = gx[k11] - gx[k10] - gx[k01] + gx[k00]; cf[c * 8 + 7] = gy[k11] - gy[k10] - gy[k01] + gy[k00];
+    bb[c * 4] = Math.min(gx[k00], gx[k10], gx[k01], gx[k11]); bb[c * 4 + 1] = Math.max(gx[k00], gx[k10], gx[k01], gx[k11]);
+    bb[c * 4 + 2] = Math.min(gy[k00], gy[k10], gy[k01], gy[k11]); bb[c * 4 + 3] = Math.max(gy[k00], gy[k10], gy[k01], gy[k11]);
+    const area = 0.5 * Math.abs((gx[k11] - gx[k00]) * (gy[k01] - gy[k10]) - (gy[k11] - gy[k00]) * (gx[k01] - gx[k10]));
+    for (const k of [k00, k10, k01, k11]) nodeArea[k] += 0.25 * area;
+  }
+  const nbx = Math.max(8, Math.min(400, Math.round(2 * Math.sqrt(nc) * Math.sqrt((x1 - x0) / (y1 - y0 || 1)))));
+  const nby = Math.max(4, Math.min(200, Math.round(nbx * (y1 - y0) / (x1 - x0 || 1))));
+  const bins = Array.from({ length: nbx * nby }, () => []);
+  const bx = x => Math.min(nbx - 1, Math.max(0, Math.floor((x - x0) / (x1 - x0) * nbx)));
+  const by = y => Math.min(nby - 1, Math.max(0, Math.floor((y - y0) / (y1 - y0) * nby)));
+  for (let c = 0; c < nc; c++) for (let q = by(bb[c * 4 + 2]); q <= by(bb[c * 4 + 3]); q++) for (let p = bx(bb[c * 4]); p <= bx(bb[c * 4 + 1]); p++) bins[q * nbx + p].push(c);
+  const tolBox = 1e-9 * Math.max(x1 - x0, y1 - y0);
+  const inCell = (c, x, y) => {
+    if (x < bb[c * 4] - tolBox || x > bb[c * 4 + 1] + tolBox || y < bb[c * 4 + 2] - tolBox || y > bb[c * 4 + 3] + tolBox) return null;
+    const o = c * 8;
+    let s = 0.5, t = 0.5;
+    for (let it = 0; it < 12; it++) {
+      const Fx = cf[o] + cf[o + 2] * s + cf[o + 4] * t + cf[o + 6] * s * t - x, Fy = cf[o + 1] + cf[o + 3] * s + cf[o + 5] * t + cf[o + 7] * s * t - y;
+      const a11 = cf[o + 2] + cf[o + 6] * t, a12 = cf[o + 4] + cf[o + 6] * s, a21 = cf[o + 3] + cf[o + 7] * t, a22 = cf[o + 5] + cf[o + 7] * s;
+      const det = a11 * a22 - a12 * a21;
+      if (!(Math.abs(det) > 0)) return null;
+      const ds = (a22 * Fx - a12 * Fy) / det, dt = (a11 * Fy - a21 * Fx) / det;
+      s -= ds; t -= dt;
+      if (Math.abs(ds) + Math.abs(dt) < 1e-12) break;
+    }
+    const e = 1e-7;
+    if (!(s > -e && s < 1 + e && t > -e && t < 1 + e)) return null;
+    return [Math.min(1, Math.max(0, s)), Math.min(1, Math.max(0, t))];
+  };
+  let last = 0;
+  const locate = (x, y) => {
+    let st = inCell(last, x, y);
+    if (st) return [last % ncx + st[0], Math.floor(last / ncx) + st[1]];
+    if (x < x0 - tolBox || x > x1 + tolBox || y < y0 - tolBox || y > y1 + tolBox) return null;
+    for (const c of bins[by(y) * nbx + bx(x)]) {
+      st = inCell(c, x, y);
+      if (st) { last = c; return [c % ncx + st[0], Math.floor(c / ncx) + st[1]]; }
+    }
+    return null;
+  };
+  const cellOf = (xi, et) => {
+    const i = Math.min(ncx - 1, Math.max(0, Math.floor(xi))), j = Math.min(ncy - 1, Math.max(0, Math.floor(et)));
+    return [j * ncx + i, xi - i, et - j];
+  };
+  const pos = (xi, et) => {
+    const [c, s, t] = cellOf(xi, et), o = c * 8;
+    return [cf[o] + cf[o + 2] * s + cf[o + 4] * t + cf[o + 6] * s * t, cf[o + 1] + cf[o + 3] * s + cf[o + 5] * t + cf[o + 7] * s * t];
+  };
+  // velocity mapped into index space: (dxi, det)/dt = J^-1 (u, v) of the cell's bilinear map
+  const idxVel = (xi, et, u, v) => {
+    const [c, s, t] = cellOf(xi, et), o = c * 8;
+    const a11 = cf[o + 2] + cf[o + 6] * t, a12 = cf[o + 4] + cf[o + 6] * s, a21 = cf[o + 3] + cf[o + 7] * t, a22 = cf[o + 5] + cf[o + 7] * s;
+    const det = a11 * a22 - a12 * a21;
+    return [(a22 * u - a12 * v) / det, (a11 * v - a21 * u) / det];
+  };
+  // nearest node, for sampling points that land a hair outside the mesh (clipped line ends)
+  const nearest = (x, y) => {
+    let best = 0, bd = Infinity;
+    for (let k = 0; k < N; k++) { const d = (gx[k] - x) ** 2 + (gy[k] - y) ** 2; if (d < bd) { bd = d; best = k; } }
+    return [best % nx, Math.floor(best / nx)];
+  };
+  // nodes within 0.3 H of the metering edge corner: stresses and pressure are singular there
+  const cornerZone = new Uint8Array(N);
+  if (r.xe != null) for (let k = 0; k < N; k++) cornerZone[k] = Math.hypot(gx[k] - r.xe, gy[k] - r.H) < 0.3 * r.H ? 1 : 0;
+  const grid = {
+    curv: true, gx, gy, Lx: x1, Ly: y1, Hedge: r.H, nodeArea, locate, pos, idxVel, nearest, cornerZone,
+    iCorner: r.iCorner, iCL: r.iCL, xe: r.xe, faceDeg: r.faceDeg,
+  };
+  if (nx % 2 && ny % 2 && nx > 2 && ny > 2) {
+    // Quadratic (Q2) finite-element mesh: every 3 x 3 block of nodes is one
+    // element, and the solution and the geometry are biquadratic in it --
+    // interpolate with the elements' own shape functions (consistent with
+    // the stream function, which was integrated from that velocity), and
+    // refine point location by Newton on that map.
+    const nEx = (nx - 1) / 2, nEy = (ny - 1) / 2;
+    const q2 = x => [x * (x - 1) / 2, 1 - x * x, x * (x + 1) / 2], dq2 = x => [x - 0.5, -2 * x, x + 0.5];
+    const elemOf = (xi, et) => {
+      const ex = Math.min(nEx - 1, Math.max(0, Math.floor(xi / 2))), ey = Math.min(nEy - 1, Math.max(0, Math.floor(et / 2)));
+      return [ex, ey, xi - 2 * ex - 1, et - 2 * ey - 1];
+    };
+    const interp = (arr, xi, et) => {
+      const [ex, ey, a, b] = elemOf(xi, et), A = q2(a), B = q2(b);
+      let v = 0;
+      for (let jb = 0; jb < 3; jb++) { const row = (2 * ey + jb) * nx + 2 * ex; for (let ia = 0; ia < 3; ia++) v += A[ia] * B[jb] * arr[row + ia]; }
+      return v;
+    };
+    const jac = (ex, ey, a, b) => {
+      const A = q2(a), B = q2(b), dA = dq2(a), dB = dq2(b);
+      let x = 0, y = 0, xa = 0, xb = 0, ya = 0, yb = 0;
+      for (let jb = 0; jb < 3; jb++) for (let ia = 0; ia < 3; ia++) {
+        const k = (2 * ey + jb) * nx + 2 * ex + ia, N = A[ia] * B[jb], Na = dA[ia] * B[jb], Nb = A[ia] * dB[jb];
+        x += N * gx[k]; y += N * gy[k]; xa += Na * gx[k]; xb += Nb * gx[k]; ya += Na * gy[k]; yb += Nb * gy[k];
+      }
+      return [x, y, xa, xb, ya, yb];
+    };
+    grid.q2 = true;
+    grid.interp = interp;
+    grid.pos = (xi, et) => { const [ex, ey, a, b] = elemOf(xi, et), J = jac(ex, ey, a, b); return [J[0], J[1]]; };
+    grid.idxVel = (xi, et, u, v) => {
+      const [ex, ey, a, b] = elemOf(xi, et), [, , xa, xb, ya, yb] = jac(ex, ey, a, b), det = xa * yb - xb * ya;
+      return [(yb * u - xb * v) / det, (xa * v - ya * u) / det];
+    };
+    grid.locate = (x, y) => {
+      const L = locate(x, y);
+      if (!L) return null;
+      let [ex, ey, a, b] = elemOf(L[0], L[1]);
+      for (let hop = 0; hop < 4; hop++) {
+        for (let it = 0; it < 10; it++) {
+          const [px, py, xa, xb, ya, yb] = jac(ex, ey, a, b), det = xa * yb - xb * ya;
+          const da = (yb * (px - x) - xb * (py - y)) / det, db = (xa * (py - y) - ya * (px - x)) / det;
+          a -= da; b -= db;
+          if (Math.abs(da) + Math.abs(db) < 1e-12) break;
+        }
+        // landed in a neighbouring element: move there and solve again
+        const sx = a > 1 + 1e-9 && ex < nEx - 1 ? 1 : a < -1 - 1e-9 && ex > 0 ? -1 : 0;
+        const sy = b > 1 + 1e-9 && ey < nEy - 1 ? 1 : b < -1 - 1e-9 && ey > 0 ? -1 : 0;
+        if (!sx && !sy) break;
+        ex += sx; ey += sy; a -= 2 * sx; b -= 2 * sy;
+      }
+      if (!(Math.abs(a) < 1 + 1e-6 && Math.abs(b) < 1 + 1e-6)) return L;
+      return [Math.min(nx - 1, Math.max(0, 2 * ex + 1 + a)), Math.min(ny - 1, Math.max(0, 2 * ey + 1 + b))];
+    };
+  }
+  return grid;
+}
+
+/** Is (x, y) inside the fluid? */
+function fieldInside(f, x, y) {
+  if (f.curv) return !!f.locate(x, y);
+  return x >= 0 && x <= f.Lx && y >= 0 && y <= bladeHeightAt(f, x);
+}
+
+/** The fluid domain's outline, counter-clockwise from the inlet's foot: web, outlet, top boundary back, inlet. */
+function fieldOutline(f) {
+  const { nx, ny } = f, P = (i, j) => nodeXY(f, i, j), out = [];
+  for (let i = 0; i < nx; i++) out.push(P(i, 0));
+  for (let j = 1; j < ny; j++) out.push(P(nx - 1, j));
+  for (let i = nx - 2; i >= 0; i--) out.push(P(i, ny - 1));
+  for (let j = ny - 2; j > 0; j--) out.push(P(0, j));
+  return out;
 }
 
 function interp1(xs, ys, x) {
@@ -88,13 +267,16 @@ function colInterp(arr, xi) {
 }
 /** Blade height above the web at x (m). */
 const bladeHeightAt = (f, x) => colInterp(f.h, x / f.dx);
-const toIndex = (f, x, y) => { const xi = x / f.dx; return [xi, y / colInterp(f.h, xi) * (f.ny - 1)]; };
-const fromIndex = (f, xi, et) => [xi * f.dx, et / (f.ny - 1) * colInterp(f.h, xi)];
-const nodeY = (f, i, j) => j / (f.ny - 1) * f.h[i];
+/** Grid-index coordinates of a physical point (sigma grid: unbounded; curvilinear: null outside the fluid). */
+const toIndex = (f, x, y) => { if (f.curv) return f.locate(x, y); const xi = x / f.dx; return [xi, y / colInterp(f.h, xi) * (f.ny - 1)]; };
+const fromIndex = (f, xi, et) => f.curv ? f.pos(xi, et) : [xi * f.dx, et / (f.ny - 1) * colInterp(f.h, xi)];
+const nodeXY = (f, i, j) => f.curv ? [f.gx[j * f.nx + i], f.gy[j * f.nx + i]] : [i * f.dx, j / (f.ny - 1) * f.h[i]];
+const nodeY = (f, i, j) => nodeXY(f, i, j)[1];
 
 function sampleIdx(f, arr, fx, fy) {
   fx = fx < 0 ? 0 : fx > f.nx - 1 ? f.nx - 1 : fx;
   fy = fy < 0 ? 0 : fy > f.ny - 1 ? f.ny - 1 : fy;
+  if (f.q2) return f.interp(arr, fx, fy);
   const i = Math.min(Math.floor(fx), f.nx - 2), j = Math.min(Math.floor(fy), f.ny - 2);
   const tx = fx - i, ty = fy - j, k = j * f.nx + i;
   return (1 - ty) * ((1 - tx) * arr[k] + tx * arr[k + 1]) + ty * ((1 - tx) * arr[k + f.nx] + tx * arr[k + f.nx + 1]);
@@ -102,8 +284,8 @@ function sampleIdx(f, arr, fx, fy) {
 
 /** Bilinear interpolation (in grid-index space) of a nodal field at physical (x, y), clamped to the domain. */
 function sampleField(f, arr, x, y) {
-  const [fx, fy] = toIndex(f, x, y);
-  return sampleIdx(f, arr, fx, fy);
+  const at = toIndex(f, x, y) || f.nearest(x, y);
+  return sampleIdx(f, arr, at[0], at[1]);
 }
 
 /**
@@ -126,15 +308,19 @@ function traceOneWay(f, x0, y0, sgn, opts) {
   const maxCells = opts.maxCells ?? 4 * (f.nx + f.ny);
   const Xi = f.nx - 1, Eta = f.ny - 1;
   const pts = [[x0, y0]];
-  let [xi, eta] = toIndex(f, x0, y0);
+  const at = toIndex(f, x0, y0);
+  if (!at) return { points: pts, reason: 'outside' };
+  let [xi, eta] = at;
   const xi0 = xi, eta0 = eta;
   if (xi < 0 || xi > Xi || eta < -1e-9 || eta > Eta + 1e-9) return { points: pts, reason: 'outside' };
 
   const dir = (a, b) => {
     const u = sampleIdx(f, f.u, a, b), v = sampleIdx(f, f.v, a, b);
     if (Math.hypot(u, v) < vmin) return null;
-    const H = colInterp(f.h, a), Hp = colInterp(f.hx, a);
-    const gx = u / f.dx, gy = (f.ny - 1) * (v - (b / (f.ny - 1)) * Hp * u) / H, m = Math.hypot(gx, gy);
+    let gx, gy;
+    if (f.curv) [gx, gy] = f.idxVel(a, b, u, v);
+    else { const H = colInterp(f.h, a), Hp = colInterp(f.hx, a); gx = u / f.dx; gy = (f.ny - 1) * (v - (b / (f.ny - 1)) * Hp * u) / H; }
+    const m = Math.hypot(gx, gy);
     return [sgn * gx / m, sgn * gy / m];
   };
 
@@ -207,7 +393,7 @@ function findEddyCentres(f) {
         if (q <= p) isMin = false;
         if (q >= p) isMax = false;
       }
-      if ((isMin && p < lo) || (isMax && p > hi)) out.push({ x: i * f.dx, y: nodeY(f, i, j), i, j, psi: p, bound: p < lo ? lo : hi });
+      if ((isMin && p < lo) || (isMax && p > hi)) { const [x, y] = nodeXY(f, i, j); out.push({ x, y, i, j, psi: p, bound: p < lo ? lo : hi }); }
     }
   }
   return out.sort((a, b) => Math.abs(b.psi - b.bound) - Math.abs(a.psi - a.bound));
@@ -231,15 +417,16 @@ function findEddyCentres(f) {
  */
 function autoSeeds(f, n, direction) {
   const seeds = [];
-  const xs = direction === 'forward' ? 0 : direction === 'backward' ? f.Lx : f.Lx / 2;
-  const i = Math.round(xs / f.dx);
+  // seed column: the inflow for forward tracing, the outflow for backward; for both, mid-channel
+  // (curvilinear: the metering edge's column, which all the through-flow crosses)
+  const i = direction === 'forward' ? 0 : direction === 'backward' ? f.nx - 1 : f.curv && f.iCorner != null ? f.iCorner : Math.round((f.nx - 1) / 2);
   const col = [];
   for (let j = 0; j < f.ny; j++) col.push(f.psi ? f.psi[j * f.nx + i] : j);
   const firstCrossing = target => {
     for (let j = 1; j < f.ny; j++) {
       if ((col[j] - target) * (col[j - 1] - target) <= 0 && col[j] !== col[j - 1]) {
         const t = (target - col[j - 1]) / (col[j] - col[j - 1]);
-        return [i * f.dx, (j - 1 + t) / (f.ny - 1) * f.h[i]];
+        return fromIndex(f, i, j - 1 + t);
       }
     }
     return null;
@@ -248,7 +435,7 @@ function autoSeeds(f, n, direction) {
   for (let m = 1; m <= n; m++) {
     const frac = m / (n + 1);
     const s = f.psi && p1 !== p0 ? firstCrossing(p0 + (p1 - p0) * frac) : null;
-    seeds.push(s || [i * f.dx, frac * f.h[i]]);
+    seeds.push(s || fromIndex(f, i, frac * (f.ny - 1)));
   }
   if (f.psi && p1 !== p0) {
     // returning flow on this column: psi overshoots the blade's value
@@ -264,7 +451,7 @@ function autoSeeds(f, n, direction) {
     // walk up from the centre until psi reaches the eddy's bounding value
     let jEdge = c.j;
     while (jEdge < f.ny - 1 && (f.psi[jEdge * f.nx + c.i] - c.bound) * (c.psi - c.bound) > 0) jEdge++;
-    for (const fr of [0.2, 0.45, 0.7]) seeds.push([c.x, (c.j + fr * (jEdge - c.j)) / (f.ny - 1) * f.h[c.i]]);
+    for (const fr of [0.2, 0.45, 0.7]) seeds.push(f.curv ? fromIndex(f, c.i, c.j + fr * (jEdge - c.j)) : [c.x, (c.j + fr * (jEdge - c.j)) / (f.ny - 1) * f.h[c.i]]);
   }
   return seeds;
 }
@@ -275,7 +462,7 @@ function sampleVectors(f, nCols, nRows) {
   for (let r = 0; r < nRows; r++) {
     for (let c = 0; c < nCols; c++) {
       const x = (c + 0.5) * f.Lx / nCols, y = (r + 0.5) * f.Ly / nRows;
-      if (y > bladeHeightAt(f, x) * (1 - 0.25 / nRows)) continue;
+      if (f.curv ? !f.locate(x, y) : y > bladeHeightAt(f, x) * (1 - 0.25 / nRows)) continue;
       const u = sampleField(f, f.u, x, y), v = sampleField(f, f.v, x, y);
       out.push({ x, y, u, v, speed: Math.hypot(u, v) });
     }
@@ -290,9 +477,9 @@ function sampleVectors(f, nCols, nRows) {
  * it's 0 by definition and says nothing).
  */
 function flowMetrics(f) {
-  const { nx, ny, dx } = f;
-  const w = (i, j) => (i === 0 || i === nx - 1 ? 0.5 : 1) * (j === 0 || j === ny - 1 ? 0.5 : 1) * dx * f.h[i] / (ny - 1);
-  const at = (i, j) => [i * dx, nodeY(f, i, j)];
+  const { nx, ny } = f;
+  const w = (i, j) => f.nodeArea[j * nx + i];
+  const at = (i, j) => nodeXY(f, i, j);
 
   let area = 0, speedInt = 0, reverseArea = 0, recircArea = 0;
   let vmaxLoc = null, vmax = -1, vminInt = Infinity, vminLoc = null, gdMax = -1, gdMaxLoc = null;
@@ -363,5 +550,5 @@ function streamlinePsiDeviation(f, line) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { makeFlowField, sampleField, bladeHeightAt, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation };
+  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation };
 }
