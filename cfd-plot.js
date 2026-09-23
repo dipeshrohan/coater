@@ -1,9 +1,11 @@
 /*
  * cfd-plot.js — CFD post-processing view of one solved 2D field: a colour
  * raster of a scalar over the fluid domain drawn to physical scale (mm
- * axes, stated vertical exaggeration), the solids drawn as geometry (blade
- * land above, moving web below, active metering edge marked), a colorbar,
- * and streamline / velocity-vector / seed overlays.
+ * axes, stated vertical exaggeration), the solids drawn as geometry (the
+ * blade above -- its surface y = h(x), flat land or round entry -- with its
+ * exit face at the metering edge, the moving web below, the active
+ * metering edge marked), a colorbar, and streamline / velocity-vector /
+ * seed overlays.
  *
  * Canvas 2D only (the app has no plotting library -- see draw.js); reads
  * theme tokens via cssVar so it follows light/dark like the other tabs.
@@ -115,6 +117,8 @@ const rasterCache = new WeakMap();
  *                vectorSpacing (px), so arrows are evenly spaced on screen; plus vectorScale,
  *                vectorNormalize, vectorVmax (shared across plots in comparison mode)
  *   seeds        [[x,y]...], manualSeeds boolean
+ *   exitAngle    blade exit face at the edge, degrees from the web (machine direction); default 90
+ *   bladeLabel   text for the blade
  * Returns the mapping for hit-testing and overlays.
  */
 function drawFlowPlot(cv, s) {
@@ -142,6 +146,13 @@ function drawFlowPlot(cv, s) {
   c.clearRect(0, 0, w, totalH);
 
   const yTop = Y(f.Ly), yBot = Y(0), xL = X(0), xR = X(f.Lx);
+  // blade surface on screen, one point per column
+  const surf = Array.from(f.h, (h, i) => [X(i * f.dx), Y(h)]);
+  const fluidPath = () => {
+    c.beginPath(); c.moveTo(xL, yBot);
+    for (const [px, py] of surf) c.lineTo(px, py);
+    c.lineTo(xR, yBot); c.closePath();
+  };
 
   // vectors on a lattice with even spacing on screen (so density is the
   // same visually whatever the vertical exaggeration)
@@ -154,7 +165,7 @@ function drawFlowPlot(cv, s) {
   const rasterOn = !!s.scalar && !s.lineScalar && !(s.vectorColor && vectors);
 
   // fluid background
-  c.fillStyle = surface; c.fillRect(xL, yTop, xR - xL, yBot - yTop);
+  c.fillStyle = surface; fluidPath(); c.fill();
   if (rasterOn) {
     const sc = s.scalar, pw = Math.round(xR - xL), ph = Math.max(1, Math.round(yBot - yTop));
     let perField = rasterCache.get(f);
@@ -170,6 +181,7 @@ function drawFlowPlot(cv, s) {
         const y = (1 - (py + 0.5) / ph) * f.Ly;
         for (let px = 0; px < pw; px++) {
           const x = (px + 0.5) / pw * f.Lx;
+          if (y > bladeHeightAt(f, x)) continue; // inside the blade: drawn as solid below
           const val = sampleField(f, sc.arr, x, y) * sc.scale;
           const n = Math.round(Math.min(1, Math.max(0, (val - sc.min) / span)) * (LUT_N - 1)) * 3;
           const p = (py * pw + px) * 4;
@@ -184,16 +196,40 @@ function drawFlowPlot(cv, s) {
   }
 
   // ---- solids as geometry --------------------------------------------
-  // blade land: from the band above the plot down to this location's gap
+  // blade: everything above its surface y = h(x), from the band above the
+  // plot down to the surface, bounded downstream by its exit face
   const bladeTop = T - bladeBand;
+  const yEdge = surf[surf.length - 1][1];
+  const th = (s.exitAngle ?? 90) * Math.PI / 180;
+  const sx = plotW / xRange, sy = plotH / yRange;
+  // exit face from the edge, screen direction (right, up) including the
+  // vertical exaggeration; a face leaning downstream is drawn at most 12 px
+  // into the right margin (the colorbar lives there), then straight up
+  const dX = Math.cos(th) * sx, dY = Math.sin(th) * sy;
+  const face = [[xR, yEdge]];
+  {
+    const tTop = (yEdge - bladeTop) / dY, xTop = xR + tTop * dX;
+    if (xTop > xR + 12) { const t = 12 / dX; face.push([xR + 12, yEdge - t * dY], [xR + 12, bladeTop]); }
+    else if (xTop < xL) { const t = (xL - xR) / dX; face.push([xL, yEdge - t * dY]); }
+    else face.push([xTop, bladeTop]);
+  }
+  const bladePath = () => {
+    c.beginPath(); c.moveTo(xL, bladeTop);
+    for (const [px, py] of surf) c.lineTo(px, py);
+    for (const [px, py] of face.slice(1)) c.lineTo(px, py);
+    c.closePath();
+  };
+  const xFaceTop = Math.max(...face.map(p => p[0]));
   c.save();
-  c.beginPath(); c.rect(xL, bladeTop, xR - xL, yTop - bladeTop); c.clip();
-  c.fillStyle = cssVar('--blade'); c.fillRect(xL, bladeTop, xR - xL, yTop - bladeTop);
+  bladePath(); c.clip();
+  c.fillStyle = cssVar('--blade'); c.fillRect(xL, bladeTop, xFaceTop - xL + 14, yBot - bladeTop);
   c.strokeStyle = ink; c.globalAlpha = 0.22; c.lineWidth = 1;
-  for (let x = xL - (yTop - bladeTop); x < xR; x += 7) { c.beginPath(); c.moveTo(x, yTop); c.lineTo(x + (yTop - bladeTop), bladeTop); c.stroke(); }
+  for (let x = xL - (yBot - bladeTop); x < xFaceTop + 14; x += 7) { c.beginPath(); c.moveTo(x, yBot); c.lineTo(x + (yBot - bladeTop), bladeTop); c.stroke(); }
   c.restore();
   c.strokeStyle = ink; c.lineWidth = 1.6;
-  c.beginPath(); c.moveTo(xL, yTop); c.lineTo(xR, yTop); c.lineTo(xR, bladeTop); c.stroke();
+  c.beginPath(); surf.forEach(([px, py], k) => k ? c.lineTo(px, py) : c.moveTo(px, py));
+  for (const [px, py] of face.slice(1)) c.lineTo(px, py);
+  c.stroke();
 
   // moving web
   c.save();
@@ -208,20 +244,20 @@ function drawFlowPlot(cv, s) {
   c.font = `${fsz}px ${mono}`; c.textBaseline = 'middle';
   if (!compact) {
     // labels only where they fit (the edge marker also has a legend entry below the plot)
-    const bl = 'blade land (fixed)', me = 'active metering edge';
+    const bl = s.bladeLabel || 'blade (fixed)', me = 'active metering edge';
     labelOn(c, bl, xL + 8, bladeTop + bladeBand / 2, ink, 'left');
     if (c.measureText(bl).width + c.measureText(me).width + 40 < xR - xL) labelOn(c, me, xR - 12, bladeTop + bladeBand / 2, ink, 'right');
     labelOn(c, `web →  U = ${(s.webSpeed * 1000).toFixed(2)} mm/s`, xL + 8, yBot + webBand / 2 + 0.5, ink, 'left');
   }
   // active metering edge marker (downstream end of the land)
   c.fillStyle = cssVar('--bad'); c.strokeStyle = surface; c.lineWidth = 2;
-  c.beginPath(); c.arc(xR, yTop, compact ? 3.5 : 5, 0, 7); c.fill(); c.stroke();
+  c.beginPath(); c.arc(xR, yEdge, compact ? 3.5 : 5, 0, 7); c.fill(); c.stroke();
 
   // ---- overlays --------------------------------------------------------
   const lw = s.lineWidth || 1.4;
   const lineLut = s.lineScalar ? getLut(s.lineScalar.kind) : null;
   if (s.streamlines) {
-    c.save(); c.beginPath(); c.rect(xL, yTop - 1, xR - xL, yBot - yTop + 2); c.clip();
+    c.save(); fluidPath(); c.clip();
     c.lineJoin = 'round'; c.lineCap = 'round';
     s.streamlines.forEach((ln, li) => {
       const pts = ln.points;

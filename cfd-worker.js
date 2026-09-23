@@ -1,63 +1,70 @@
 /*
- * cfd-worker.js — runs the CFD gap solve, and the downstream free-surface
- * film development that follows it, off the main thread.
+ * cfd-worker.js — runs one location's CFD solve off the main thread: the
+ * 2D gap flow (cfd-gap-solver.js) and the downstream free-surface film
+ * development that follows it (cfd-solver.js's solveDownstreamFilm).
  *
- * The gap solve running off-thread existed as a planned Phase 4
- * requirement ("do not freeze the GUI" for parallel multi-location runs);
- * brought forward because the non-Newtonian Picard extension
- * (cfd-solver.js's solveChannelNSNonNewtonian) measured up to ~3s for
- * some rheology combinations -- long enough to visibly freeze a
- * synchronous single-threaded call, which the spec rules out.
- *
- * Message in:  { nx, ny, Lx, Ly, U, dpdxFavorable, rho, muRef, ty, n,
- *                maxIter, tol, maxOuter, outerTol, gamma, g, ovenDistance }
- * Message out: { ok: true, result: {...} } or { ok: false, error: string }
+ * Message in:  { geometry: 'round'|'flat', H, L, R, Xup, nx, ny, U, Pup,
+ *                rho, muRef, ty, n, muRep, gamma, g, ovenDistance }
+ *              lengths in m, U in m/s, Pup in Pa, muRef = the slider's
+ *              viscosity at 2.7 1/s (the rheology law's own reference),
+ *              muRep = mu at the representative shear rate U/H (only for
+ *              the one-viscosity lubrication estimate shown alongside).
+ * Messages out: { progress: { it, residual, s } } while solving, then
+ *               { ok: true, result } or { ok: false, error }.
  */
-importScripts('cfd-solver.js');
+importScripts('cfd-solver.js', 'cfd-gap-solver.js');
+
+/** Blade height above the web over the solved domain, x = 0 at the inlet, x = Lx at the metering edge. */
+function bladeShape(o) {
+  if (o.geometry === 'round') {
+    // Round entry of radius R whose lowest point is the metering edge (gap H
+    // there), converging from the pool edge Xup upstream.
+    const R = o.R, X = o.Xup, H = o.H, root = x => Math.sqrt(R * R - (X - x) ** 2);
+    return { Lx: X, h: x => H + R - root(x), hx: x => -(X - x) / root(x), hxx: x => R * R / Math.pow(root(x), 3) };
+  }
+  return { Lx: o.L, h: () => o.H, hx: () => 0, hxx: () => 0 };
+}
+
+/** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
+function lubricationQ(o, shape) {
+  const M = 20000, mu = o.muRep;
+  let I2 = 0, I3 = 0;
+  for (let k = 0; k < M; k++) { const h = shape.h((k + 0.5) * shape.Lx / M); I2 += shape.Lx / M / (h * h); I3 += shape.Lx / M / (h * h * h); }
+  return (o.Pup + 6 * mu * o.U * I2) / (12 * mu * I3);
+}
 
 onmessage = e => {
   try {
-    const opts = e.data;
-    const r = solveChannelNSNonNewtonian(opts);
+    const o = e.data;
+    const shape = bladeShape(o);
+    const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
+    let lastPost = 0;
+    const r = solveGapFlow({
+      nx: o.nx, ny: o.ny, ...shape, U: o.U, rho: o.rho, mu: law, Pup: o.Pup,
+      onIteration: h => { const t = Date.now(); if (t - lastPost > 150) { lastPost = t; postMessage({ progress: { it: h.it, residual: h.residual, s: h.s } }); } },
+    });
 
-    let qOutlet = 0;
-    const iOut = r.nx - 1;
-    for (let j = 1; j < r.ny; j++) qOutlet += 0.5 * (r.u[(j - 1) * r.nx + iOut] + r.u[j * r.nx + iOut]) * r.dy;
+    // Flat land: the exact fully developed 1D profile for the same pressure
+    // gradient is the exact answer there -- shown as the reference.
+    let prof1D = null;
+    if (o.geometry !== 'round') {
+      const p1 = solveFullyDeveloped1D({ Ly: o.H, U: o.U, G: o.Pup / o.L, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
+      prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd) };
+    }
 
-    // Downstream free-surface film development, driven by this solve's
-    // own real outlet flow rate (see solveDownstreamFilm's own header for
-    // why this is a reuse of simulation.js's existing free-surface
-    // method, not new physics). Representative viscosity uses the
-    // downstream film's own natural shear scale U/h_inf (h_inf = Q/U),
-    // not the gap's U/H -- a different, thinner regime once the film is
-    // no longer bounded by the blade.
-    const hInfEstimate = qOutlet / opts.U;
-    const gdDownstream = opts.U * opts.U / qOutlet;
-    const muDownstream = muEffLocal(gdDownstream, opts.muRef, opts.ty, opts.n);
-    // maxSteps is generous because convergence time scales with the real
-    // physical residence time to the oven (Lx/U) -- at the slowest web
-    // speed and longest oven distance the slider ranges allow, reaching
-    // the true steady profile measured ~75600 steps (~1.1s wall-clock,
-    // off the main thread so it doesn't block the page either way).
+    // Downstream free-surface film development, driven by this solve's own
+    // flow rate (see solveDownstreamFilm's header: a reuse of the Slurry
+    // animation tab's free-surface method). Representative viscosity at the
+    // film's own shear scale U/h_inf, h_inf = Q/U.
+    const Hedge = shape.h(shape.Lx);
+    const muDownstream = muEffLocal(o.U * o.U / r.Q, o.muRef, o.ty, o.n);
     const film = solveDownstreamFilm({
-      H0: opts.Ly, Q: qOutlet, U: opts.U, mu: muDownstream,
-      gamma: opts.gamma, rho: opts.rho, g: opts.g, Lx: opts.ovenDistance,
+      H0: Hedge, Q: r.Q, U: o.U, mu: muDownstream,
+      gamma: o.gamma, rho: o.rho, g: o.g, Lx: o.ovenDistance,
       nx: 200, maxSteps: 150000, tol: 1e-8,
     });
 
-    // psi (streamfunction) and omega (vorticity) are kept: flow-tracking
-    // post-processing seeds streamlines at equal psi spacing, checks them
-    // against psi, finds eddies from psi extrema, and plots vorticity.
-    const result = {
-      nx: r.nx, ny: r.ny, dx: r.dx, dy: r.dy,
-      u: r.u, v: r.v, psi: r.psi, omega: r.omega, nuField: r.nuField,
-      iterations: r.iterations, converged: r.converged, residual: r.residual,
-      outerIterations: r.outerIterations, outerConverged: r.outerConverged, outerResidual: r.outerResidual,
-      prof1D: { y: r.prof1D.y, u: Array.from(r.prof1D.u), gd: Array.from(r.prof1D.gd) },
-      qOutlet, muDownstream,
-      film,
-    };
-    postMessage({ ok: true, result });
+    postMessage({ ok: true, result: { ...r, prof1D, film, muDownstream, qLub: lubricationQ(o, shape), Hedge } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

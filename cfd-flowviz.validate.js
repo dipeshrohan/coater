@@ -15,8 +15,9 @@
  *
  * Run: node cfd-flowviz.validate.js
  */
-const { solveCavityNS, solveChannelNSNonNewtonian } = require('./cfd-solver.js');
-const { makeFlowField, sampleField, traceStreamline, autoSeeds, flowMetrics, streamlinePsiDeviation, findEddyCentres } = require('./cfd-flowviz.js');
+const { solveCavityNS, muEffLocal } = require('./cfd-solver.js');
+const { solveGapFlow } = require('./cfd-gap-solver.js');
+const { makeFlowField, sampleField, bladeHeightAt, traceStreamline, autoSeeds, flowMetrics, streamlinePsiDeviation, findEddyCentres } = require('./cfd-flowviz.js');
 
 let fails = 0;
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) fails++; };
@@ -24,8 +25,8 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
 // ---------------------------------------------------------------- channel
 {
   const RHO = 1020, U = 0.28 / 60, H = 1.70e-3, L = 10e-3;
-  const r = solveChannelNSNonNewtonian({ nx: 121, ny: 61, Lx: L, Ly: H, U, dpdxFavorable: 72000, rho: RHO, muRef: 10.47, ty: 5, n: 1, maxIter: 80000, tol: 1e-6, maxOuter: 60, outerTol: 1e-3 });
-  const f = makeFlowField(r, RHO, r.prof1D);
+  const r = solveGapFlow({ nx: 121, ny: 41, Lx: L, h: () => H, U, rho: RHO, mu: gd => muEffLocal(gd, 10.5, 5, 1), Pup: 720 });
+  const f = makeFlowField(r, { rho: RHO, ty: 5 });
   console.log('\n-- metering-gap channel (defaults) --');
 
   const seeds = autoSeeds(f, 16, 'forward');
@@ -80,7 +81,7 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
   console.log('\n-- lid-driven cavity, Re=100 (independent field with recirculation) --');
   const N = 97;
   const r = solveCavityNS({ nx: N, ny: N, Lx: 1, Ly: 1, nu: 0.01, wallU: { top: 1 }, maxIter: 80000, tol: 1e-7 });
-  const f = makeFlowField(r, null, null);
+  const f = makeFlowField(r);
   const eddies = findEddyCentres(f);
   const c = eddies[0];
   const h = 1 / (N - 1);
@@ -101,6 +102,32 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
   const nearCentre = m.stagnation.some(s => Math.hypot(s.x - c.x, s.y - c.y) < 3 * h);
   check(nearCentre, `a stagnation point is found at the vortex centre (${m.stagnation.length} region(s) total)`);
   check(m.recircFraction > 0.9, `recirculation covers the closed cavity (${(m.recircFraction * 100).toFixed(1)}% of area)`);
+}
+
+// ------------------------------------------------------------ round entry
+{
+  console.log('\n-- round entry onto the metering edge (curved blade, returning flow) --');
+  const RHO = 1020, U = 0.28 / 60, H = 1.70e-3, R = 0.1, X = 0.04;
+  const r = solveGapFlow({
+    nx: 121, ny: 41, Lx: X, U, rho: RHO, mu: () => 10.5, Pup: 720,
+    h: x => H + R - Math.sqrt(R * R - (X - x) ** 2), hx: x => -(X - x) / Math.sqrt(R * R - (X - x) ** 2), hxx: x => R * R / Math.pow(R * R - (X - x) ** 2, 1.5),
+  });
+  const f = makeFlowField(r, { rho: RHO, ty: 0 });
+  const seeds = autoSeeds(f, 16, 'forward');
+  const lines = seeds.map(s => traceStreamline(f, s, { direction: 'forward' }));
+  const through = lines.slice(0, 16), back = lines.slice(16);
+  let maxDev = 0, inside = true;
+  for (const ln of lines) {
+    maxDev = Math.max(maxDev, streamlinePsiDeviation(f, ln));
+    for (const [x, y] of ln.points) if (y < -1e-12 || y > bladeHeightAt(f, x) * (1 + 1e-9)) inside = false;
+  }
+  check(maxDev < 3e-3, `psi constant along every streamline (max deviation ${(maxDev * 100).toFixed(4)}% of psi range)`);
+  check(inside, 'no streamline point inside the curved blade or below the web');
+  check(through.every(ln => Math.abs(ln.points[ln.points.length - 1][0] - f.Lx) < 1e-9), 'every through-flow line ends at the metering edge');
+  check(back.length >= 2 && back.every(ln => ln.points[ln.points.length - 1][0] < 1e-9), `returning-flow lines (${back.length}) turn back and leave toward the pool`);
+  const m = flowMetrics(f);
+  check(m.reverseFraction > 0, `reverse flow found in the converging entry (${(m.reverseFraction * 100).toFixed(1)}% of area)`);
+  check(Math.abs(m.meanGapVelocity * f.Hedge - r.Q) < 1e-15, 'mean velocity at the edge x edge gap = through-flow Q');
 }
 
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nALL PASS');

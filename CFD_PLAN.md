@@ -5,12 +5,78 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status: Phase 1 and Phase 2 complete and validated. Live in the app's
-## "CFD Analysis" tab now, one location (the web centreline): the 2D gap
-## solve (Newtonian + non-Newtonian, Web Workers) plus the downstream
-## free-surface film development to the oven. Still open: the other 3
-## lateral locations and their comparison view, porous fibre coupling,
-## localStorage persistence, export.
+## Status (latest first). Remaining feature list, in order: 3. 2D free
+## surface / meniscus downstream of the edge, 4. porous fibre coupling,
+## 5. remaining output fields, 6. independent inputs per location,
+## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
+## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Items 1-2: pressure field + round-entry domain, on a rebuilt solver
+
+User's blade: "Round entry, metering edge and the exit is flat land at a
+certain angle, interesting ones being 90 degree to metering edge". Built
+as: round entry of radius R (default 100 mm) whose lowest point is the
+metering edge (gap H there, the location's gap), converging from the pool
+edge (default 40 mm upstream, where the bead pressure Pup acts); exit face
+at the edge at an adjustable angle from the web (default 90, drawn; it
+bounds the downstream meniscus, item 3). The flat land stays as an option.
+
+**Finding that forced the rebuild.** Adding pressure exposed that the
+Phase-1 non-Newtonian solver (`solveChannelNSNonNewtonian`) was not
+iterating: explicit pseudo-time steps limited by the largest viscosity
+(the regularized plug, thousands of times the flowing fluid's) changed
+the field by almost nothing per step, so the per-step-change convergence
+test passed on the starting field. That starting field was the exact 1D
+profile -- the right answer for a flat gap -- so the shown results were
+right, but the solve did no work and could not handle any other shape.
+It is removed. `solveChannelNS` (Newtonian, validated) stays for its own
+checks.
+
+**New solver: `cfd-gap-solver.js`, `solveGapFlow`.**
+- Exact generalized-Newtonian equations for the stream function in
+  conservative stress form (stresses formed at nodes, then
+  differentiated; the viscosity is never differentiated -- robust where it
+  jumps at a yield surface).
+- Boundary-fitted (sigma) grid y = eta h(x), exact chain-rule metrics.
+- Implicit: banded LU with partial pivoting, exact Newton for the
+  rheology (the stress Jacobian mu I + (mu_t - mu) e e^T/|e|^2 is local, so
+  no extra bandwidth), backtracking line search, continuation from a
+  Newtonian fluid to the real rheology and then from a smooth to the final
+  regularization (gdMin = 1e-3 U/H, results insensitive to it).
+- Flow rate Q is an unknown found so the web pressure drop from inlet to
+  edge equals Pup (bordered system).
+- Pressure recovered from the momentum equation using the solver's own
+  stresses; web route (dp/dx = -d(mu omega)/dy) + vertical integration,
+  and an independent route along the blade as a reported consistency
+  check (Newtonian round entry 0.4% of range, default yield-stress case
+  2%).
+- Grid 121 x 41; about 1-2 s per location (4 in parallel Workers).
+
+**Validation (`node cfd-gap-solver.validate.js`, all pass):** flat gap
+exact Couette-Poiseuille (second order, pressure exactly linear, drop =
+Pup); exact 1D yield-stress / shear-thinning solutions (Q within
+0.06-0.36%, regularization 10x smaller moves Q < 0.001%); exact Stokes
+wedge flow (velocity second order; pressure within ~0.1% of range but
+converging slower than velocity -- stated in the check); Ghia (1982)
+cavity (centreline error < 0.007 of lid speed); round entry vs Reynolds
+lubrication within 0.26% (expected O(H/2R) = 0.85%), second-order grid
+convergence. `cfd-flowviz.validate.js` adds a round-entry section
+(streamlines never enter the curved blade, returning flow leaves toward
+the pool).
+
+**Physics results worth knowing.**
+- Where the bead pressure acts matters: moving the pool edge from 20 to
+  80 mm upstream raises the film by 4.8%, and lubrication theory shows the
+  same dependence, so it is physics (the web builds pressure all the way
+  from the pool), not numerics. The inlet condition itself (zero gradient
+  vs local lubrication profile) moves Q by 0.4%.
+- With the round entry and the same Pup, the film comes out about 1.72-
+  1.76 mm, versus about 1.5 mm for the flat land. The Pup slider was set
+  "to give 1.45 mm at default" for the flat-land lubrication model, so it
+  is not calibrated for the round entry.
+- With the default 5 Pa yield stress, the wide part of the entry is a
+  dead zone (stress below yield, fluid at rest; ~16% of the area): no
+  returning-flow vortex there, unlike a Newtonian fluid.
 
 ### Phase 2: downstream free-surface film development
 
@@ -406,6 +472,7 @@ view shares scales, existing tabs unaffected.
 
 ## Still open
 
-(none currently -- the lateral-position format is resolved as numeric mm,
-matching the existing "Position across web" mm slider in the animation
-tab and the 0-300 mm across-web axis the other tabs already use)
+- Pool edge position (default 40 mm) and round-entry radius (100 mm) are
+  inputs in the CFD tab; the user's real values would replace them.
+- Lateral-position format: resolved as numeric mm, matching the
+  "Position across web" slider and the 0-300 mm across-web axis.
