@@ -150,34 +150,65 @@ function makeStencil(dx, de) {
 }
 
 
+/** Inverse of a 3x3 matrix (rows). */
+function invert3(m) {
+  const [a, b, c] = m[0], [d, e, f] = m[1], [g, h, k] = m[2];
+  const A = e * k - f * h, B = -(d * k - f * g), Cc = d * h - e * g;
+  const det = a * A + b * B + c * Cc;
+  if (!(Math.abs(det) > 0)) throw new Error('singular metric');
+  return [[A / det, -(b * k - c * h) / det, (b * f - c * e) / det],
+          [B / det, (a * k - c * g) / det, -(a * f - c * d) / det],
+          [Cc / det, -(a * h - b * g) / det, (a * e - b * d) / det]];
+}
+
+/** Blade-following ("sigma") grid: node (i, j) at x = i Lx/(nx-1), y = j/(ny-1) h(x). Row-major, k = j*nx + i. */
+function sigmaGrid(nx, ny, Lx, hFn) {
+  const x = new Float64Array(nx * ny), y = new Float64Array(nx * ny);
+  for (let i = 0; i < nx; i++) {
+    const xi = i * Lx / (nx - 1), h = hFn(xi);
+    for (let j = 0; j < ny; j++) { x[j * nx + i] = xi; y[j * nx + i] = j / (ny - 1) * h; }
+  }
+  return { x, y };
+}
+
 /**
  * @param {object} opts
- * @param {number} opts.nx, opts.ny   grid nodes along x and across the gap (ny >= 7)
+ * @param {number} opts.nx, opts.ny   grid nodes along the flow and across it (ny >= 7)
+ * Geometry, either
  * @param {number} opts.Lx            domain length (m); inlet at x = 0, outlet at x = Lx
- * @param {(x:number)=>number} opts.h     blade height above the web (m)
- * @param {(x:number)=>number} [opts.hx]  dh/dx (default 0)
- * @param {(x:number)=>number} [opts.hxx] d2h/dx2 (default 0)
+ * @param {(x:number)=>number} opts.h     blade height above the web (m) -- a sigma grid is built
+ * or
+ * @param {{x:Float64Array,y:Float64Array}} opts.grid  any structured grid, node (i, j) at k = j*nx + i:
+ *        j = 0 on the web (y = 0, grid lines leaving it vertically), j = ny-1 on the top boundary
+ * @param {string[]} [opts.top]       per column: 'wall' (no-slip, default) or 'free' (free surface:
+ *                                    kinematic + zero shear stress; its shape is the grid's top row)
  * @param {number} opts.U             web speed (m/s)
- * @param {number} [opts.Ublade=0]    blade speed (m/s, only for the cavity check; needs h' = 0)
+ * @param {number} [opts.Ublade=0]    top-wall speed (m/s, only for the cavity check; flat top)
  * @param {number} opts.rho           density (kg/m^3)
  * @param {(gd:number)=>number} opts.mu  viscosity (Pa.s) at shear rate gd (1/s)
  * @param {number} [opts.gdMin]       regularization shear rate (1/s)
  * @param {number} [opts.Q]           fixed flow rate per unit width (m^2/s) ...
- * @param {number} [opts.Pup]         ... or the inlet-to-outlet pressure drop (Pa) to match
+ * @param {number} [opts.Pup]         ... or the inlet-to-outlet pressure drop along the web (Pa) to match
+ * @param {number} [opts.pOutlet=0]   pressure at the outlet on the web (Pa) -- the datum of the recovered field
  * @param {string|object} [opts.inlet='developed'], [opts.outlet='developed']
- * @param {number} [opts.tol=1e-9]    residual tolerance (relative, per equation)
- * @param {number} [opts.maxIter=60]
+ * @param {object} [opts.warm]        { X, Q } from a previous result's `state` (same grid layout): start
+ *                                    from it with the real rheology, skipping the continuation
+ * @param {number} [opts.tol=1e-6]    residual tolerance (relative, per equation)
+ * @param {number} [opts.maxIter=200]
  */
 function solveGapFlow(opts) {
   const nx = opts.nx, ny = opts.ny, N = nx * ny;
   if (ny < 7 || nx < 5) throw new Error('grid too small');
-  const hFn = opts.h, hxFn = opts.hx || (() => 0), hxxFn = opts.hxx || (() => 0);
-  const Lx = opts.Lx, U = opts.U || 0, Ub = opts.Ublade || 0, rho = opts.rho;
+  const U = opts.U || 0, Ub = opts.Ublade || 0, rho = opts.rho;
   const fixedQ = opts.Q != null;
   const tol = opts.tol ?? 1e-6, maxIter = opts.maxIter ?? 200;
+  const grid = opts.grid || sigmaGrid(nx, ny, opts.Lx, opts.h);
+  const topType = opts.top || new Array(nx).fill('wall');
+  const nid = (i, j) => i * ny + j;
+  const kof = (i, j) => j * nx + i;
 
   // ---- reference scales; the solve runs in these units ----
-  const Hr = opts.Hr ?? hFn(Lx);
+  const Hr = opts.Hr ?? grid.y[kof(nx - 1, ny - 1)];
   const Ur = opts.Ur ?? (Math.abs(U) > 0 ? Math.abs(U) : Math.abs(Ub) > 0 ? Math.abs(Ub) : Math.abs(opts.Q || 0) / Hr || 1);
   const gdRef = Ur / Hr, muR = opts.mu(gdRef);
   const epsTarget = (opts.gdMin ?? 1e-3 * gdRef) / gdRef;
@@ -193,32 +224,91 @@ function solveGapFlow(opts) {
     return (muStar(a) * a - muStar(b) * b) / (a - b);
   };
   const Re = rho * Ur * Hr / muR, Us = U / Ur, Ubs = Ub / Ur;
-  const dx = Lx / (nx - 1) / Hr, de = 1 / (ny - 1);
-  const hs = new Float64Array(nx), hp = new Float64Array(nx), hpp = new Float64Array(nx);
-  for (let i = 0; i < nx; i++) {
-    const x = i * Lx / (nx - 1);
-    hs[i] = hFn(x) / Hr; hp[i] = hxFn(x); hpp[i] = hxxFn(x) * Hr;
-  }
   const PupStar = fixedQ ? 0 : opts.Pup * Hr / (muR * Ur);
+
+  // ---- grid (nondimensional) and its metrics, index space (xi = i, eta = j) ----
+  const gx = new Float64Array(N), gy = new Float64Array(N);
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { gx[nid(i, j)] = grid.x[kof(i, j)] / Hr; gy[nid(i, j)] = grid.y[kof(i, j)] / Hr; }
+  const dI = (a, i, j) => i === 0 ? (-3 * a[nid(0, j)] + 4 * a[nid(1, j)] - a[nid(2, j)]) / 2
+    : i === nx - 1 ? (3 * a[nid(i, j)] - 4 * a[nid(i - 1, j)] + a[nid(i - 2, j)]) / 2 : (a[nid(i + 1, j)] - a[nid(i - 1, j)]) / 2;
+  const dJ = (a, i, j) => j === 0 ? (-3 * a[nid(i, 0)] + 4 * a[nid(i, 1)] - a[nid(i, 2)]) / 2
+    : j === ny - 1 ? (3 * a[nid(i, j)] - 4 * a[nid(i, j - 1)] + a[nid(i, j - 2)]) / 2 : (a[nid(i, j + 1)] - a[nid(i, j - 1)]) / 2;
+  const dII = (a, i, j) => i === 0 ? 2 * a[nid(0, j)] - 5 * a[nid(1, j)] + 4 * a[nid(2, j)] - a[nid(3, j)]
+    : i === nx - 1 ? 2 * a[nid(i, j)] - 5 * a[nid(i - 1, j)] + 4 * a[nid(i - 2, j)] - a[nid(i - 3, j)] : a[nid(i + 1, j)] - 2 * a[nid(i, j)] + a[nid(i - 1, j)];
+  const dJJ = (a, i, j) => j === 0 ? 2 * a[nid(i, 0)] - 5 * a[nid(i, 1)] + 4 * a[nid(i, 2)] - a[nid(i, 3)]
+    : j === ny - 1 ? 2 * a[nid(i, j)] - 5 * a[nid(i, j - 1)] + 4 * a[nid(i, j - 2)] - a[nid(i, j - 3)] : a[nid(i, j + 1)] - 2 * a[nid(i, j)] + a[nid(i, j - 1)];
+  const dIJ = (a, i, j) => {
+    const f = ii => dJ(a, ii, j);
+    return i === 0 ? (-3 * f(0) + 4 * f(1) - f(2)) / 2 : i === nx - 1 ? (3 * f(i) - 4 * f(i - 1) + f(i - 2)) / 2 : (f(i + 1) - f(i - 1)) / 2;
+  };
+  const XE = new Float64Array(N), YE = new Float64Array(N); // x_eta, y_eta (ghost conditions)
+  const LCEE = new Float64Array(N), LCE = new Float64Array(N); // coefficients of F_ee, F_e in the Laplacian (wall vorticity)
+  const TX = new Float64Array(nx), TY = new Float64Array(nx); // unit tangent of the top boundary per column
+
+  // ---- operator weights at every node, from the chain rule
+  //   F_x = (y_e F_s - y_s F_e)/J,  F_y = (x_s F_e - x_e F_s)/J   (s = xi, e = eta)
+  // and the second derivatives from the 3x3 system
+  //   F_ss = x_s^2 F_xx + 2 x_s y_s F_xy + y_s^2 F_yy + x_ss F_x + y_ss F_y  (and the ee, se rows)
+  // central differences in index space, 3x3 over (i+di, j+dj), slot (dj+1)*3+(di+1) ----
+  const stencil = makeStencil(1, 1);
+  const OA = new Float64Array(N * 9), OB = new Float64Array(N * 9), OL = new Float64Array(N * 9);
+  const ODX = new Float64Array(N * 9), ODY = new Float64Array(N * 9), OXX = new Float64Array(N * 9), OYY = new Float64Array(N * 9), OXY = new Float64Array(N * 9);
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+    const n = nid(i, j), o = n * 9;
+    const xs = dI(gx, i, j), xe = dJ(gx, i, j), ys = dI(gy, i, j), ye = dJ(gy, i, j);
+    const xss = dII(gx, i, j), xee = dJJ(gx, i, j), xse = dIJ(gx, i, j), yss = dII(gy, i, j), yee = dJJ(gy, i, j), yse = dIJ(gy, i, j);
+    XE[n] = xe; YE[n] = ye;
+    const J = xs * ye - xe * ys;
+    if (!(Math.abs(J) > 0)) throw new Error(`degenerate grid cell at (${i}, ${j})`);
+    // first derivatives as coefficient vectors over [F_s, F_e, F_ss, F_ee, F_se]
+    const Fx = [ye / J, -ys / J, 0, 0, 0], Fy = [-xe / J, xs / J, 0, 0, 0];
+    // rhs_r = F_rr - x_rr F_x - y_rr F_y
+    const rhs = [[xss, yss, [0, 0, 1, 0, 0]], [xee, yee, [0, 0, 0, 1, 0]], [xse, yse, [0, 0, 0, 0, 1]]]
+      .map(([xr, yr, base]) => base.map((b, q) => b - xr * Fx[q] - yr * Fy[q]));
+    const M = [[xs * xs, 2 * xs * ys, ys * ys], [xe * xe, 2 * xe * ye, ye * ye], [xs * xe, xs * ye + xe * ys, ys * ye]];
+    const Mi = invert3(M);
+    const second = Mi.map(row => [0, 1, 2, 3, 4].map(q => row[0] * rhs[0][q] + row[1] * rhs[1][q] + row[2] * rhs[2][q]));
+    LCEE[n] = second[0][3] + second[2][3]; LCE[n] = second[0][1] + second[2][1];
+    const w = c => stencil(c[0], c[1], c[2], c[3], c[4]).slice();
+    const xx = w(second[0]), xy = w(second[1]), yy = w(second[2]), ddx = w(Fx), ddy = w(Fy);
+    for (let m = 0; m < 9; m++) {
+      OXX[o + m] = xx[m]; OYY[o + m] = yy[m]; OXY[o + m] = xy[m];
+      OA[o + m] = yy[m] - xx[m]; OB[o + m] = 2 * xy[m]; OL[o + m] = xx[m] + yy[m];
+      ODX[o + m] = ddx[m]; ODY[o + m] = ddy[m];
+    }
+    if (j === ny - 1) { const L = Math.hypot(xs, ys); TX[i] = xs / L; TY[i] = ys / L; }
+  }
+  const DI = [-1, 0, 1, -1, 0, 1, -1, 0, 1], DJ = [-1, -1, -1, 0, 0, 0, 1, 1, 1];
+
   const endOf = spec => typeof spec === 'string' ? { type: spec } : { type: 'profile', f: spec.profile, base: spec.base || (() => 0) };
   const inlet = endOf(opts.inlet || 'developed'), outlet = endOf(opts.outlet || 'developed');
+  const free = i => topType[Math.min(nx - 1, Math.max(0, i))] === 'free';
+  if ((free(0) && inlet.type === 'wall') || (free(nx - 1) && outlet.type === 'wall')) throw new Error('a free surface cannot meet a side wall');
 
-  // ---- unknowns: psi at interior nodes, column-major; Q bordered ----
-  const nI = ny - 2, NU = (nx - 2) * nI;
-  const uid = (i, j) => (i - 1) * nI + (j - 1);
+  // ---- unknowns: per interior column i = 1..nx-2, psi at j = 1..ny-2 plus
+  // one slot for the column's top ghost value (an unknown on free-surface
+  // columns, fixed by the zero-shear condition; unused and pinned to 0 on
+  // wall columns); column-major; Q bordered ----
+  const nB = ny - 1, NU = (nx - 2) * nB;
+  const uid = (i, j) => (i - 1) * nB + (j - 1);
+  const gid = i => (i - 1) * nB + (ny - 2);
 
   // psi at any node of the grid extended by one ghost layer, as an affine
   // function of the unknowns: psi = a * x[idx] + qc * Q + c (idx -1: none)
   const EW = nx + 2, EH = ny + 2, EN = EW * EH;
   const rIdx = new Int32Array(EN).fill(-1), rA = new Float64Array(EN), rQ = new Float64Array(EN), rC = new Float64Array(EN);
   const eid = (i, j) => (i + 1) * EH + (j + 1);
-  const hAt = i => hs[Math.min(nx - 1, Math.max(0, i))];
+  const clampI = i => Math.min(nx - 1, Math.max(0, i));
+  const webX = i => i < 0 ? 2 * gx[nid(0, 0)] - gx[nid(1, 0)] : i > nx - 1 ? 2 * gx[nid(nx - 1, 0)] - gx[nid(nx - 2, 0)] : gx[nid(i, 0)];
   function ref(i, j) {
     const end = i <= 0 ? inlet : i >= nx - 1 ? outlet : null;
-    if (end && end.type === 'profile') return [-1, 0, end.f(i * dx * Hr, j * de), end.base(i * dx * Hr, j * de) / (Ur * Hr)];
-    if (j < 0) { const r = ref(i, 1); return [r[0], r[1], r[2], r[3] - 2 * de * Us * hAt(i)]; }
-    if (j > ny - 1) { const r = ref(i, ny - 2); return [r[0], r[1], r[2], r[3] + 2 * de * Ubs * hAt(i)]; }
+    if (end && end.type === 'profile') return [-1, 0, end.f(webX(i) * Hr, j / (ny - 1)), end.base(webX(i) * Hr, j / (ny - 1)) / (Ur * Hr)];
+    if (j < 0) { const r = ref(i, 1); return [r[0], r[1], r[2], r[3] - 2 * Us * YE[nid(clampI(i), 0)]]; }
     if (end && end.type === 'developed') return ref(i <= 0 ? 1 : nx - 2, j);
+    if (j > ny - 1) {
+      if (free(i)) return [gid(i), 1, 0, 0];
+      const r = ref(i, ny - 2); return [r[0], r[1], r[2], r[3] + 2 * Ubs * YE[nid(clampI(i), ny - 1)]];
+    }
     if (end && end.type === 'wall') return (i === 0 || i === nx - 1) ? [-1, 0, 0, 0] : ref(i < 0 ? -i : 2 * (nx - 1) - i, j);
     if (j === 0) return [-1, 0, 0, 0];
     if (j === ny - 1) return [-1, 0, 1, 0];
@@ -228,25 +318,6 @@ function solveGapFlow(opts) {
     const r = ref(i, j), k = eid(i, j);
     rIdx[k] = r[0]; rA[k] = r[1]; rQ[k] = r[2]; rC[k] = r[3];
   }
-
-  // ---- operator weights at every real node (3x3 over (i+di, j+dj), slot (dj+1)*3+(di+1)) ----
-  const stencil = makeStencil(dx, de);
-  const OA = new Float64Array(N * 9), OB = new Float64Array(N * 9), OL = new Float64Array(N * 9);
-  const ODX = new Float64Array(N * 9), ODY = new Float64Array(N * 9), OXX = new Float64Array(N * 9), OYY = new Float64Array(N * 9), OXY = new Float64Array(N * 9);
-  const nid = (i, j) => i * ny + j;
-  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
-    const h = hs[i], eta = j * de, ex = -eta * hp[i] / h, exx = eta * (2 * hp[i] * hp[i] - h * hpp[i]) / (h * h);
-    const o = nid(i, j) * 9;
-    const xx = stencil(0, exx, 1, ex * ex, 2 * ex).slice(), yy = stencil(0, 0, 0, 1 / (h * h), 0).slice();
-    const xy = stencil(0, -hp[i] / (h * h), 0, ex / h, 1 / h).slice();
-    const ddx = stencil(1, ex, 0, 0, 0).slice(), ddy = stencil(0, 1 / h, 0, 0, 0).slice();
-    for (let m = 0; m < 9; m++) {
-      OXX[o + m] = xx[m]; OYY[o + m] = yy[m]; OXY[o + m] = xy[m];
-      OA[o + m] = yy[m] - xx[m]; OB[o + m] = 2 * xy[m]; OL[o + m] = xx[m] + yy[m];
-      ODX[o + m] = ddx[m]; ODY[o + m] = ddy[m];
-    }
-  }
-  const DI = [-1, 0, 1, -1, 0, 1, -1, 0, 1], DJ = [-1, -1, -1, 0, 0, 0, 1, 1, 1];
 
   // ---- state and derived nodal fields ----
   const X = new Float64Array(NU);
@@ -272,26 +343,42 @@ function solveGapFlow(opts) {
 
   // ---- residual of the nonlinear discrete equations ----
   const E = new Float64Array(NU), rowScale = new Float64Array(NU);
-  const tw = i => (i === 0 || i === nx - 1 ? 0.5 : 1) * dx / (2 * de * hs[i]);
-  const CW = [0, -5, 8, -3]; // d/dy at the web extrapolated from rows 1..3
+  // pressure drop along the web, p_in - p_out = int d(mu omega)/dy dx; grid
+  // lines leave the web vertically, so d/dy = (d/deta)/y_eta there, and d/deta
+  // at the wall is extrapolated from rows 1..3 (second order, free of the
+  // wall-vorticity formula's own error)
+  const tw = i => 0.5 * (webX(i + 1) - webX(i - 1)) * (i === 0 || i === nx - 1 ? 0.5 : 1) / (2 * YE[nid(i, 0)]);
+  const CW = [0, -5, 8, -3];
+  // shear-free condition at a free-surface node: a (tx^2 - ty^2) - 2 tx ty b = 0
+  const shearRow = i => { const n = nid(i, ny - 1); return [TX[i] * TX[i] - TY[i] * TY[i], -2 * TX[i] * TY[i], n]; };
   // scale: per-row normalizers to use (null: this state's own) -- a line
   // search must compare trial points with one fixed scaling, or the merit
   // function changes under it
   const scaleNow = new Float64Array(NU);
   function residual(scale) {
     let sMax = 1e-300;
-    for (let i = 1; i < nx - 1; i++) for (let j = 1; j < ny - 1; j++) {
-      const n = nid(i, j), o = n * 9, r = uid(i, j);
-      let e = 0, s = 0, wx = 0, wy = 0;
-      for (let m = 0; m < 9; m++) {
-        const q = n + DI[m] * ny + DJ[m];
-        const t = -(OXX[o + m] - OYY[o + m]) * mu[q] * ea[q] + 2 * OXY[o + m] * mu[q] * eb[q];
-        e += t; s += Math.abs(t);
-        wx += ODX[o + m] * om[q]; wy += ODY[o + m] * om[q];
+    for (let i = 1; i < nx - 1; i++) {
+      for (let j = 1; j < ny - 1; j++) {
+        const n = nid(i, j), o = n * 9, r = uid(i, j);
+        let e = 0, s = 0, wx = 0, wy = 0;
+        for (let m = 0; m < 9; m++) {
+          const q = n + DI[m] * ny + DJ[m];
+          const t = -(OXX[o + m] - OYY[o + m]) * mu[q] * ea[q] + 2 * OXY[o + m] * mu[q] * eb[q];
+          e += t; s += Math.abs(t);
+          wx += ODX[o + m] * om[q]; wy += ODY[o + m] * om[q];
+        }
+        const c = Re * (u[n] * wx + v[n] * wy);
+        E[r] = e + c; rowScale[r] = s + Math.abs(c);
+        if (rowScale[r] > sMax) sMax = rowScale[r];
       }
-      const c = Re * (u[n] * wx + v[n] * wy);
-      E[r] = e + c; rowScale[r] = s + Math.abs(c);
-      if (rowScale[r] > sMax) sMax = rowScale[r];
+      const g = gid(i);
+      if (free(i)) {
+        const [ca, cb, n] = shearRow(i);
+        E[g] = ca * ea[n] + cb * eb[n];
+        let s = 0; const o = n * 9;
+        for (let m = 0; m < 9; m++) s += Math.abs((ca * OA[o + m] + cb * OB[o + m]) * psiE[eid(i + DI[m], ny - 1 + DJ[m])]);
+        rowScale[g] = s;
+      } else { E[g] = X[g]; rowScale[g] = 1; }
     }
     let worst = 0, l2 = 0;
     for (let r = 0; r < NU; r++) scaleNow[r] = rowScale[r] + 1e-6 * sMax;
@@ -312,7 +399,7 @@ function solveGapFlow(opts) {
   }
 
   // ---- Jacobian (exact for the stress; convection frozen), bordered with Q ----
-  const kl = 2 * nI + 2, ku = kl, W = 2 * kl + ku + 1;
+  const kl = 2 * nB + 2, ku = kl, W = 2 * kl + ku + 1;
   const LU = new Float64Array(NU * W), bQ = new Float64Array(NU), cRow = new Float64Array(NU);
   let cQ = 0;
   const C = new Float64Array(4);
@@ -337,22 +424,29 @@ function solveGapFlow(opts) {
   }
   function assembleJ(newton) {
     LU.fill(0); bQ.fill(0); cRow.fill(0); cQ = 0;
-    for (let i = 1; i < nx - 1; i++) for (let j = 1; j < ny - 1; j++) {
-      const n = nid(i, j), o = n * 9, row = uid(i, j);
-      for (let m = 0; m < 9; m++) {
-        const wa = -(OXX[o + m] - OYY[o + m]), wb = 2 * OXY[o + m];
-        const iq = i + DI[m], jq = j + DJ[m], q = nid(iq, jq), oq = q * 9;
-        if (wa !== 0 || wb !== 0) {
-          const c = tangent(q, newton);
-          const ca = wa * C[0] + wb * C[2], cb = wa * C[1] + wb * C[3];
-          for (let p = 0; p < 9; p++) {
-            const val = ca * OA[oq + p] + cb * OB[oq + p];
-            if (val !== 0) route(row, iq, jq, p, val);
+    for (let i = 1; i < nx - 1; i++) {
+      for (let j = 1; j < ny - 1; j++) {
+        const n = nid(i, j), o = n * 9, row = uid(i, j);
+        for (let m = 0; m < 9; m++) {
+          const wa = -(OXX[o + m] - OYY[o + m]), wb = 2 * OXY[o + m];
+          const iq = i + DI[m], jq = j + DJ[m], q = nid(iq, jq), oq = q * 9;
+          if (wa !== 0 || wb !== 0) {
+            tangent(q, newton);
+            const ca = wa * C[0] + wb * C[2], cb = wa * C[1] + wb * C[3];
+            for (let p = 0; p < 9; p++) {
+              const val = ca * OA[oq + p] + cb * OB[oq + p];
+              if (val !== 0) route(row, iq, jq, p, val);
+            }
           }
+          const cq = Re * (u[n] * ODX[o + m] + v[n] * ODY[o + m]);
+          if (cq !== 0) for (let p = 0; p < 9; p++) if (OL[oq + p] !== 0) route(row, iq, jq, p, -cq * OL[oq + p]);
         }
-        const cq = Re * (u[n] * ODX[o + m] + v[n] * ODY[o + m]);
-        if (cq !== 0) for (let p = 0; p < 9; p++) if (OL[oq + p] !== 0) route(row, iq, jq, p, -cq * OL[oq + p]);
       }
+      const g = gid(i);
+      if (free(i)) {
+        const [ca, cb, n] = shearRow(i), o = n * 9;
+        for (let m = 0; m < 9; m++) { const val = ca * OA[o + m] + cb * OB[o + m]; if (val !== 0) route(g, i, ny - 1, m, val); }
+      } else LU[g * W + kl] = 1;
     }
     if (!fixedQ) {
       for (let i = 0; i < nx; i++) for (let j = 1; j <= 3; j++) {
@@ -436,31 +530,44 @@ function solveGapFlow(opts) {
     eps = t <= 1 ? eps0 : eps0 * Math.pow(epsTarget / eps0, Math.min(1, t - 1));
   };
   const tEnd = eps0 > epsTarget ? 2 : 1;
-  setPath(lawVaries ? 0 : tEnd);
-  fields(); res = residual();
-  { const { dX, dQ } = newtonStep(false); for (let r = 0; r < NU; r++) X[r] += dX[r]; Q += dQ; fields(); res = residual(); it++; }
-  let converged = false, stages = 0;
-  if (!lawVaries) converged = iterate(tol, maxIter);
-  else {
-    let t0 = 0, dt = 0.25;
-    let keepX = Float64Array.from(X), keepQ = Q;
-    while (it < maxIter) {
-      const t1 = Math.min(tEnd, t0 + dt), final = t1 === tEnd;
-      setPath(t1); fields(); res = residual(); stages++;
-      const itStart = it;
-      const ok = iterate(final ? tol : (opts.stageTol ?? 1e-3), final ? maxIter : 8);
-      if (ok) {
-        if (final) { converged = true; break; }
-        t0 = t1; keepX = Float64Array.from(X); keepQ = Q;
-        dt = Math.min(tEnd - t0, it - itStart <= 4 ? dt * 2 : dt);
-      } else {
-        if (final && (it >= maxIter || stalled)) break;
-        stalled = false;
-        X.set(keepX); Q = keepQ; dt *= 0.5;
-        if (dt < 1 / 512) break;
-      }
-    }
+  let converged = false, stages = 0, warmUsed = false;
+  if (opts.warm && opts.warm.X && opts.warm.X.length === NU) {
+    // warm start (e.g. the previous pass of a free-surface iteration): the
+    // stored state is dimensional psi, rescaled to this solve's units
+    const f = 1 / (Ur * Hr);
+    for (let r = 0; r < NU; r++) X[r] = opts.warm.X[r] * f;
+    if (!fixedQ) Q = opts.warm.Q * f;
     setPath(tEnd); fields(); res = residual();
+    converged = iterate(tol, maxIter);
+    warmUsed = converged;
+    if (!converged) { X.fill(0); Q = fixedQ ? opts.Q / (Ur * Hr) : 0; it = 0; stalled = false; }
+  }
+  if (!warmUsed) {
+    setPath(lawVaries ? 0 : tEnd);
+    fields(); res = residual();
+    { const { dX, dQ } = newtonStep(false); for (let r = 0; r < NU; r++) X[r] += dX[r]; Q += dQ; fields(); res = residual(); it++; }
+    if (!lawVaries) converged = iterate(tol, maxIter);
+    else {
+      let t0 = 0, dt = 0.25;
+      let keepX = Float64Array.from(X), keepQ = Q;
+      while (it < maxIter) {
+        const t1 = Math.min(tEnd, t0 + dt), final = t1 === tEnd;
+        setPath(t1); fields(); res = residual(); stages++;
+        const itStart = it;
+        const ok = iterate(final ? tol : (opts.stageTol ?? 1e-3), final ? maxIter : 8);
+        if (ok) {
+          if (final) { converged = true; break; }
+          t0 = t1; keepX = Float64Array.from(X); keepQ = Q;
+          dt = Math.min(tEnd - t0, it - itStart <= 4 ? dt * 2 : dt);
+        } else {
+          if (final && (it >= maxIter || stalled)) break;
+          stalled = false;
+          X.set(keepX); Q = keepQ; dt *= 0.5;
+          if (dt < 1 / 512) break;
+        }
+      }
+      setPath(tEnd); fields(); res = residual();
+    }
   }
 
   // ---- dimensional output, row-major (k = j*nx + i) as cfd-flowviz.js / cfd-plot.js expect ----
@@ -468,28 +575,38 @@ function solveGapFlow(opts) {
   // the viscous stresses the discrete equations balanced: tau_xy = mu a, tau_xx = -tau_yy = mu b
   const tauXY = new Float64Array(N), tauXX = new Float64Array(N), tauS = muR * Ur / Hr;
   for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
-    const n = nid(i, j), k = j * nx + i;
+    const n = nid(i, j), k = kof(i, j);
     psi[k] = psiE[eid(i, j)] * Ur * Hr; omega[k] = om[n] * Ur / Hr;
     uo[k] = u[n] * Ur; vo[k] = v[n] * Ur; muo[k] = mu[n] * muR; gdo[k] = gd[n] * gdRef;
     tauXY[k] = mu[n] * ea[n] * tauS; tauXX[k] = mu[n] * eb[n] * tauS;
   }
-  // wall vorticity for display: the second-order (Jensen) wall formula
+  // wall vorticity for display: the second-order (Jensen) wall formula for
+  // psi_etaeta, with the wall's known psi_eta, in the node's own Laplacian
   for (let i = 0; i < nx; i++) {
-    const h = hs[i], P = j => psiE[eid(i, j)];
-    const w0 = -((8 * P(1) - P(2) - 7 * P(0) - 6 * de * Us * h) / (2 * de * de)) / (h * h);
-    const w1 = -(1 + hp[i] * hp[i]) * ((8 * P(ny - 2) - P(ny - 3) - 7 * P(ny - 1) + 6 * de * Ubs * h) / (2 * de * de)) / (h * h);
-    omega[i] = w0 * Ur / Hr; omega[(ny - 1) * nx + i] = w1 * Ur / Hr;
+    const P = j => psiE[eid(i, j)];
+    const n0 = nid(i, 0), pe0 = Us * YE[n0];
+    omega[kof(i, 0)] = -(LCEE[n0] * (8 * P(1) - P(2) - 7 * P(0) - 6 * pe0) / 2 + LCE[n0] * pe0) * Ur / Hr;
+    if (!free(i)) {
+      const n1 = nid(i, ny - 1), pe1 = Ubs * YE[n1];
+      omega[kof(i, ny - 1)] = -(LCEE[n1] * (8 * P(ny - 2) - P(ny - 3) - 7 * P(ny - 1) + 6 * pe1) / 2 + LCE[n1] * pe1) * Ur / Hr;
+    }
   }
-  const hOut = Array.from(hs, h => h * Hr), hxOut = Array.from(hp);
   const out = {
-    nx, ny, dx: Lx / (nx - 1), Lx, h: hOut, hx: hxOut,
+    nx, ny, x: Float64Array.from(grid.x), y: Float64Array.from(grid.y), top: topType.slice(),
     psi, omega, u: uo, v: vo, mu: muo, gd: gdo, tauXY, tauXX,
     Q: Q * Ur * Hr, iterations: it, converged, residual: res ? res.worst : Infinity, pressureResidual: res ? res.pres : Infinity,
-    stalled, factorizations, lineSearchCuts, stages, history,
+    stalled, warmStart: warmUsed, factorizations, lineSearchCuts, stages, history,
     scales: { Hr, Ur, muR, Re, gdMin: epsTarget * gdRef },
+    state: { X: Float64Array.from(X, v => v * Ur * Hr), Q: Q * Ur * Hr },
   };
-  if (hOut.every(h => h === hOut[0])) out.dy = hOut[0] / (ny - 1); // rectangular channel: plain Cartesian spacing too
-  Object.assign(out, recoverPressureSigma(out, rho));
+  if (!opts.grid) {
+    // sigma grid: columns vertical and evenly spaced, the blade height per column
+    out.dx = opts.Lx / (nx - 1); out.Lx = opts.Lx;
+    out.h = Array.from({ length: nx }, (_, i) => grid.y[kof(i, ny - 1)]);
+    out.hx = Array.from({ length: nx }, (_, i) => dI(gy, i, ny - 1) / dI(gx, i, ny - 1));
+    if (out.h.every(h => h === out.h[0])) out.dy = out.h[0] / (ny - 1);
+  }
+  Object.assign(out, recoverPressure(out, rho, opts.pOutlet || 0));
   return out;
 }
 
@@ -505,36 +622,38 @@ function solveGapFlow(opts) {
  * (tau_xy = mu a, tau_xx = -tau_yy = mu b at the nodes), then
  * differentiated -- the viscosity itself is never differentiated, which
  * matters where it jumps by orders of magnitude at the edge of an
- * unyielded region.
+ * unyielded region. Derivatives by the chain rule on the grid's own
+ * coordinates (second-order differences in index space).
  *
  *  - along the web, dp/dx = -d(mu omega)/dy exactly (no-slip moving wall),
  *    with d/dy extrapolated from rows 1-3 -- the same expression the solver
- *    used to match the bead pressure, integrated from p = 0 at the outlet
- *    (the gap exit opens to ambient air; gauge pressure);
- *  - then up every vertical grid line using dp/dy;
- *  - independently along the blade wall from the outlet corner. The two
- *    routes to the blade must agree; their largest difference relative to
- *    the pressure range is returned as pathError (a consistency check on
- *    the solution, reported rather than hidden).
+ *    used to match the bead pressure -- integrated from pOutlet at the
+ *    outlet (0: the gap exit opens to ambient air; gauge pressure);
+ *  - then up every grid line from the web using grad p;
+ *  - independently along the top boundary (blade, exit face, free surface)
+ *    from the outlet corner. The two routes to the top must agree; their
+ *    largest difference relative to the pressure range is returned as
+ *    pathError (a consistency check on the solution, reported rather than
+ *    hidden).
  */
-function recoverPressureSigma(r, rho) {
-  const { nx, ny, dx, h, hx, u, v, omega, mu, tauXY, tauXX } = r;
-  const N = nx * ny, de = 1 / (ny - 1);
+function recoverPressure(r, rho, pOutlet = 0) {
+  const { nx, ny, x, y, u, v, omega, mu, tauXY, tauXX } = r;
+  const N = nx * ny;
   const K = (i, j) => j * nx + i;
-  const dXi = (a, i, j) => i === 0 ? (-3 * a[K(0, j)] + 4 * a[K(1, j)] - a[K(2, j)]) / (2 * dx)
-    : i === nx - 1 ? (3 * a[K(i, j)] - 4 * a[K(i - 1, j)] + a[K(i - 2, j)]) / (2 * dx)
-    : (a[K(i + 1, j)] - a[K(i - 1, j)]) / (2 * dx);
-  const dEta = (a, i, j) => (a[K(i, j + 1)] - a[K(i, j - 1)]) / (2 * de);
+  const dI = (a, i, j) => i === 0 ? (-3 * a[K(0, j)] + 4 * a[K(1, j)] - a[K(2, j)]) / 2
+    : i === nx - 1 ? (3 * a[K(i, j)] - 4 * a[K(i - 1, j)] + a[K(i - 2, j)]) / 2 : (a[K(i + 1, j)] - a[K(i - 1, j)]) / 2;
+  const dJ = (a, i, j) => j === 0 ? (-3 * a[K(i, 0)] + 4 * a[K(i, 1)] - a[K(i, 2)]) / 2
+    : j === ny - 1 ? (3 * a[K(i, j)] - 4 * a[K(i, j - 1)] + a[K(i, j - 2)]) / 2 : (a[K(i, j + 1)] - a[K(i, j - 1)]) / 2;
   const fx = new Float64Array(N), fy = new Float64Array(N);
   for (let i = 0; i < nx; i++) {
     for (let j = 1; j < ny - 1; j++) {
-      const k = K(i, j), H = h[i], ex = -j * de * hx[i] / H;
-      const d = a => { const ae = dEta(a, i, j); return [dXi(a, i, j) + ex * ae, ae / H]; }; // [d/dx, d/dy]
+      const k = K(i, j), xs = dI(x, i, j), xe = dJ(x, i, j), ys = dI(y, i, j), ye = dJ(y, i, j), J = xs * ye - xe * ys;
+      const d = a => { const as = dI(a, i, j), ae = dJ(a, i, j); return [(ye * as - ys * ae) / J, (xs * ae - xe * as) / J]; };
       const [ux, uy] = d(u), [vx, vy] = d(v), [sxx_x, sxx_y] = d(tauXX), [sxy_x, sxy_y] = d(tauXY);
       fx[k] = -rho * (u[k] * ux + v[k] * uy) + sxx_x + sxy_y;
       fy[k] = -rho * (u[k] * vx + v[k] * vy) + sxy_x - sxx_y;
     }
-    // wall nodes: quadratic extrapolation from the interior
+    // boundary nodes: quadratic extrapolation from the interior
     for (const [j0, s] of [[0, 1], [ny - 1, -1]]) {
       fx[K(i, j0)] = 3 * fx[K(i, j0 + s)] - 3 * fx[K(i, j0 + 2 * s)] + fx[K(i, j0 + 3 * s)];
       fy[K(i, j0)] = 3 * fy[K(i, j0 + s)] - 3 * fy[K(i, j0 + 2 * s)] + fy[K(i, j0 + 3 * s)];
@@ -542,17 +661,15 @@ function recoverPressureSigma(r, rho) {
   }
   const p = new Float64Array(N), dpdxWeb = new Float64Array(nx);
   const mw = (i, j) => mu[K(i, j)] * omega[K(i, j)];
-  for (let i = 0; i < nx; i++) dpdxWeb[i] = -(-5 * mw(i, 1) + 8 * mw(i, 2) - 3 * mw(i, 3)) / (2 * de * h[i]);
-  for (let i = nx - 2; i >= 0; i--) p[K(i, 0)] = p[K(i + 1, 0)] - 0.5 * (dpdxWeb[i] + dpdxWeb[i + 1]) * dx;
-  for (let i = 0; i < nx; i++) {
-    const dy = h[i] * de;
-    for (let j = 1; j < ny; j++) p[K(i, j)] = p[K(i, j - 1)] + 0.5 * (fy[K(i, j - 1)] + fy[K(i, j)]) * dy;
-  }
+  for (let i = 0; i < nx; i++) dpdxWeb[i] = -((-5 * mw(i, 1) + 8 * mw(i, 2) - 3 * mw(i, 3)) / 2) / dJ(y, i, 0);
+  p[K(nx - 1, 0)] = pOutlet;
+  for (let i = nx - 2; i >= 0; i--) p[K(i, 0)] = p[K(i + 1, 0)] - 0.5 * (dpdxWeb[i] + dpdxWeb[i + 1]) * (x[K(i + 1, 0)] - x[K(i, 0)]);
+  const step = (ka, kb) => 0.5 * (fx[ka] + fx[kb]) * (x[kb] - x[ka]) + 0.5 * (fy[ka] + fy[kb]) * (y[kb] - y[ka]);
+  for (let i = 0; i < nx; i++) for (let j = 1; j < ny; j++) p[K(i, j)] = p[K(i, j - 1)] + step(K(i, j - 1), K(i, j));
   const pWeb = new Float64Array(nx), pBlade = new Float64Array(nx), pBladeWall = new Float64Array(nx);
   for (let i = 0; i < nx; i++) { pWeb[i] = p[K(i, 0)]; pBlade[i] = p[K(i, ny - 1)]; }
-  const ds = i => fx[K(i, ny - 1)] + hx[i] * fy[K(i, ny - 1)];
   pBladeWall[nx - 1] = pBlade[nx - 1];
-  for (let i = nx - 2; i >= 0; i--) pBladeWall[i] = pBladeWall[i + 1] - 0.5 * (ds(i) + ds(i + 1)) * dx;
+  for (let i = nx - 2; i >= 0; i--) pBladeWall[i] = pBladeWall[i + 1] - step(K(i, ny - 1), K(i + 1, ny - 1));
   let pMax = -Infinity, pMin = Infinity, kMax = 0, kMin = 0;
   for (let k = 0; k < N; k++) {
     if (p[k] > pMax) { pMax = p[k]; kMax = k; }
@@ -561,8 +678,8 @@ function recoverPressureSigma(r, rho) {
   const range = Math.max(pMax - pMin, 1e-300);
   let pathError = 0;
   for (let i = 0; i < nx; i++) pathError = Math.max(pathError, Math.abs(pBladeWall[i] - pBlade[i]) / range);
-  const loc = k => { const i = k % nx, j = (k - i) / nx; return [i * dx, j * de * h[i]]; };
+  const loc = k => [x[k], y[k]];
   return { p, pWeb, pBlade, pBladeWall, dpdxWeb, pathError, pMax, pMaxLoc: loc(kMax), pMin, pMinLoc: loc(kMin) };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveGapFlow, recoverPressureSigma, bandFactor, bandSolve };
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveGapFlow, sigmaGrid, recoverPressure, bandFactor, bandSolve, makeStencil, invert3 };

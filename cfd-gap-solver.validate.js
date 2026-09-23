@@ -185,5 +185,31 @@ const RHO = 1020, U = 0.28 / 60, H = 1.7e-3, L = 10e-3, PUP = 720, MU = 10.5;
   check(worst < H / (2 * R), `2D follows lubrication theory at every inlet position (worst ${pct(worst)}); the inlet position itself moves the film by ${pct(tr[4].q / tr[0].q - 1)} over 20-80 mm`);
 }
 
+// ---------------------------------------------------------------- 6
+{
+  console.log('\n-- 6. free-surface boundary (kinematic + zero shear): exact solutions --');
+  // flat free film on the moving web with a pressure drop: u = U + (G/mu)(h y - y^2/2), Q = U h + G h^3/(3 mu)
+  const Pf = 50, G = Pf / L, Qa = U * H + G * H ** 3 / (3 * MU), errs = [];
+  for (const [nx, ny] of [[41, 21], [41, 41]]) {
+    const r = solveGapFlow({ nx, ny, Lx: L, h: () => H, U, rho: RHO, mu: () => MU, Pup: Pf, top: new Array(nx).fill('free') });
+    errs.push(Math.abs(r.Q / Qa - 1));
+  }
+  check(errs[1] < 1e-4 && errs[0] / errs[1] > 3.5, `flat free film: flow rate error ${pct(errs[0])} -> ${pct(errs[1])} (second order)`);
+  // Stokes flow in a wedge between a no-slip wall and a stress-free sloped surface:
+  // f'' + 4 f = C with f(0) = 0, f'(beta) = 0  ->  f = A (cos(2 th - 2 beta) - cos 2 beta)
+  const beta = 15 * Math.PI / 180, tb = Math.tan(beta), x1 = 5e-3, x2 = 15e-3, mu = 10, A = -1e-6;
+  const psiT = th => A * ((Math.sin(2 * th - 2 * beta) + Math.sin(2 * beta)) / 2 - th * Math.cos(2 * beta));
+  const Qex = psiT(beta);
+  const exact = (xs, eta) => { const xp = x1 + xs, y = eta * xp * tb, r = Math.hypot(xp, y), th = Math.atan2(y, xp); const ur = A * (Math.cos(2 * th - 2 * beta) - Math.cos(2 * beta)) / r; return { u: ur * Math.cos(th), v: ur * Math.sin(th) }; };
+  const profile = { profile: (xs, eta) => psiT(Math.atan(eta * tb)) / Qex };
+  const ev = [[41, 21], [81, 41]].map(([nx, ny]) => {
+    const r = solveGapFlow({ nx, ny, Lx: x2 - x1, h: x => (x1 + x) * tb, U: 0, rho: 1e-9, mu: () => mu, inlet: profile, outlet: profile, Q: Qex, Hr: x2 * tb, Ur: Math.abs(Qex) / (x2 * tb), top: new Array(nx).fill('free') });
+    let e = 0, m = 0;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const x = exact(i * (x2 - x1) / (nx - 1), j / (ny - 1)), k = j * nx + i; m = Math.max(m, Math.hypot(x.u, x.v)); e = Math.max(e, Math.hypot(r.u[k] - x.u, r.v[k] - x.v)); }
+    return e / m;
+  });
+  check(ev[1] < 1e-3 && Math.log(ev[0] / ev[1]) / Math.log(2) > 1.8, `wedge with a stress-free sloped surface: velocity error ${pct(ev[0])} -> ${pct(ev[1])} (order ${(Math.log(ev[0] / ev[1]) / Math.log(2)).toFixed(2)})`);
+}
+
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nALL PASS');
 if (fails) process.exit(1);
