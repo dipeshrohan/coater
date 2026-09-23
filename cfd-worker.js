@@ -45,10 +45,12 @@ onmessage = e => {
       nx: 200, maxSteps: 150000, tol: 1e-8,
     });
 
-    // psi/omega are large and not needed by the UI; drop them, keep u/v/nuField/prof1D.
+    // psi (streamfunction) and omega (vorticity) are kept: flow-tracking
+    // post-processing seeds streamlines at equal psi spacing, checks them
+    // against psi, finds eddies from psi extrema, and plots vorticity.
     const result = {
       nx: r.nx, ny: r.ny, dx: r.dx, dy: r.dy,
-      u: r.u, v: r.v, nuField: r.nuField,
+      u: r.u, v: r.v, psi: r.psi, omega: r.omega, nuField: r.nuField,
       iterations: r.iterations, converged: r.converged, residual: r.residual,
       outerIterations: r.outerIterations, outerConverged: r.outerConverged, outerResidual: r.outerResidual,
       prof1D: { y: r.prof1D.y, u: Array.from(r.prof1D.u), gd: Array.from(r.prof1D.gd) },

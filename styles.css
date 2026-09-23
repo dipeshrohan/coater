@@ -287,6 +287,99 @@ details > summary::-webkit-details-marker { display: none; }
 .anim-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 24px; margin: 18px 0; }
 .anim-params .sl { margin-bottom: 10px; }
 
+/* ---- CFD Analysis tab ------------------------------------------------
+ * Sections separated by hairlines rather than more boxed cards, so the
+ * field plot stays the one lifted object on the page. ---------------- */
+.cfd-lede { margin-bottom: 6px; }
+.cfd-block { border-top: 1px solid var(--line-soft); padding-top: 16px; margin-top: 18px; }
+.cfd-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.cfd-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+.cfd-actions { display: flex; gap: 8px; }
+.btn-sm { font-size: 12.5px; padding: 5px 10px; border-radius: 7px; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.loc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; }
+.loc-card { display: grid; gap: 6px; align-content: start; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.loc-card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.loc-name { font-size: 13px; font-weight: 600; }
+.loc-state { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: -3px; }
+.loc-state.ok { color: var(--ok); } .loc-state.warn { color: var(--warn); } .loc-state.bad { color: var(--bad); } .loc-state.run { color: var(--accent); }
+.loc-z { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.cfd-block .loc-z input[type=number] { width: 76px; padding: 4px 4px 4px 6px; }
+.loc-meta { font-size: 12px; color: var(--muted); }
+.loc-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+.loc-card .btn { justify-self: start; }
+
+.cfd-block input[type=number], .cfd-block select {
+  font: inherit; font-size: 12.5px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px;
+}
+.cfd-block input[type=number] { width: 72px; font-family: var(--mono); }
+.cfd-block select:focus-visible, .cfd-block input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-size: 12.5px; padding: 5px 10px; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { color: var(--ink); background: var(--soft); }
+.seg button[aria-selected=true] { background: var(--accent); color: var(--accent-ink); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.fv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 9px 12px; background: var(--soft); border: 1px solid var(--line-soft); border-radius: 9px; }
+.fv-ctl { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+.fv-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.fv-chk input { accent-color: var(--accent); margin: 0; }
+.fv-chk.is-off { color: var(--muted); cursor: help; }
+.fv-why { font-size: 11.5px; color: var(--muted); }
+.fv-more { margin: 10px 0 0; }
+.fv-more > summary { font-size: 13px; color: var(--accent); display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.fv-more > summary::before { content: ''; border-left: 4px solid var(--accent); border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent; transition: transform .15s; }
+.fv-more[open] > summary::before { transform: rotate(90deg); }
+.fv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 10px; }
+.fv-grid fieldset { display: grid; gap: 8px; align-content: start; margin: 0; padding: 10px 12px 12px; border: 1px solid var(--line-soft); border-radius: 9px; }
+.fv-grid legend { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); padding: 0 4px; }
+.fv-grid .fv-ctl { justify-content: space-between; }
+.fv-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; line-height: 1.5; }
+
+.fv-seeds { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; padding: 9px 12px; border: 1px dashed var(--accent); border-radius: 9px; font-size: 12.5px; color: var(--muted); }
+.fv-seeds label { display: inline-flex; align-items: center; gap: 5px; }
+.seed-list { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+.seed-chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11.5px; color: var(--ink); background: var(--soft); border: 1px solid var(--line-soft); border-radius: 999px; padding: 2px 4px 2px 9px; }
+.seed-chip button { font: inherit; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; border-radius: 50%; }
+.seed-chip button:hover { color: var(--bad); }
+
+#cfdPlots { margin-top: 14px; }
+.fv-caption { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 0 0 6px; }
+.warn-text { color: var(--warn); }
+.fv-plot { position: relative; }
+.fv-plot.compact + .fv-plot.compact { margin-top: 10px; }
+.fv-plot .fv-over { position: absolute; left: 0; top: 0; background: transparent; box-shadow: none; pointer-events: none; }
+.fv-tip { position: absolute; z-index: 2; display: grid; gap: 2px; min-width: 180px; max-width: 280px; padding: 7px 9px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; box-shadow: var(--shadow); font-family: var(--mono); font-size: 11.5px; color: var(--muted); pointer-events: none; }
+.fv-tip b { color: var(--ink); font-weight: 500; }
+.fv-empty { padding: 30px 0; text-align: center; max-width: none; }
+
+.fv-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.fv-legend .fv-note { flex-basis: 100%; margin-top: 2px; }
+.lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg i { display: inline-block; flex: 0 0 auto; }
+.lg-line { width: 18px; height: 2px; background: var(--ink); border-radius: 1px; }
+.lg-arrow { width: 0; height: 0; border-left: 7px solid var(--ink); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.lg-seed { width: 7px; height: 7px; border-radius: 50%; border: 1.3px solid var(--ink); background: var(--surface); }
+.lg-seed.man { border: 2px solid var(--accent); }
+.lg-vec { width: 16px; height: 1.5px; background: var(--ink); position: relative; }
+.lg-vec::after { content: ''; position: absolute; right: -2px; top: -3px; border-left: 5px solid var(--ink); border-top: 3.75px solid transparent; border-bottom: 3.75px solid transparent; }
+.lg-edge { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+
+.table-wrap { overflow-x: auto; }
+.cfd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cfd-table th, .cfd-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.cfd-table tbody th { font-weight: 400; color: var(--ink); width: 42%; }
+.cfd-table tbody th small { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+.cfd-table td { font-family: var(--mono); font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cfd-table td small { display: block; font-size: 10.5px; color: var(--muted); }
+.cfd-table.cmp tbody th { width: auto; min-width: 150px; }
+.cfd-table thead th { font-size: 12px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--line); }
+.cfd-table thead th small { display: block; font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--muted); }
+
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; transition: none !important; }
 }
