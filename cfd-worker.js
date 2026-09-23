@@ -1,28 +1,31 @@
 /*
  * cfd-worker.js — runs one location's CFD solve off the main thread: the
- * 2D gap flow (cfd-gap-solver.js) and the downstream free-surface film
- * development that follows it (cfd-solver.js's solveDownstreamFilm).
+ * 2D flow under the blade, over its exit face and into the free film, with
+ * the meniscus and its contact line solved together with the flow
+ * (cfd-fem.js), then the 1D thin-film development from the end of that 2D
+ * domain to the oven (cfd-solver.js's solveDownstreamFilm).
  *
- * Message in:  { geometry: 'round'|'flat', H, L, R, Xup, nx, ny, U, Pup,
- *                rho, muRef, ty, n, muRep, gamma, g, ovenDistance }
- *              lengths in m, U in m/s, Pup in Pa, muRef = the slider's
- *              viscosity at 2.7 1/s (the rheology law's own reference),
- *              muRep = mu at the representative shear rate U/H (only for
- *              the one-viscosity lubrication estimate shown alongside).
- * Messages out: { progress: { it, residual, s } } while solving, then
+ * Message in:  { geometry: 'round'|'flat', H, L, R, Xup, exitAngle, contactDeg,
+ *                U, Pup, rho, muRef, ty, n, muRep, gamma, g, ovenDistance }
+ *              lengths in m, angles in degrees, U in m/s, Pup in Pa,
+ *              muRef = the slider's viscosity at 2.7 1/s (the rheology
+ *              law's own reference), muRep = mu at the representative
+ *              shear rate U/H (only for the one-viscosity lubrication
+ *              estimate shown alongside).
+ * Messages out: { progress: { it, residual, s, stage } } while solving, then
  *               { ok: true, result } or { ok: false, error }.
  */
-importScripts('cfd-solver.js', 'cfd-gap-solver.js');
+importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js');
 
-/** Blade height above the web over the solved domain, x = 0 at the inlet, x = Lx at the metering edge. */
+/** Blade height above the web over the blade's part of the domain, x = 0 at the inlet, x = Lx at the metering edge. */
 function bladeShape(o) {
   if (o.geometry === 'round') {
     // Round entry of radius R whose lowest point is the metering edge (gap H
     // there), converging from the pool edge Xup upstream.
     const R = o.R, X = o.Xup, H = o.H, root = x => Math.sqrt(R * R - (X - x) ** 2);
-    return { Lx: X, h: x => H + R - root(x), hx: x => -(X - x) / root(x), hxx: x => R * R / Math.pow(root(x), 3) };
+    return { Lx: X, h: x => H + R - root(x) };
   }
-  return { Lx: o.L, h: () => o.H, hx: () => 0, hxx: () => 0 };
+  return { Lx: o.L, h: () => o.H };
 }
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
@@ -36,35 +39,48 @@ function lubricationQ(o, shape) {
 onmessage = e => {
   try {
     const o = e.data;
-    const shape = bladeShape(o);
+    const shape = bladeShape(o), xe = shape.Lx, H = shape.h(xe);
     const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
-    let lastPost = 0;
-    const r = solveGapFlow({
-      nx: o.nx, ny: o.ny, ...shape, U: o.U, rho: o.rho, mu: law, Pup: o.Pup,
-      onIteration: h => { const t = Date.now(); if (t - lastPost > 150) { lastPost = t; postMessage({ progress: { it: h.it, residual: h.residual, s: h.s } }); } },
+    const qLub = lubricationQ(o, shape);
+    let lastPost = 0, stage = '';
+    const post = h => { const t = Date.now(); if (t - lastPost > 150) { lastPost = t; postMessage({ progress: { it: h.it, residual: h.residual, s: h.s, stage } }); } };
+    // mesh: blade elements about 0.6 H long (12..40), rows graded toward the blade/face/surface
+    const nEb = Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
+    const r = solveCoaterFEM({
+      hFn: shape.h, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg,
+      U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
+      Ld: Math.max(12e-3, 8 * H), nEb, nEf: 6, nEs: 24, nEy: 6, fInfGuess: qLub / o.U,
+      onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration: post,
     });
+    if (!r.x) throw new Error(r.error || 'no solution');
+    const g = coaterGrid(r, { xe, H, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U });
 
-    // Flat land: the exact fully developed 1D profile for the same pressure
-    // gradient is the exact answer there -- shown as the reference.
+    // Flat land: away from its ends the flow is fully developed, so the exact
+    // 1D profile for the pressure gradient the 2D solution has at mid-land
+    // must match it there -- shown as the reference. (Not the bead pressure
+    // over the land length: the meniscus sets the pressure at the edge.)
     let prof1D = null;
     if (o.geometry !== 'round') {
-      const p1 = solveFullyDeveloped1D({ Ly: o.H, U: o.U, G: o.Pup / o.L, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
-      prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd) };
+      let i = 1;
+      while (i < g.iCorner - 1 && g.xWeb[i] < 0.5 * xe) i++;
+      const G = -(g.pWeb[i + 1] - g.pWeb[i - 1]) / (g.xWeb[i + 1] - g.xWeb[i - 1]);
+      const p1 = solveFullyDeveloped1D({ Ly: o.H, U: o.U, G, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
+      prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd), x: g.xWeb[i], G };
     }
 
-    // Downstream free-surface film development, driven by this solve's own
-    // flow rate (see solveDownstreamFilm's header: a reuse of the Slurry
-    // animation tab's free-surface method). Representative viscosity at the
-    // film's own shear scale U/h_inf, h_inf = Q/U.
-    const Hedge = shape.h(shape.Lx);
-    const muDownstream = muEffLocal(o.U * o.U / r.Q, o.muRef, o.ty, o.n);
-    const film = solveDownstreamFilm({
-      H0: Hedge, Q: r.Q, U: o.U, mu: muDownstream,
-      gamma: o.gamma, rho: o.rho, g: o.g, Lx: o.ovenDistance,
+    // Beyond the 2D domain: the 1D thin-film development (a reuse of the
+    // Slurry animation tab's free-surface method) from the 2D film's end to
+    // the oven, driven by this solve's own flow rate. Representative
+    // viscosity at the film's own shear scale U/h_inf, h_inf = Q/U.
+    const filmStart = g.xEnd - xe;                     // distance from the edge where the 1D film takes over
+    const muDownstream = muEffLocal(o.U * o.U / g.Q, o.muRef, o.ty, o.n);
+    const film = o.ovenDistance > filmStart ? solveDownstreamFilm({
+      H0: g.hEnd, Q: g.Q, U: o.U, mu: muDownstream,
+      gamma: o.gamma, rho: o.rho, g: o.g, Lx: o.ovenDistance - filmStart,
       nx: 200, maxSteps: 150000, tol: 1e-8,
-    });
+    }) : { error: 'the oven is inside the 2D domain' };
 
-    postMessage({ ok: true, result: { ...r, prof1D, film, muDownstream, qLub: lubricationQ(o, shape), Hedge } });
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

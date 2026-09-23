@@ -368,6 +368,8 @@ details > summary::-webkit-details-marker { display: none; }
 .lg-vec { width: 16px; height: 1.5px; background: var(--ink); position: relative; }
 .lg-vec::after { content: ''; position: absolute; right: -2px; top: -3px; border-left: 5px solid var(--ink); border-top: 3.75px solid transparent; border-bottom: 3.75px solid transparent; }
 .lg-edge { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+.lg-surf { height: 1.5px; }
+.lg-cl { width: 8px; height: 8px; }
 
 .table-wrap { overflow-x: auto; }
 .cfd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }

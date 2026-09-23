@@ -7,10 +7,16 @@
  * metering edge marked), a colorbar, and streamline / velocity-vector /
  * seed overlays.
  *
+ * A curvilinear field (the finite-element domain with the meniscus) is
+ * drawn from its own mesh: the fluid is the mesh outline, the blade runs
+ * along the top boundary to the contact line and its exit face continues
+ * above it, and the free surface from the contact line to the domain end
+ * is drawn as a line with air above.
+ *
  * Canvas 2D only (the app has no plotting library -- see draw.js); reads
  * theme tokens via cssVar so it follows light/dark like the other tabs.
  * Pure drawing: never touches the solver. Depends on draw.js (setupCanvas,
- * cssVar) and cfd-flowviz.js (sampleField).
+ * cssVar) and cfd-flowviz.js (sampleField, sampleIdx, fieldOutline).
  */
 
 // ---- colour ramps -----------------------------------------------------
@@ -146,10 +152,14 @@ function drawFlowPlot(cv, s) {
   c.clearRect(0, 0, w, totalH);
 
   const yTop = Y(f.Ly), yBot = Y(0), xL = X(0), xR = X(f.Lx);
-  // blade surface on screen, one point per column
-  const surf = Array.from(f.h, (h, i) => [X(i * f.dx), Y(h)]);
+  // blade surface on screen, one point per column (curvilinear: the top boundary up to the contact line)
+  const topRow = f.curv ? Array.from({ length: f.nx }, (_, i) => [X(f.gx[(f.ny - 1) * f.nx + i]), Y(f.gy[(f.ny - 1) * f.nx + i])]) : null;
+  const surf = f.curv ? topRow.slice(0, f.iCL + 1) : Array.from(f.h, (h, i) => [X(i * f.dx), Y(h)]);
+  const outline = f.curv ? fieldOutline(f).map(([x, y]) => [X(x), Y(y)]) : null;
   const fluidPath = () => {
-    c.beginPath(); c.moveTo(xL, yBot);
+    c.beginPath();
+    if (outline) { outline.forEach(([px, py], k) => k ? c.lineTo(px, py) : c.moveTo(px, py)); c.closePath(); return; }
+    c.moveTo(xL, yBot);
     for (const [px, py] of surf) c.lineTo(px, py);
     c.lineTo(xR, yBot); c.closePath();
   };
@@ -181,8 +191,9 @@ function drawFlowPlot(cv, s) {
         const y = (1 - (py + 0.5) / ph) * f.Ly;
         for (let px = 0; px < pw; px++) {
           const x = (px + 0.5) / pw * f.Lx;
-          if (y > bladeHeightAt(f, x)) continue; // inside the blade: drawn as solid below
-          const val = sampleField(f, sc.arr, x, y) * sc.scale;
+          let val;
+          if (f.curv) { const at = f.locate(x, y); if (!at) continue; val = sampleIdx(f, sc.arr, at[0], at[1]) * sc.scale; } // outside: blade or air
+          else { if (y > bladeHeightAt(f, x)) continue; val = sampleField(f, sc.arr, x, y) * sc.scale; } // inside the blade: drawn as solid below
           const n = Math.round(Math.min(1, Math.max(0, (val - sc.min) / span)) * (LUT_N - 1)) * 3;
           const p = (py * pw + px) * 4;
           img.data[p] = lut[n]; img.data[p + 1] = lut[n + 1]; img.data[p + 2] = lut[n + 2]; img.data[p + 3] = 255;
@@ -199,18 +210,22 @@ function drawFlowPlot(cv, s) {
   // blade: everything above its surface y = h(x), from the band above the
   // plot down to the surface, bounded downstream by its exit face
   const bladeTop = T - bladeBand;
-  const yEdge = surf[surf.length - 1][1];
   const th = (s.exitAngle ?? 90) * Math.PI / 180;
   const sx = plotW / xRange, sy = plotH / yRange;
-  // exit face from the edge, screen direction (right, up) including the
-  // vertical exaggeration; a face leaning downstream is drawn at most 12 px
-  // into the right margin (the colorbar lives there), then straight up
+  // exit face, screen direction (right, up) including the vertical
+  // exaggeration: from the metering edge (the domain ends there), or, with
+  // the meniscus in the domain, on from the contact line (the face below it
+  // is the mesh's top boundary). A face leaning downstream past the plot's
+  // right end is drawn at most 12 px into the margin (the colorbar lives
+  // there), then straight up.
   const dX = Math.cos(th) * sx, dY = Math.sin(th) * sy;
-  const face = [[xR, yEdge]];
+  const [xF0, yF0] = surf[surf.length - 1];
+  const edgePx = f.curv ? topRow[f.iCorner] : [xR, yF0];
+  const face = [[xF0, yF0]];
   {
-    const tTop = (yEdge - bladeTop) / dY, xTop = xR + tTop * dX;
-    if (xTop > xR + 12) { const t = 12 / dX; face.push([xR + 12, yEdge - t * dY], [xR + 12, bladeTop]); }
-    else if (xTop < xL) { const t = (xL - xR) / dX; face.push([xL, yEdge - t * dY]); }
+    const tTop = (yF0 - bladeTop) / dY, xTop = xF0 + tTop * dX;
+    if (xTop > xR + 12) { const t = (xR + 12 - xF0) / dX; face.push([xR + 12, yF0 - t * dY], [xR + 12, bladeTop]); }
+    else if (xTop < xL) { const t = (xL - xF0) / dX; face.push([xL, yF0 - t * dY]); }
     else face.push([xTop, bladeTop]);
   }
   const bladePath = () => {
@@ -230,6 +245,16 @@ function drawFlowPlot(cv, s) {
   c.beginPath(); surf.forEach(([px, py], k) => k ? c.lineTo(px, py) : c.moveTo(px, py));
   for (const [px, py] of face.slice(1)) c.lineTo(px, py);
   c.stroke();
+  if (f.curv) {
+    // free surface, contact line to the domain end (air above it)
+    c.strokeStyle = ink; c.lineWidth = 1.3;
+    c.beginPath(); topRow.slice(f.iCL).forEach(([px, py], k) => k ? c.lineTo(px, py) : c.moveTo(px, py)); c.stroke();
+    if (f.iCL !== f.iCorner) {
+      // contact line
+      c.fillStyle = surface; c.strokeStyle = ink; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(xF0, yF0, compact ? 2.5 : 3.5, 0, 7); c.fill(); c.stroke();
+    }
+  }
 
   // moving web
   c.save();
@@ -246,12 +271,13 @@ function drawFlowPlot(cv, s) {
     // labels only where they fit (the edge marker also has a legend entry below the plot)
     const bl = s.bladeLabel || 'blade (fixed)', me = 'active metering edge';
     labelOn(c, bl, xL + 8, bladeTop + bladeBand / 2, ink, 'left');
-    if (c.measureText(bl).width + c.measureText(me).width + 40 < xR - xL) labelOn(c, me, xR - 12, bladeTop + bladeBand / 2, ink, 'right');
+    if (c.measureText(bl).width + c.measureText(me).width + 40 < edgePx[0] - xL) labelOn(c, me, edgePx[0] - 12, bladeTop + bladeBand / 2, ink, 'right');
+    if (f.curv) labelOn(c, 'air', xR - 8, Math.max(yTop + 10, topRow[f.nx - 1][1] - 10), muted, 'right');
     labelOn(c, `web →  U = ${(s.webSpeed * 1000).toFixed(2)} mm/s`, xL + 8, yBot + webBand / 2 + 0.5, ink, 'left');
   }
   // active metering edge marker (downstream end of the land)
   c.fillStyle = cssVar('--bad'); c.strokeStyle = surface; c.lineWidth = 2;
-  c.beginPath(); c.arc(xR, yEdge, compact ? 3.5 : 5, 0, 7); c.fill(); c.stroke();
+  c.beginPath(); c.arc(edgePx[0], edgePx[1], compact ? 3.5 : 5, 0, 7); c.fill(); c.stroke();
 
   // ---- overlays --------------------------------------------------------
   const lw = s.lineWidth || 1.4;
@@ -332,7 +358,7 @@ function drawFlowPlot(cv, s) {
   }
   if (!compact) {
     c.textBaseline = 'top'; c.textAlign = 'center';
-    const mid = 'x (mm), machine direction →', inl = 'inflow from bead', outl = 'outflow at edge';
+    const mid = 'x (mm), machine direction →', inl = 'inflow from bead', outl = f.curv ? 'film outflow' : 'outflow at edge';
     const roomy = c.measureText(mid).width + c.measureText(inl).width + c.measureText(outl).width + 40 < xR - xL;
     c.fillText(roomy ? mid : 'x (mm) →', (xL + xR) / 2, xTickY + 17);
     if (roomy) {
