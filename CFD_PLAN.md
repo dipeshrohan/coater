@@ -5,9 +5,25 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Remaining feature list, in order: 6. independent inputs per location,
+## Status (latest first). Remaining feature list, in order:
 ## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Item 6 (done): independent inputs per location
+
+As the data model below planned: each location has `over` (its own
+values), read first, falling back to the shared ones (the sidebar's; for
+the gap and contact angle, the across-web variation at its z). Settable
+per location: gap at the edge, contact angle, web speed, bead pressure,
+viscosity, n, yield stress, surface tension (sidebar units). Blade and
+fibre stay shared (one blade, one web). Edited from a card's "Inputs"
+button in a full-width panel under the cards (empty field = shared value,
+shown as the placeholder); a change marks only that location out of date;
+the run keeps a snapshot of its own inputs, listed as the first row of
+Flow metrics. Progress messages now refresh only the status lines, so
+typing in a card is not interrupted by a running solve. Also fixed: at
+phone width the page grid could not shrink below a wide compare-mode table
+(`minmax(0, 1fr)`).
 
 ### Item 5 (done): remaining output fields
 
