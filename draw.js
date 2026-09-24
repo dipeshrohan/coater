@@ -81,9 +81,9 @@ function plotChart(cv, aspectRatio, opts) {
     c.beginPath(); c.moveTo(margin.l, y); c.lineTo(w - margin.r, y); c.stroke();
     c.textAlign = 'right'; c.fillText(opts.yf ? opts.yf(v) : v.toFixed(opts.yd ?? 1), margin.l - 6, y + 4);
   }
-  for (let i = 0; i <= 4; i++) {
-    const v = opts.x0 + (opts.x1 - opts.x0) * i / 4;
-    c.textAlign = 'center'; c.fillText(v.toFixed(opts.xd ?? 0), X(v), h - margin.b + 16);
+  // (opts.xticks: tick positions, e.g. a factor's levels; opts.xf: their labels)
+  for (const v of opts.xticks || [0, 1, 2, 3, 4].map(i => opts.x0 + (opts.x1 - opts.x0) * i / 4)) {
+    c.textAlign = 'center'; c.fillText(opts.xf ? opts.xf(v) : v.toFixed(opts.xd ?? 0), X(v), h - margin.b + 16);
   }
 
   // axis labels
@@ -116,6 +116,11 @@ function plotChart(cv, aspectRatio, opts) {
     });
     c.stroke();
     c.setLineDash([]);
+    if (series.dots) {
+      // (points: 8 px markers with a surface ring)
+      const surf = cssVar('--surface');
+      series.p.forEach(pt => { c.beginPath(); c.arc(X(pt[0]), Y(pt[1]), 4, 0, 7); c.fillStyle = series.c; c.fill(); c.lineWidth = 1.5; c.strokeStyle = surf; c.stroke(); });
+    }
   });
 
   // (inverse mapping and plot rectangle too, for hover read-outs)
