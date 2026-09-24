@@ -16,6 +16,10 @@
  *              estimate shown alongside).
  * Messages out: { progress: { it, residual, s, stage } } while solving, then
  *               { ok: true, result } or { ok: false, error }.
+ * result.trace: the convergence record over every solve the strategy ran, in order --
+ *   r: the residual at each Newton iterate (all solves in sequence),
+ *   solves: [{ label, k0 (index of its first iterate in r), n (its iterates), converged, residual }],
+ *   used: index in solves of the solve whose solution is the result.
  */
 importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js');
 
@@ -46,14 +50,22 @@ onmessage = e => {
     const qLub = lubricationQ(o, shape);
     let lastPost = 0, stage = '';
     const post = h => { const t = Date.now(); if (t - lastPost > 150) { lastPost = t; postMessage({ progress: { it: h.it, residual: h.residual, s: h.s, stage } }); } };
+    const trace = { r: [], solves: [], used: -1 };
+    let open = null;
+    const onIteration = h => { if (Number.isFinite(h.residual)) trace.r.push(h.residual); post(h); };
+    const onSolveStart = label => { if (open) open.n = trace.r.length - open.k0; open = { label, k0: trace.r.length, n: 0, converged: false, residual: NaN }; trace.solves.push(open); return trace.solves.length - 1; };
+    const onSolveEnd = e => { if (open) Object.assign(open, { n: trace.r.length - open.k0, converged: e.converged, residual: e.residual }); open = null; };
     // mesh: blade elements about 0.6 H long (12..40), rows graded toward the blade/face/surface
     const nEb = Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
     const r = solveCoaterFEM({
       hFn: shape.h, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg,
       U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H, webSlip: o.webSlip || 0,
       Ld: Math.max(12e-3, 8 * H), nEb, nEf: 6, nEs: 24, nEy: 6, fInfGuess: qLub / o.U,
-      onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration: post,
+      onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration, onSolveStart, onSolveEnd,
     });
+    // (a solve that ended without returning: its iterates so far)
+    if (open) open.n = trace.r.length - open.k0;
+    trace.used = r.solveId ?? -1;
     if (!r.x) throw new Error(r.error || 'no solution');
     const g = coaterGrid(r, { xe, H, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U });
 
@@ -83,7 +95,7 @@ onmessage = e => {
       nx: 200, maxSteps: 150000, tol: 1e-8,
     }) : { error: 'the oven is inside the 2D domain' };
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb } });
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

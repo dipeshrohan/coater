@@ -119,6 +119,8 @@ function femQuality(m, st) {
  *   flatEnd: no flow -- the outlet end of the surface is set flat instead of its kinematic row
  *   webSlip: alpha / sqrt(k) (1/m) -- Beavers-Joseph slip over the porous web instead of no slip
  *   tol, maxIter, onIteration
+ *   label: what this solve is (for the convergence record); onSolveStart(label) -> an id, kept as the
+ *     result's solveId; onSolveEnd({ converged, residual, iterations }) when it returns
  */
 function solveFEM(o) {
   const mesh = o.mesh, nEx = mesh.nEx, nEy = mesh.nEy, NC = 2 * nEx + 1, NR = 2 * nEy + 1, NN = NC * NR;
@@ -471,6 +473,7 @@ function solveFEM(o) {
   // ---- Newton with line search; continuation from a Newtonian fluid ----
   const history = [];
   let it = 0, converged = false, res = null, factorizations = 0;
+  const solveId = o.onSolveStart ? o.onSolveStart(o.label || '') : undefined;
   const norms = r => {
     let fm = 0;
     for (let d = 0; d < ND; d++) { if (isDir[d]) continue; const a = Math.abs(r.R[d]); fm = Math.max(fm, a); }
@@ -612,10 +615,11 @@ function solveFEM(o) {
     const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx)), mu = o.mu(Math.sqrt(gd * gd + epsDim * epsDim));
     gdo[n] = gd; muo[n] = mu; txy[n] = mu * (uy + vx); txx[n] = 2 * mu * ux; tyy[n] = 2 * mu * vy; omo[n] = vx - uy;
   }
-  const st = stNow();
+  const st = stNow(), resid = res ? norms(res) : Infinity;
+  if (o.onSolveEnd) o.onSolveEnd({ converged, residual: resid, iterations: it });
   return {
-    NC, NR, x: xo, y: yo, u: uo, v: vo, p: po, psi, gd: gdo, mu: muo, tauXY: txy, tauXX: txx, tauYY: tyy, omega: omo, Q, converged, iterations: it, factorizations, stages, history,
-    residual: res ? norms(res) : Infinity, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca },
+    NC, NR, x: xo, y: yo, u: uo, v: vo, p: po, psi, gd: gdo, mu: muo, tauXY: txy, tauXX: txx, tauYY: tyy, omega: omo, Q, converged, iterations: it, factorizations, stages, history, solveId,
+    residual: resid, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca },
     state: { sol: Float64Array.from(sol), h: st.h, s: st.s },
   };
 }
@@ -752,7 +756,8 @@ function staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd,
  *       mu(gd), gdMin, Ld (free film kept in the domain), nEb, nEf, nEs, nEy, gradeB,
  *       gradeS, gradeY, fInfGuess (film thickness guess for the static start; default H),
  *       mode ('pinned' | 'climbed', no flow only: force it), webSlip (alpha / sqrt k, 1/m: Beavers-Joseph
- *       slip over the porous web; omitted = no slip), onStage(text), onIteration,
+ *       slip over the porous web; omitted = no slip), onStage(text), onIteration, onSolveStart / onSolveEnd
+ *       (each solveFEM call: see there),
  *       onMesh / onLayout (test hooks: the mesh chosen, each layout's quality)
  * Returns solveFEM's result plus meshInfo { mode, cCL, cCorner, nEy, quality } and
  * meniscus { mode, alphaMaxDeg, s, leaveDeg, static }, or { error } for an unsupported case.
@@ -764,7 +769,7 @@ function solveCoaterFEM(opts) {
   const xEnd = xe + Ld;
   const base = { U, rho, g, gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: H, Ur: Math.abs(U) || 1e-3,
     inlet: { type: 'traction', p: y => Pup - rho * g * y }, outlet: { type: 'plug' }, flatEnd: !U, webSlip: opts.webSlip,
-    tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration };
+    tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration, onSolveStart: opts.onSolveStart, onSolveEnd: opts.onSolveEnd };
 
   function buildMesh(mode, s0, stat, fan) {
     // face elements: nEf for a climb of H or more, fewer (at least one) for a short one
@@ -896,19 +901,19 @@ function solveCoaterFEM(opts) {
     }
     if (opts.onMesh) opts.onMesh(m, m.h0, s0, stat);
     if (!(m.quality > 0)) return { error: `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
-    const where = mode === 'pinned' ? 'contact line at the edge' : free ? 'contact line free on the face' : `contact line held ${(s0 * 1e3).toFixed(3)} mm up the face`;
+    const where = mode === 'pinned' ? 'contact line at the edge' : free ? `contact line free on the face (from ${(s0 * 1e3).toFixed(3)} mm)` : `contact line held ${(s0 * 1e3).toFixed(3)} mm up the face`;
     log(`${where}: flow, surface frozen`);
     let frozen = null;
     if (from && from.r) {
       // warm start: the earlier solution interpolated onto this mesh, at the final rheology
       const { X, Y } = femNodes(m.mesh, { h: m.h0, s: s0 });
-      frozen = solveFEM({ ...base, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null, initNodal: femInterpolate(from.r, X, Y) });
+      frozen = solveFEM({ ...base, label: `${where}: flow, surface frozen (warm start)`, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null, initNodal: femInterpolate(from.r, X, Y) });
     }
-    if (!frozen || !frozen.converged) frozen = solveFEM({ ...base, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null });
+    if (!frozen || !frozen.converged) frozen = solveFEM({ ...base, label: `${where}: flow, surface frozen`, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null });
     if (!frozen.converged) return { error: 'flow with the surface frozen did not converge', r: frozen, m, stat };
     log(`${where}: surface and flow coupled`);
     // (held trial heights fail fast: a failure only halves the step toward them)
-    const r = solveFEM({ ...base, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: m.cCorner, alphaDeg: aUse } : null, s0,
+    const r = solveFEM({ ...base, label: `${where}: surface and flow coupled`, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: m.cCorner, alphaDeg: aUse } : null, s0,
       homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, iterCap) });
     r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy, quality: m.quality };
     if (!r.converged) return { error: 'surface and flow coupled did not converge', r, m, stat };
@@ -991,7 +996,7 @@ function solveCoaterFEM(opts) {
       log(`contact angle continuation from ${a.toFixed(1)}° to ${alphaDeg.toFixed(1)}°`);
       while (Math.abs(da) >= 0.25) {
         const a1 = Math.abs(alphaDeg - a) <= Math.abs(da) ? alphaDeg : a + da;
-        const r1 = solveFEM({ ...base, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cCorner, alphaDeg: a1 }, s0: cur.sNow,
+        const r1 = solveFEM({ ...base, label: `contact angle ${(a1 + 180 - faceDeg).toFixed(1)}°, contact line free on the face`, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cCorner, alphaDeg: a1 }, s0: cur.sNow,
           homotopy: true, maxIter: 60 });
         if (r1.converged && r1.surface.s > 0) {
           r1.meshInfo = cur.r.meshInfo;
@@ -1054,7 +1059,7 @@ function solveCoaterFEM(opts) {
   best = remeshed(best, true);
   // release: contact-angle condition, starting from the held solution on its own mesh
   log('contact line free on the face: final solve');
-  const r = solveFEM({ ...base, mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cCorner, alphaDeg }, s0: best.s,
+  const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cCorner, alphaDeg }, s0: best.s,
     homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
   r.meshInfo = { mode: 'climbed', cCL: best.m.cCL, cCorner: best.m.cCorner, nEy, quality: best.m.quality };
   const fin = r.converged ? { r, m: best.m, stat: best.stat, leave: leaveDeg(r, best.m.cCL) } : { ...best, error: undefined, heldOnly: true };
@@ -1086,7 +1091,7 @@ function coaterGrid(r, geo) {
   const Qin = g.psi[top(0)] - g.psi[0], Qout = g.psi[top(nx - 1)] - g.psi[nx - 1];
   return {
     ...g, Q: r.Q, Qin, Qout, massError: (Qout - Qin) / Qin,
-    converged: r.converged, residual: r.residual, iterations: r.iterations, history: r.history, error: r.error,
+    converged: r.converged, residual: r.residual, iterations: r.iterations, history: r.history, solveId: r.solveId, error: r.error,
     xe: geo.xe, H: geo.H, faceDeg: geo.faceDeg, contactDeg: geo.contactDeg,
     iCorner, iCL, mode: r.meniscus.mode, sCL: r.meniscus.mode === 'climbed' ? r.surface.s : 0,
     clX: g.gx[top(iCL)], clY: g.gy[top(iCL)], leaveDeg: r.meniscus.leaveDeg, alphaMaxDeg: r.meniscus.alphaMaxDeg,

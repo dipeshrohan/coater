@@ -110,6 +110,7 @@ const FV = {
   yScale: 'exaggerated', settingsOpen: false,
   manualSeeds: [],        // [x, y] in metres, shared by all locations so comparisons are like for like
   across: 'film',         // quantity plotted against position across the web
+  convOpen: false,        // convergence: solve-sequence table expanded
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -401,7 +402,8 @@ function viewCFD() {
       <div id="cfdAcross"></div>
     </section>
     <section class="cfd-block"><div class="cfd-head"><h3>Fibre (porous web)</h3></div><div id="cfdFibre"></div></section>
-    <section class="cfd-block"><div class="cfd-head"><h3 id="cfdProfTitle">Profiles</h3></div><div id="cfdProfiles"></div></section>`;
+    <section class="cfd-block"><div class="cfd-head"><h3 id="cfdProfTitle">Profiles</h3></div><div id="cfdProfiles"></div></section>
+    <section class="cfd-block"><div class="cfd-head"><h3>Convergence</h3></div><div id="cfdConv"></div></section>`;
 
   document.getElementById('cfdRunAll').onclick = runAllLocations;
   document.querySelectorAll('#cfdShape button').forEach(b => { b.onclick = () => { CFDG.shape = b.dataset.shape; viewCFD(); }; });
@@ -474,6 +476,7 @@ function renderCFD() {
   renderAcross();
   renderFibre();
   renderProfiles();
+  renderConvergence();
 }
 
 // ---------------------------------------------------------------------
@@ -1172,6 +1175,95 @@ function renderAcross() {
       vl: [{ x: cfdRuns[locs[0]].result.xe * 1000, c: cssVar('--line'), t: 'edge' }] });
   overlay('xlProf', 0.4, locs.map(i => { const run = cfdRuns[i], x = run.result.xe - 0.3 * run.geo.H; return ser(i, cfdColumn(run.field, run.field.u, x).map(([u, y]) => [u * 1000, y * 1000])); }),
     { aria: 'Velocity profile just upstream of the metering edge at each location', xl: 'velocity u (mm/s)', yl: 'height above the web y (mm)', xd: 1, yd: 2, y0: 0, by: 'y', head: t => `y ${t.toFixed(3)} mm`, fmt: v => fmtNum(v) + ' mm/s' });
+}
+
+// ---- convergence: the residual at every Newton iterate, through every solve a run needed ----
+
+const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+const pow10Label = e => '10' + String(Math.round(e)).split('').map(ch => SUP[ch]).join('');
+const TOL_EXP = -8;       // solveFEM's tolerance, 1e-8: the solves a result comes from end below it
+
+function renderConvergence() {
+  const host = document.getElementById('cfdConv');
+  if (!host) return;
+  const compare = FV.view === 'compare';
+  const locs = (compare ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].field && cfdRuns[i].result.trace);
+  if (!locs.length) { host.innerHTML = `<p class="cap">${compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet.`}</p>`; return; }
+  const stale = i => cfdIsStale(i), tr = i => cfdRuns[i].result.trace;
+  const name = i => `Location ${i + 1} · z ${CFD_LOCS[i].z} mm${stale(i) ? ' (out of date)' : ''}`;
+  const lg10 = v => Math.log10(Math.max(v, 1e-16));
+  const series = locs.map(i => ({ i, name: name(i), short: `L${i + 1}`, color: locColor(i), stale: stale(i), pts: tr(i).r.map((v, k) => [k + 1, lg10(v)]) }));
+  const solveAt = (t, k) => t.solves.findIndex(sv => k > sv.k0 && k <= sv.k0 + sv.n);
+  const fmtE = v => Number.isFinite(v) ? v.toExponential(1) : '—';
+  const one = !compare, t0 = tr(locs[0]);
+
+  const rows = [
+    ['Solves run', i => { const t = tr(i); return `${t.solves.length}<small>${t.solves.filter(sv => sv.converged).length} converged</small>`; }],
+    ['Newton iterates, all solves', i => `${tr(i).r.length}`],
+    ['Solution shown', i => { const t = tr(i), u = t.solves[t.used]; return u ? `solve ${t.used + 1}<small>${u.label}</small>` : '—'; }],
+    ['Its iterates', i => { const u = tr(i).solves[tr(i).used]; return u ? `${u.n}` : '—'; }],
+    ['Its final residual', i => { const u = tr(i).solves[tr(i).used]; return u ? fmtE(u.residual) : '—'; }],
+    ['Wall time', i => `${(cfdRuns[i].elapsedMs / 1000).toFixed(1)} s`],
+  ];
+  const table = `<div class="table-wrap"><table class="cfd-table${compare ? ' cmp' : ''}"><thead><tr><th></th>${locs.map(i => `<th>${compare ? `<i class="xl-sw" style="background:${locColor(i)}"></i> ` : ''}Location ${i + 1}<small>z ${CFD_LOCS[i].z} mm${stale(i) ? ' · out of date' : ''}</small></th>`).join('')}</tr></thead>
+    <tbody>${rows.map(([l, f]) => `<tr><th scope="row">${l}</th>${locs.map(i => `<td>${f(i)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const seq = one ? `<details class="fv-more" id="convSeq"${FV.convOpen ? ' open' : ''}><summary>Solve sequence (${t0.solves.length} solves)</summary>
+    <div class="table-wrap"><table class="cfd-table cmp conv-seq"><thead><tr><th>#</th><th>Solve</th><th>Iterates</th><th>First residual</th><th>Final residual</th><th>Converged</th></tr></thead>
+    <tbody>${t0.solves.map((sv, k) => `<tr${k === t0.used ? ' class="conv-used"' : ''}><td>${k + 1}</td><th scope="row">${sv.label}${k === t0.used ? '<small>solution shown</small>' : ''}</th><td>${sv.n}</td><td>${fmtE(t0.r[sv.k0])}</td><td>${fmtE(sv.residual)}</td><td>${sv.converged ? 'yes' : 'no'}</td></tr>`).join('')}</tbody></table></div></details>` : '';
+  const later = one && t0.used >= 0 && t0.used < t0.solves.length - 1
+    ? ` Solve ${t0.used + 1} of ${t0.solves.length} gives the solution shown; the solves after it did not replace it (see the sequence).` : '';
+  host.innerHTML = `${compare && locs.length > 1 ? `<div class="xl-legend">${locs.map(i => `<span class="lg"><i class="xl-sw" style="background:${locColor(i)}"></i>${name(i)}</span>`).join('')}</div>` : ''}
+    <div class="xl-chart"><canvas id="convChart" role="img"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div>
+    <p class="cap"><b>Residual at each Newton iterate</b> (largest equation residual, in the solver's scaled units), through every solve the run needed, in order: the meniscus pinned at the edge first, then — if the surface climbs the exit face — the contact line released onto it${one ? ' (shaded bands: one solve each)' : ''}. Each solve starts afresh on a new mesh or condition, so its residual jumps up and falls again. Within a solve, continuation steps (Newtonian to the chosen viscosity law; homotopy from the starting shape) converge intermediate problems loosely before the last one to the tolerance (dashed). Ringed: the end of the solve whose solution is shown.${later}</p>
+    ${table}${seq}`;
+  const det = document.getElementById('convSeq');
+  if (det) det.addEventListener('toggle', e => { FV.convOpen = e.target.open; });
+
+  const cv = document.getElementById('convChart');
+  let lo = Infinity, hi = -Infinity, nMax = 1;
+  for (const sr of series) for (const [k, v] of sr.pts) { lo = Math.min(lo, v); hi = Math.max(hi, v); nMax = Math.max(nMax, k); }
+  hi = Math.ceil(hi); lo = Math.min(Math.floor(lo), TOL_EXP - 1);
+  lo = hi - 4 * Math.ceil((hi - lo) / 4);                  // five ticks on whole powers of ten
+  const soft = cssVar('--soft');
+  const bands = one ? t0.solves.filter((_, k) => k % 2 === 0).map(sv => ({ x0: sv.k0 + 0.5, x1: sv.k0 + sv.n + 0.5, c: soft })) : [];
+  cv.setAttribute('aria-label', `Newton residual history, ${locs.map(i => `location ${i + 1}`).join(', ')}`);
+  const map = plotChart(cv, 0.36, { x0: 0.5, x1: nMax + 0.5, y0: lo, y1: hi, xl: 'Newton iterate, all solves in sequence', yl: 'residual (scaled)', xd: 0, yf: pow10Label, bands,
+    s: series.map(sr => ({ p: sr.pts, c: sr.color, w: 2, dash: sr.stale ? [4, 3] : null })),
+    hl: [{ y: TOL_EXP, c: cssVar('--muted'), t: '' }] });
+  // (the tolerance line's label at the left, clear of the end labels and the ring)
+  const c = cv.getContext('2d'), surf = cssVar('--surface'), ink = cssVar('--ink');
+  c.font = `11px ${cssVar('--mono')}`; c.textBaseline = 'middle';
+  labelOn(c, `tolerance ${pow10Label(TOL_EXP)}`, map.rect.l + 6, map.Y(TOL_EXP) - 8, cssVar('--muted'), 'left');
+  // the end of the solve each result comes from: a ring
+  for (const sr of series) {
+    const t = tr(sr.i), u = t.solves[t.used];
+    if (!u || !u.n) continue;
+    const [k, v] = sr.pts[u.k0 + u.n - 1], x = map.X(k), y = map.Y(v);
+    c.beginPath(); c.arc(x, y, 5, 0, 7); c.fillStyle = sr.color; c.fill(); c.lineWidth = 2; c.strokeStyle = surf; c.stroke();
+    if (one) { labelOn(c, 'solution shown', x + 8, Math.max(map.rect.t + 8, y - 12), ink, x > map.rect.r - 120 ? 'right' : 'left'); }
+  }
+  if (compare && series.length > 1) endLabels(cv, map, series);
+
+  // hover: the iterate under the pointer, each location's residual there and which solve it belongs to
+  const wrap = cv.parentElement, tip = wrap.querySelector('.fv-tip'), guide = wrap.querySelector('.xl-guide');
+  cv.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    const k = Math.round(map.invX(px));
+    if (px < map.rect.l || px > map.rect.r || py < map.rect.t || py > map.rect.b || k < 1 || k > nMax) { tip.hidden = true; guide.hidden = true; return; }
+    const lines = series.filter(sr => k <= sr.pts.length).map(sr => {
+      const t = tr(sr.i), j = solveAt(t, k), sv = t.solves[j];
+      return `<span><i class="xl-sw" style="background:${sr.color}"></i>${compare ? sr.short + ': ' : ''}${fmtE(t.r[k - 1])}${sv ? `<small style="display:block">solve ${j + 1}: ${sv.label}</small>` : ''}</span>`;
+    }).join('');
+    if (!lines) { tip.hidden = true; guide.hidden = true; return; }
+    tip.innerHTML = `<b>iterate ${k}</b>${lines}`;
+    tip.hidden = false; guide.hidden = false;
+    const gx = map.X(k);
+    Object.assign(guide.style, { left: gx + 'px', width: '1px', top: map.rect.t + 'px', height: (map.rect.b - map.rect.t) + 'px' });
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = (gx + 14 + tw > cv.clientWidth ? gx - tw - 14 : gx + 14) + 'px';
+    tip.style.top = Math.max(0, Math.min(py + 14, cv.clientHeight - th)) + 'px';
+  });
+  cv.addEventListener('pointerleave', () => { tip.hidden = true; guide.hidden = true; });
 }
 
 // ---- profiles for one location ----

@@ -44,6 +44,8 @@ function outlinedText(c, text, x, y, color) {
  *   x0,x1,y0,y1   data-space axis bounds
  *   xl,yl         axis label strings
  *   xd,yd         decimal places for axis tick labels (default 0 / 1)
+ *   yf            y tick label formatter (overrides yd)
+ *   bands: [{x0, x1, c}]          background bands along x
  *   s:  [{p:[[x,y],...], c:color, w?:lineWidth, dash?:[on,off]}]  one or more series
  *   hl: [{y, c:color, t:label}]   horizontal reference lines
  *   vl: [{x, c:color, t:label}]   vertical reference lines
@@ -64,11 +66,18 @@ function plotChart(cv, aspectRatio, opts) {
   c.strokeStyle = line;
   c.lineWidth = 1;
 
-  // gridlines + axis ticks
+  // background bands along x (behind everything)
+  (opts.bands || []).forEach(b => {
+    const x0 = Math.max(margin.l, X(b.x0)), x1 = Math.min(margin.l + plotW, X(b.x1));
+    if (x1 > x0) { c.fillStyle = b.c; c.fillRect(x0, margin.t, x1 - x0, plotH); }
+  });
+  c.fillStyle = muted;
+
+  // gridlines + axis ticks (opts.yf: tick label formatter)
   for (let i = 0; i <= 4; i++) {
     const v = opts.y0 + (opts.y1 - opts.y0) * i / 4, y = Y(v);
     c.beginPath(); c.moveTo(margin.l, y); c.lineTo(w - margin.r, y); c.stroke();
-    c.textAlign = 'right'; c.fillText(v.toFixed(opts.yd ?? 1), margin.l - 6, y + 4);
+    c.textAlign = 'right'; c.fillText(opts.yf ? opts.yf(v) : v.toFixed(opts.yd ?? 1), margin.l - 6, y + 4);
   }
   for (let i = 0; i <= 4; i++) {
     const v = opts.x0 + (opts.x1 - opts.x0) * i / 4;

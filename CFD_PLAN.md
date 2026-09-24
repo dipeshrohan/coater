@@ -5,8 +5,24 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Remaining feature list, in order:
-## 12. convergence history plot.
+## Status (latest first). Feature list 1-12 complete.
+
+### Item 12 (done): convergence residual history
+
+"Convergence" section: the residual (largest scaled equation residual) at
+every Newton iterate, over every solve a location's run went through, in
+order -- solveCoaterFEM runs several (meniscus pinned, then the contact
+line released onto the face: frozen-surface flow, then coupled; contact-
+angle steps or held heights when needed; a re-laid-out mesh at the end).
+solveFEM takes a label and onSolveStart / onSolveEnd hooks (its result
+keeps the id onSolveStart returned as solveId, carried by coaterGrid);
+the worker builds result.trace = { r (all iterates), solves [{label, k0,
+n, converged, residual}], used (the solve the result is) }. Log-scale
+chart (whole powers of ten), tolerance 1e-8 dashed, the shown solution's
+solve ringed; one location in view: shaded band per solve and a solve-
+sequence table; compare: the locations overlaid in their colours with
+legend and direct labels. Summary table: solves, iterates, the solve
+shown, its residual, wall time. Validation section 5 checks the record.
 
 ### Item 11 (done): cross-location plots
 
