@@ -271,12 +271,7 @@ function updateProjectTitle() {
   document.getElementById('fmSave').onclick = () => { close(); saveProject(false); };
   document.getElementById('fmSaveAs').onclick = () => { close(); saveProject(true); };
   menu.addEventListener('toggle', () => { if (menu.open) renderRecent(); });
-  document.addEventListener('keydown', e => {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    const k = e.key.toLowerCase();
-    if (k === 's') { e.preventDefault(); saveProject(e.shiftKey); }
-    else if (k === 'o') { e.preventDefault(); openProject(); }
-  });
+  // (Ctrl+S, Ctrl+Shift+S, Ctrl+O: keys.js)
   addEventListener('beforeunload', e => { if (projDirty()) { e.preventDefault(); e.returnValue = ''; } });
 })();
 
