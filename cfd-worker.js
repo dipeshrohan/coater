@@ -55,12 +55,14 @@ onmessage = e => {
     const onIteration = h => { if (Number.isFinite(h.residual)) trace.r.push(h.residual); post(h); };
     const onSolveStart = label => { if (open) open.n = trace.r.length - open.k0; open = { label, k0: trace.r.length, n: 0, converged: false, residual: NaN }; trace.solves.push(open); return trace.solves.length - 1; };
     const onSolveEnd = e => { if (open) Object.assign(open, { n: trace.r.length - open.k0, converged: e.converged, residual: e.residual }); open = null; };
-    // mesh: blade elements about 0.6 H long (12..40), rows graded toward the blade/face/surface
-    const nEb = Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
+    // mesh: the settings sent (o.solver), else blade elements about 0.6 H long (12..40); rows graded toward the blade/face/surface
+    const sv = o.solver || {};
+    const nEb = sv.nEb ?? Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
     const r = solveCoaterFEM({
       hFn: shape.h, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg,
       U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H, webSlip: o.webSlip || 0,
-      Ld: Math.max(12e-3, 8 * H), nEb, nEf: 6, nEs: 24, nEy: 6, fInfGuess: qLub / o.U,
+      Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb, nEf: sv.nEf ?? 6, nEs: sv.nEs ?? 24, nEy: sv.nEy ?? 6, fInfGuess: qLub / o.U,
+      gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY, tol: sv.tol, maxIter: sv.maxIter,
       onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration, onSolveStart, onSolveEnd,
     });
     // (a solve that ended without returning: its iterates so far)
