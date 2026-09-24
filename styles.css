@@ -814,3 +814,17 @@ button[data-help], summary[data-help] { cursor: pointer; }
 .hist-tag { margin-left: 6px; padding: 1px 6px; border-radius: 9px; font-size: 10.5px; font-weight: 500; background: var(--soft); color: var(--muted); }
 .hist-row.is-cur .hist-tag { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
 .mod-dock .dock-body { padding: 10px 14px 12px; }
+
+/* ---- run report ---- */
+.menu-sep-plain { padding: 0; margin: 4px 0; }
+.rep-dlg { width: min(520px, calc(100vw - 32px)); }
+.rep-field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.rep-field input, .rep-field textarea { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; resize: vertical; }
+.rep-field input:focus, .rep-field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.rep-secs { display: grid; gap: 1px; }
+.rep-secs .img-opt { align-items: baseline; }
+.rep-secs .img-opt small { margin-left: 4px; font-size: 11.5px; color: var(--muted); }
+.rep-secs .is-off { opacity: .55; cursor: default; }
+.rep-veil { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(2px); }
+.rep-veil > div { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 13px; box-shadow: var(--shadow-lg); }
+.rep-print { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; }

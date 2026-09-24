@@ -180,7 +180,7 @@ function undoLabel(ids, a, b) {
 /** Record what changed since the last step as a step of the view it was made in. */
 function undoCommit() {
   clearTimeout(UNDO.timer); UNDO.timer = 0;
-  if (!UNDO.known) return false;
+  if (!UNDO.known || UNDO.applying) return false;
   const v = UNDO.view ?? tab, hint = UNDO.hint;
   UNDO.view = null; UNDO.hint = null;
   const now = undoSnap(), before = {}, after = {}, ids = [];
@@ -208,6 +208,12 @@ function undoSchedule(e) {
 }
 /** Name the next step (a button that changes several things at once); changes before it stay a step of their own. */
 function undoHint(label) { undoCommit(); UNDO.hint = label; UNDO.view = tab; undoSchedule(); }
+/** Run f (may be async) with changes not picked up: what it changes and puts back is not a step. */
+async function undoQuiet(f) {
+  undoCommit();
+  UNDO.applying = true;
+  try { return await f(); } finally { UNDO.applying = false; undoSync(); }
+}
 /** Take what the program itself just changed as the starting point (not a step). */
 function undoSync() { UNDO.known = undoSnap(); }
 /** A new or opened project: every view's history starts again. */
