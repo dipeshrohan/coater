@@ -7,10 +7,22 @@ drift out of sync with what's actually built.
 
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
-## 1 zoom/pan (done), 2 mesh display, 3 colour map controls, 4 contour lines, 5 cut lines,
+## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls, 4 contour lines, 5 cut lines,
 ## 6 difference plots, 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-2 (done): mesh display
+
+User's choices: optional (off by default), element edges and nodes, over
+the field colours, an optional quality overlay; toggles in the Display
+pop-over. Edges drawn as quadratic curves through the mid nodes; corner
+nodes filled, mid nodes hollow. meshQuality(f) (cfd-flowviz.js): per
+element min/max of the quadratic map's Jacobian at its nine nodes, cached
+on the field. With quality on, elements are filled by it (worse = stronger
+colour; the colour bar shows it, reversed) in place of the field colours
+(one colour scale per plot), the worst element and any below 0.2 are
+outlined, and the caption states the worst value.
 
 ### GUI-1 (done): zoom and pan in the flow field
 

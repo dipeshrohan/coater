@@ -471,6 +471,36 @@ function autoSeeds(f, n, direction) {
 }
 
 /** Velocity vectors on a regular lattice (nCols x nRows over the plot's x and y range), keeping only points inside the fluid. */
+/**
+ * Quality of each finite element of a curvilinear field (element e = ex + nEx * ey, nodes
+ * 2ex..2ex+2 x 2ey..2ey+2 of the node grid): the smallest over the largest Jacobian of its
+ * quadratic map, taken at its nine nodes (1 = undistorted; 0 or below = degenerate / inverted).
+ * Cached on the field. Returns { nEx, nEy, q, worst, worstAt }.
+ */
+function meshQuality(f) {
+  if (f._quality) return f._quality;
+  const nEx = (f.nx - 1) / 2, nEy = (f.ny - 1) / 2, q = new Float64Array(nEx * nEy);
+  const N = t => [t * (t - 1) / 2, 1 - t * t, t * (t + 1) / 2], dN = t => [t - 0.5, -2 * t, t + 0.5];
+  const at = [-1, 0, 1].map(t => ({ N: N(t), dN: dN(t) }));
+  let worst = Infinity, worstAt = 0;
+  for (let ey = 0; ey < nEy; ey++) for (let ex = 0; ex < nEx; ex++) {
+    let jmin = Infinity, jmax = -Infinity;
+    for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+      let xs = 0, xt = 0, ys = 0, yt = 0;
+      for (let jb = 0; jb < 3; jb++) for (let ia = 0; ia < 3; ia++) {
+        const k = (2 * ey + jb) * f.nx + 2 * ex + ia, Ns = at[a].dN[ia] * at[b].N[jb], Nt = at[a].N[ia] * at[b].dN[jb];
+        xs += f.gx[k] * Ns; xt += f.gx[k] * Nt; ys += f.gy[k] * Ns; yt += f.gy[k] * Nt;
+      }
+      const J = xs * yt - xt * ys;
+      jmin = Math.min(jmin, J); jmax = Math.max(jmax, J);
+    }
+    const e = ex + nEx * ey;
+    q[e] = jmax > 0 ? jmin / jmax : -1;
+    if (q[e] < worst) { worst = q[e]; worstAt = e; }
+  }
+  return (f._quality = { nEx, nEy, q, worst, worstAt });
+}
+
 function sampleVectors(f, nCols, nRows, win) {
   const out = [], w = win || { x0: 0, x1: f.Lx, y0: 0, y1: f.Ly };   // (win: the zoom window, m)
   for (let r = 0; r < nRows; r++) {

@@ -131,6 +131,9 @@ const rasterCache = new WeakMap();
  *   view         { x0, x1, y0, y1 } (m): the window shown (zoom); omitted = the whole domain. The plot
  *                keeps its size; the window fills it (so its shape sets the vertical scale)
  *   fast         draw the colour raster at half resolution (while zooming / panning)
+ *   mesh         { quality: meshQuality(f) | null } -- draw the finite elements' edges (curved through
+ *                their mid nodes) and nodes over the field; with quality, the elements are filled by
+ *                their quality instead of the field colours (the colour bar then shows it)
  * Returns the mapping for hit-testing and overlays.
  */
 function drawFlowPlot(cv, s) {
@@ -188,8 +191,10 @@ function drawFlowPlot(cv, s) {
     : null;
 
   // ---- colour carrier: one colour scale per plot --------------------
-  const carrier = s.lineScalar || (s.vectorColor && vectors ? s.vectorScalar : null) || s.scalar;
-  const rasterOn = !!s.scalar && !s.lineScalar && !(s.vectorColor && vectors);
+  const mq = s.mesh && s.mesh.quality && f.curv ? s.mesh.quality : null;
+  const qCarrier = mq ? { short: 'quality', unit: 'J min/max', kind: 'seq', reverse: true, min: Math.min(0.9, Math.floor(Math.max(0, mq.worst) * 10) / 10), max: 1, capped: false } : null;
+  const carrier = qCarrier || s.lineScalar || (s.vectorColor && vectors ? s.vectorScalar : null) || s.scalar;
+  const rasterOn = !!s.scalar && !mq && !s.lineScalar && !(s.vectorColor && vectors);
 
   c.save();
   c.beginPath(); c.rect(CR.l, CR.t, CR.r - CR.l, CR.b - CR.t); c.clip();
@@ -228,6 +233,19 @@ function drawFlowPlot(cv, s) {
     }
     c.imageSmoothingEnabled = true;
     c.drawImage(off, vl, vt, vr - vl, vb - vt);
+  }
+
+  // mesh quality: each element filled by its quality (worse = stronger colour)
+  const node = k => [X(f.gx[k]), Y(f.gy[k])];
+  const elemPath = (ex, ey) => {
+    const k = (i, j) => (2 * ey + j) * f.nx + 2 * ex + i, ring = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
+    c.beginPath(); ring.forEach(([i, j], n) => { const [px, py] = node(k(i, j)); n ? c.lineTo(px, py) : c.moveTo(px, py); }); c.closePath();
+  };
+  if (mq) {
+    const lut = getLut('seq'), lo = qCarrier.min;
+    for (let ey = 0; ey < mq.nEy; ey++) for (let ex = 0; ex < mq.nEx; ex++) {
+      elemPath(ex, ey); c.fillStyle = lutColor(lut, 1 - (mq.q[ex + mq.nEx * ey] - lo) / (1 - lo)); c.fill();
+    }
   }
 
   // ---- solids as geometry --------------------------------------------
@@ -304,6 +322,37 @@ function drawFlowPlot(cv, s) {
   // active metering edge marker (downstream end of the land)
   c.fillStyle = cssVar('--bad'); c.strokeStyle = surface; c.lineWidth = 2;
   c.beginPath(); c.arc(edgePx[0], edgePx[1], compact ? 3.5 : 5, 0, 7); c.fill(); c.stroke();
+
+  // ---- mesh: element edges (quadratic, through the mid nodes) and nodes --------
+  if (s.mesh && f.curv) {
+    const k = (i, j) => j * f.nx + i;
+    const curve = (a, m, b) => { const [ax, ay] = node(a), [mx, my] = node(m), [bx, by] = node(b); c.quadraticCurveTo(2 * mx - (ax + bx) / 2, 2 * my - (ay + by) / 2, bx, by); };
+    c.save();
+    c.strokeStyle = ink; c.globalAlpha = mq ? 0.55 : 0.38; c.lineWidth = compact ? 0.5 : 0.7;
+    c.beginPath();
+    for (let j = 0; j < f.ny; j += 2) { c.moveTo(...node(k(0, j))); for (let i = 0; i + 2 < f.nx; i += 2) curve(k(i, j), k(i + 1, j), k(i + 2, j)); }
+    for (let i = 0; i < f.nx; i += 2) { c.moveTo(...node(k(i, 0))); for (let j = 0; j + 2 < f.ny; j += 2) curve(k(i, j), k(i, j + 1), k(i, j + 2)); }
+    c.stroke();
+    // nodes: corner nodes filled, mid nodes smaller and hollow
+    c.globalAlpha = mq ? 0.7 : 0.55;
+    const rc = compact ? 1.1 : 1.5, rm = compact ? 0.8 : 1.1;
+    c.fillStyle = ink; c.beginPath();
+    for (let j = 0; j < f.ny; j += 2) for (let i = 0; i < f.nx; i += 2) { const [px, py] = node(k(i, j)); c.moveTo(px + rc, py); c.arc(px, py, rc, 0, 7); }
+    c.fill();
+    c.strokeStyle = ink; c.lineWidth = 0.8; c.beginPath();
+    for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) { if (i % 2 === 0 && j % 2 === 0) continue; const [px, py] = node(k(i, j)); c.moveTo(px + rm, py); c.arc(px, py, rm, 0, 7); }
+    c.stroke();
+    c.restore();
+    if (mq) {
+      // the worst element, and any below 0.2, outlined
+      c.save(); c.strokeStyle = cssVar('--bad'); c.lineWidth = 2;
+      for (let ey = 0; ey < mq.nEy; ey++) for (let ex = 0; ex < mq.nEx; ex++) {
+        const e = ex + mq.nEx * ey;
+        if (e === mq.worstAt || mq.q[e] < 0.2) { elemPath(ex, ey); c.stroke(); }
+      }
+      c.restore();
+    }
+  }
 
   // ---- overlays --------------------------------------------------------
   const lw = s.lineWidth || 1.4;
@@ -425,7 +474,8 @@ function drawFlowPlot(cv, s) {
   if (carrier) {
     const bx = pr + 16, bw = compact ? 9 : 11, by0 = vt, by1 = vb, lut = getLut(carrier.kind);
     for (let py = Math.floor(by0); py < by1; py++) {
-      c.fillStyle = lutColor(lut, 1 - (py - by0) / (by1 - by0));
+      const rel = 1 - (py - by0) / (by1 - by0);
+      c.fillStyle = lutColor(lut, carrier.reverse ? 1 - rel : rel);   // (reverse: low values in the strong colour)
       c.fillRect(bx, py, bw, 1);
     }
     c.strokeStyle = cssVar('--line'); c.lineWidth = 1; c.strokeRect(bx + 0.5, by0 + 0.5, bw - 1, by1 - by0 - 1);
@@ -437,8 +487,8 @@ function drawFlowPlot(cv, s) {
       c.fillText(Math.abs(t) >= 1e4 ? t.toExponential(1) : tickTxt(t, ticks), bx + bw + 4, py);
     }
     c.textBaseline = 'alphabetic'; c.fillStyle = ink;
-    c.fillText(carrier.short + (carrier.capped ? ' ↑cap' : ''), bx, by0 - (compact ? 4 : 16));
-    if (!compact) { c.fillStyle = muted; c.fillText(carrier.unit, bx, by0 - 4); }
+    c.fillText(carrier.short + (carrier.capped ? ' ↑cap' : ''), bx, by0 - (compact ? 5 : 20));
+    if (!compact) { c.fillStyle = muted; c.fillText(carrier.unit, bx, by0 - 8); }
   }
 
   return {
