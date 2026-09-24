@@ -156,6 +156,8 @@ async function saveProject(as = false) {
   try {
     if (projUseFS()) {
       let handle = as ? null : PROJ.handle;
+      if (handle && handle.queryPermission && (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+        && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') handle = null;   // (a project reopened from the last session)
       if (!handle) handle = await window.showSaveFilePicker({ suggestedName: `${PROJ.name}.bcdl`, types: PROJ_TYPES });
       const w = await handle.createWritable(); await w.write(text); await w.close();
       Object.assign(PROJ, { handle, name: handle.name.replace(/\.(bcdl|json)$/i, '') });
@@ -203,11 +205,11 @@ function askProjectName(cur) {
 }
 
 // ---- recent projects: file handles kept in this browser (where it can reopen files) ----
-const RECENT_DB = 'bladeCoatDefectLab', RECENT_STORE = 'recent';
+const RECENT_DB = 'bladeCoatDefectLab', RECENT_STORE = 'recent', SESSION_STORE = 'session';
 function recentDb() {
   return new Promise((res, rej) => {
-    const q = indexedDB.open(RECENT_DB, 1);
-    q.onupgradeneeded = () => q.result.createObjectStore(RECENT_STORE);
+    const q = indexedDB.open(RECENT_DB, 2);
+    q.onupgradeneeded = () => { for (const s of [RECENT_STORE, SESSION_STORE]) if (!q.result.objectStoreNames.contains(s)) q.result.createObjectStore(s); };
     q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
   });
 }
@@ -259,3 +261,77 @@ function updateProjectTitle() {
   });
   addEventListener('beforeunload', e => { if (projDirty()) { e.preventDefault(); e.returnValue = ''; } });
 })();
+
+// ---------------------------------------------------------------------
+// Session memory: the whole working state (as a project, results included) kept in this browser
+// every minute and when the tab is hidden; on the next visit a bar asks to continue from it.
+// ---------------------------------------------------------------------
+const SESSION = { suspended: true, lastKey: null, timer: 0 };
+/** What has to change for the session to be written again: inputs, view, results, DOE, mesh study, project. */
+const sessionKey = () => [projKey(), JSON.stringify([tab, FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}`).join(','),
+  DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : ''].join('|');
+async function sessionSave(force = false) {
+  if (SESSION.suspended || !window.indexedDB) return false;
+  const key = sessionKey();
+  if (!force && key === SESSION.lastKey) return false;
+  try {
+    const text = JSON.stringify(projectData(), projReplacer);
+    const db = await recentDb();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(SESSION_STORE, 'readwrite');
+      tx.objectStore(SESSION_STORE).put({ t: Date.now(), text, name: PROJ.name, savedKey: PROJ.savedKey, handle: PROJ.handle || null }, 'last');
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+    SESSION.lastKey = key;
+    return true;
+  } catch (e) { return false; }   // (session memory is a convenience: a full or blocked store only loses it)
+}
+async function sessionRead() {
+  if (!window.indexedDB) return null;
+  try {
+    const db = await recentDb();
+    return await new Promise(res => { const g = db.transaction(SESSION_STORE).objectStore(SESSION_STORE).get('last'); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); });
+  } catch (e) { return null; }
+}
+async function sessionClear() {
+  try { const db = await recentDb(); db.transaction(SESSION_STORE, 'readwrite').objectStore(SESSION_STORE).delete('last'); } catch (e) { /* nothing kept */ }
+}
+function sessionStart() {
+  SESSION.suspended = false;
+  clearInterval(SESSION.timer);
+  SESSION.timer = setInterval(() => sessionSave(), 60000);
+}
+/** Restore the last session into the app. */
+function sessionRestore(s) {
+  const p = JSON.parse(s.text, projReviver);
+  applyProject(p);
+  Object.assign(PROJ, { name: s.name || p.name || 'Untitled', handle: s.handle || null });
+  // (its unsaved state as it was: saved key from then, or clean if it had none)
+  PROJ.savedKey = s.savedKey || projKey();
+  updateProjectTitle();
+}
+/** On opening the app: a bar offering the last session, when it holds something worth continuing. */
+(async function sessionOffer() {
+  const s = await sessionRead();
+  let p = null;
+  try { p = s && JSON.parse(s.text, projReviver); } catch (e) { p = null; }
+  const defaults = JSON.stringify(Object.fromEntries(CFG.map(c => [c.k, c.v])));
+  const worth = p && (p.results && p.results.some(Boolean) || (p.doe && p.doe.runs && p.doe.runs.length) || (s.name && s.name !== 'Untitled')
+    || JSON.stringify(p.inputs) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length));
+  if (!worth) { sessionStart(); return; }
+  const bar = document.createElement('div');
+  bar.className = 'session-bar'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Last session');
+  const when = new Date(s.t), today = when.toDateString() === new Date().toDateString();
+  const n = p.results ? p.results.filter(Boolean).length : 0;
+  bar.innerHTML = `<span><b>Continue where you left off?</b> ${s.name && s.name !== 'Untitled' ? `Project “${s.name.replace(/[<&]/g, '')}”, ` : ''}saved ${today ? 'today' : when.toLocaleDateString()} at ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${n ? ` · ${n} location${n > 1 ? 's' : ''} solved` : ''}${p.doe && p.doe.runs && p.doe.runs.length ? ` · a DOE of ${p.doe.runs.length} runs` : ''}.</span>
+    <button type="button" class="btn btn-primary btn-sm" data-s="restore">Restore</button><button type="button" class="btn btn-secondary btn-sm" data-s="fresh">Start fresh</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('[data-s="restore"]').onclick = () => {
+    bar.remove();
+    try { sessionRestore(s); imgToast('Restored the last session'); } catch (e) { imgToast(`Could not restore the last session: ${e.message}`, 'error'); }
+    sessionStart();
+  };
+  bar.querySelector('[data-s="fresh"]').onclick = () => { bar.remove(); sessionClear(); sessionStart(); };
+})();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') sessionSave(); });
+addEventListener('pagehide', () => { sessionSave(); });

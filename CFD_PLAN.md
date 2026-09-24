@@ -10,7 +10,22 @@ drift out of sync with what's actually built.
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
-## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+## 14 session memory (done), 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-14 (done): session memory
+
+User's choices: everything comes back (results included); ask first;
+saved every minute; the project's file link and name kept.
+- project.js: the working state as a project (projectData) written to
+  IndexedDB (store 'session', about 1 MB with four results) every minute
+  when something changed (sessionKey: inputs, view, results, DOE, mesh
+  study, project name and unsaved state) and when the tab is hidden; the
+  project's file handle, name and saved key kept with it.
+- On the next visit, when the session holds anything beyond the defaults, a
+  bar asks 'Continue where you left off?' (when, project, what was solved):
+  Restore applies it (no solving; unsaved state as it was, Save writes to
+  the same file after asking for permission again), Start fresh deletes it.
+  Autosave waits until one is chosen.
 
 ### GUI-13 (done): project files
 
