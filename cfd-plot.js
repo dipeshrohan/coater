@@ -128,6 +128,9 @@ const rasterCache = new WeakMap();
  *   exitAngle    blade exit face at the edge, degrees from the web (machine direction); default 90
  *   bladeLabel   text for the blade
  *   maxH         the canvas's whole height may not exceed this (px): the plot then fills it
+ *   view         { x0, x1, y0, y1 } (m): the window shown (zoom); omitted = the whole domain. The plot
+ *                keeps its size; the window fills it (so its shape sets the vertical scale)
+ *   fast         draw the colour raster at half resolution (while zooming / panning)
  * Returns the mapping for hit-testing and overlays.
  */
 function drawFlowPlot(cv, s) {
@@ -142,19 +145,29 @@ function drawFlowPlot(cv, s) {
   if (s.yScale === 'true') plotH = plotW * yRange / xRange;
   else plotH = plotW * (compact ? 0.26 : 0.5);
   plotH = Math.max(compact ? 70 : 110, Math.min(plotH, s.maxH ? s.maxH - titleH - bladeBand - webBand - axisH : compact ? 190 : 420));
-  const exaggeration = (plotH / plotW) * (xRange / yRange);
+  const full = { x0: 0, x1: xRange, y0: 0, y1: yRange };
+  const v = s.view ? clampView(s.view, full) : full, zoomed = !!s.view;
+  const vw = v.x1 - v.x0, vh = v.y1 - v.y0;
+  const exaggeration = (plotH / plotW) * (vw / vh);
 
   const T = titleH + bladeBand;
   const totalH = T + plotH + webBand + axisH;
   const { c, w } = setupCanvas(cv, totalH / w0);
 
-  const X = x => L + x / xRange * plotW;
-  const Y = y => T + plotH - y / yRange * plotH;
+  const X = x => L + (x - v.x0) / vw * plotW;
+  const Y = y => T + plotH - (y - v.y0) / vh * plotH;
+  const pl = L, pr = L + plotW, pt = T, pb = T + plotH;          // the plot's rectangle on screen
+  const eps = 1e-12;
+  // what may be drawn on: the plot, plus the blade band above it / the web band below it / the
+  // right margin when the window reaches the domain's top / bottom / downstream end
+  const CR = { l: pl, r: pr + (v.x1 >= full.x1 - eps ? 14 : 0), t: pt - (v.y1 >= full.y1 - eps ? bladeBand : 0), b: pb + (v.y0 <= eps ? webBand : 0) };
   const ink = cssVar('--ink'), muted = cssVar('--muted'), surface = cssVar('--surface');
   const mono = cssVar('--mono'), fsz = compact ? 10.5 : 11.5;
   c.clearRect(0, 0, w, totalH);
 
   const yTop = Y(f.Ly), yBot = Y(0), xL = X(0), xR = X(f.Lx);
+  // the part of the domain in view, on screen
+  const vl = Math.max(pl, xL), vr = Math.min(pr, xR), vt = Math.max(pt, yTop), vb = Math.min(pb, yBot);
   // blade surface on screen, one point per column (curvilinear: the top boundary up to the contact line)
   const topRow = f.curv ? Array.from({ length: f.nx }, (_, i) => [X(f.gx[(f.ny - 1) * f.nx + i]), Y(f.gy[(f.ny - 1) * f.nx + i])]) : null;
   const surf = f.curv ? topRow.slice(0, f.iCL + 1) : Array.from(f.h, (h, i) => [X(i * f.dx), Y(h)]);
@@ -170,30 +183,38 @@ function drawFlowPlot(cv, s) {
   // vectors on a lattice with even spacing on screen (so density is the
   // same visually whatever the vertical exaggeration)
   const vectors = s.vectorSample
-    ? s.vectorSample(Math.max(4, Math.round((xR - xL) / s.vectorSpacing)), Math.max(2, Math.round((yBot - yTop) / s.vectorSpacing)))
+    ? s.vectorSample(Math.max(4, Math.round((vr - vl) / s.vectorSpacing)), Math.max(2, Math.round((vb - vt) / s.vectorSpacing)),
+      { x0: v.x0 + (vl - pl) / plotW * vw, x1: v.x0 + (vr - pl) / plotW * vw, y0: v.y0 + (pb - vb) / plotH * vh, y1: v.y0 + (pb - vt) / plotH * vh })
     : null;
 
   // ---- colour carrier: one colour scale per plot --------------------
   const carrier = s.lineScalar || (s.vectorColor && vectors ? s.vectorScalar : null) || s.scalar;
   const rasterOn = !!s.scalar && !s.lineScalar && !(s.vectorColor && vectors);
 
+  c.save();
+  c.beginPath(); c.rect(CR.l, CR.t, CR.r - CR.l, CR.b - CR.t); c.clip();
   // fluid background
   c.fillStyle = surface; fluidPath(); c.fill();
-  if (rasterOn) {
-    const sc = s.scalar, pw = Math.round(xR - xL), ph = Math.max(1, Math.round(yBot - yTop));
+  if (rasterOn && vr > vl && vb > vt) {
+    // sampled over the part of the domain in view (half resolution while zooming / panning)
+    const q = s.fast ? 0.5 : 1;
+    const sc = s.scalar, pw = Math.max(1, Math.round((vr - vl) * q)), ph = Math.max(1, Math.round((vb - vt) * q));
     let perField = rasterCache.get(f);
     if (!perField) { perField = new Map(); rasterCache.set(f, perField); }
     const dark = isDarkTheme();
-    const key = [sc.key, pw, ph, sc.min, sc.max, sc.kind, dark].join('|');
+    const key = [sc.key, pw, ph, sc.min, sc.max, sc.kind, dark, zoomed ? [v.x0, v.x1, v.y0, v.y1].join(',') : 'full'].join('|');
     let off = perField.get(key);
     if (!off) {
+      // (only the whole-domain rasters are kept; a zoomed one replaces the last zoomed one)
+      if (zoomed) for (const k of [...perField.keys()]) if (!k.endsWith('|full')) perField.delete(k);
       off = document.createElement('canvas'); off.width = pw; off.height = ph;
       const oc = off.getContext('2d'), img = oc.createImageData(pw, ph), lut = getLut(sc.kind);
       const span = sc.max - sc.min || 1;
+      const gx0 = v.x0 + (vl - pl) / plotW * vw, gxs = (vr - vl) / plotW * vw, gy1 = v.y0 + (pb - vt) / plotH * vh, gys = (vb - vt) / plotH * vh;
       for (let py = 0; py < ph; py++) {
-        const y = (1 - (py + 0.5) / ph) * f.Ly;
+        const y = gy1 - (py + 0.5) / ph * gys;
         for (let px = 0; px < pw; px++) {
-          const x = (px + 0.5) / pw * f.Lx;
+          const x = gx0 + (px + 0.5) / pw * gxs;
           let val;
           if (f.curv) { const at = f.locate(x, y); if (!at) continue; val = sampleIdx(f, sc.arr, at[0], at[1]) * sc.scale; } // outside: blade or air
           else { if (y > bladeHeightAt(f, x)) continue; val = sampleField(f, sc.arr, x, y) * sc.scale; } // inside the blade: drawn as solid below
@@ -206,13 +227,13 @@ function drawFlowPlot(cv, s) {
       perField.set(key, off);
     }
     c.imageSmoothingEnabled = true;
-    c.drawImage(off, xL, yTop, xR - xL, yBot - yTop);
+    c.drawImage(off, vl, vt, vr - vl, vb - vt);
   }
 
   // ---- solids as geometry --------------------------------------------
   // blade: everything above its surface y = h(x), from the band above the
   // plot down to the surface, bounded downstream by its exit face
-  const bladeTop = T - bladeBand;
+  const bladeTop = Math.min(T - bladeBand, yTop - 2);
   const th = (s.exitAngle ?? 90) * Math.PI / 180;
   const sx = plotW / xRange, sy = plotH / yRange;
   // exit face, screen direction (right, up) including the vertical
@@ -237,12 +258,13 @@ function drawFlowPlot(cv, s) {
     for (const [px, py] of face.slice(1)) c.lineTo(px, py);
     c.closePath();
   };
-  const xFaceTop = Math.max(...face.map(p => p[0]));
   c.save();
   bladePath(); c.clip();
-  c.fillStyle = cssVar('--blade'); c.fillRect(xL, bladeTop, xFaceTop - xL + 14, yBot - bladeTop);
+  // (filled and hatched over what may be drawn on only: when zoomed the blade extends far off screen)
+  c.fillStyle = cssVar('--blade'); c.fillRect(CR.l, CR.t, CR.r - CR.l, CR.b - CR.t);
   c.strokeStyle = ink; c.globalAlpha = 0.22; c.lineWidth = 1;
-  for (let x = xL - (yBot - bladeTop); x < xFaceTop + 14; x += 7) { c.beginPath(); c.moveTo(x, yBot); c.lineTo(x + (yBot - bladeTop), bladeTop); c.stroke(); }
+  const hh = CR.b - CR.t;
+  for (let x = CR.l - hh; x < CR.r; x += 7) { c.beginPath(); c.moveTo(x, CR.b); c.lineTo(x + hh, CR.t); c.stroke(); }
   c.restore();
   c.strokeStyle = ink; c.lineWidth = 1.6;
   c.beginPath(); surf.forEach(([px, py], k) => k ? c.lineTo(px, py) : c.moveTo(px, py));
@@ -260,17 +282,18 @@ function drawFlowPlot(cv, s) {
   }
 
   // moving web
+  const wl = Math.max(xL, CR.l), wr = Math.min(xR, CR.r);
   c.save();
-  c.beginPath(); c.rect(xL, yBot, xR - xL, webBand); c.clip();
-  c.fillStyle = cssVar('--fibre'); c.fillRect(xL, yBot, xR - xL, webBand);
+  c.beginPath(); c.rect(wl, yBot, wr - wl, webBand); c.clip();
+  c.fillStyle = cssVar('--fibre'); c.fillRect(wl, yBot, wr - wl, webBand);
   c.strokeStyle = muted; c.globalAlpha = 0.55; c.lineWidth = 1;
-  for (let x = xL - webBand; x < xR; x += 9) { c.beginPath(); c.moveTo(x, yBot + webBand); c.lineTo(x + webBand * 0.45, yBot); c.stroke(); }
+  for (let x = wl - webBand; x < wr; x += 9) { c.beginPath(); c.moveTo(x, yBot + webBand); c.lineTo(x + webBand * 0.45, yBot); c.stroke(); }
   c.restore();
   c.strokeStyle = ink; c.lineWidth = 1.6;
-  c.beginPath(); c.moveTo(xL, yBot); c.lineTo(xR, yBot); c.stroke();
+  c.beginPath(); c.moveTo(wl, yBot); c.lineTo(wr, yBot); c.stroke();
 
   c.font = `${fsz}px ${mono}`; c.textBaseline = 'middle';
-  if (!compact) {
+  if (!compact && !zoomed) {
     // labels only where they fit (the edge marker also has a legend entry below the plot)
     const bl = s.bladeLabel || 'blade (fixed)', me = 'active metering edge';
     labelOn(c, bl, xL + 8, bladeTop + bladeBand / 2, ink, 'left');
@@ -342,7 +365,7 @@ function drawFlowPlot(cv, s) {
     c.font = `${compact ? 9.5 : 10.5}px ${mono}`; c.textBaseline = 'middle';
     for (const q of s.probes) {
       const px = X(q.x), py = Y(q.y), r = compact ? 4 : 5;
-      if (px < xL - 1 || px > xR + 1 || py < T - 1 || py > yBot + 1) continue;
+      if (px < CR.l - 1 || px > CR.r + 1 || py < CR.t - 1 || py > CR.b + 1) continue;
       c.beginPath(); c.moveTo(px, py - r); c.lineTo(px + r, py); c.lineTo(px, py + r); c.lineTo(px - r, py); c.closePath();
       c.lineWidth = 3; c.strokeStyle = surface; c.stroke();
       c.lineWidth = 1.5; c.strokeStyle = ink; c.stroke();
@@ -351,52 +374,56 @@ function drawFlowPlot(cv, s) {
     }
   }
 
+  c.restore();   // (end of the drawable area's clip)
+
   // ---- axes ------------------------------------------------------------
   c.fillStyle = muted; c.strokeStyle = cssVar('--line'); c.lineWidth = 1;
   c.font = `${fsz}px ${mono}`;
   c.textAlign = 'center'; c.textBaseline = 'top';
-  const xTickY = yBot + webBand + 3;
+  const xTickY = pb + webBand + 3;
   const tickTxt = (t, ticks) => {
     const step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
     return t.toFixed(Math.max(0, Math.min(3, -Math.floor(Math.log10(step) + 1e-9) + (step / Math.pow(10, Math.floor(Math.log10(step))) % 1 ? 1 : 0))));
   };
-  const xt = niceTicks(0, f.Lx * 1000, compact ? 5 : 8);
+  const xt = niceTicks(v.x0 * 1000, v.x1 * 1000, compact ? 5 : 8);
   for (const t of xt) {
     const px = X(t / 1000);
-    c.beginPath(); c.moveTo(px, yBot + webBand); c.lineTo(px, yBot + webBand + 3); c.stroke();
+    if (px < pl - 0.5 || px > pr + 0.5) continue;
+    c.beginPath(); c.moveTo(px, pb + webBand); c.lineTo(px, pb + webBand + 3); c.stroke();
     c.fillText(tickTxt(t, xt), px, xTickY + 2);
   }
   c.textAlign = 'right'; c.textBaseline = 'middle';
-  const yt = niceTicks(0, yRange * 1000, compact ? 2 : 4);
+  const yt = niceTicks(v.y0 * 1000, v.y1 * 1000, compact ? 2 : 4);
   for (const t of yt) {
     if (t / 1000 > f.Ly * 1.0001) continue;
     const py = Y(t / 1000);
-    c.beginPath(); c.moveTo(xL - 3, py); c.lineTo(xL, py); c.stroke();
-    c.fillText(tickTxt(t, yt), xL - 5, py);
+    if (py < pt - 0.5 || py > pb + 0.5) continue;
+    c.beginPath(); c.moveTo(pl - 3, py); c.lineTo(pl, py); c.stroke();
+    c.fillText(tickTxt(t, yt), pl - 5, py);
   }
   if (!compact) {
     c.textBaseline = 'top'; c.textAlign = 'center';
     const mid = 'x (mm), machine direction →', inl = 'inflow from bead', outl = f.curv ? 'film outflow' : 'outflow at edge';
-    const roomy = c.measureText(mid).width + c.measureText(inl).width + c.measureText(outl).width + 40 < xR - xL;
-    c.fillText(roomy ? mid : 'x (mm) →', (xL + xR) / 2, xTickY + 17);
+    const roomy = !zoomed && c.measureText(mid).width + c.measureText(inl).width + c.measureText(outl).width + 40 < xR - xL;
+    c.fillText(roomy || zoomed ? mid : 'x (mm) →', (pl + pr) / 2, xTickY + 17);
     if (roomy) {
       c.textAlign = 'left'; c.fillText(inl, xL, xTickY + 17);
       c.textAlign = 'right'; c.fillText(outl, xR, xTickY + 17);
     }
-    c.save(); c.translate(12, (yTop + yBot) / 2); c.rotate(-Math.PI / 2); c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.save(); c.translate(12, (vt + vb) / 2); c.rotate(-Math.PI / 2); c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText('y (mm)', 0, 0); c.restore();
   }
   // stated vertical exaggeration -- the plot is never silently stretched
   // (single view states the vertical exaggeration in its HTML caption line)
   if (compact) {
     c.fillStyle = muted; c.textAlign = 'right'; c.textBaseline = 'alphabetic';
-    c.fillText(exaggeration > 1.05 ? `y ×${exaggeration.toFixed(1)}` : 'true scale', xR, titleH - 6);
-    if (s.title) { c.textAlign = 'left'; c.fillStyle = ink; c.font = `500 11.5px ${mono}`; c.fillText(s.title, xL, titleH - 6); }
+    c.fillText((zoomed ? 'zoomed · ' : '') + (exaggeration > 1.05 ? `y ×${exaggeration.toFixed(1)}` : exaggeration < 0.95 ? `y ×${exaggeration.toFixed(2)}` : 'true scale'), pr, titleH - 6);
+    if (s.title) { c.textAlign = 'left'; c.fillStyle = ink; c.font = `500 11.5px ${mono}`; c.fillText(s.title, pl, titleH - 6); }
   }
 
   // ---- colorbar ----------------------------------------------------------
   if (carrier) {
-    const bx = xR + 16, bw = compact ? 9 : 11, by0 = yTop, by1 = yBot, lut = getLut(carrier.kind);
+    const bx = pr + 16, bw = compact ? 9 : 11, by0 = vt, by1 = vb, lut = getLut(carrier.kind);
     for (let py = Math.floor(by0); py < by1; py++) {
       c.fillStyle = lutColor(lut, 1 - (py - by0) / (by1 - by0));
       c.fillRect(bx, py, bw, 1);
@@ -415,13 +442,25 @@ function drawFlowPlot(cv, s) {
   }
 
   return {
-    left: xL, right: xR, top: yTop, bottom: yBot, exaggeration,
+    left: vl, right: vr, top: vt, bottom: vb, exaggeration, zoomed, view: v, full,
+    plot: { l: pl, r: pr, t: pt, b: pb },
     toPhys(px, py) {
-      if (px < xL || px > xR || py < yTop || py > yBot) return null;
-      return [(px - xL) / plotW * xRange, (T + plotH - py) / plotH * yRange];
+      if (px < vl || px > vr || py < vt || py > vb) return null;
+      return [v.x0 + (px - pl) / plotW * vw, v.y0 + (pb - py) / plotH * vh];
     },
+    // (any screen point, inside the plot or not: for dragging and boxes)
+    toPhysAny: (px, py) => [v.x0 + (px - pl) / plotW * vw, v.y0 + (pb - py) / plotH * vh],
     toScreen: (x, y) => [X(x), Y(y)],
   };
+}
+
+/** A zoom window kept inside the domain `full` and no smaller than 1/2000 of it in either direction. */
+function clampView(v, full) {
+  const fw = full.x1 - full.x0, fh = full.y1 - full.y0;
+  let w = Math.min(fw, Math.max(fw / 2000, v.x1 - v.x0)), h = Math.min(fh, Math.max(fh / 2000, v.y1 - v.y0));
+  let x0 = (v.x0 + v.x1) / 2 - w / 2, y0 = (v.y0 + v.y1) / 2 - h / 2;
+  x0 = Math.min(full.x1 - w, Math.max(full.x0, x0)); y0 = Math.min(full.y1 - h, Math.max(full.y0, y0));
+  return { x0, x1: x0 + w, y0, y1: y0 + h };
 }
 
 function labelOn(c, text, x, y, color, align) {

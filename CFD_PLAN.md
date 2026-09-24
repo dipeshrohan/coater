@@ -6,6 +6,30 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
+## GUI features list (user: "Implement them one by one", asking where a choice is open):
+## 1 zoom/pan (done), 2 mesh display, 3 colour map controls, 4 contour lines, 5 cut lines,
+## 6 difference plots, 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
+## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
+## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-1 (done): zoom and pan in the flow field
+
+User's choices: wheel zoom at the cursor, drag to pan, box zoom (Shift+drag
+and a toolbar toggle), zoom buttons; each plot zooms on its own in Compare;
+the colours rescale to what is in view; presets Fit, Metering edge,
+Meniscus; wheel/buttons keep the vertical scale, a box sets its own.
+- drawFlowPlot(view, fast): the window fills the plot (the plot keeps its
+  size); everything is clipped to the drawable area (plot, plus the blade /
+  web bands and right margin when the window reaches the domain's top /
+  bottom / end); the raster is sampled over the part of the domain in view
+  (half resolution while zooming / panning, sharpened 160 ms after);
+  vectors sample a lattice over the view; clampView keeps the window in the
+  domain, at least 1/2000 of it.
+- FV.zoom[location] (shared by the single and compare views of a
+  location); scalarRange(key, fields, win) = nodes in the window plus a
+  24 x 24 lattice of samples in it (a deep zoom holds few nodes).
+- Double-click = fit; a press that does not move stays a click (probes,
+  seeds); touch keeps page scrolling (zoom with the buttons or the box).
 
 ### GUI (G1-G5, done): a CFD-workbench frontend
 

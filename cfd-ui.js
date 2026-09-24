@@ -188,6 +188,8 @@ const FV = {
   convOpen: false,        // convergence: solve-sequence table expanded
   tree: { geo: true, rheo: true, fibre: false, air: false, locs: true },   // model tree: CFD groups open
   dock: 'metrics',        // results panel shown
+  zoom: {},               // flow plots: each location's zoom window { x0, x1, y0, y1 } (m); none = the whole domain
+  boxZoom: false,         // toolbar toggle: a drag draws a zoom box (else Shift+drag does)
   dockH: 300,             // results panel height (px)
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
@@ -314,7 +316,12 @@ function cancelAllLocations() {
 // Post-processing (cached per stored field; never re-solves)
 // ---------------------------------------------------------------------
 
-function scalarRange(key, fields) {
+/**
+ * Colour range of a field over the given flow fields' nodes -- or, with `win` (a zoom window, m;
+ * one field), over what is in view: the nodes inside it, plus a lattice of samples inside it
+ * (a deep zoom may hold few or no nodes).
+ */
+function scalarRange(key, fields, win) {
   const d = SCALARS[key];
   let min = Infinity, max = -Infinity, capped = false, vref = 0;
   for (const f of fields) {
@@ -322,14 +329,23 @@ function scalarRange(key, fields) {
     if (!a) continue;
     vref = Math.max(vref, f.vmax * 1000);
     const cap = d.cap && f.hasPlug ? f.muCap : Infinity, skip = d.skipCorner && f.cornerZone;
+    const take = v => { v *= d.scale; if (v > cap) { v = cap; capped = true; } if (v < min) min = v; if (v > max) max = v; };
+    const inWin = win && f.gx ? k => f.gx[k] >= win.x0 && f.gx[k] <= win.x1 && f.gy[k] >= win.y0 && f.gy[k] <= win.y1 : () => true;
     for (let k = 0; k < a.length; k++) {
       if (skip && skip[k]) continue;
-      let v = a[k] * d.scale;
-      if (v > cap) { v = cap; capped = true; }
-      if (v < min) min = v;
-      if (v > max) max = v;
+      if (!inWin(k)) continue;
+      take(a[k]);
+    }
+    if (win) {
+      const nearCorner = (x, y) => d.skipCorner && f.xe != null && Math.hypot(x - f.xe, y - f.Hedge) < 0.3 * f.Hedge;
+      for (let i = 0; i < 24; i++) for (let j = 0; j < 24; j++) {
+        const x = win.x0 + (i + 0.5) / 24 * (win.x1 - win.x0), y = win.y0 + (j + 0.5) / 24 * (win.y1 - win.y0);
+        if (!fieldInside(f, x, y) || nearCorner(x, y)) continue;
+        take(sampleField(f, a, x, y));
+      }
     }
   }
+  if (!(max >= min)) return scalarRange(key, fields);   // (nothing of the fluid in view)
   const kind = d.kind === 'auto' ? (min < -(d.autoTol ?? 1e-3) * Math.abs(max) ? 'div' : 'seq') : d.kind;
   if (kind === 'div') {
     // symmetric about zero; a floor keeps numerical noise in a ~zero field from being stretched into bold colour
@@ -998,62 +1014,211 @@ function renderFlowPlots() {
     host.innerHTML = `<p class="cap fv-empty">${running ? '<i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
     return;
   }
-  const fields = list.map(i => cfdRuns[i].field);
-  const ranges = {
-    base: FV.base !== 'none' && SCALARS[FV.base] ? scalarRange(FV.base, fields) : null,
-    line: !FV.streamlines || FV.lineColor === 'none' ? null
-      : FV.lineColor === 'time' ? timeRange(list)
-        : scalarRange(FV.lineColor, fields),
-    speed: scalarRange('speed', fields),
-  };
-  const yMax = Math.max(...fields.map(f => f.Ly));
-  const vmax = Math.max(...fields.map(f => f.vmax));
+  const zoomBtn = (act, title, icon) => `<button type="button" class="zb" data-z="${act}" title="${title}" aria-label="${title}"><svg viewBox="0 0 16 16" aria-hidden="true">${icon}</svg></button>`;
+  const zoomCtl = i => `<div class="zoom-ctl" role="toolbar" aria-label="Zoom, location ${i + 1}">
+      ${zoomBtn('in', 'Zoom in', '<path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')}
+      ${zoomBtn('out', 'Zoom out', '<path d="M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')}
+      ${zoomBtn('fit', 'Fit the whole domain', '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>')}
+      <span class="zb-sep" aria-hidden="true"></span>
+      <button type="button" class="zb zb-t" data-z="edge" title="Zoom to the metering edge">Edge</button>
+      <button type="button" class="zb zb-t" data-z="meniscus" title="Zoom to the exit face, contact line and free surface">Meniscus</button>
+      <span class="zb-sep" aria-hidden="true"></span>
+      <button type="button" class="zb" data-z="box" aria-pressed="${FV.boxZoom}" title="Box zoom: drag a rectangle (also Shift+drag)" aria-label="Box zoom"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="9" height="7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 1.6"/><path d="M10.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    </div>`;
 
   host.innerHTML = list.map(i => `
     ${compare ? '' : `<div class="fv-caption">${locationTitle(i)} · ${cfdRuns[i].result.mesh.nEx} × ${cfdRuns[i].result.mesh.nEy} finite elements · <span class="fv-ex"></span>${cfdIsStale(i) ? ' · <span class="warn-text">out of date: inputs changed since this run</span>' : ''}${cfdRuns[i].result.converged ? '' : ` · <span class="warn-text">converged only to residual ${cfdRuns[i].result.residual.toExponential(1)}</span>`}</div>`}
     <div class="fv-plot${compare ? ' compact' : ''}" data-i="${i}">
       <canvas class="fv-main" role="img" aria-label="${locationTitle(i)}: CFD field with flow overlays"></canvas>
       <canvas class="fv-over" aria-hidden="true"></canvas>
+      ${zoomCtl(i)}
       <div class="fv-tip" hidden></div>
-    </div>`).join('') + (compare ? '<p class="fv-note">Same colour range, axes (y up to the largest gap), streamline settings and vector scale in all four.</p>' : '');
+    </div>`).join('') + (compare ? '<p class="fv-note">Same axes (y up to the largest gap), streamline settings and vector scale in all four; the same colour range too, except in a zoomed plot, whose colours span what is in view. Each plot zooms on its own.</p>' : '');
 
   // one location: the plot fills the viewport's height (what the caption leaves)
   const cap = host.querySelector('.fv-caption');
   const maxH = compare ? null : host.clientHeight - (cap ? cap.offsetHeight + 6 : 0) - 4;
+  const ctx = { compare, list, maxH: maxH > 150 ? maxH : null, fields: list.map(i => cfdRuns[i].field) };
+  ctx.shared = plotRanges(ctx.fields, list, null);
+  ctx.yMax = Math.max(...ctx.fields.map(f => f.Ly));
+  ctx.vmax = Math.max(...ctx.fields.map(f => f.vmax));
   host.querySelectorAll('.fv-plot').forEach(el => {
-    const i = +el.dataset.i, run = cfdRuns[i], f = run.field;
-    const sl = FV.streamlines ? streamlinesFor(run) : null;
-    const cv = el.querySelector('.fv-main');
-    const map = drawFlowPlot(cv, {
-      f, webSpeed: run.geo.U, yMax, yScale: FV.yScale, compact: compare, maxH: maxH > 150 ? maxH : null, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
-      exitAngle: run.geo.exitAngle, bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : 'blade land (fixed)',
-      scalar: scalarFor(ranges.base, f), lineScalar: scalarFor(ranges.line, f),
-      streamlines: sl ? sl.lines : null, lineWidth: LINE_W[FV.lineWidth] * (compare ? 0.8 : 1), arrows: FV.arrows,
-      vectorSample: FV.vectors ? (nc, nr) => sampleVectors(f, nc, nr) : null,
-      vectorSpacing: VEC_SPACING[FV.vectorDensity] * (compare ? 0.8 : 1), vectorScale: FV.vectorScale,
-      vectorNormalize: FV.vectorNormalize, vectorVmax: vmax, vectorColor: FV.vectorColor, vectorScalar: scalarFor(ranges.speed, f),
-      seeds: sl ? sl.seeds : null, manualSeeds: FV.seedMode === 'manual',
-      probes: cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
-    });
-    wirePlotProbe(el, cv, map, run);
-    const ex = host.querySelector('.fv-ex');
-    if (ex) ex.textContent = map.exaggeration > 1.05 ? `vertical scale ×${map.exaggeration.toFixed(1)}` : 'true 1:1 scale';
+    el._ctx = ctx;
+    paintPlot(el, false);
+    wirePlotProbe(el);
+    wirePlotZoom(el);
   });
 }
 
+/** The colour ranges of one plot: shared by the plots in view, or, zoomed (win), over what is in view. */
+function plotRanges(fields, list, win) {
+  return {
+    base: FV.base !== 'none' && SCALARS[FV.base] ? scalarRange(FV.base, fields, win) : null,
+    line: !FV.streamlines || FV.lineColor === 'none' ? null
+      : FV.lineColor === 'time' ? timeRange(list)
+        : scalarRange(FV.lineColor, fields, win),
+    speed: scalarRange('speed', fields, win),
+  };
+}
+
+/** Draw (or redraw) one flow plot at its location's current zoom; fast = half-resolution colours (while zooming / panning). */
+function paintPlot(el, fast) {
+  const ctx = el._ctx, i = +el.dataset.i, run = cfdRuns[i], f = run.field, compare = ctx.compare;
+  const zoom = FV.zoom[i] || null;
+  const ranges = zoom ? plotRanges([f], [i], zoom) : ctx.shared;
+  const sl = FV.streamlines ? streamlinesFor(run) : null;
+  const cv = el.querySelector('.fv-main');
+  const map = drawFlowPlot(cv, {
+    f, webSpeed: run.geo.U, yMax: ctx.yMax, yScale: FV.yScale, compact: compare, maxH: ctx.maxH, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
+    exitAngle: run.geo.exitAngle, bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : 'blade land (fixed)',
+    scalar: scalarFor(ranges.base, f), lineScalar: scalarFor(ranges.line, f),
+    streamlines: sl ? sl.lines : null, lineWidth: LINE_W[FV.lineWidth] * (compare ? 0.8 : 1), arrows: FV.arrows,
+    vectorSample: FV.vectors ? (nc, nr, win) => sampleVectors(f, nc, nr, win) : null,
+    vectorSpacing: VEC_SPACING[FV.vectorDensity] * (compare ? 0.8 : 1), vectorScale: FV.vectorScale,
+    vectorNormalize: FV.vectorNormalize, vectorVmax: ctx.vmax, vectorColor: FV.vectorColor, vectorScalar: scalarFor(ranges.speed, f),
+    seeds: sl ? sl.seeds : null, manualSeeds: FV.seedMode === 'manual',
+    probes: cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
+    view: zoom, fast,
+  });
+  el._map = map;
+  if (zoom) FV.zoom[i] = map.view;            // (kept as clamped to the domain)
+  // overlay canvas (crosshair, zoom box) matches the plot
+  const over = el.querySelector('.fv-over'), dpr = window.devicePixelRatio || 1;
+  over.width = cv.width; over.height = cv.height; over.style.width = cv.clientWidth + 'px'; over.style.height = cv.style.height;
+  over.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  // zoom controls sit at the plot's top right, left of the colour bar
+  const zc = el.querySelector('.zoom-ctl');
+  zc.style.right = (cv.clientWidth - map.plot.r + 6) + 'px'; zc.style.top = (map.plot.t + 6) + 'px';
+  zc.querySelector('[data-z="fit"]').classList.toggle('on', !!zoom);
+  const ex = el.previousElementSibling && el.previousElementSibling.querySelector && el.previousElementSibling.querySelector('.fv-ex');
+  if (ex) {
+    const vs = map.exaggeration > 1.05 ? `vertical scale ×${map.exaggeration.toFixed(1)}` : map.exaggeration < 0.95 ? `vertical scale ×${map.exaggeration.toFixed(2)}` : 'true 1:1 scale';
+    ex.textContent = zoom ? `zoomed: x ${(map.view.x0 * 1000).toFixed(2)}–${(map.view.x1 * 1000).toFixed(2)} mm, y ${(map.view.y0 * 1000).toFixed(3)}–${(map.view.y1 * 1000).toFixed(3)} mm · ${vs} · colours span the view` : vs;
+    ex.parentElement.title = ex.parentElement.textContent;   // (the caption line may be cut short)
+  }
+  return map;
+}
+
+/** Zoom windows for the one-click presets (m), from a location's solution. */
+function zoomPreset(i, which) {
+  const run = cfdRuns[i], r = run.result, H = run.geo.H, xe = r.xe;
+  if (which === 'edge') return { x0: xe - 2.5 * H, x1: xe + 1.5 * H, y0: 0, y1: 1.6 * H };
+  // meniscus: from just upstream of the edge to where the free surface has flattened onto the film
+  let xFlat = r.xEnd;
+  for (let k = r.iCL; k < r.nx; k++) if (Math.abs(r.yTop[k] - r.hEnd) < 0.02 * r.hEnd) { xFlat = r.xTop[k]; break; }
+  return { x0: xe - 0.6 * H, x1: Math.max(xFlat, r.clX) + H, y0: 0, y1: Math.max(r.clY, H) + 0.6 * H };
+}
+
+/** Wheel zoom at the cursor, drag to pan, Shift+drag (or the box toggle) for a zoom box, and the plot's zoom buttons. */
+function wirePlotZoom(el) {
+  const i = +el.dataset.i, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over');
+  let idle = 0, raf = 0, pendingFast = false;
+  const repaint = fast => {
+    if (fast) {
+      pendingFast = true;
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (pendingFast) { pendingFast = false; paintPlot(el, true); } });
+      clearTimeout(idle); idle = setTimeout(() => paintPlot(el, false), 160);   // sharpen once still
+    } else { cancelAnimationFrame(raf); raf = 0; pendingFast = false; clearTimeout(idle); paintPlot(el, false); }
+  };
+  const setView = (v, fast) => {
+    const m = el._map, full = m.full;
+    if (!v || (v.x1 - v.x0 >= (full.x1 - full.x0) * 0.999 && v.y1 - v.y0 >= (full.y1 - full.y0) * 0.999)) delete FV.zoom[i];
+    else FV.zoom[i] = clampView(v, full);
+    repaint(fast);
+  };
+  const scaleAbout = (cx, cy, k) => {         // zoom by k (< 1 = in) about the physical point (cx, cy), keeping the vertical scale
+    const v = el._map.view;
+    return { x0: cx - (cx - v.x0) * k, x1: cx + (v.x1 - cx) * k, y0: cy - (cy - v.y0) * k, y1: cy + (v.y1 - cy) * k };
+  };
+  const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const inPlot = ([px, py]) => { const p = el._map.plot; return px >= p.l && px <= p.r && py >= p.t && py <= p.b; };
+
+  cv.addEventListener('wheel', e => {
+    const pt = at(e);
+    if (!inPlot(pt)) return;
+    e.preventDefault();
+    const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const k = Math.exp(Math.max(-0.5, Math.min(0.5, d * 0.0015)));
+    const [cx, cy] = el._map.toPhysAny(...pt);
+    setView(scaleAbout(cx, cy, k), true);
+  }, { passive: false });
+
+  // drag: pan, or draw a zoom box (Shift, or the box toggle); a press that does not move stays a click
+  let drag = null;
+  cv.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const pt = at(e);
+    if (!inPlot(pt)) return;
+    const box = e.shiftKey || FV.boxZoom;
+    if (!box && e.pointerType === 'touch') return;     // (touch: the page keeps scrolling; zoom with the buttons or the box)
+    drag = { box, start: pt, last: pt, moved: false, id: e.pointerId, view: { ...el._map.view } };
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const pt = at(e);
+    if (!drag.moved && Math.hypot(pt[0] - drag.start[0], pt[1] - drag.start[1]) < 4) return;
+    if (!drag.moved) { drag.moved = true; cv.setPointerCapture(e.pointerId); el.classList.add(drag.box ? 'boxing' : 'panning'); }
+    drag.last = pt;
+    if (drag.box) {
+      const oc = over.getContext('2d'), p = el._map.plot;
+      const x0 = Math.max(p.l, Math.min(drag.start[0], pt[0])), x1 = Math.min(p.r, Math.max(drag.start[0], pt[0]));
+      const y0 = Math.max(p.t, Math.min(drag.start[1], pt[1])), y1 = Math.min(p.b, Math.max(drag.start[1], pt[1]));
+      oc.clearRect(0, 0, over.width, over.height);
+      oc.fillStyle = cssVar('--accent'); oc.globalAlpha = 0.12; oc.fillRect(x0, y0, x1 - x0, y1 - y0);
+      oc.globalAlpha = 1; oc.strokeStyle = cssVar('--accent'); oc.lineWidth = 1.2; oc.setLineDash([4, 3]); oc.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1); oc.setLineDash([]);
+    } else {
+      // pan: the point grabbed stays under the pointer
+      const m = el._map, v = drag.view, p = m.plot;
+      const dx = (pt[0] - drag.start[0]) / (p.r - p.l) * (v.x1 - v.x0), dy = (pt[1] - drag.start[1]) / (p.b - p.t) * (v.y1 - v.y0);
+      FV.zoom[i] = clampView({ x0: v.x0 - dx, x1: v.x1 - dx, y0: v.y0 + dy, y1: v.y1 + dy }, m.full);
+      repaint(true);
+    }
+  });
+  const end = e => {
+    if (!drag || (e && e.pointerId !== drag.id)) return;
+    const d = drag; drag = null;
+    el.classList.remove('boxing', 'panning');
+    if (!d.moved) return;
+    el._suppressClick = true; setTimeout(() => { el._suppressClick = false; }, 0);
+    if (d.box) {
+      over.getContext('2d').clearRect(0, 0, over.width, over.height);
+      const m = el._map, p = m.plot;
+      const x0 = Math.max(p.l, Math.min(d.start[0], d.last[0])), x1 = Math.min(p.r, Math.max(d.start[0], d.last[0]));
+      const y0 = Math.max(p.t, Math.min(d.start[1], d.last[1])), y1 = Math.min(p.b, Math.max(d.start[1], d.last[1]));
+      if (x1 - x0 < 8 || y1 - y0 < 8) return;                  // (too small to mean a box)
+      const a = m.toPhysAny(x0, y1), b = m.toPhysAny(x1, y0);
+      setView({ x0: a[0], x1: b[0], y0: a[1], y1: b[1] }, false);
+    } else repaint(false);
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+  cv.addEventListener('dblclick', e => { if (inPlot(at(e))) setView(null, false); });   // double-click: fit
+
+  el.querySelector('.zoom-ctl').addEventListener('click', e => {
+    const b = e.target.closest('button[data-z]');
+    if (!b) return;
+    const z = b.dataset.z, v = el._map.view;
+    if (z === 'in' || z === 'out') setView(scaleAbout((v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2, z === 'in' ? 1 / 1.5 : 1.5), false);
+    else if (z === 'fit') setView(null, false);
+    else if (z === 'edge' || z === 'meniscus') setView(zoomPreset(i, z), false);
+    else if (z === 'box') { FV.boxZoom = !FV.boxZoom; document.querySelectorAll('.zoom-ctl [data-z="box"]').forEach(x => x.setAttribute('aria-pressed', FV.boxZoom)); document.querySelectorAll('.fv-plot').forEach(p => p.classList.toggle('box-mode', FV.boxZoom)); }
+  });
+  el.classList.toggle('box-mode', FV.boxZoom);
+}
+
 /** Hover/touch probe (crosshair + values at the point, read from the stored field) and click-to-seed in manual mode. */
-function wirePlotProbe(el, cv, map, run) {
-  const f = run.field, over = el.querySelector('.fv-over'), tip = el.querySelector('.fv-tip');
-  const dpr = window.devicePixelRatio || 1, cssW = cv.clientWidth || cv.width / dpr, cssH = parseFloat(cv.style.height) || cv.height / dpr;
-  over.width = cv.width; over.height = cv.height; over.style.width = cssW + 'px'; over.style.height = cssH + 'px';
+function wirePlotProbe(el) {
+  const i = +el.dataset.i, run = cfdRuns[i], f = run.field, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over'), tip = el.querySelector('.fv-tip');
   const oc = over.getContext('2d');
-  oc.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cv.style.cursor = placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : 'default';
+  const size = () => [cv.clientWidth, parseFloat(cv.style.height) || cv.clientHeight];
+  cv.style.cursor = placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : '';
   const sb = document.getElementById('sbCoord');
-  const clear = () => { oc.clearRect(0, 0, cssW, cssH); tip.hidden = true; if (sb) sb.textContent = ''; };
+  const clear = () => { const [w, h] = size(); oc.clearRect(0, 0, w, h); tip.hidden = true; if (sb) sb.textContent = ''; };
   const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 
   const probe = e => {
+    if (el.classList.contains('boxing') || el.classList.contains('panning')) { tip.hidden = true; return; }
+    const map = el._map, [cssW, cssH] = size();
     const [px, py] = at(e), p = map.toPhys(px, py);
     if (!p) { clear(); return; }
     oc.clearRect(0, 0, cssW, cssH);
@@ -1063,7 +1228,7 @@ function wirePlotProbe(el, cv, map, run) {
     oc.beginPath(); oc.arc(px, py, 3.5, 0, 7); oc.fillStyle = cssVar('--surface'); oc.fill(); oc.strokeStyle = cssVar('--ink'); oc.stroke();
 
     const [x, y] = p, s = a => sampleField(f, a, x, y);
-    if (sb) sb.textContent = `L${run.geo ? CFD_LOCS.findIndex((_, k) => cfdRuns[k] === run) + 1 : ''} · x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm${fieldInside(f, x, y) ? ` · |V| ${fmtNum(Math.hypot(s(f.u), s(f.v)) * 1000)} mm/s${f.p ? ` · p ${fmtNum(s(f.p))} Pa` : ''}` : ''}`;
+    if (sb) sb.textContent = `L${i + 1} · x ${(x * 1000).toFixed(3)} mm · y ${(y * 1000).toFixed(3)} mm${fieldInside(f, x, y) ? ` · |V| ${fmtNum(Math.hypot(s(f.u), s(f.v)) * 1000)} mm/s${f.p ? ` · p ${fmtNum(s(f.p))} Pa` : ''}` : ''}`;
     if (!fieldInside(f, x, y)) {
       tip.innerHTML = `<b>x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm</b><span class="fv-why">outside the fluid (${f.curv && x > f.xe && y > cfdTopAt(f, x) ? 'air' : 'blade'})</span>`;
       tip.hidden = false;
@@ -1092,7 +1257,8 @@ function wirePlotProbe(el, cv, map, run) {
   cv.addEventListener('pointerdown', probe);
   cv.addEventListener('pointerleave', clear);
   cv.addEventListener('click', e => {
-    const p = map.toPhys(...at(e));
+    if (el._suppressClick) return;                // (the end of a pan or a zoom box)
+    const p = el._map.toPhys(...at(e));
     if (!p) return;
     if (placeProbes) { addProbe(p[0], p[1]); renderCFD(); return; }
     if (FV.seedMode !== 'manual' || !FV.streamlines) return;
