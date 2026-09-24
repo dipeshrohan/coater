@@ -47,8 +47,37 @@ function airProps(Tc) {
   return { mu: 1.716e-5 * Math.pow(T / 273.15, 1.5) * (273.15 + 110.4) / (T + 110.4), rho: 101325 / (287.05 * T) };
 }
 const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab already uses
-const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z }));
+// Each location reads its own inputs (over) first, falling back to the shared values: the
+// sidebar's, and for the gap and the contact angle the across-web variation at its z.
+const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z, over: {} }));
+// Inputs a location can set for itself, in the sidebar's units.
+const LOC_INPUTS = [
+  { k: 'gap', l: 'Gap at edge', u: 'mm', step: 0.001, d: 3 },
+  { k: 'th', l: 'Contact angle', u: '°', step: 0.5, d: 1 },
+  { k: 'U', l: 'Web speed', u: 'm/min', step: 0.01, d: 2 },
+  { k: 'Pup', l: 'Bead pressure', u: 'kPa', step: 0.02, d: 2 },
+  { k: 'mu', l: 'Viscosity at 2.7 1/s', u: 'Pa·s', step: 0.5, d: 1 },
+  { k: 'n', l: 'Shear-thinning n', u: '', step: 0.05, d: 2 },
+  { k: 'ty', l: 'Yield stress', u: 'Pa', step: 0.5, d: 1 },
+  { k: 'g', l: 'Surface tension', u: 'N/m', step: 0.005, d: 3 },
+];
+/** A location's shared (not overridden) value of an input. */
+function locShared(i, k) {
+  const z = CFD_LOCS[i].z;
+  if (k === 'gap') return cfdLocalGapMm(z);
+  if (k === 'th') return cfdLocalContactDeg(z);
+  return P[k];
+}
+/** A location's effective value of an input: its own if set, else the shared one. */
+const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
+/** The rheology law (as physics.js muEff) for given parameters. */
+function muLaw(gd, muRef, ty, n) {
+  gd = Math.max(gd, 1e-6);
+  const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
+  return ty / gd + base * Math.pow(gd / 2.7, n - 1);
+}
 const cfdRuns = CFD_LOCS.map(() => ({ status: 'idle' }));
+let cfdEditLoc = null; // location whose own inputs are open for editing
 const cfdWorkers = CFD_LOCS.map(() => null);
 let cfdAutoStarted = false;
 
@@ -94,32 +123,34 @@ function cfdLocalGapMm(z) {
 /** Local contact angle on the blade (deg) at lateral position z (mm): the sidebar's value with its wetting variation, as the Contact line tab uses it. */
 const cfdLocalContactDeg = z => P.th + P.dth * spatialNoise(z, 4.1);
 
-function cfdGeometry(z) {
-  const U = P.U / 60;                       // m/min -> m/s
-  const H = cfdLocalGapMm(z) / 1000;        // mm -> m, gap at the metering edge
+function cfdGeometry(i) {
+  const z = CFD_LOCS[i].z, v = k => locInput(i, k);
+  const U = v('U') / 60;                    // m/min -> m/s
+  const H = v('gap') / 1000;                // mm -> m, gap at the metering edge
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
-    contactDeg: cfdLocalContactDeg(z), webSlip: CFDG.alphaBJ / Math.sqrt(fibrePermeability()),
-    Pup: P.Pup * 1000,                      // kPa -> Pa, applied at the inlet (pool edge / start of the land)
-    muRef: P.mu,                            // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
-    muRep: muEff(U / H),                    // at the representative shear rate U/H: one-viscosity estimates only
-    ty: P.ty, n: P.n, rho: RHO, gamma: P.g, g: GRAVITY, ovenDistance: P.oven,
+    contactDeg: v('th'), webSlip: CFDG.alphaBJ / Math.sqrt(fibrePermeability()),
+    Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
+    muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
+    muRep: muLaw(U / H, v('mu'), v('ty'), v('n')), // at the representative shear rate U/H: one-viscosity estimates only
+    ty: v('ty'), n: v('n'), rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven,
+    own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
   };
 }
 const cfdInputsKey = geo => JSON.stringify([geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
-const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(CFD_LOCS[i].z));
+const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
 function runLocation(i) {
   const run = cfdRuns[i];
   if (run.status === 'running') return;
-  const geo = cfdGeometry(CFD_LOCS[i].z);
+  const geo = cfdGeometry(i);
   const worker = new Worker('cfd-worker.js');
   cfdWorkers[i] = worker;
   const t0 = performance.now();
   run.status = 'running'; run.error = null; run.progress = null;
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
-    if (e.data.progress) { run.progress = e.data.progress; renderLocCards(); return; }
+    if (e.data.progress) { run.progress = e.data.progress; updateLocStates(); return; }
     finish();
     const ms = performance.now() - t0;
     const r = e.data.ok ? e.data.result : null;
@@ -227,7 +258,7 @@ function viewCFD() {
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
       <b>Fibre.</b> The slurry does not enter the fibre (its pores are there to let the drying air through), so no slurry crosses the web surface; over that porous surface the slurry slips (Beavers&ndash;Joseph: du/dy = (&alpha;/&radic;k)(u &minus; U) at the surface), with the fibre's permeability k from Kozeny&ndash;Carman. Drying air: Darcy's law for the air speed and temperature you set; the air's path through the fibre in the oven is not modelled.
       <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Flat land: the lubrication model's geometry, for comparison. The film is followed in 2D for a stretch downstream of the edge, then by the 1D thin-film model to the oven (under Profiles).
-      <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses.
+      <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses. Any location can instead be given its own gap, contact angle, web speed, bead pressure, rheology or surface tension (Inputs on its card); the blade and the fibre are shared.
       <b>Flow tracking.</b> Streamlines are integrated (RK4) through the interpolated velocity field and checked against the stream function, which is constant along a true streamline; the drift is reported under Flow metrics.
       <b>Limits.</b> The sharp metering edge is a corner: stresses and pressure there are singular in any continuum model, so their values right at the corner depend on the mesh (the reported lowest pressure says when it sits there). Contact angle is the static one (no contact-line hysteresis). Upstream, the pool's own free surface is not modelled; flow that turns back leaves through the inlet. Steady solver: no pathlines.
     </p></details>
@@ -268,6 +299,7 @@ function viewCFD() {
         </div>
       </div>
       <div class="loc-grid" id="cfdLocs"></div>
+      <div class="loc-edit" id="cfdLocEdit" hidden></div>
     </section>
 
     <section class="cfd-block">
@@ -371,7 +403,7 @@ function renderGeoNote() {
   const el = document.getElementById('cfdGeoNote');
   if (!el) return;
   if (CFDG.shape === 'round') {
-    const g = cfdGeometry(CFD_LOCS[0].z), hPool = g.H + g.R - Math.sqrt(g.R * g.R - g.Xup * g.Xup);
+    const g = cfdGeometry(0), hPool = g.H + g.R - Math.sqrt(g.R * g.R - g.Xup * g.Xup);
     const clipped = CFDG.pool > 0.8 * CFDG.R ? ` (limited to 0.8 × radius)` : '';
     el.textContent = `Domain: ${(g.Xup * 1000).toFixed(0)} mm from the pool edge${clipped}, where the gap is ${(hPool * 1000).toFixed(1)} mm, to the metering edge.`;
   } else {
@@ -403,21 +435,48 @@ function renderLocCards() {
     else if (r.field && cfdIsStale(i)) { cls = 'warn'; txt = 'out of date'; }
     else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `solved · ${(r.elapsedMs / 1000).toFixed(1)} s${r.result.converged ? '' : ' · partly converged'}`; }
     else if (r.status === 'cancelled') { cls = 'warn'; txt = 'cancelled'; }
-    const sel = FV.view === i ? ' sel' : '';
+    const sel = FV.view === i ? ' sel' : '', own = Object.keys(loc.over).length;
     return `<div class="loc-card${sel}">
       <div class="loc-name">Location ${loc.id}</div>
-      <div class="loc-state ${cls}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
+      <div class="loc-state ${cls}" data-state="${i}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
       <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
-      <div class="loc-meta">gap at edge <b>${cfdLocalGapMm(loc.z).toFixed(3)}</b> mm · contact angle <b>${cfdLocalContactDeg(loc.z).toFixed(1)}</b>&deg;</div>
+      <div class="loc-meta">gap at edge <b>${locInput(i, 'gap').toFixed(3)}</b> mm · contact angle <b>${locInput(i, 'th').toFixed(1)}</b>&deg;</div>
+      <button class="loc-in-btn" type="button" data-edit="${i}" aria-expanded="${cfdEditLoc === i}" aria-controls="cfdLocEdit">Inputs · ${own ? `<b>${own} set here</b>` : 'shared'} <span aria-hidden="true">${cfdEditLoc === i ? '▾' : '▸'}</span></button>
       <button class="btn btn-secondary btn-sm" type="button" data-run="${i}"${r.status === 'running' ? ' disabled' : ''}>Run</button>
     </div>`;
   }).join('');
+  const edit = document.getElementById('cfdLocEdit');
+  if (cfdEditLoc == null) { edit.hidden = true; edit.innerHTML = ''; }
+  else {
+    const i = cfdEditLoc, loc = CFD_LOCS[i], own = Object.keys(loc.over).length;
+    edit.hidden = false;
+    edit.innerHTML = `<div class="loc-edit-head"><b>Location ${loc.id}: its own inputs</b><span class="fv-why">empty = the shared value (shown faint)</span></div>
+      <div class="loc-in-grid">${LOC_INPUTS.map(q => `<label><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}</span><input type="number" step="${q.step}" data-li="${i}" data-k="${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}" aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`).join('')}</div>
+      <div class="loc-edit-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear="${i}"${own ? '' : ' disabled'}>Use shared values</button><button class="btn btn-secondary btn-sm" type="button" data-edit="${i}">Close</button></div>`;
+  }
   host.querySelectorAll('input[data-i]').forEach(inp => inp.addEventListener('change', () => {
     const v = Math.min(CFD_WEB_WIDTH_MM, Math.max(0, +inp.value || 0));
     CFD_LOCS[+inp.dataset.i].z = v;
     renderCFD();
   }));
+  document.querySelectorAll('#cfdLocs button[data-edit], #cfdLocEdit button[data-edit]').forEach(b => { b.onclick = () => { cfdEditLoc = cfdEditLoc === +b.dataset.edit ? null : +b.dataset.edit; renderLocCards(); }; });
+  edit.querySelectorAll('input[data-li]').forEach(inp => inp.addEventListener('change', () => {
+    const loc = CFD_LOCS[+inp.dataset.li], k = inp.dataset.k, raw = inp.value.trim(), v = +raw;
+    const ok = k === 'th' ? v > 0 && v < 180 : k === 'ty' || k === 'Pup' ? v >= 0 : v > 0;
+    if (raw === '') delete loc.over[k];
+    else if (Number.isFinite(v) && ok) loc.over[k] = v;
+    renderCFD();
+  }));
+  edit.querySelectorAll('button[data-clear]').forEach(b => { b.onclick = () => { CFD_LOCS[+b.dataset.clear].over = {}; renderCFD(); }; });
   host.querySelectorAll('button[data-run]').forEach(b => { b.onclick = () => runLocation(+b.dataset.run); });
+}
+
+/** Refresh only the locations' status lines (progress while solving), leaving their inputs alone. */
+function updateLocStates() {
+  document.querySelectorAll('.loc-state[data-state]').forEach(el => {
+    const r = cfdRuns[+el.dataset.state];
+    if (r.status === 'running') { el.className = 'loc-state run'; el.textContent = r.progress ? `solving · ${cfdStageText(r.progress.stage)}${r.progress.s < 1 ? `, rheology ${Math.round(r.progress.s * 100)}%` : ''}` : 'solving…'; }
+  });
 }
 
 /** Short progress text from the solver's stage message. */
@@ -470,7 +529,7 @@ function renderSeedPanel() {
 
 function locationTitle(i) {
   const r = cfdRuns[i];
-  return `Location ${i + 1} · z = ${CFD_LOCS[i].z} mm · gap at edge ${(r.geo.H * 1000).toFixed(3)} mm`;
+  return `Location ${i + 1} · z = ${CFD_LOCS[i].z} mm · gap at edge ${(r.geo.H * 1000).toFixed(3)} mm${r.geo.own && r.geo.own.length ? ` · own ${r.geo.own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ')}` : ''}`;
 }
 
 function renderFlowPlots() {
@@ -646,6 +705,7 @@ function renderMetrics() {
   const pAt = (r, key) => where(r.field, r.result[key]);
   // [label, unit, value] -- units live in the label column so the values stay short enough to compare side by side
   const rows = [
+    ['Inputs of this run', 'set for this location (others shared)', r => r.geo.own && r.geo.own.length ? r.geo.own.map(k => { const q = LOC_INPUTS.find(x => x.k === k); return `${q.l} ${r.geo.ownVals[k]}${q.u ? ' ' + q.u : ''}`; }).join('<br>') : 'shared'],
     ['Wet film thickness, Q/U', 'mm', r => (r.result.Q / r.geo.U * 1000).toFixed(3)],
     ['Through-flow Q', 'mm²/s per mm width', r => fmtNum(r.metrics.Q * 1e6)],
     ['Mean velocity at the metering edge, Q/H', 'mm/s', r => fmtNum(r.metrics.meanGapVelocity * 1000)],
