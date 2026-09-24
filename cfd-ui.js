@@ -836,6 +836,7 @@ function renderCFD() {
   markInvalidInputs();
   decorateImageButtons();
   applyHelp();
+  updateProjectTitle();
 }
 
 // ---------------------------------------------------------------------
