@@ -361,6 +361,12 @@ function viewCFD() {
       <div id="cfdSeeds"></div>
       <div id="cfdPlots"></div>
       <div class="fv-legend" id="cfdLegend"></div>
+      <div class="fv-bar cfd-export" id="cfdExport" hidden>
+        <span class="fv-ctl"><b>Export CSV</b> <span class="fv-why" id="cfdExportWhat"></span></span>
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvField">Field (every node)</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvBound">Boundaries (web, blade, face, free surface)</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvMetrics">Flow metrics table</button>
+      </div>
     </section>
 
     <section class="cfd-block"><div class="cfd-head"><h3>Flow metrics</h3></div><div id="cfdMetrics"></div></section>
@@ -379,6 +385,9 @@ function viewCFD() {
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('cfdCaseSave').onclick = saveCase;
+  document.getElementById('cfdCsvField').onclick = () => exportField();
+  document.getElementById('cfdCsvBound').onclick = () => exportBoundaries();
+  document.getElementById('cfdCsvMetrics').onclick = () => exportMetrics();
   document.getElementById('fvMore').addEventListener('toggle', e => { FV.settingsOpen = e.target.open; });
 
   const bind = (id, key, parse = v => v, prop = 'value') => {
@@ -419,9 +428,70 @@ function renderCFD() {
   renderFlowPlots();
   renderLegend();
   renderCases();
+  renderExportBar();
   renderMetrics();
   renderFibre();
   renderProfiles();
+}
+
+// ---------------------------------------------------------------------
+// CSV export of what is solved and shown: the location in view, or all
+// four in the comparison view (a location column tells them apart).
+// ---------------------------------------------------------------------
+const csvCell = v => { const t = typeof v === 'number' ? (Number.isFinite(v) ? String(+v.toPrecision(9)) : '') : String(v ?? ''); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+function downloadCSV(name, rows) {
+  const blob = new Blob(['\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+const exportLocs = () => (FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].field);
+const csvStamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+function renderExportBar() {
+  const bar = document.getElementById('cfdExport');
+  if (!bar) return;
+  const locs = exportLocs();
+  bar.hidden = !locs.length;
+  document.getElementById('cfdExportWhat').textContent = locs.length ? `(location${locs.length > 1 ? 's' : ''} ${locs.map(i => i + 1).join(', ')}${locs.some(cfdIsStale) ? '; some out of date' : ''})` : '';
+}
+/** Where a node sits: the boundary it lies on, else interior. */
+function nodeKind(f, i, j) {
+  if (j === 0) return 'web';
+  if (j === f.ny - 1) return i <= f.iCorner ? 'blade' : i <= f.iCL ? 'exit face' : 'free surface';
+  if (i === 0) return 'inlet';
+  if (i === f.nx - 1) return 'outlet';
+  return 'interior';
+}
+function exportField() {
+  const rows = [['location', 'z_mm', 'i', 'j', 'boundary', 'x_mm', 'y_mm', 'u_mm_s', 'v_mm_s', 'speed_mm_s', 'p_Pa', 'shear_rate_1_s', 'viscosity_Pa_s', 'unyielded',
+    'vorticity_1_s', 'strain_rate_stretching_1_s', 'strain_rate_compression_1_s', 'stretching_direction_deg', 'dissipation_W_m3', 'stream_function_mm2_s']];
+  for (const L of exportLocs()) {
+    const f = cfdRuns[L].field;
+    for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) {
+      const k = j * f.nx + i;
+      rows.push([L + 1, CFD_LOCS[L].z, i, j, nodeKind(f, i, j), f.gx[k] * 1e3, f.gy[k] * 1e3, f.u[k] * 1e3, f.v[k] * 1e3, f.speed[k] * 1e3, f.p[k], f.shear[k], f.mu[k],
+        f.unyielded && f.unyielded[k] ? 1 : 0, f.omega[k], f.strain1[k], f.strain2[k], f.strainDir[k] * 180 / Math.PI, f.dissipation[k], f.psi[k] * 1e6]);
+    }
+  }
+  downloadCSV(`cfd-field-${csvStamp()}.csv`, rows);
+}
+function exportBoundaries() {
+  const rows = [['location', 'z_mm', 'column', 'web_x_mm', 'web_p_Pa', 'web_u_mm_s', 'top', 'top_x_mm', 'top_y_mm', 'top_p_Pa']];
+  for (const L of exportLocs()) {
+    const r = cfdRuns[L].result, f = cfdRuns[L].field;
+    for (let i = 0; i < f.nx; i++) rows.push([L + 1, CFD_LOCS[L].z, i, r.xWeb[i] * 1e3, r.pWeb[i], r.uWeb[i] * 1e3, nodeKind(f, i, f.ny - 1), r.xTop[i] * 1e3, r.yTop[i] * 1e3, r.pTop[i]]);
+  }
+  downloadCSV(`cfd-boundaries-${csvStamp()}.csv`, rows);
+}
+/** The Flow metrics table as shown (a value's small note follows it after " | "). */
+function exportMetrics() {
+  const table = document.querySelector('#cfdMetrics table');
+  if (!table) return;
+  const cell = c => [...c.childNodes].map(n => n.textContent.trim()).filter(Boolean).join(' | ');
+  const rows = [...table.querySelectorAll('tr')].map(tr => [...tr.children].map(cell));
+  if (FV.view !== 'compare') rows.unshift(['Metric', `Location ${FV.view + 1}`]);
+  downloadCSV(`cfd-metrics-${csvStamp()}.csv`, rows);
 }
 
 // ---------------------------------------------------------------------
