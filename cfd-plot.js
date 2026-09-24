@@ -114,7 +114,8 @@ const rasterCache = new WeakMap();
  *   compact      small-multiple layout (comparison mode)
  *   title        compact-mode title
  *   scalar       { key, arr, label, unit, scale, min, max, kind: 'seq'|'div', capped } | null  -- colour raster
- *   lineScalar   same shape, or null  -- colour streamlines by this instead (raster then off)
+ *   lineScalar   same shape, or null  -- colour streamlines by this instead (raster then off);
+ *                perLine: true colours by each line's own times, line.t (per point)
  *   vectorColor  boolean -- colour vectors by |V| using `vectorScalar`
  *   vectorScalar same shape as scalar (|V|), used when vectorColor
  *   streamlines  [{points:[[x,y]...]}] | null
@@ -295,7 +296,8 @@ function drawFlowPlot(cv, s) {
         c.lineWidth = lw;
         for (let i = 1; i < pts.length; i++) {
           const xm = (pts[i][0] + pts[i - 1][0]) / 2, ym = (pts[i][1] + pts[i - 1][1]) / 2;
-          c.strokeStyle = lutColor(lineLut, (sampleField(f, sc.arr, xm, ym) * sc.scale - sc.min) / span);
+          const val = sc.perLine ? 0.5 * (ln.t[i] + ln.t[i - 1]) : sampleField(f, sc.arr, xm, ym);
+          c.strokeStyle = lutColor(lineLut, (val * sc.scale - sc.min) / span);
           c.beginPath(); c.moveTo(X(pts[i - 1][0]), Y(pts[i - 1][1])); c.lineTo(X(pts[i][0]), Y(pts[i][1])); c.stroke();
         }
       } else {
@@ -304,7 +306,7 @@ function drawFlowPlot(cv, s) {
       // arrows staggered line to line (golden-ratio offset) so parallel
       // streamlines don't line their arrows up into a grid of columns
       const spacing = compact ? 150 : 170;
-      if (s.arrows) drawLineArrows(c, pts, X, Y, spacing, spacing * (0.25 + ((li * 0.618) % 1) * 0.75), compact ? 3.5 : 4.5, lineLut ? null : ink, surface, lineLut, s.lineScalar, f);
+      if (s.arrows) drawLineArrows(c, pts, X, Y, spacing, spacing * (0.25 + ((li * 0.618) % 1) * 0.75), compact ? 3.5 : 4.5, lineLut ? null : ink, surface, lineLut, s.lineScalar, f, ln.t);
     });
     c.restore();
   }
@@ -413,7 +415,7 @@ function labelOn(c, text, x, y, color, align) {
 }
 
 /** Direction chevrons at regular screen-space intervals along a streamline (points are in flow order). */
-function drawLineArrows(c, pts, X, Y, spacing, firstAt, size, color, halo, lut, sc, f) {
+function drawLineArrows(c, pts, X, Y, spacing, firstAt, size, color, halo, lut, sc, f, times) {
   let acc = firstAt;
   for (let i = 1; i < pts.length; i++) {
     const x0 = X(pts[i - 1][0]), y0 = Y(pts[i - 1][1]), x1 = X(pts[i][0]), y1 = Y(pts[i][1]);
@@ -423,7 +425,7 @@ function drawLineArrows(c, pts, X, Y, spacing, firstAt, size, color, halo, lut, 
       const t = acc / seg, ax = x0 + (x1 - x0) * t, ay = y0 + (y1 - y0) * t;
       const ang = Math.atan2(y1 - y0, x1 - x0);
       let col = color;
-      if (lut) { const span = sc.max - sc.min || 1; col = lutColor(lut, (sampleField(f, sc.arr, pts[i][0], pts[i][1]) * sc.scale - sc.min) / span); }
+      if (lut) { const span = sc.max - sc.min || 1, val = sc.perLine ? times[i] : sampleField(f, sc.arr, pts[i][0], pts[i][1]); col = lutColor(lut, (val * sc.scale - sc.min) / span); }
       c.save(); c.translate(ax, ay); c.rotate(ang);
       c.beginPath(); c.moveTo(size, 0); c.lineTo(-size, -size * 0.8); c.lineTo(-size * 0.4, 0); c.lineTo(-size, size * 0.8); c.closePath();
       c.lineWidth = 2; c.strokeStyle = halo; c.stroke(); c.fillStyle = col; c.fill();

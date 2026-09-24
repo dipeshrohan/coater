@@ -24,6 +24,10 @@
  *     slip condition, exact; a yield-stress fluid meets the condition
  *     du/dy = (alpha / sqrt k)(u - U) pointwise, converging with the mesh;
  *     the coating flow with slip converges and conserves mass.
+ *  9. Derived outputs (cfd-flowviz.js on the finite-element grid), on
+ *     Couette-Poiseuille flow where they are known exactly: principal strain
+ *     rates +-|du/dy|/2, total viscous dissipation int mu (du/dy)^2, and the
+ *     travel time along each (straight) streamline, L / u(y).
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -189,6 +193,33 @@ section('8. Beavers-Joseph slip over the porous web');
   const gr = coaterGrid(r, { xe: xe0, H, faceDeg: 90, contactDeg: 35, U: 0.1 });
   check(r.converged && Math.abs(gr.massError) < 1e-4 && Math.abs(gr.uWeb[gr.nx - 1] - 0.1) < 1e-12,
     `coating flow with 20 um slip length: converged, ${r.meniscus.mode}, film ${(r.Q / 0.1 * 1e3).toFixed(4)} mm, mass ${(gr.massError * 100).toFixed(4)}%, plug (no slip) at the outlet`);
+}
+
+// ---------------------------------------------------------------------
+section('9. Derived outputs: strain rates, dissipation, travel times (Couette-Poiseuille)');
+{
+  const FV = require('./cfd-flowviz.js');
+  const Hc = 1e-3, L = 5e-3, U = 0.1, mu = 2, dp = 50, G = dp / L;
+  const du = y => -U / Hc + G / (2 * mu) * (Hc - 2 * y), uEx = y => U * (1 - y / Hc) + G / (2 * mu) * y * (Hc - y);
+  const errs = [];
+  for (const nE of [4, 8]) {
+    const r = solveFEM({ mesh: { nEx: 6, nEy: nE, spineFoot: c => c / 12 * L, spineTop: c => [c / 12 * L, Hc] }, U, rho: 0, mu: () => mu, Hr: Hc, Ur: U,
+      inlet: { type: 'traction', p: () => dp }, outlet: { type: 'traction', p: () => 0 } });
+    const nx = r.NC, ny = r.NR, re = a => { const o = new Float64Array(nx * ny); for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) o[j * nx + i] = a[i * ny + j]; return o; };
+    const f = FV.makeFlowField({ grid: 'curvilinear', nx, ny, gx: re(r.x), gy: re(r.y), u: re(r.u), v: re(r.v), p: re(r.p), psi: re(r.psi), gd: re(r.gd), mu: re(r.mu),
+      tauXY: re(r.tauXY), tauXX: re(r.tauXX), tauYY: re(r.tauYY), omega: re(r.omega), H: Hc, iCorner: nx - 1, iCL: nx - 1 });
+    let es = 0, diss = 0;
+    for (let k = 0; k < nx * ny; k++) { es = Math.max(es, Math.abs(f.strain1[k] - Math.abs(du(f.gy[k])) / 2), Math.abs(f.strain2[k] + Math.abs(du(f.gy[k])) / 2)); diss += f.nodeArea[k] * f.dissipation[k]; }
+    // exact: L int_0^H mu du^2 dy, du linear in y
+    let ex = 0; const M = 20000; for (let m = 0; m < M; m++) { const y = (m + 0.5) * Hc / M; ex += mu * du(y) ** 2 * Hc / M; } ex *= L;
+    const t = FV.residenceTimes(f, L * 0.999, 16);
+    let et = 0;
+    for (const s of FV.autoSeeds(f, 16, 'forward').slice(0, 16)) { const line = FV.traceStreamline(f, s, { direction: 'forward' }), tt = FV.streamlineTimes(f, line); et = Math.max(et, Math.abs(tt[tt.length - 1] / (L / uEx(s[1])) - 1)); }
+    errs.push({ es: es / (U / Hc), diss: Math.abs(diss / ex - 1), et, n: t.n });
+  }
+  check(errs[0].es < 1e-10, `principal strain rates = +-|du/dy|/2 to ${errs[0].es.toExponential(1)} of U/H`);
+  check(errs[1].diss < errs[0].diss / 3 && errs[1].diss < 0.01, `total dissipation vs exact: ${(errs[0].diss * 100).toFixed(3)}% -> ${(errs[1].diss * 100).toFixed(3)}% with the rows doubled`);
+  check(errs[1].et < 2e-3 && errs[1].n === 16, `travel time along each streamline = L / u(y) within ${(errs[1].et * 100).toFixed(3)}% (16 lines timed)`);
 }
 
 console.log(allPass ? '\nALL PASS' : '\nSOME CHECKS FAILED');

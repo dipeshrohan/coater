@@ -1074,7 +1074,7 @@ function coaterGrid(r, geo) {
   const re = a => { const out = new Float64Array(N); for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) out[j * nx + i] = a[i * ny + j]; return out; };
   const g = {
     grid: 'curvilinear', nx, ny, gx: re(r.x), gy: re(r.y), u: re(r.u), v: re(r.v), p: re(r.p), psi: re(r.psi),
-    gd: re(r.gd), mu: re(r.mu), tauXY: re(r.tauXY), tauXX: re(r.tauXX), omega: re(r.omega),
+    gd: re(r.gd), mu: re(r.mu), tauXY: re(r.tauXY), tauXX: re(r.tauXX), tauYY: re(r.tauYY), omega: re(r.omega),
   };
   const top = i => (ny - 1) * nx + i;
   const iCorner = r.meshInfo.cCorner, iCL = r.meshInfo.cCL;
