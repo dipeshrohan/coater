@@ -139,6 +139,12 @@ console.log('\n-- contour lines and mesh quality (display helpers) --');
   let err = 0;
   for (const { v, lines } of res) for (const l of lines) for (const [x, y] of l) err = Math.max(err, Math.abs(x * x + y * y - v));
   check(res.every(r => r.lines.length === 1) && err < 1e-3, `contours of x^2 + y^2: one line per level, on the circle to ${err.toExponential(1)}`);
+  // cells with no data (NaN nodes) are skipped: no NaN points, and lines stop at the gap
+  const holed = Float64Array.from(a, (v, k) => gx[k] > 0.5 ? NaN : v);
+  const rh = contourLines({ nx, ny, gx, gy }, holed, 1, [0.25, 0.5]);
+  const finite = rh.every(r => r.lines.every(l => l.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))));
+  const inHalf = rh.every(r => r.lines.every(l => l.every(([x]) => x <= 0.5 + 1e-9)));
+  check(finite && inHalf && rh.every(r => r.lines.length >= 1), 'contours skip cells with no data (NaN): finite points, none past the gap');
   // mesh quality: an undistorted (parallelogram) grid is 1 everywhere; a bent one below 1
   const q1 = meshQuality({ nx, ny, gx, gy });
   const bent = Float64Array.from(gy, (y, k) => y * (1 + 0.5 * gx[k]));

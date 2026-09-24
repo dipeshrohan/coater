@@ -144,6 +144,7 @@ const rasterCache = new WeakMap();
  *   compact      small-multiple layout (comparison mode)
  *   title        compact-mode title
  *   scalar       { key, arr, label, unit, scale, min, max, kind: 'seq'|'div', capped } | null  -- colour raster
+ *                (or with at(x, y, idx) giving the value in display units, null = no data: a grey hatch)
  *   lineScalar   same shape, or null  -- colour streamlines by this instead (raster then off);
  *                perLine: true colours by each line's own times, line.t (per point)
  *   vectorColor  boolean -- colour vectors by |V| using `vectorScalar`
@@ -246,16 +247,18 @@ function drawFlowPlot(cv, s) {
       if (zoomed) for (const k of [...perField.keys()]) if (!k.endsWith('|full')) perField.delete(k);
       off = document.createElement('canvas'); off.width = pw; off.height = ph;
       const oc = off.getContext('2d'), img = oc.createImageData(pw, ph), lut = getLut(sc.kind);
+      const noData = dark ? [34, 92] : [218, 170];
       const gx0 = v.x0 + (vl - pl) / plotW * vw, gxs = (vr - vl) / plotW * vw, gy1 = v.y0 + (pb - vt) / plotH * vh, gys = (vb - vt) / plotH * vh;
       for (let py = 0; py < ph; py++) {
         const y = gy1 - (py + 0.5) / ph * gys;
         for (let px = 0; px < pw; px++) {
           const x = gx0 + (px + 0.5) / pw * gxs;
           let val;
-          if (f.curv) { const at = f.locate(x, y); if (!at) continue; val = sampleIdx(f, sc.arr, at[0], at[1]) * sc.scale; } // outside: blade or air
-          else { if (y > bladeHeightAt(f, x)) continue; val = sampleField(f, sc.arr, x, y) * sc.scale; } // inside the blade: drawn as solid below
-          const n = Math.round(scaleT(sc, val) * (LUT_N - 1)) * 3;
+          if (f.curv) { const at = f.locate(x, y); if (!at) continue; val = sc.at ? sc.at(x, y, at) : sampleIdx(f, sc.arr, at[0], at[1]) * sc.scale; } // outside: blade or air
+          else { if (y > bladeHeightAt(f, x)) continue; val = sc.at ? sc.at(x, y, null) : sampleField(f, sc.arr, x, y) * sc.scale; } // inside the blade: drawn as solid below
           const p = (py * pw + px) * 4;
+          if (val == null) { const g = (px + py) % 6 < 2 ? noData[1] : noData[0]; img.data[p] = g; img.data[p + 1] = g; img.data[p + 2] = g - 3; img.data[p + 3] = 255; continue; } // (no data: grey hatch)
+          const n = Math.round(scaleT(sc, val) * (LUT_N - 1)) * 3;
           img.data[p] = lut[n]; img.data[p + 1] = lut[n + 1]; img.data[p + 2] = lut[n + 2]; img.data[p + 3] = 255;
         }
       }

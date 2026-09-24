@@ -517,6 +517,7 @@ function contourLines(f, arr, scale, levels) {
     const segs = [];            // pairs of edge ids
     for (let j = 0; j + 1 < ny; j++) for (let i = 0; i + 1 < nx; i++) {
       const k0 = j * nx + i, k1 = k0 + 1, k3 = k0 + nx, k2 = k3 + 1;
+      if (!(Number.isFinite(arr[k0]) && Number.isFinite(arr[k1]) && Number.isFinite(arr[k2]) && Number.isFinite(arr[k3]))) continue;   // (a cell with no data)
       const a0 = val(k0) >= v, a1 = val(k1) >= v, a2 = val(k2) >= v, a3 = val(k3) >= v;
       const idx = (a0 ? 1 : 0) | (a1 ? 2 : 0) | (a2 ? 4 : 0) | (a3 ? 8 : 0);
       if (idx === 0 || idx === 15) continue;

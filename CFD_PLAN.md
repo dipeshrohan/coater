@@ -8,9 +8,32 @@ drift out of sync with what's actually built.
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
-## 6 difference plots, 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
+## 6 difference plots (done), 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-6 (done): difference plots
+
+User's choices: location vs location; drawn on the reference A's shape
+(points outside B's fluid = no data); absolute or percent (a switch);
+a 'Difference' view button beside L1-L4 / Compare; B and A picked in two
+dropdowns (default L2 - L1); blue-red centred on zero by default, Jet
+selectable; overlays: contours of the difference (with the zero line)
+and A's streamlines.
+- B is read at each pixel / node of A (B's own mesh, located per point);
+  percent = (B - A)/|A| x 100, left blank where |A| < 2 % of its largest
+  value. No data = a grey hatch (and a legend entry).
+- Colour range from A's nodes plus a lattice (the view's, when zoomed),
+  leaving out both metering-edge corner zones for the corner-singular
+  fields; symmetric for blue-red; a manual range per field and mode.
+- Contours: ink on blue-red (by-value lines would vanish into its pale
+  middle), by value on Jet; contourLines now skips cells with no data.
+- Its own zoom (key 'd'); hover shows A, B and B - A. Vectors, probes
+  and cut lines are off in this view (their buttons disabled); the dock
+  shows A and B side by side (metrics, probes, cut lines, convergence).
+- The legend is drawn before the plots (its height sizes them). Toolbar:
+  below 1800 px 'Run', 'Diff', no 'Field' word, an Export icon; below
+  1366 px tighter gaps: one line from 1920 down to 1280.
 
 ### GUI-5 (done): cut lines
 
@@ -27,7 +50,7 @@ locations overlaid; CSV export.
 - Up to four lines charted at once, in categorical slots 5-8 (slots 1-4
   are the locations' colours); others listed, muted. Direct end labels
   plus a legend; hover reads every line at the same distance.
-- Charts of never-negative fields start at zero. Below 1600 px the Cut
+- Charts of never-negative fields start at zero. Below 1800 px the Cut
   line and Probes buttons show icons only (toolbar stays on one line).
 
 ### GUI-4 (done): contour lines
