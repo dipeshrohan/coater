@@ -85,6 +85,17 @@ function muLaw(gd, muRef, ty, n) {
 }
 const cfdRuns = CFD_LOCS.map(() => ({ status: 'idle' }));
 let cfdEditLoc = null; // location whose own inputs are open for editing
+// Named probes: points (m) shared by all locations, kept in local storage; placeProbes = clicks on a plot add one
+const PROBES_KEY = 'bladeCoatDefectLab.cfdProbes.v1';
+let cfdProbes = (() => { try { const a = JSON.parse(localStorage.getItem(PROBES_KEY) || '[]'); return Array.isArray(a) ? a.filter(q => q && typeof q.name === 'string' && Number.isFinite(q.x) && Number.isFinite(q.y)) : []; } catch (e) { return []; } })();
+let placeProbes = false;
+function saveProbes() { try { localStorage.setItem(PROBES_KEY, JSON.stringify(cfdProbes)); } catch (e) { /* storage blocked: probes live for this session only */ } }
+function addProbe(x, y, name) {
+  let n = cfdProbes.length + 1;
+  while (cfdProbes.some(q => q.name === 'P' + n)) n++;
+  cfdProbes.push({ name: (name || '').trim() || 'P' + n, x, y });
+  saveProbes();
+}
 const cfdWorkers = CFD_LOCS.map(() => null);
 let cfdAutoStarted = false;
 
@@ -366,9 +377,22 @@ function viewCFD() {
         <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvField">Field (every node)</button>
         <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvBound">Boundaries (web, blade, face, free surface)</button>
         <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvMetrics">Flow metrics table</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvProbes">Probes</button>
       </div>
     </section>
 
+    <section class="cfd-block">
+      <div class="cfd-head"><h3>Probes</h3></div>
+      <div class="fv-bar">
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}">${placeProbes ? 'Done placing' : 'Place by clicking the plot'}</button>
+        <span class="fv-ctl">or</span>
+        <label class="fv-ctl">Name <input type="text" id="cfdProbeName" maxlength="24" placeholder="auto" aria-label="Probe name"></label>
+        <label class="fv-ctl">x <input type="number" id="cfdProbeX" step="0.1" min="0"> mm</label>
+        <label class="fv-ctl">y <input type="number" id="cfdProbeY" step="0.01" min="0"> mm</label>
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdProbeAdd">Add</button>
+      </div>
+      <div id="cfdProbes"></div>
+    </section>
     <section class="cfd-block"><div class="cfd-head"><h3>Flow metrics</h3></div><div id="cfdMetrics"></div></section>
     <section class="cfd-block"><div class="cfd-head"><h3>Fibre (porous web)</h3></div><div id="cfdFibre"></div></section>
     <section class="cfd-block"><div class="cfd-head"><h3 id="cfdProfTitle">Profiles</h3></div><div id="cfdProfiles"></div></section>`;
@@ -388,6 +412,15 @@ function viewCFD() {
   document.getElementById('cfdCsvField').onclick = () => exportField();
   document.getElementById('cfdCsvBound').onclick = () => exportBoundaries();
   document.getElementById('cfdCsvMetrics').onclick = () => exportMetrics();
+  document.getElementById('cfdCsvProbes').onclick = () => exportProbes();
+  document.getElementById('cfdProbePlace').onclick = () => { placeProbes = !placeProbes; viewCFD(); };
+  document.getElementById('cfdProbeAdd').onclick = () => {
+    const x = parseFloat(document.getElementById('cfdProbeX').value), y = parseFloat(document.getElementById('cfdProbeY').value);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) return;
+    addProbe(x / 1000, y / 1000, document.getElementById('cfdProbeName').value);
+    document.getElementById('cfdProbeName').value = '';
+    renderCFD();
+  };
   document.getElementById('fvMore').addEventListener('toggle', e => { FV.settingsOpen = e.target.open; });
 
   const bind = (id, key, parse = v => v, prop = 'value') => {
@@ -428,6 +461,7 @@ function renderCFD() {
   renderFlowPlots();
   renderLegend();
   renderCases();
+  renderProbes();
   renderExportBar();
   renderMetrics();
   renderFibre();
@@ -494,6 +528,38 @@ function exportMetrics() {
   downloadCSV(`cfd-metrics-${csvStamp()}.csv`, rows);
 }
 
+/** Values at a probe point in one location's field, or null when the point is outside its fluid. */
+function probeValues(f, q) {
+  if (!fieldInside(f, q.x, q.y)) return null;
+  const v = a => sampleField(f, a, q.x, q.y);
+  const u = v(f.u), w = v(f.v);
+  return { u, v: w, speed: Math.hypot(u, w), p: v(f.p), shear: v(f.shear), mu: v(f.mu), unyielded: f.hasPlug && v(f.mu) > f.muCap };
+}
+function renderProbes() {
+  const host = document.getElementById('cfdProbes');
+  if (!host) return;
+  if (!cfdProbes.length) { host.innerHTML = `<p class="cap">No probes yet. ${placeProbes ? 'Click a plot to place one.' : 'Place them by clicking a plot, or enter a point.'}</p>`; return; }
+  const locs = exportLocs(), esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const cell = (L, q) => {
+    const f = cfdRuns[L].field, pv = probeValues(f, q);
+    if (!pv) return '<td><small>outside the fluid</small></td>';
+    return `<td>|V| ${fmtNum(pv.speed * 1000)} <small>u ${fmtNum(pv.u * 1000)} · v ${fmtNum(pv.v * 1000)} mm/s</small><small>p ${fmtNum(pv.p)} Pa · γ̇ ${fmtNum(pv.shear)} 1/s</small><small>μ ${pv.unyielded ? '&gt; cap (unyielded)' : fmtNum(pv.mu) + ' Pa·s'}</small></td>`;
+  };
+  host.innerHTML = `<div class="table-wrap"><table class="cfd-table probe-table${locs.length > 1 ? ' cmp' : ''}"><thead><tr><th>Probe <small>x, y (mm)</small></th>${locs.map(L => `<th>Location ${L + 1}<small>z ${CFD_LOCS[L].z} mm</small></th>`).join('')}<th></th></tr></thead><tbody>
+    ${cfdProbes.map((q, k) => `<tr><th scope="row"><input type="text" class="probe-name" data-pn="${k}" value="${esc(q.name)}" maxlength="24" aria-label="Probe name"><small>${(q.x * 1000).toFixed(2)}, ${(q.y * 1000).toFixed(3)}</small></th>${locs.map(L => cell(L, q)).join('')}<td class="case-act"><button class="btn btn-secondary btn-sm" type="button" data-pdel="${k}" aria-label="Delete probe ${esc(q.name)}">Delete</button></td></tr>`).join('')}
+  </tbody></table></div><p class="fv-note">Probes are shared by all locations and kept in this browser; values are read from the stored fields${locs.length ? '' : ' (no solved location in view)'}.</p>`;
+  host.querySelectorAll('input[data-pn]').forEach(inp => inp.addEventListener('change', () => { const t = inp.value.trim(); if (t) { cfdProbes[+inp.dataset.pn].name = t; saveProbes(); } renderCFD(); }));
+  host.querySelectorAll('button[data-pdel]').forEach(b => { b.onclick = () => { cfdProbes.splice(+b.dataset.pdel, 1); saveProbes(); renderCFD(); }; });
+}
+function exportProbes() {
+  const rows = [['probe', 'x_mm', 'y_mm', 'location', 'z_mm', 'inside_fluid', 'u_mm_s', 'v_mm_s', 'speed_mm_s', 'p_Pa', 'shear_rate_1_s', 'viscosity_Pa_s', 'unyielded']];
+  for (const q of cfdProbes) for (const L of exportLocs()) {
+    const pv = probeValues(cfdRuns[L].field, q);
+    rows.push([q.name, q.x * 1e3, q.y * 1e3, L + 1, CFD_LOCS[L].z, pv ? 1 : 0, ...(pv ? [pv.u * 1e3, pv.v * 1e3, pv.speed * 1e3, pv.p, pv.shear, pv.mu, pv.unyielded ? 1 : 0] : ['', '', '', '', '', '', ''])]);
+  }
+  downloadCSV(`cfd-probes-${csvStamp()}.csv`, rows);
+}
+
 // ---------------------------------------------------------------------
 // Saved cases (browser local storage): every input that defines a run --
 // the sidebar's, this tab's blade / fibre / rheology-model inputs, and the
@@ -521,6 +587,7 @@ function saveCase() {
     P: Object.fromEntries(CFG.map(q => [q.k, P[q.k]])),
     CFDG: { ...CFDG },
     locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over } })),
+    probes: cfdProbes.map(q => ({ ...q })),
     summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
   };
   const at = list.findIndex(x => x.name === name);
@@ -542,6 +609,7 @@ function loadCase(name) {
   }
   Object.assign(CFDG, c.CFDG);
   c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; } });
+  if (Array.isArray(c.probes)) { cfdProbes = c.probes.map(q => ({ ...q })); saveProbes(); }
   cfdEditLoc = null;
   viewCFD();
   caseMsg(`Loaded "${name}": solving its four locations.`);
@@ -749,6 +817,7 @@ function renderFlowPlots() {
       vectorSpacing: VEC_SPACING[FV.vectorDensity] * (compare ? 0.8 : 1), vectorScale: FV.vectorScale,
       vectorNormalize: FV.vectorNormalize, vectorVmax: vmax, vectorColor: FV.vectorColor, vectorScalar: scalarFor(ranges.speed, f),
       seeds: sl ? sl.seeds : null, manualSeeds: FV.seedMode === 'manual',
+      probes: cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
     });
     wirePlotProbe(el, cv, map, run);
     const ex = host.querySelector('.fv-ex');
@@ -763,7 +832,7 @@ function wirePlotProbe(el, cv, map, run) {
   over.width = cv.width; over.height = cv.height; over.style.width = cssW + 'px'; over.style.height = cssH + 'px';
   const oc = over.getContext('2d');
   oc.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cv.style.cursor = FV.seedMode === 'manual' && FV.streamlines ? 'crosshair' : 'default';
+  cv.style.cursor = placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : 'default';
   const clear = () => { oc.clearRect(0, 0, cssW, cssH); tip.hidden = true; };
   const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 
@@ -795,7 +864,7 @@ function wirePlotProbe(el, cv, map, run) {
       <span>shear ${fmtNum(s(f.shear))} 1/s · ${muTxt}</span>
       ${f.omega ? `<span>ω ${fmtNum(s(f.omega))} 1/s</span>` : ''}
       ${f.p ? `<span>p ${fmtNum(s(f.p))} Pa</span>` : ''}
-      ${FV.seedMode === 'manual' && FV.streamlines ? '<span class="fv-why">click to add a seed here</span>' : ''}`;
+      ${placeProbes ? '<span class="fv-why">click to place a probe here</span>' : FV.seedMode === 'manual' && FV.streamlines ? '<span class="fv-why">click to add a seed here</span>' : ''}`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     tip.style.left = (px + 14 + tw > cssW ? px - tw - 14 : px + 14) + 'px';
@@ -805,9 +874,10 @@ function wirePlotProbe(el, cv, map, run) {
   cv.addEventListener('pointerdown', probe);
   cv.addEventListener('pointerleave', clear);
   cv.addEventListener('click', e => {
-    if (FV.seedMode !== 'manual' || !FV.streamlines) return;
     const p = map.toPhys(...at(e));
     if (!p) return;
+    if (placeProbes) { addProbe(p[0], p[1]); renderCFD(); return; }
+    if (FV.seedMode !== 'manual' || !FV.streamlines) return;
     FV.manualSeeds.push(p);
     renderCFD();
   });

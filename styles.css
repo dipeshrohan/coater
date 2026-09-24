@@ -309,7 +309,11 @@ details > summary::-webkit-details-marker { display: none; }
 .loc-meta { font-size: 12px; color: var(--muted); }
 .loc-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
 .loc-card .btn { justify-self: start; }
-.case-table td.case-act { white-space: nowrap; text-align: right; }
+.case-table td.case-act, .probe-table td.case-act { white-space: nowrap; text-align: right; }
+.probe-table td small { display: block; }
+.cfd-block .probe-table input.probe-name { width: 110px; font: inherit; font-weight: 600; padding: 2px 4px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ink); }
+.cfd-block .probe-table input.probe-name:hover, .cfd-block .probe-table input.probe-name:focus { border-color: var(--line); background: var(--surface); }
+.cfd-block input[type=text]#cfdProbeName { width: 90px; }
 .cfd-block input[type=text]#cfdCaseName { width: 220px; max-width: 100%; }
 .loc-in-btn { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; text-align: left; }
 .loc-in-btn b { color: var(--accent); font-weight: 600; }

@@ -124,6 +124,7 @@ const rasterCache = new WeakMap();
  *                vectorSpacing (px), so arrows are evenly spaced on screen; plus vectorScale,
  *                vectorNormalize, vectorVmax (shared across plots in comparison mode)
  *   seeds        [[x,y]...], manualSeeds boolean
+ *   probes       [{name, x, y, inside}] -- named probe points (filled when inside this field's fluid)
  *   exitAngle    blade exit face at the edge, degrees from the web (machine direction); default 90
  *   bladeLabel   text for the blade
  * Returns the mapping for hit-testing and overlays.
@@ -332,6 +333,20 @@ function drawFlowPlot(cv, s) {
     for (const [x, y] of s.seeds) {
       c.beginPath(); c.arc(X(x), Y(y), s.manualSeeds ? 4 : 2, 0, 7);
       c.fillStyle = surface; c.fill(); c.lineWidth = s.manualSeeds ? 2 : 1.3; c.strokeStyle = s.manualSeeds ? cssVar('--accent') : ink; c.stroke();
+    }
+  }
+
+  // named probes: a diamond and the name (hollow where the point is outside this location's fluid)
+  if (s.probes) {
+    c.font = `${compact ? 9.5 : 10.5}px ${mono}`; c.textBaseline = 'middle';
+    for (const q of s.probes) {
+      const px = X(q.x), py = Y(q.y), r = compact ? 4 : 5;
+      if (px < xL - 1 || px > xR + 1 || py < T - 1 || py > yBot + 1) continue;
+      c.beginPath(); c.moveTo(px, py - r); c.lineTo(px + r, py); c.lineTo(px, py + r); c.lineTo(px - r, py); c.closePath();
+      c.lineWidth = 3; c.strokeStyle = surface; c.stroke();
+      c.lineWidth = 1.5; c.strokeStyle = ink; c.stroke();
+      if (q.inside) { c.fillStyle = cssVar('--warn'); c.fill(); }
+      labelOn(c, q.name, px + r + 3, py, ink, 'left');
     }
   }
 
