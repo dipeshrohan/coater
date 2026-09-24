@@ -5,9 +5,10 @@
  */
 
 const GUIDE = [
-  { tab: 0, t: 'Slurry animation', what: 'An animated cross-section of the slurry metered under the fixed blade onto the moving fibre, from start-up: the pool fills and pulses with the feed, the fibre accelerates, the film forms and the downstream surface is solved live. A second pane magnifies the meniscus on the same clock.',
+  { tab: 0, t: 'Overview', what: 'An animated cross-section of the slurry metered under the fixed blade onto the moving fibre, from start-up: the pool fills and pulses with the feed, the fibre accelerates, the film forms and the downstream surface is solved live. A second pane magnifies the meniscus on the same clock.',
     uses: 'Process (not the distance to the oven), Slurry, Blade and bead; the across-web inputs through the position slider (the local gap and wetting there); the scenario in the Model bar (feed pulsing, pool, position, playback speed).',
-    read: 'Play / Pause and the time slider drive both panes. The pills give the contact line\'s place (at the edge, up the face, or at the notch corner: the dry edge gets wet) and the local gap and contact angle; the results strip gives the gap, wet film and shear rate at that position. A red pill or "surface solve stopped" means the numbers there are not to be trusted.' },
+    read: 'Play / Pause and the time slider drive both panes. The pills give the contact line\'s place (at the edge, up the face, or at the notch corner: the dry edge gets wet) and the local gap and contact angle; the results strip gives the gap, wet film and shear rate at that position. A red pill or "surface solve stopped" means the numbers there are not to be trusted.',
+    more: 'How it runs: the fibre starts at rest under a pool of slurry already deeper than the gap, starts at 3 s and reaches full speed 1.5 s later (assumed). The nozzle at the pool surface feeds in pulses, on average what leaves through the gap; the pool level comes from that volume balance, and the gap flow from the fibre speed and the bead pressure, taken as proportional to pool depth. The blade diameter is 100 mm; the notch size, pool depth and length are assumed. Bead height scales with bead pressure for display.' },
   { tab: 1, t: 'Contact line', what: 'Where the meniscus leaves the blade: the static cross-section at the web centre, and the contact line\'s height up the notch face at every position across the web.',
     uses: 'Process (not the oven), Slurry, Blade and bead, Variation across the web (waviness, fibre thickness and wetting variation move the line up and down).',
     read: 'Left: blade, slurry, meniscus and film at the centre. Right: the contact line up the face (mm) against position across the web; the red dashed line is the notch corner, where slurry reaches the dry edge. The pills say whether it stays pinned, is uneven, or reaches the corner.' },
@@ -29,6 +30,7 @@ const GUIDE = [
 ];
 
 const METHODS = [
+  { t: 'Inputs: measured and assumed', d: 'Measured (yours): web speed, machine height, fibre thickness, viscosity 10.5 Pa·s at 2.7 1/s, and the design wet film of 1.45 mm: the default bead pressure is back-calculated so the fast model gives 1.45 mm (it is not itself a measurement). Assumed until measured: surface tension (0.07 N/m, water-like), the contact angle on the blade, yield stress, shear-thinning index, land length, notch face length and density (1020 kg/m³). The Model bar marks the assumed inputs, and Measured data can fit them to your measurements.', lim: '' },
   { t: 'Wet film thickness (fast models)', d: 'One-dimensional lubrication flow between the fixed land and the moving web: q = U·H/2 + H³/(12 μ)·Δp/L, film h = q/U, with the bead pressure Δp over the land length L. The viscosity is the Herschel–Bulkley law at the representative shear rate U/H (its value at 2.7 1/s is the viscosity input).',
     lim: 'Valid while the thin-film checks hold: Reynolds number below 1 (inertia negligible), capillary number below 0.1, gap / land length below 0.2. The status bar says when one fails ("Use with caution", or "Result withheld" when there is no finite film).' },
   { t: 'Contact line and meniscus (fast models)', d: 'The static 2D Young–Laplace meniscus (gravity and surface tension): it climbs 2 Lcap sin(φ/2) above the film, Lcap the capillary length. If it cannot reach past the gap, the contact line stays pinned at the sharp metering edge (Gibbs pinning); otherwise it moves up the 45° notch face.',
@@ -39,7 +41,7 @@ const METHODS = [
     lim: 'An order-of-magnitude indicator.' },
   { t: 'Film levelling', d: 'Ripple of the chosen wavelength levelled by surface tension and gravity against viscosity (a thin-film levelling time constant 3 μ / (h³ (γ k⁴ + ρ g k²))); a yield stress leaves a residual amplitude it cannot level. The starting ripple is the gap waviness times dh/dH plus vibration.',
     lim: 'Linear, one wavelength at a time; an order-of-magnitude indicator.' },
-  { t: 'Slurry animation', d: 'The pool depth from a volume balance (pulsed feed in, gap flow out), the gap flow from the web speed and a bead pressure taken as proportional to pool depth; the downstream surface from the thin-film equation (viscous flow, surface tension, the moving fibre), solved live.',
+  { t: 'Overview animation', d: 'The pool depth from a volume balance (pulsed feed in, gap flow out), the gap flow from the web speed and a bead pressure taken as proportional to pool depth; the downstream surface from the thin-film equation (viscous flow, surface tension, the moving fibre), solved live.',
     lim: 'The start-up, pool depth and length are assumed. When the pool cannot supply the outlet, the outlet is supply-limited; a numerical failure stops the surface and is reported.' },
   { t: 'CFD', d: 'Steady 2D incompressible Navier–Stokes by finite elements (Taylor–Hood: quadratic velocity, linear pressure) with the viscosity varying as the rheology model says (Newtonian, power law, Herschel–Bulkley). Velocity, pressure, the free surface and the contact line are solved together by Newton\'s method, stepping from a Newtonian fluid to the real rheology. The contact line is pinned at the edge or climbs the exit face (Gibbs). The fibre is porous (Darcy, from its test report). Validated against exact flat-gap flows, the lid-driven cavity, the static meniscus, mass conservation and grid convergence (CFD Analysis > Method).',
     lim: 'Steady and 2D (no instabilities along the web). The solver needs exit face + contact angle between 94° and 175°. The contact line position depends on the mesh more than the film does: check with the mesh study. A run that does not converge is not shown.' },
@@ -127,7 +129,8 @@ function renderHelpDlg() {
   if (HELPDLG.sec === 'guide') {
     const g = GUIDE.find(x => x.tab === HELPDLG.mod) || GUIDE[0];
     body.innerHTML = `<h3 class="help-h">${g.t}${g.tab === tab ? ' <small>the tab shown</small>' : ` <button type="button" class="btn btn-secondary btn-sm" data-go="${g.tab}">Go to this tab</button>`}</h3>
-      <h4>What it does</h4><p>${g.what}</p><h4>Inputs it uses</h4><p>${g.uses}</p><h4>Reading it</h4><p>${g.read}</p>
+      <p class="help-q">${TAB_Q[g.tab]}</p>
+      <h4>What it does</h4><p>${g.what}</p><h4>Inputs it uses</h4><p>${g.uses}</p><h4>Reading it</h4><p>${g.read}</p>${g.more ? `<h4>How it works</h4><p>${g.more}</p>` : ''}
       <h4>Keys</h4><p>${[['run.run', 'run'], ['run.stop', 'stop']].filter(([k]) => keyOf(k) && (g.tab >= 4)).map(([k, l]) => `<kbd>${keyLabel(k)}</kbd> ${l}`).join(' · ') || ''}${g.tab === 4 ? ` · <kbd>${keyLabel('view.fit')}</kbd> fit, <kbd>${keyLabel('view.l1')}</kbd>…<kbd>${keyLabel('view.l4')}</kbd> location, <kbd>${keyLabel('view.compare')}</kbd> compare, <kbd>${keyLabel('view.diff')}</kbd> difference` : ''}${g.tab < 4 ? 'The panel and edit keys work here (see Keyboard shortcuts).' : ''}</p>`;
     const go = body.querySelector('[data-go]');
     if (go) go.onclick = () => { dlg.close(); tab = +go.dataset.go; render(); };
@@ -142,5 +145,6 @@ function renderHelpDlg() {
 (function helpMenu() {
   const menu = document.getElementById('helpMenu');
   if (!menu) return;
+  const w = document.getElementById('hmWelcome'); if (w) w.onclick = () => { menu.open = false; openWelcome(); };
   menu.querySelectorAll('[data-help-sec]').forEach(b => { b.onclick = () => { menu.open = false; openHelp(b.dataset.helpSec); }; });
 })();

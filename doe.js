@@ -174,7 +174,8 @@ const doeRunSeconds = () => { const t = cfdRuns.filter(r => r.elapsedMs).map(r =
 // The module: base case in the model tree; toolbar, plots in the viewport, design and runs in the dock
 // ---------------------------------------------------------------------
 function viewDOE() {
-  if (!DOE.factors) DOE.factors = [doeNewFactor('U', DOE.loc), doeNewFactor('mu', DOE.loc)];
+  // (the first visit makes the default design: not an unsaved change)
+  if (!DOE.factors) { const clean = PROJ.savedKey != null && !projDirty(); DOE.factors = [doeNewFactor('U', DOE.loc), doeNewFactor('mu', DOE.loc)]; if (clean) PROJ.savedKey = projKey(); }
   const i = DOE.loc, s = solverOf(i), own = Object.keys(CFD_LOCS[i].over);
   const row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
   document.getElementById('setupExtra').innerHTML = `
@@ -192,7 +193,7 @@ function viewDOE() {
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">Edit in CFD Analysis</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${k === 'problems' || k === 'history' ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${['problems', 'history', 'msgs'].includes(k) ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   view.innerHTML = `
     <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${DOE.dockH}px">
       <div class="vp-bar" role="toolbar" aria-label="DOE">
@@ -204,6 +205,7 @@ function viewDOE() {
         <span class="doe-status" id="doeStatus" role="status"></span>
         <span class="vp-spacer"></span>
         <button class="tool-btn" type="button" id="doeCsv" title="Export the runs as CSV"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>CSV</button>
+        ${aboutButton()}
       </div>
       <div class="viewport" id="doeViewport">
         <div class="fv-bar doe-plotbar" id="doePlotBar"></div>
@@ -213,11 +215,12 @@ function viewDOE() {
       </div>
       <div class="split split-h" id="doeSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the DOE panel" tabindex="0"></div>
       <section class="dock" aria-label="DOE design and runs">
-        <div class="dock-tabs" role="tablist" aria-label="DOE">${dockTab('design', 'Design')}${dockTab('runs', 'Runs')}${dockTab('problems', 'Problems')}${dockTab('history', 'History')}</div>
+        <div class="dock-tabs" role="tablist" aria-label="DOE">${dockTab('design', 'Design')}${dockTab('runs', 'Runs')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History')}</div>
         <div class="dock-body">
           <div class="dock-panel" id="doe-design" role="tabpanel"${DOE.dock === 'design' ? '' : ' hidden'}></div>
           <div class="dock-panel" id="doe-runs" role="tabpanel"${DOE.dock === 'runs' ? '' : ' hidden'}></div>
           <div class="dock-panel" id="doe-problems" role="tabpanel"${DOE.dock === 'problems' ? '' : ' hidden'}><div class="problems-host"></div></div>
+          <div class="dock-panel" id="doe-msgs" role="tabpanel"${DOE.dock === 'msgs' ? '' : ' hidden'}>${msgsBar()}<div class="msg-log" role="log"></div></div>
           <div class="dock-panel" id="doe-history" role="tabpanel"${DOE.dock === 'history' ? '' : ' hidden'}><div class="history-host"></div></div>
         </div>
       </section>
@@ -260,6 +263,7 @@ function renderDOE() {
   renderDOEPlots();
   renderProblems();
   renderHistory();
+  renderMessages(); renderDockCounts();
   markInvalidInputs();
   applyHelp();
   updateProjectTitle();
@@ -364,7 +368,14 @@ function renderDOEPlots() {
   bind('doeX', 'x'); bind('doeMX', 'mx'); bind('doeMY', 'my');
   lg.innerHTML = '';
   drawDOELive();
-  if (!d || !done.length) { host.innerHTML = DOE.status === 'running' ? '' : '<p class="cap fv-empty">No results yet: set the factors in the Design tab below, then Run DOE.</p>'; return; }
+  if (!d || !done.length) {
+    host.innerHTML = DOE.status === 'running' ? '' : emptyHint('No DOE results yet',
+      `Choose 1 to 3 factors and their levels in the Design tab below: every combination is solved in the CFD at location ${DOE.loc + 1} (${doeRunCount()} runs now, a few seconds each, ${DOE.workers} at a time).`,
+      `<button type="button" class="btn btn-primary btn-sm" data-hint-doe>Run DOE</button><button type="button" class="btn btn-secondary btn-sm" data-hint-design>Open the design</button>`);
+    const r = host.querySelector('[data-hint-doe]'); if (r) r.onclick = runDOE;
+    const g = host.querySelector('[data-hint-design]'); if (g) g.onclick = () => { DOE.dock = 'design'; setPanelHidden('dock', false); };
+    return;
+  }
   const val = r => r.out[o.k], ok = done.filter(r => Number.isFinite(val(r)));
   if (!ok.length) { host.innerHTML = `<p class="cap fv-empty">No run has a value for ${o.l.toLowerCase()}.</p>`; return; }
   let lo = Math.min(...ok.map(val)), hi = Math.max(...ok.map(val));

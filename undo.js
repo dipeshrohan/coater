@@ -324,8 +324,8 @@ function renderHistory() {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 /** Open this view's History panel. */
 function showHistory() {
-  const b = document.querySelector('#view .dock-tabs button[data-dock="history"]');
-  if (b) { b.click(); b.focus(); }
+  const b = document.querySelector('#view .dock-tabs button[data-dock="history"]') || document.querySelector('#view [data-dock-more="history"]');
+  if (b) { b.click(); const t = document.querySelector('#view .dock-tabs button[data-dock="history"]'); if (t) t.focus(); }
   renderHistory();
 }
 (function editMenu() {

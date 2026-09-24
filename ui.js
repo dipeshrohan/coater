@@ -147,11 +147,34 @@ function drawSection(cv, aspect = 0.66) {
 // and "About this view").
 // ---------------------------------------------------------------------
 const workbenchFits = () => innerWidth >= 1024;
+/** A hint where there is nothing to show yet: what it is, what to do next, and the button to do it. */
+const emptyHint = (title, text, actions = '') => `<div class="empty-hint"><svg class="eh-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 7.5v5.5M12 16.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><b>${title}</b><p>${text}</p>${actions ? `<div class="eh-act">${actions}</div>` : ''}</div>`;
+/** One line at the top of the Model bar: what its inputs do in the tab shown. */
+const TREE_NOTE = [
+  'Inputs this tab uses are bright; dimmed ones do not change it. The animation\'s own settings are at the bottom.',
+  'Inputs this tab uses are bright; dimmed ones do not change it.',
+  'Inputs this tab uses are bright; dimmed ones do not change it.',
+  'Inputs this tab uses are bright; dimmed ones do not change it.',
+  'The shared inputs, then the CFD setup and the four locations below. Change them, then Run.',
+  'The DOE starts from these inputs and the CFD setup (its base case) and varies the factors of its Design tab. Changing an input here changes CFD Analysis too.',
+  'The predictions use these inputs; the Fit tab can adjust them to your data.',
+];
+/** The (i) of a view's toolbar: this tab's guide in the help. */
+const aboutButton = () => `<button type="button" class="icon-btn vp-about" data-about title="About this tab: what it answers and how to read it" aria-label="About this tab"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg></button>`;
+/** A plot's explanation is behind an (i) in its caption (open ones remembered while the page is open). */
+const PANE_NOTES = new Set();
+const paneInfo = id => `<button type="button" class="pane-i" data-note="${id}" aria-expanded="${PANE_NOTES.has(id)}" aria-controls="note_${id}" title="What this plot shows">i</button>`;
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('[data-about]');
+  if (a) { openHelp('guide'); return; }
+  const n = e.target.closest && e.target.closest('[data-note]');
+  if (n) { const id = n.dataset.note; if (PANE_NOTES.has(id)) PANE_NOTES.delete(id); else PANE_NOTES.add(id); render(); }
+});
 function moduleFrame({ tools = '', panes, cols = 1, notes = '' }) {
   return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
-    <div class="vp-bar" role="toolbar" aria-label="Module controls">${tools}<span class="vp-spacer"></span><div class="status" id="st"></div></div>
-    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.note ? `<p class="pane-note">${p.note}</p>` : ''}</figure>`).join('')}</div>
-    <div class="mod-results"><div class="stats" id="ss"></div>${notes ? `<details class="vp-pop pop-up"><summary class="tool-btn">About this view</summary><div class="pop-body"><p class="cap">${notes}</p></div></details>` : ''}</div>
+    <div class="vp-bar" role="toolbar" aria-label="Module controls">${tools || `<span class="vp-q">${TAB_Q[tab]}</span>`}<span class="vp-spacer"></span><div class="status" id="st"></div>${aboutButton()}</div>
+    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}</div>
+    <div class="mod-results"><div class="stats" id="ss"></div></div>
     <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
     <section class="dock mod-dock" aria-label="History">
       <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">History<span class="tab-n" data-n="history"></span></button></div>
@@ -214,7 +237,6 @@ function viewA() {
       { id: 'ca', title: 'Slurry metering under the fixed blade · fibre moving left to right', aria: 'Animation of slurry metering under the fixed blade onto the moving fibre', center: true },
       { id: 'cb', title: 'Downstream meniscus, magnified · same simulation and clock', aria: 'Separate magnified animation of the downstream meniscus', center: true },
     ],
-    notes: `<b>Fixed blade, fibre moves left to right.</b> The animation is driven by the same model and the same inputs as the other tabs. Web speed, machine height, fibre thickness, viscosity, yield stress, shear thinning, bead pressure, land length, surface tension and contact angle set the flow and the meniscus. The across-web inputs act through the position slider, which picks the local gap and wetting at that point. Edge, ripple and oven inputs act in the other tabs. The blade diameter is 100 mm (from you); the notch size is assumed. Bead height scales with bead pressure for display. <b>The downstream liquid surface is solved live</b> (thin-film equation with viscous flow, surface tension and the moving fibre, in real time). The run starts from a developed steady film. <b>How it works.</b> The run starts with the fibre stopped and a pool of slurry already deeper than the gap. The fibre starts at 3 s and reaches full speed 1.5 s later (assumed). The nozzle tip sits at the pool surface and feeds in pulses, at an average rate equal to the flow leaving through the gap. The pool level comes from a volume balance (feed in minus gap flow out), and the gap flow comes from the fibre speed and the bead pressure, which is taken as proportional to pool depth. The pool depth at start and its length upstream of the blade are assumed, not measured. The liquid surface downstream is solved live (thin-film equation with viscous flow, surface tension and the moving fibre). Change any input while it runs and the surface relaxes to the new state. The contact-line position on the face still comes from the static balance used in the other tabs.`,
   });
 
   const cv = document.getElementById('ca'), cv2 = document.getElementById('cb');
@@ -301,7 +323,7 @@ function view1() {
       { id: 'c1', title: 'Cross-section at the web centre', aria: 'Cross-section of blade, slurry and meniscus',
         note: 'The meniscus is the Young–Laplace profile from the contact line down to the flat film. It is pinned at the sharp edge when the contact angle is large, and climbs the flat face when it is small.' },
       { id: 'c2', title: 'Top view: contact line across the web', aria: 'Contact line position across the web',
-        note: 'Each point is where the contact line sits on the face, from the sharp edge (0) to the notch corner. Gap waviness, fibre thickness and wetting changes push it up and down. Compare photos 1, 3 and 5: an uneven line.' },
+        note: 'Each point is where the contact line sits on the face, from the sharp edge (0) to the notch corner. Gap waviness, fibre thickness and wetting changes push it up and down.' },
     ],
   });
   const c1 = document.getElementById('c1');
@@ -356,7 +378,7 @@ function view2() {
       { id: 'c1', title: 'Edge growth from the blade to the oven', aria: 'Edge amplitude versus distance',
         note: 'The wet edge is a ridge of slurry along the fibre margin. Surface tension pulls it into beads (Rayleigh–Plateau), and viscosity slows that down. A yield stress larger than the capillary pressure freezes it.' },
       { id: 'c2', title: 'Top view of the edge at the oven entrance', aria: 'Top view of the wet edge',
-        note: 'Machine direction left to right. Compare photo 4: a scalloped boundary against the white margin.' },
+        note: 'Machine direction left to right.' },
     ],
   });
 
@@ -428,7 +450,7 @@ function view3() {
   view.innerHTML = moduleFrame({
     panes: [
       { id: 'c1', title: 'Film surface across the web', aria: 'Film surface ripple before and after levelling',
-        note: 'Deviation from the mean, in µm. Dashed: just after the blade. Solid: at the oven entrance. Compare the fine streaks in photos 2 and 4.' },
+        note: 'Deviation from the mean, in µm. Dashed: just after the blade. Solid: at the oven entrance.' },
       { id: 'c2', title: 'Levelling in time', aria: 'Ripple amplitude versus time',
         note: `Surface tension smooths the film. A yield stress stops levelling at a residual amplitude that stays into the oven. The ripple source is the gap wobble (through the film sensitivity dh/dH = ${dhdH.toFixed(2)}) plus vibration.` },
     ],
@@ -485,7 +507,19 @@ function view3() {
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
 let tab = 0;
-const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis', 'DOE', 'Measured data'];
+const TABS = ['Overview', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis', 'DOE', 'Measured data'];
+/** What each tab answers, in plain words (its tooltip, the welcome screen, its About). */
+const TAB_Q = [
+  'How the slurry moves under the blade, from start-up (animation)',
+  'Does the slurry climb the blade face and reach the dry edge?',
+  'Does the wet edge break into scallops before the oven?',
+  'Do streaks and ripples level out before the oven?',
+  'What does the flow under the blade look like in detail? (2D CFD)',
+  'Which setting changes the result most? (design of experiments)',
+  'How well do the models match my measurements, and which inputs fit them?',
+];
+/** The tabs in groups along the workflow: overview | quick checks | detailed | validate. */
+const TAB_GROUP_START = [1, 4, 6];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
   '<path d="M3 2.5v11M3 5.5c4 0 5.5 3.5 10.5 3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5.5" r="1.4" fill="currentColor"/>',
@@ -496,10 +530,13 @@ const TAB_ICONS = [
   '<path d="M2.5 2.5v11h11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".6"/><path d="M3.5 12.5l9.5-9.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="1.6 1.6"/><circle cx="6" cy="9.4" r="1.4" fill="currentColor"/><circle cx="9" cy="7.4" r="1.4" fill="currentColor"/><circle cx="11.6" cy="4.8" r="1.4" fill="currentColor"/>',
 ];
 const tabsEl = document.getElementById('tabs');
+const tabButtons = () => [...tabsEl.querySelectorAll('button[role="tab"]')];
 TABS.forEach((t, i) => {
+  if (TAB_GROUP_START.includes(i)) tabsEl.insertAdjacentHTML('beforeend', '<span class="tab-sep" aria-hidden="true"></span>');
   const b = document.createElement('button');
   b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[i]}</svg><span>${t}</span>`;
   b.type = 'button';
+  b.title = TAB_Q[i];
   b.setAttribute('role', 'tab');
   b.onclick = () => { tab = i; render(); };
   b.onkeydown = e => {
@@ -507,7 +544,7 @@ TABS.forEach((t, i) => {
     e.preventDefault();
     tab = e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : (tab + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length;
     render();
-    tabsEl.children[tab].focus();
+    tabButtons()[tab].focus();
   };
   tabsEl.appendChild(b);
 });
@@ -519,7 +556,9 @@ function titleStatus() { const st = document.getElementById('st'); if (st) st.ti
 
 function render() {
   undoBeforeRender();
-  [...tabsEl.children].forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
+  tabButtons().forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
+  document.body.dataset.tab = tab;
+  document.getElementById('treeNote').textContent = TREE_NOTE[tab] || '';
   ANIM.stop();
   // module-specific setup (CFD) lives in the model tree; a module that fills the work area sets .fill itself
   if (tab !== 0 && tab !== 4) document.getElementById('setupExtra').innerHTML = '';
@@ -535,6 +574,7 @@ function render() {
   updateScope();
   undoAfterRender();
   applyKeyLabels();
+  decorateTree();
 }
 
 // ---- theme: follows the system until switched here (remembered in this browser)
@@ -575,6 +615,7 @@ document.getElementById('reset').onclick = () => {
     s.value = c.v;
     s.dispatchEvent(new Event('input'));
   });
+  imgToast(`The shared inputs are back to their defaults (the CFD setup stays).${keyLabel('edit.undo') ? ` Undo: ${keyLabel('edit.undo')}.` : ''}`);
 };
 
 

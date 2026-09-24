@@ -12,6 +12,48 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Redesign (after GUI-18): easier for a new user
+
+User: the left bar collapsible, only relevant parameters, an icon per
+parameter, a modern design, and a new user not overwhelmed; plus an audit
+of the whole app for workflow, gaps and stale containers (17 findings, all
+fixed). Choices: dim the inputs a tab does not use; line icons tinted by
+group; collapsed bar = icon rail with flyouts; welcome screen and hints in
+empty areas; tab order Overview, quick checks, detailed, validate; keep
+Saved cases and explain them; light and airy style.
+- tree.js: an icon for every input (shared, CFD setup, solver, animation,
+  DOE base case), the group's colour on its icon and header chip; the
+  shared inputs a tab does not use dimmed with the reason on hover (per tab;
+  in CFD / DOE also by the rheology model and blade entry); a group with
+  nothing used is marked "not used here". Collapsed (Ctrl+B or the arrow),
+  the bar is a rail of group icons; one opens that group as a flyout (Esc or
+  a click outside closes it). A MutationObserver decorates the tree whenever
+  a module redraws it.
+- welcome.js: on first open, what the app is for and "What do you want to
+  do?" cards (each a tab, plus import and open); Help > Welcome again; a
+  "show when the app opens" choice.
+- Workflow: tabs Overview (the animation) | Contact line, Web edge, Film
+  surface | CFD Analysis, DOE | Measured data, grouped by separators; each
+  tab's plain question (TAB_Q) as its tooltip, in the simple tabs' toolbar,
+  the welcome and its guide. CFD no longer solves on the first visit: a hint
+  with Run. An About (i) on every toolbar opens the tab's guide; plot notes
+  sit behind an (i) on their caption; the animation's long note moved to
+  its guide.
+- Gaps: Messages in DOE and Measured data too (one log); opening DOE no
+  longer marks the project unsaved; disabled toolbar buttons look disabled;
+  Saved cases explained against project files; a one-line note at the top
+  of the Model bar per tab (the DOE's: its inputs are CFD's base case);
+  Reset labelled, with a toast.
+- Clutter: the status bar shows the fast-model check on the fast tabs only
+  and the CFD run chips on CFD / DOE / Measured (elsewhere only while
+  solving); the stale "measured and assumed" note moved to Help > Methods;
+  the references to the user's photos removed; the simple tabs' History
+  panel starts hidden; the CFD panel's less-used tabs (Mesh study, Saved
+  cases, History, Method) under More; one Import button.
+- Style: light title bar with underlined, grouped tabs; the Model bar's
+  groups as rounded cards; more room in toolbars, plots and results;
+  hints as dashed cards with the next action.
+
 ### GUI-18 (done): keyboard shortcuts and help
 
 User's choices: run / stop, view controls and panel keys (no tab keys);
