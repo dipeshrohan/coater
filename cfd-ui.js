@@ -27,35 +27,68 @@
 //    web in the machine direction (90 = square to the web). The meniscus
 //    meets it; its contact angle there is the sidebar's contact angle on the
 //    blade, varied across the web as the Contact line tab does.
-//  Fibre (the woven web), from its test report: gsm basis weight (g/m^2),
-//    rhoF fibre density (kg/m^3), den yarn denier, nf filaments per yarn, with
-//    the sidebar's fibre thickness -> porosity and filament diameter; kozeny
-//    the Kozeny constant (permeability by Kozeny-Carman); airPerm the report's
-//    air permeability (1e-3 m^3/m^2/s, a check on k). Its pores are dry (air):
-//    the slurry rests on the top filaments and slips over the air between
-//    them; airFrac is the air fraction of that top surface.
+//  Fibre (the woven web), picked from its test report (fibre: FIBRES key; the
+//    report's values fill the inputs below and the sidebar's fibre thickness):
+//    gsm basis weight (g/m^2), rhoF fibre density (kg/m^3) -> porosity; the
+//    filament diameter from the yarn (dFrom 'yarn': den denier, nf filaments
+//    per yarn) or, not given, from the air permeability (dFrom 'air': the
+//    Kozeny-Carman diameter that reproduces it); kozeny the Kozeny constant;
+//    airPerm the air permeability (1e-3 m^3/m^2/s) at airDP Pa (0 = test
+//    pressure not stated). Its pores are dry (air): the slurry rests on the
+//    top filaments and slips over the air between them; airFrac is the air
+//    fraction of that top surface.
 //  Drying air in the oven, blown up into the fibre from a plenum below: airU
 //    its superficial speed (m/s), airT its temperature (C), plenum its length
 //    in the machine direction (mm). The wet film seals the fibre's top, so the
 //    air can only leave along the fibre: the pressure that speed needs follows.
 //  model: the slurry's rheology model for the CFD runs (which of the sidebar's
 //    rheology inputs apply): Newtonian, power law, or Herschel-Bulkley.
-const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, model: 'hb', gsm: 138, rhoF: 1380, den: 150, nf: 48, kozeny: 5, airFrac: 0.5, airPerm: 25, airU: 1, airT: 100, plenum: 100 };
+// The fibres' test reports. tf thickness (mm, sets the sidebar's), tUse / tMom continuous / momentary use temperature (C).
+const FIBRES = {
+  thin: {
+    l: 'Thin PET (130)', tf: 0.20, tUse: 130, tMom: null,
+    set: { gsm: 138, rhoF: 1380, dFrom: 'yarn', den: 150, nf: 48, airPerm: 25, airDP: 0, kozeny: 5, airFrac: 0.5 },
+    note: 'report 2018-01-29: polyester filament, 150D×2 plain weave, 0.20 mm, 138 g/m², 25.9 / 22 threads/cm, air permeability 20–30 ×10⁻³ m³/m²·s (test pressure not stated), below 130 °C continuous. Filaments per yarn (48; not in the report), PET density and the top-surface air fraction (= porosity) assumed.',
+  },
+  thick: {
+    l: 'Thick PP (RX001)', tf: 0.90, tUse: 90, tMom: 110,
+    set: { gsm: 600, rhoF: 905, dFrom: 'air', den: 0, nf: 0, airPerm: 125, airDP: 127, kozeny: 5, airFrac: 0.26 },
+    note: 'report 2026-03-20: polypropylene, heat set, 0.90 mm, 600 g/m², 55 / 19.5 threads/cm, air flow 1 L/s through 80 cm² at 127 Pa (= 125 ×10⁻³ m³/m²·s), 90 °C continuous, 110 °C momentary. Filament size not in the report: inferred from the air permeability. PP density (905, literature 900–910) and the top-surface air fraction (= porosity) assumed.',
+  },
+};
+const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, model: 'hb', fibre: 'thin', ...FIBRES.thin.set, airU: 1, airT: 100, plenum: 100 };
 const RHEO_MODELS = {
   newtonian: { l: 'Newtonian', uses: [], law: 'μ = the viscosity at 2.7 1/s; n and yield stress not used' },
   power: { l: 'Power law', uses: ['n'], law: 'μ = μ(2.7 1/s) · (γ̇ / 2.7)^(n−1); yield stress not used' },
   hb: { l: 'Herschel–Bulkley', uses: ['n', 'ty'], law: 'μ = τy / γ̇ + K (γ̇ / 2.7)^(n−1), K such that μ(2.7 1/s) is the viscosity input' },
 };
 
+/** Permeability (m^2) from the air-permeability test: Darcy across the thickness t (m), air at 20 C, test pressure dp (Pa). */
+const airTestK = (t, dp) => CFDG.airPerm * 1e-3 * airProps(20).mu * t / dp;
 /**
  * Fibre structure from its test-report data: thickness t (m, the sidebar's), porosity
- * eps = 1 - basis weight / (fibre density x t), filament diameter d (m) from the yarn's
- * denier (g per 9000 m) shared by its filaments; ok = a porosity that makes sense.
+ * eps = 1 - basis weight / (fibre density x t), filament diameter d (m) -- from the yarn's
+ * denier (g per 9000 m) shared by its filaments, or the Kozeny-Carman diameter that gives
+ * the measured air permeability, d = sqrt(16 K (1 - eps)^2 k / eps^3); ok = a porosity
+ * that makes sense and a diameter.
  */
 function fibreStructure() {
   const t = P.tf / 1000, eps = 1 - CFDG.gsm / 1000 / (CFDG.rhoF * t);
-  const d = Math.sqrt(4 * (CFDG.den / CFDG.nf) / 9e6 / (Math.PI * CFDG.rhoF));
-  return { t, eps, d, ok: eps > 0.05 && eps < 0.98 };
+  const d = CFDG.dFrom === 'air'
+    ? (CFDG.airDP > 0 ? Math.sqrt(16 * CFDG.kozeny * (1 - eps) ** 2 * airTestK(t, CFDG.airDP) / eps ** 3) : NaN)
+    : Math.sqrt(4 * (CFDG.den / CFDG.nf) / 9e6 / (Math.PI * CFDG.rhoF));
+  return { t, eps, d, ok: eps > 0.05 && eps < 0.98 && d > 0 };
+}
+/** Has the fibre been changed from its report's values? */
+const fibreEdited = () => { const f = FIBRES[CFDG.fibre]; return Math.abs(P.tf - f.tf) > 1e-9 || Object.entries(f.set).some(([k, v]) => CFDG[k] !== v); };
+/** Where the fibre inputs come from (updated as they change). */
+const fibreNote = () => `${FIBRES[CFDG.fibre].l}, ${FIBRES[CFDG.fibre].note} Thickness: the sidebar's fibre thickness. Test pressure 0 = not stated.${fibreEdited() ? ' <span class="warn-text">Edited from the report.</span>' : ''}`;
+/** Pick a fibre: its report's values into the inputs, and its thickness into the sidebar (as loading a case does, so every tab updates). */
+function selectFibre(key) {
+  const f = FIBRES[key];
+  CFDG.fibre = key; Object.assign(CFDG, f.set);
+  const sl = document.getElementById('s_tf');
+  if (sl) { sl.value = f.tf; sl.dispatchEvent(new Event('input')); } else P.tf = f.tf;
 }
 /** Fibre permeability (m^2), Kozeny-Carman for a bed of fibres: k = d^2 eps^3 / (16 K (1 - eps)^2). */
 function fibrePermeability() {
@@ -343,15 +376,16 @@ function viewCFD() {
         <span class="fv-why" id="cfdModelNote">${RHEO_MODELS[CFDG.model].law}</span>
       </div>
       <div class="fv-bar cfd-geo">
-        <span class="fv-ctl"><b>Fibre</b> (woven web, test report)</span>
-        <label class="fv-ctl">Basis weight <input type="number" id="cfdGsm" min="10" max="1000" step="1" value="${CFDG.gsm}"> g/m²</label>
-        <label class="fv-ctl">Fibre density <input type="number" id="cfdRhoF" min="800" max="3000" step="10" value="${CFDG.rhoF}"> kg/m³</label>
-        <label class="fv-ctl">Yarn <input type="number" id="cfdDen" min="5" max="3000" step="1" value="${CFDG.den}"> denier</label>
-        <label class="fv-ctl">Filaments <input type="number" id="cfdNf" min="1" max="1000" step="1" value="${CFDG.nf}"> per yarn</label>
+        <label class="fv-ctl"><b>Fibre</b> <select id="cfdFibreSel">${Object.entries(FIBRES).map(([k, f]) => opt(k, f.l, CFDG.fibre)).join('')}</select></label>
+        <label class="fv-ctl">Basis weight <input type="number" id="cfdGsm" min="10" max="3000" step="1" value="${CFDG.gsm}"> g/m²</label>
+        <label class="fv-ctl">Fibre density <input type="number" id="cfdRhoF" min="800" max="3000" step="5" value="${CFDG.rhoF}"> kg/m³</label>
+        <label class="fv-ctl">Filament diameter from <select id="cfdDFrom">${opt('yarn', 'yarn denier / filaments', CFDG.dFrom)}${opt('air', 'air permeability (Kozeny–Carman)', CFDG.dFrom)}</select></label>
+        <label class="fv-ctl"${CFDG.dFrom === 'yarn' ? '' : ' hidden'}>Yarn <input type="number" id="cfdDen" min="5" max="3000" step="1" value="${CFDG.den}"> denier</label>
+        <label class="fv-ctl"${CFDG.dFrom === 'yarn' ? '' : ' hidden'}>Filaments <input type="number" id="cfdNf" min="1" max="1000" step="1" value="${CFDG.nf}"> per yarn</label>
+        <label class="fv-ctl">Air permeability <input type="number" id="cfdAirPerm" min="0.1" max="5000" step="0.5" value="${CFDG.airPerm}"> ×10⁻³ m³/m²·s at <input type="number" id="cfdAirDP" min="0" max="2000" step="1" value="${CFDG.airDP}"> Pa</label>
         <label class="fv-ctl">Kozeny constant <input type="number" id="cfdKoz" min="1" max="20" step="0.5" value="${CFDG.kozeny}"></label>
-        <label class="fv-ctl">Air fraction of the top surface <input type="number" id="cfdAirFrac" min="0.05" max="0.95" step="0.05" value="${CFDG.airFrac}"></label>
-        <label class="fv-ctl">Air permeability <input type="number" id="cfdAirPerm" min="0.1" max="5000" step="0.5" value="${CFDG.airPerm}"> ×10⁻³ m³/m²·s</label>
-        <span class="fv-why">thickness: the sidebar's fibre thickness · PET, 150D, 138 g/m², 20–30 ×10⁻³ m³/m²·s from the report; filaments (not in the report) and top-surface air fraction assumed</span>
+        <label class="fv-ctl">Air fraction of the top surface <input type="number" id="cfdAirFrac" min="0.05" max="0.95" step="0.01" value="${CFDG.airFrac}"></label>
+        <span class="fv-why" id="cfdFibreNote">${fibreNote()}</span>
       </div>
       <div class="fv-bar cfd-geo">
         <span class="fv-ctl"><b>Drying air</b> up into the fibre from below</span>
@@ -458,8 +492,10 @@ function viewCFD() {
     el.addEventListener('change', () => { const v = +el.value; if (Number.isFinite(v)) CFDG[key] = Math.min(hi, Math.max(lo, v)); el.value = CFDG[key]; renderCFD(); });
   };
   geoNum('cfdR', 'R', 10, 500); geoNum('cfdPool', 'pool', 5, 150); geoNum('cfdExit', 'exitAngle', 30, 150);
-  geoNum('cfdGsm', 'gsm', 10, 1000); geoNum('cfdRhoF', 'rhoF', 800, 3000); geoNum('cfdDen', 'den', 5, 3000); geoNum('cfdNf', 'nf', 1, 1000);
-  geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAirFrac', 'airFrac', 0.05, 0.95); geoNum('cfdAirPerm', 'airPerm', 0.1, 5000);
+  geoNum('cfdGsm', 'gsm', 10, 3000); geoNum('cfdRhoF', 'rhoF', 800, 3000); geoNum('cfdDen', 'den', 5, 3000); geoNum('cfdNf', 'nf', 1, 1000);
+  geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAirFrac', 'airFrac', 0.05, 0.95); geoNum('cfdAirPerm', 'airPerm', 0.1, 5000); geoNum('cfdAirDP', 'airDP', 0, 2000);
+  document.getElementById('cfdFibreSel').addEventListener('change', e => { selectFibre(e.target.value); viewCFD(); });
+  document.getElementById('cfdDFrom').addEventListener('change', e => { CFDG.dFrom = e.target.value; viewCFD(); });
   geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400); geoNum('cfdPlenum', 'plenum', 1, 5000);
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
@@ -1055,7 +1091,9 @@ function renderFibre() {
   const compare = FV.view === 'compare', idx = compare ? CFD_LOCS.map((_, i) => i) : [FV.view];
   const st = fibreStructure(), k = fibrePermeability(), sl = fibreSlip(), oa = ovenAir(), air = oa.air;
   // the report's air permeability as a check on k: Darcy across the thickness, air at 20 C, for the two standard test pressures (ISO 9237)
-  const muTest = airProps(20).mu, kTest = dp => CFDG.airPerm * 1e-3 * muTest * st.t / dp;
+  const note = document.getElementById('cfdFibreNote');
+  if (note) note.innerHTML = fibreNote();
+  const fib = FIBRES[CFDG.fibre], kTest = dp => airTestK(st.t, dp);
   const um = v => fmtNum(v * 1e6);
   // slip along the web under the blade, from each run
   const slip = r => {
@@ -1074,12 +1112,13 @@ function renderFibre() {
   const kFmt = v => Number.isFinite(v) ? `${v.toExponential(2)} <small>${fmtNum(v / 9.869233e-13)} D</small>` : '—';
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table${compare ? ' cmp' : ''}">${head ? `<thead>${head}</thead>` : ''}<tbody>
     ${row('Porosity, 1 − basis weight / (fibre density × thickness)', `${CFDG.gsm} g/m², ${CFDG.rhoF} kg/m³, ${P.tf} mm`, st.ok ? st.eps.toFixed(3) : `<span class="warn-text">${st.eps.toFixed(3)}: not a porosity (basis weight too high for this thickness)</span>`)}
-    ${row('Filament diameter', `${CFDG.den} denier yarn, ${CFDG.nf} filaments`, `${um(st.d)} µm`)}
+    ${row('Filament diameter', CFDG.dFrom === 'air' ? 'Kozeny–Carman diameter that gives the measured air permeability' : `${CFDG.den} denier yarn, ${CFDG.nf} filaments`, Number.isFinite(st.d) ? `${um(st.d)} µm` : '—')}
     ${row('Permeability k, Kozeny–Carman', 'm² (darcy)', kFmt(k))}
-    ${row('Permeability from the report\'s air permeability', `${CFDG.airPerm} ×10⁻³ m³/m²·s across ${P.tf} mm; test pressure not stated`, `${kFmt(kTest(200))} at 200 Pa<br>${kFmt(kTest(100))} at 100 Pa`)}
+    ${row('Permeability from the report\'s air permeability', `${CFDG.airPerm} ×10⁻³ m³/m²·s across ${P.tf} mm${CFDG.airDP > 0 ? ` at ${CFDG.airDP} Pa` : '; test pressure not stated'}`, CFDG.airDP > 0 ? `${kFmt(kTest(CFDG.airDP))}${CFDG.dFrom === 'air' ? ' <small>(the filament diameter is fitted to it)</small>' : ''}` : `${kFmt(kTest(200))} at 200 Pa<br>${kFmt(kTest(100))} at 100 Pa`)}
     ${row('Top surface: filament spacing', `filament + air gap, air fraction ${CFDG.airFrac}`, `${um(sl.period)} µm`)}
     ${row('Slip length b over the air between filaments', 'µm: along / across the filaments; used (plain weave: mean)', `${um(sl.along)} / ${um(sl.across)}; <b>${um(sl.b)}</b>`)}
     ${locRows}
+    ${row('Fibre use temperature', `${fib.l}: continuous${fib.tMom ? ' / momentary' : ''}`, `${fib.tUse}${fib.tMom ? ' / ' + fib.tMom : ''} °C${CFDG.airT > fib.tUse ? ` <span class="warn-text">oven air ${CFDG.airT} °C is above the continuous limit</span>` : ''}`)}
     ${row('Drying air: viscosity, density', `at ${CFDG.airT} °C`, `${(air.mu * 1e6).toFixed(2)} µPa·s, ${air.rho.toFixed(3)} kg/m³`)}
     ${row('Drying air: pressure the plenum needs for this speed', `at the plenum's centre, gauge; ${CFDG.airU} m/s up into the fibre over ${CFDG.plenum} mm, out along the ${P.tf} mm fibre`, st.ok ? `at least <b>${fmtNum(oa.dp / 1e6)} MPa</b> <small>${fmtNum(oa.dpInc / 1e6)} MPa if the air did not compress</small>` : '—')}
     ${row('Drying air: speed along the fibre where it leaves', "at the plenum's edges", st.ok ? `${fmtNum(oa.uEdge)} m/s` : '—')}
