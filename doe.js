@@ -257,6 +257,7 @@ function renderDOE() {
   renderDOEPlots();
   renderProblems();
   markInvalidInputs();
+  applyHelp();
 }
 function doeStatusLine() {
   const el = document.getElementById('doeStatus');

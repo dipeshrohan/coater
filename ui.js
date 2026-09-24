@@ -517,6 +517,7 @@ function render() {
   work.classList.add('fill');
   [viewA, view1, view2, view3, viewCFD, viewDOE][tab]();
   decorateImageButtons();
+  applyHelp();
   titleStatus();
   updateScope();
 }

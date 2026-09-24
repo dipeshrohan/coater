@@ -835,6 +835,7 @@ function renderCFD() {
   renderProblems();
   markInvalidInputs();
   decorateImageButtons();
+  applyHelp();
 }
 
 // ---------------------------------------------------------------------
@@ -1382,6 +1383,7 @@ function renderLocCards() {
   }));
   edit.querySelectorAll('button[data-clear]').forEach(b => { b.onclick = () => { CFD_LOCS[+b.dataset.clear].over = {}; CFD_LOCS[+b.dataset.clear].solver = {}; renderCFD(); }; });
   host.querySelectorAll('button[data-run]').forEach(b => { b.onclick = () => runLocation(+b.dataset.run); });
+  applyHelp();
 }
 
 /** Refresh only the locations' status lines (progress while solving), leaving their inputs alone. */

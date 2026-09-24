@@ -9,8 +9,25 @@ drift out of sync with what's actually built.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
-## 10 live residual plot (done), 11 input validation (done), 12 input tooltips, 13 project file,
+## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-12 (done): help cards
+
+User's choices: meaning, range and source, effect, used by; hover and
+focus, plus an (i) for touch; the model tree inputs, toolbar controls,
+result names and the DOE; a styled card.
+- help.js: HELP (inputs, CFD setup, solver, locations, toolbars, Display
+  pop-over, zoom bar, DOE) and HELP_RESULTS (metrics, mesh study and DOE
+  output names). The sidebar inputs' range, default and source come from
+  CFG. applyHelp (after each render) puts data-help on the controls by id,
+  selector or label (results: the table's row label; DOE factor columns:
+  the factor's input) and an (i) in each model-tree row; native titles
+  that the card replaces are removed.
+- One card (role tooltip, aria-describedby): after 450 ms of hover, at
+  once on keyboard focus, pinned by the (i) until a click elsewhere;
+  hidden on Escape or scroll; a rejected entry's message shows in it.
+  225 controls carry a card; every key resolves.
 
 ### GUI-11 (done): input validation
 
