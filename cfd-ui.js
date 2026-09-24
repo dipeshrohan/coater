@@ -34,12 +34,13 @@
 //    air permeability (1e-3 m^3/m^2/s, a check on k). Its pores are dry (air):
 //    the slurry rests on the top filaments and slips over the air between
 //    them; airFrac is the air fraction of that top surface.
-//  Drying air through the fibre in the oven: airU its superficial speed
-//    (m/s), airT its temperature (C) -- for the Darcy numbers only (the air's
-//    pressure field in the fibre is not solved).
+//  Drying air in the oven, blown up into the fibre from a plenum below: airU
+//    its superficial speed (m/s), airT its temperature (C), plenum its length
+//    in the machine direction (mm). The wet film seals the fibre's top, so the
+//    air can only leave along the fibre: the pressure that speed needs follows.
 //  model: the slurry's rheology model for the CFD runs (which of the sidebar's
 //    rheology inputs apply): Newtonian, power law, or Herschel-Bulkley.
-const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, model: 'hb', gsm: 138, rhoF: 1380, den: 150, nf: 48, kozeny: 5, airFrac: 0.5, airPerm: 25, airU: 1, airT: 100 };
+const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, model: 'hb', gsm: 138, rhoF: 1380, den: 150, nf: 48, kozeny: 5, airFrac: 0.5, airPerm: 25, airU: 1, airT: 100, plenum: 100 };
 const RHEO_MODELS = {
   newtonian: { l: 'Newtonian', uses: [], law: 'μ = the viscosity at 2.7 1/s; n and yield stress not used' },
   power: { l: 'Power law', uses: ['n'], law: 'μ = μ(2.7 1/s) · (γ̇ / 2.7)^(n−1); yield stress not used' },
@@ -72,6 +73,22 @@ function fibreSlip() {
   const { d } = fibreStructure(), a = CFDG.airFrac, period = d / (1 - a);
   const along = period / Math.PI * Math.log(1 / Math.cos(Math.PI * a / 2)), across = along / 2;
   return { period, along, across, b: (along + across) / 2 };
+}
+/**
+ * Drying air blown up into the fibre at speed ua over a plenum of length Lp, the wet film
+ * sealing the top: it can only flow along the fibre (thickness t) to the plenum's edges.
+ * Taking it out right at those edges (the shortest path it could have; ambient pressure
+ * p0 there), Darcy along the thin layer with the air's density rising with pressure
+ * (isothermal): p dp/dx = -mu p0 ua x / (k t), so at the plenum's centre
+ * p^2 = p0^2 + 2 p0 dpInc, dpInc = mu ua Lp^2 / (8 k t) (the same without compression).
+ * Also the speed along the fibre where it leaves, ua Lp / (2 t), and its pore Reynolds
+ * number there (well above 1: inertial losses add to Darcy's, so the pressure is a least value).
+ */
+function ovenAir() {
+  const st = fibreStructure(), k = fibrePermeability(), air = airProps(CFDG.airT), ua = CFDG.airU, Lp = CFDG.plenum / 1000, p0 = 101325;
+  const dpInc = air.mu * ua * Lp * Lp / (8 * k * st.t), pc = Math.sqrt(p0 * p0 + 2 * p0 * dpInc);
+  const uEdge = ua * Lp / (2 * st.t);
+  return { air, dpInc, dp: pc - p0, uEdge, ReEdge: air.rho * (uEdge / st.eps) * st.d / air.mu };
 }
 /** Air viscosity (Sutherland's law) and density (ideal gas at 1 atm) at T degC. */
 function airProps(Tc) {
@@ -302,7 +319,7 @@ function viewCFD() {
       <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
       <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
-      <b>Fibre.</b> The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface. Over the air between those filaments the slurry slips (du/dy = (u &minus; U)/b at the surface, slip length b from the filament spacing, Philip 1972). Porosity, filament diameter and permeability (Kozeny&ndash;Carman) follow from the fibre's test-report data. Drying air: Darcy's law for the air speed and temperature you set; its pressure field in the fibre is not solved.
+      <b>Fibre.</b> The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface. Over the air between those filaments the slurry slips (du/dy = (u &minus; U)/b at the surface, slip length b from the filament spacing, Philip 1972). Porosity, filament diameter and permeability (Kozeny&ndash;Carman) follow from the fibre's test-report data. Drying air: blown up into the fibre from a plenum; with the wet film sealing its top, the air can only leave along the fibre, and the pressure the set speed needs for that follows (Darcy, the air compressing).
       <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Flat land: the lubrication model's geometry, for comparison. The film is followed in 2D for a stretch downstream of the edge, then by the 1D thin-film model to the oven (under Profiles).
       <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses. Any location can instead be given its own gap, contact angle, web speed, bead pressure, rheology or surface tension (Inputs on its card); the blade and the fibre are shared.
       <b>Flow tracking.</b> Streamlines are integrated (RK4) through the interpolated velocity field and checked against the stream function, which is constant along a true streamline; the drift is reported under Flow metrics.
@@ -337,9 +354,10 @@ function viewCFD() {
         <span class="fv-why">thickness: the sidebar's fibre thickness · PET, 150D, 138 g/m², 20–30 ×10⁻³ m³/m²·s from the report; filaments (not in the report) and top-surface air fraction assumed</span>
       </div>
       <div class="fv-bar cfd-geo">
-        <span class="fv-ctl"><b>Drying air</b> through the fibre</span>
+        <span class="fv-ctl"><b>Drying air</b> up into the fibre from below</span>
         <label class="fv-ctl">Air speed <input type="number" id="cfdAirU" min="0" max="50" step="0.1" value="${CFDG.airU}"> m/s</label>
         <label class="fv-ctl">Air temperature <input type="number" id="cfdAirT" min="0" max="400" step="5" value="${CFDG.airT}"> °C</label>
+        <label class="fv-ctl">Plenum length <input type="number" id="cfdPlenum" min="1" max="5000" step="10" value="${CFDG.plenum}"> mm</label>
         <span class="fv-why">assumed</span>
       </div>
     </section>
@@ -442,7 +460,7 @@ function viewCFD() {
   geoNum('cfdR', 'R', 10, 500); geoNum('cfdPool', 'pool', 5, 150); geoNum('cfdExit', 'exitAngle', 30, 150);
   geoNum('cfdGsm', 'gsm', 10, 1000); geoNum('cfdRhoF', 'rhoF', 800, 3000); geoNum('cfdDen', 'den', 5, 3000); geoNum('cfdNf', 'nf', 1, 1000);
   geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAirFrac', 'airFrac', 0.05, 0.95); geoNum('cfdAirPerm', 'airPerm', 0.1, 5000);
-  geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400);
+  geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400); geoNum('cfdPlenum', 'plenum', 1, 5000);
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('cfdCaseSave').onclick = saveCase;
@@ -1035,8 +1053,7 @@ function renderFibre() {
   const host = document.getElementById('cfdFibre');
   if (!host) return;
   const compare = FV.view === 'compare', idx = compare ? CFD_LOCS.map((_, i) => i) : [FV.view];
-  const st = fibreStructure(), k = fibrePermeability(), sl = fibreSlip(), air = airProps(CFDG.airT), ua = CFDG.airU;
-  const G = air.mu * ua / k, Re = air.rho * (ua / st.eps) * st.d / air.mu;
+  const st = fibreStructure(), k = fibrePermeability(), sl = fibreSlip(), oa = ovenAir(), air = oa.air;
   // the report's air permeability as a check on k: Darcy across the thickness, air at 20 C, for the two standard test pressures (ISO 9237)
   const muTest = airProps(20).mu, kTest = dp => CFDG.airPerm * 1e-3 * muTest * st.t / dp;
   const um = v => fmtNum(v * 1e6);
@@ -1064,11 +1081,11 @@ function renderFibre() {
     ${row('Slip length b over the air between filaments', 'µm: along / across the filaments; used (plain weave: mean)', `${um(sl.along)} / ${um(sl.across)}; <b>${um(sl.b)}</b>`)}
     ${locRows}
     ${row('Drying air: viscosity, density', `at ${CFDG.airT} °C`, `${(air.mu * 1e6).toFixed(2)} µPa·s, ${air.rho.toFixed(3)} kg/m³`)}
-    ${row('Drying air: pressure gradient along its path in the fibre, μu/k', 'kPa per mm of path', Number.isFinite(G) ? fmtNum(G / 1e6) : '—')}
-    ${row('Drying air: pressure drop across the fibre thickness', `Pa, if it crosses the ${P.tf} mm fibre`, Number.isFinite(G) ? fmtNum(G * st.t) : '—')}
-    ${row('Drying air: pore Reynolds number ρ(u/ε)d/μ', '', Number.isFinite(Re) && st.ok ? `${fmtNum(Re)} <small>${Re < 1 ? "Darcy's law holds (below 1)" : "above 1: inertial losses add to Darcy's law (not included)"}</small>` : '—')}
+    ${row('Drying air: pressure the plenum needs for this speed', `at the plenum's centre, gauge; ${CFDG.airU} m/s up into the fibre over ${CFDG.plenum} mm, out along the ${P.tf} mm fibre`, st.ok ? `at least <b>${fmtNum(oa.dp / 1e6)} MPa</b> <small>${fmtNum(oa.dpInc / 1e6)} MPa if the air did not compress</small>` : '—')}
+    ${row('Drying air: speed along the fibre where it leaves', "at the plenum's edges", st.ok ? `${fmtNum(oa.uEdge)} m/s` : '—')}
+    ${row('Drying air: pore Reynolds number there, ρ(u/ε)d/μ', '', st.ok ? `${fmtNum(oa.ReEdge)} <small>${oa.ReEdge < 1 ? "Darcy's law holds (below 1)" : "above 1: inertial losses add to Darcy's, so the pressure above is a least value"}</small>` : '—')}
   </tbody></table></div>
-    <p class="fv-note">The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface (at over 40 vol% solids the gaps between the slurry's own 2–8 µm particles are finer than the fibre's pores, so capillarity keeps the liquid in the slurry). Over the air between the filaments the slurry slips: filaments as no-slip stripes, air as shear-free ones (Philip 1972). The drying air comes up from below in the oven; its numbers follow from Darcy's law for the speed you set, but its pressure field in the fibre is not solved.</p>`;
+    <p class="fv-note">The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface (at over 40 vol% solids the gaps between the slurry's own 2–8 µm particles are finer than the fibre's pores, so capillarity keeps the liquid in the slurry). Over the air between the filaments the slurry slips: filaments as no-slip stripes, air as shear-free ones (Philip 1972). The drying air comes up into the fibre from a plenum below, but the wet film seals the fibre's top, so it can only leave along the fibre's ${P.tf} mm to the plenum's edges (taken as its exit: the shortest path it could have). The pressure above is what the set speed needs for that (Darcy along the fibre, the air compressing as the pressure rises); a plenum at a realistic pressure moves the air in the fibre far slower, so under the film it is nearly still.</p>`;
 }
 
 // ---- across the web: the four locations side by side ----
