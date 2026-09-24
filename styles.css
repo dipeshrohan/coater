@@ -737,3 +737,11 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .doe-addbar { margin-top: 10px; }
 .doe-rtable th, .doe-rtable td { white-space: nowrap; font-size: 12px; }
 .doe-rtable td { font-family: var(--mono); }
+
+/* ---- live residuals while solving ---- */
+.live-res { flex: 0 0 auto; margin: 0 0 8px; padding: 6px 8px 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.live-res.big { flex: 1 1 auto; min-height: 0; }
+.live-res .xl-chart { margin-top: 0; }
+.live-res .xl-legend { margin-top: 4px; }
+#cfdPlots:empty, #doePlots:empty { flex: 0 0 0; }
+#studyLive { margin: 6px 0 10px; }

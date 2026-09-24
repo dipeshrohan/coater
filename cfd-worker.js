@@ -48,9 +48,16 @@ onmessage = e => {
     const shape = bladeShape(o), xe = shape.Lx, H = shape.h(xe);
     const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
     const qLub = lubricationQ(o, shape);
-    let lastPost = 0, stage = '';
-    const post = h => { const t = Date.now(); if (t - lastPost > 150) { lastPost = t; postMessage({ progress: { it: h.it, residual: h.residual, s: h.s, stage } }); } };
+    let lastPost = 0, stage = '', sent = 0;
     const trace = { r: [], solves: [], used: -1 };
+    // progress: the stage, the latest residual, and the residuals since the last post with the solves so far (live residual plots)
+    const post = h => {
+      const t = Date.now();
+      if (t - lastPost <= 150) return;
+      lastPost = t;
+      const add = trace.r.slice(sent); sent = trace.r.length;
+      postMessage({ progress: { it: h.it, residual: h.residual, s: h.s, stage, add, solves: trace.solves.map(sv => [sv.label, sv.k0]) } });
+    };
     let open = null;
     const onIteration = h => { if (Number.isFinite(h.residual)) trace.r.push(h.residual); post(h); };
     const onSolveStart = label => { if (open) open.n = trace.r.length - open.k0; open = { label, k0: trace.r.length, n: 0, converged: false, residual: NaN }; trace.solves.push(open); return trace.solves.length - 1; };
