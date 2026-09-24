@@ -6,8 +6,20 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Remaining feature list, in order:
-## 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Item 9 (done): export (CSV)
+
+Three downloads from the Flow field section, for the location in view (or
+all four in the comparison view, with a location column): the field at
+every node (position, velocity, pressure, shear rate, viscosity, yielded
+flag, vorticity, principal strain rates and direction, dissipation, stream
+function, which boundary the node is on); the boundaries per column (web:
+x, p, u; top: blade / exit face / free surface x, y, p -- the free
+surface's shape); and the Flow metrics table as shown (notes after " | ").
+UTF-8 with BOM (units like um and degrees open correctly in spreadsheets),
+9 significant digits. Checked: row counts and sampled values equal the
+stored field.
 
 ### Item 8 (done): save / load cases (local storage)
 
