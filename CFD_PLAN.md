@@ -8,9 +8,36 @@ drift out of sync with what's actually built.
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
-## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE,
+## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-9 (done): DOE module
+
+User's choices: a full-factorial design; factors from the process and
+slurry inputs, the blade geometry, and the mesh / solver; one location;
+a table with CSV, response plots and main effects; its own module in
+the title bar; outputs covering film and flow, meniscus, pressure and
+shear, and flow quality; 2-3 factors at 2-5 levels; several runs at a time.
+- doe.js. Factors: numeric (from, to, levels evenly spaced) or
+  categorical (mesh preset, tolerance); those the current model or blade
+  shape does not use are left out. Each run is the base case (model tree,
+  CFD Analysis setup, the location's own inputs) with the factors set
+  (doeGeometry sets them on a copy of the state and restores it).
+- A queue of Web Workers (1-8 at a time); outputs per run: film Q/U, Q,
+  end film, contact line (0 = pinned), surface angle, peak pressure,
+  -dp/dx, max shear away from the corner, reverse flow, recirculation,
+  stagnation points, mean residence time. Failed runs keep their reason.
+- Plots (panes, so image export picks them up): response (output vs a
+  factor, a line per level of the second factor, a panel per level of the
+  third; points marked; hover snaps to the levels), response map (cells on
+  one sequential scale, values printed), main effects (level means, grand
+  mean dashed). plotChart gained xticks / xf and point markers.
+- Model tree: the base case (read-only) with 'Edit in CFD Analysis'.
+- Worker fix: a solve that stops part way returns its last state with the
+  reason; the worker now reports that reason (it used to fail later in
+  post-processing, "reading 'cCorner'"). Seen at 0.1 m/min with 5.25 Pa.s
+  (yield stress 5 Pa): "flow with the surface frozen did not converge".
 
 ### GUI-8 (done): solver and mesh settings, mesh study
 

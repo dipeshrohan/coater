@@ -68,7 +68,7 @@ onmessage = e => {
     // (a solve that ended without returning: its iterates so far)
     if (open) open.n = trace.r.length - open.k0;
     trace.used = r.solveId ?? -1;
-    if (!r.x) throw new Error(r.error || 'no solution');
+    if (!r.x || r.error) throw new Error(r.error || 'no solution');   // (a solve that stopped part way returns its last state with the reason)
     const g = coaterGrid(r, { xe, H, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U });
 
     // Flat land: away from its ends the flow is fully developed, so the exact

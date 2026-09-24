@@ -280,12 +280,12 @@ function imageTargets() {
     }));
     if (charts().length > 1) out.push({ id: 'charts', slug: `charts-${FV.dock}`, label: `All charts in “${tabName}”`, canvases: charts, legend: () => panel().querySelectorAll('.xl-legend .lg'), title: () => tabName, subtitle: () => '' });
   } else {
-    const panes = () => [...document.querySelectorAll('#view .pane > canvas')];
+    const panes = () => [...document.querySelectorAll('#view .pane canvas[role="img"]')];
     panes().forEach((cv, n) => out.push({
       id: 'pane:' + n, slug: `plot-${n + 1}`, label: `Plot: ${chartName(cv, `${mod} ${n + 1}`)}`,
-      canvases: () => [panes()[n]].filter(Boolean), legend: () => [], title: () => cleanText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
+      canvases: () => [panes()[n]].filter(Boolean), legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => cleanText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
     }));
-    if (panes().length > 1) out.push({ id: 'panes', slug: 'plots', label: `All plots of “${mod}”`, canvases: panes, legend: () => [], title: () => '', subtitle: () => '', captions: true });
+    if (panes().length > 1) out.push({ id: 'panes', slug: 'plots', label: `All plots of “${mod}”`, canvases: panes, legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => '', subtitle: () => '', captions: true });
   }
   out.push({ id: 'window', slug: 'window', label: 'Whole window', window: true });
   return out;
@@ -650,6 +650,6 @@ function decorateImageButtons() {
     host.appendChild(b);
   };
   document.querySelectorAll('#view .dock-panel canvas[role="img"]').forEach(cv => add(cv, () => { const p = cv.closest('.dock-panel'); return 'chart:' + [...p.querySelectorAll('canvas[role="img"]')].indexOf(cv); }, 'chart'));
-  document.querySelectorAll('#view .pane > canvas').forEach(cv => add(cv, () => 'pane:' + [...document.querySelectorAll('#view .pane > canvas')].indexOf(cv), 'plot'));
+  document.querySelectorAll('#view .pane canvas[role="img"]').forEach(cv => add(cv, () => 'pane:' + [...document.querySelectorAll('#view .pane canvas[role="img"]')].indexOf(cv), 'plot'));
 }
 document.getElementById('imgBtn').onclick = () => openImageDialog();

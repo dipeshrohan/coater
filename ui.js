@@ -476,13 +476,14 @@ function view3() {
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
 let tab = 0;
-const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis'];
+const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis', 'DOE'];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
   '<path d="M3 2.5v11M3 5.5c4 0 5.5 3.5 10.5 3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5.5" r="1.4" fill="currentColor"/>',
   '<path d="M1.5 9.5c1.6-3 3.2-3 4.8 0s3.2 3 4.8 0 2.4-2.2 3.4-1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M1.5 13.5h13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>',
   '<path d="M1.5 7c1.2-1.4 2.4-1.4 3.6 0s2.4 1.4 3.6 0 2.4-1.4 3.6 0 1.6 1 2.2.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M1.5 11h13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>',
   '<path d="M2 2.5h12v11H2zM2 6.2h12M2 9.8h12M6 2.5v11M10 2.5v11" fill="none" stroke="currentColor" stroke-width="1.1"/>',
+  '<circle cx="4" cy="4" r="1.6" fill="currentColor"/><circle cx="12" cy="4" r="1.6" fill="currentColor"/><circle cx="4" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M4 4h8v8H4z" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>',
 ];
 const tabsEl = document.getElementById('tabs');
 TABS.forEach((t, i) => {
@@ -514,7 +515,7 @@ function render() {
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE][tab]();
   decorateImageButtons();
   titleStatus();
   updateScope();
