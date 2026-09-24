@@ -665,3 +665,12 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .cbar-pop { width: 340px; }
 .cbar-pop .cc-range > span { flex-basis: 100%; }
 .cbar-pop .fv-ctl { justify-content: space-between; }
+.lg-contour { height: 2px; box-shadow: 0 0 0 1px var(--surface); }
+.lg-contour.by-value { background: linear-gradient(90deg, #00f, #0ff, #ff0, #f00); }
+.cfd-wb .vp-bar { gap: 6px 8px; }
+.vp-bar #fvBase { max-width: 172px; }
+.cfd-wb .vp-bar .fv-chk { font-size: 12.5px; }
+@media (max-width: 1365px) {
+  .hide-narrow { display: none; }
+  .wb-body { grid-template-columns: var(--tree-w, 292px) 5px minmax(0, 1fr); }
+}

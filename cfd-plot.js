@@ -161,6 +161,7 @@ const rasterCache = new WeakMap();
  *   view         { x0, x1, y0, y1 } (m): the window shown (zoom); omitted = the whole domain. The plot
  *                keeps its size; the window fills it (so its shape sets the vertical scale)
  *   fast         draw the colour raster at half resolution (while zooming / panning)
+ *   contours     { sets: [{ v, lines }] (contourLines), colorOf: v => css colour | null (null = ink), fmt: v => label }
  *   mesh         { quality: meshQuality(f) | null } -- draw the finite elements' edges (curved through
  *                their mid nodes) and nodes over the field; with quality, the elements are filled by
  *                their quality instead of the field colours (the colour bar then shows it)
@@ -381,6 +382,46 @@ function drawFlowPlot(cv, s) {
       }
       c.restore();
     }
+  }
+
+  // ---- contour lines: a halo, the line (its level's colour, or ink), and its value where it fits ----
+  if (s.contours) {
+    c.save(); fluidPath(); c.clip();
+    c.lineJoin = 'round'; c.lineCap = 'round';
+    const labels = [], placed = [];
+    for (const set of s.contours.sets) {
+      const col = s.contours.colorOf ? s.contours.colorOf(set.v) : ink;
+      let best = null, bestLen = 0;
+      for (const ln of set.lines) {
+        if (ln.length < 2) continue;
+        const pts = ln.map(([x, y]) => [X(x), Y(y)]);
+        c.beginPath(); pts.forEach(([px, py], n) => n ? c.lineTo(px, py) : c.moveTo(px, py));
+        c.strokeStyle = surface; c.globalAlpha = 0.85; c.lineWidth = compact ? 2.2 : 2.8; c.stroke();
+        c.globalAlpha = 1; c.strokeStyle = col; c.lineWidth = compact ? 0.9 : 1.3; c.stroke();
+        // the longest stretch in view carries the label
+        let len = 0;
+        for (let n = 1; n < pts.length; n++) if (pts[n][0] >= CR.l && pts[n][0] <= CR.r && pts[n][1] >= CR.t && pts[n][1] <= CR.b) len += Math.hypot(pts[n][0] - pts[n - 1][0], pts[n][1] - pts[n - 1][1]);
+        if (len > bestLen) { bestLen = len; best = pts; }
+      }
+      if (best && bestLen > (compact ? 60 : 80)) labels.push({ pts: best, len: bestLen, text: s.contours.fmt(set.v) });
+    }
+    c.restore();
+    // labels: halfway along each level's longest stretch, skipped where they would overlap another
+    c.save(); c.beginPath(); c.rect(CR.l, CR.t, CR.r - CR.l, CR.b - CR.t); c.clip();
+    c.font = `${compact ? 9.5 : 10.5}px ${mono}`; c.textBaseline = 'middle';
+    for (const lb of labels) {
+      let acc = 0, px = lb.pts[0][0], py = lb.pts[0][1];
+      for (let n = 1; n < lb.pts.length; n++) {
+        const d = Math.hypot(lb.pts[n][0] - lb.pts[n - 1][0], lb.pts[n][1] - lb.pts[n - 1][1]);
+        if (acc + d >= lb.len / 2) { const t = (lb.len / 2 - acc) / (d || 1); px = lb.pts[n - 1][0] + t * (lb.pts[n][0] - lb.pts[n - 1][0]); py = lb.pts[n - 1][1] + t * (lb.pts[n][1] - lb.pts[n - 1][1]); break; }
+        acc += d;
+      }
+      const tw = c.measureText(lb.text).width, box = [px - tw / 2 - 2, py - 7, px + tw / 2 + 2, py + 7];
+      if (placed.some(b => b[0] < box[2] && box[0] < b[2] && b[1] < box[3] && box[1] < b[3])) continue;
+      placed.push(box);
+      labelOn(c, lb.text, px, py, ink, 'center');
+    }
+    c.restore();
   }
 
   // ---- overlays --------------------------------------------------------

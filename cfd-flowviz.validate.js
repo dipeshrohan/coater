@@ -17,7 +17,7 @@
  */
 const { solveCavityNS, muEffLocal } = require('./cfd-solver.js');
 const { solveGapFlow } = require('./cfd-gap-solver.js');
-const { makeFlowField, sampleField, bladeHeightAt, traceStreamline, autoSeeds, flowMetrics, streamlinePsiDeviation, findEddyCentres } = require('./cfd-flowviz.js');
+const { makeFlowField, sampleField, bladeHeightAt, traceStreamline, autoSeeds, flowMetrics, streamlinePsiDeviation, findEddyCentres, contourLines, meshQuality } = require('./cfd-flowviz.js');
 
 let fails = 0;
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) fails++; };
@@ -128,6 +128,22 @@ const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!o
   const m = flowMetrics(f);
   check(m.reverseFraction > 0, `reverse flow found in the converging entry (${(m.reverseFraction * 100).toFixed(1)}% of area)`);
   check(Math.abs(m.meanGapVelocity * f.Hedge - r.Q) < 1e-15, 'mean velocity at the edge x edge gap = through-flow Q');
+}
+
+console.log('\n-- contour lines and mesh quality (display helpers) --');
+{
+  // f = x^2 + y^2 on a sheared grid: every contour point on its circle (to the edges' linear interpolation), one line per level
+  const nx = 41, ny = 21, gx = new Float64Array(nx * ny), gy = new Float64Array(nx * ny), a = new Float64Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const k = j * nx + i; gx[k] = i / (nx - 1) + 0.1 * j / (ny - 1); gy[k] = j / (ny - 1); a[k] = gx[k] ** 2 + gy[k] ** 2; }
+  const res = contourLines({ nx, ny, gx, gy }, a, 1, [0.25, 0.5, 1]);
+  let err = 0;
+  for (const { v, lines } of res) for (const l of lines) for (const [x, y] of l) err = Math.max(err, Math.abs(x * x + y * y - v));
+  check(res.every(r => r.lines.length === 1) && err < 1e-3, `contours of x^2 + y^2: one line per level, on the circle to ${err.toExponential(1)}`);
+  // mesh quality: an undistorted (parallelogram) grid is 1 everywhere; a bent one below 1
+  const q1 = meshQuality({ nx, ny, gx, gy });
+  const bent = Float64Array.from(gy, (y, k) => y * (1 + 0.5 * gx[k]));
+  const q2 = meshQuality({ nx, ny, gx, gy: bent });
+  check(Math.abs(q1.worst - 1) < 1e-12 && q2.worst < 0.99 && q2.worst > 0, `mesh quality: parallelogram grid ${q1.worst.toFixed(6)}, tapered grid worst ${q2.worst.toFixed(3)}`);
 }
 
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nALL PASS');

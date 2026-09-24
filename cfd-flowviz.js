@@ -501,6 +501,62 @@ function meshQuality(f) {
   return (f._quality = { nEx, nEy, q, worst, worstAt });
 }
 
+/**
+ * Contour lines (isolines) of a nodal field on a curvilinear grid, by marching squares over its
+ * node cells: for each level v (in the field's units x scale), the crossing points on the cell
+ * edges (linear along each edge), joined into polylines. Returns [{ v, lines: [[[x, y], ...], ...] }].
+ */
+function contourLines(f, arr, scale, levels) {
+  const { nx, ny, gx, gy } = f, val = k => arr[k] * scale;
+  // edge ids: horizontal edge (i,j)-(i+1,j) = 2*(j*nx+i), vertical (i,j)-(i,j+1) = 2*(j*nx+i)+1
+  const pointOn = (id, v) => {
+    const k = id >> 1, k2 = id & 1 ? k + nx : k + 1, a = val(k), b = val(k2), t = (v - a) / (b - a);
+    return [gx[k] + t * (gx[k2] - gx[k]), gy[k] + t * (gy[k2] - gy[k])];
+  };
+  return levels.map(v => {
+    const segs = [];            // pairs of edge ids
+    for (let j = 0; j + 1 < ny; j++) for (let i = 0; i + 1 < nx; i++) {
+      const k0 = j * nx + i, k1 = k0 + 1, k3 = k0 + nx, k2 = k3 + 1;
+      const a0 = val(k0) >= v, a1 = val(k1) >= v, a2 = val(k2) >= v, a3 = val(k3) >= v;
+      const idx = (a0 ? 1 : 0) | (a1 ? 2 : 0) | (a2 ? 4 : 0) | (a3 ? 8 : 0);
+      if (idx === 0 || idx === 15) continue;
+      const eB = 2 * k0, eR = 2 * k1 + 1, eT = 2 * k3, eL = 2 * k0 + 1;   // bottom, right, top, left
+      const centre = (val(k0) + val(k1) + val(k2) + val(k3)) / 4 >= v;
+      switch (idx) {
+        case 1: case 14: segs.push([eL, eB]); break;
+        case 2: case 13: segs.push([eB, eR]); break;
+        case 3: case 12: segs.push([eL, eR]); break;
+        case 4: case 11: segs.push([eR, eT]); break;
+        case 6: case 9: segs.push([eB, eT]); break;
+        case 7: case 8: segs.push([eL, eT]); break;
+        case 5: if (centre) { segs.push([eL, eT], [eB, eR]); } else { segs.push([eL, eB], [eR, eT]); } break;
+        case 10: if (centre) { segs.push([eL, eB], [eR, eT]); } else { segs.push([eL, eT], [eB, eR]); } break;
+      }
+    }
+    // join the segments into polylines through their shared edges
+    const at = new Map();
+    segs.forEach((sg, n) => { for (const e of sg) { if (!at.has(e)) at.set(e, []); at.get(e).push(n); } });
+    const used = new Uint8Array(segs.length), lines = [];
+    for (let n0 = 0; n0 < segs.length; n0++) {
+      if (used[n0]) continue;
+      used[n0] = 1;
+      const chain = [segs[n0][0], segs[n0][1]];
+      for (const dir of [1, 0]) {
+        for (;;) {
+          const end = dir ? chain[chain.length - 1] : chain[0];
+          const next = (at.get(end) || []).find(m => !used[m]);
+          if (next == null) break;
+          used[next] = 1;
+          const other = segs[next][0] === end ? segs[next][1] : segs[next][0];
+          if (dir) chain.push(other); else chain.unshift(other);
+        }
+      }
+      lines.push(chain.map(e => pointOn(e, v)));
+    }
+    return { v, lines };
+  });
+}
+
 function sampleVectors(f, nCols, nRows, win) {
   const out = [], w = win || { x0: 0, x1: f.Lx, y0: 0, y1: f.Ly };   // (win: the zoom window, m)
   for (let r = 0; r < nRows; r++) {
@@ -628,5 +684,5 @@ function streamlinePsiDeviation(f, line) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation, streamlineTimes, residenceTimes };
+  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation, streamlineTimes, residenceTimes, contourLines, meshQuality };
 }

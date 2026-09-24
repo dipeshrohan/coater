@@ -7,10 +7,29 @@ drift out of sync with what's actually built.
 
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
-## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines, 5 cut lines,
+## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines,
 ## 6 difference plots, 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-4 (done): contour lines
+
+User's choices: the lines' own field (default: the colour field); values
+at the colour-band boundaries of that field's scale (10 lines when
+smooth); value labels; coloured by value when they follow the field
+whose colours are shown, else ink (no second colour bar); a 'Contours'
+checkbox in the toolbar, the field in the Display pop-over.
+- contourLines(f, arr, scale, levels) (cfd-flowviz.js): marching squares
+  over the node cells (saddles by the cell's mean), crossings linear along
+  each edge, segments joined into polylines through shared edges.
+  Validated: x^2 + y^2 on a sheared grid, one line per level, on the
+  circle to 6e-4.
+- Drawn with a surface-coloured halo (visible over their own colours),
+  clipped to the fluid; each level labelled halfway along its longest
+  stretch in view, skipping overlaps. Levels follow the plot's range
+  (zoom rescale, log, manual range).
+- Toolbar compacted (Export; below 1366 px the Field word and the Probes
+  text hide and the tree narrows) so it stays on one line down to 1280.
 
 ### GUI-3 (done): colour map controls
 
