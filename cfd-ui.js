@@ -194,6 +194,8 @@ const FV = {
   levels: 0,              // colour levels: 0 = smooth, else that many bands
   crange: {},             // per field: a manual colour range { min, max } (either may be null = automatic), display units
   clog: {},               // per field: logarithmic colour scale (positive fields only)
+  contours: false,        // contour lines (isolines) over the field
+  contourField: 'same',   // ... of this field ('same' = the colour field)
   mesh: false,            // draw the finite elements (edges and nodes) over the field
   meshQuality: false,     // ... filled by their quality instead of the field colours
   dockH: 300,             // results panel height (px)
@@ -463,7 +465,7 @@ function viewCFD() {
         <span class="vp-sep" aria-hidden="true"></span>
         <div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div>
         <span class="vp-sep" aria-hidden="true"></span>
-        <label class="vp-ctl">Field <select id="fvBase">
+        <label class="vp-ctl"><span class="hide-narrow">Field</span> <select id="fvBase" aria-label="Field">
           ${opt('speed', 'Velocity magnitude |V|', FV.base)}${opt('ux', 'u_x (machine direction)', FV.base)}${opt('uy', 'u_y (normal to web)', FV.base)}
           ${opt('shear', 'Shear rate', FV.base)}${opt('mu', 'Apparent viscosity', FV.base)}${opt('omega', 'Vorticity', FV.base)}
           ${opt('strain1', 'Principal strain rate', FV.base)}${opt('dissip', 'Viscous dissipation', FV.base)}
@@ -471,6 +473,7 @@ function viewCFD() {
         </select></label>
         <label class="fv-chk"><input type="checkbox" id="fvStream"${FV.streamlines ? ' checked' : ''}> Streamlines</label>
         <label class="fv-chk"><input type="checkbox" id="fvVec"${FV.vectors ? ' checked' : ''}> Vectors</label>
+        <label class="fv-chk"><input type="checkbox" id="fvContours"${FV.contours ? ' checked' : ''}> Contours</label>
         <details class="vp-pop" id="fvMore"${FV.settingsOpen ? ' open' : ''}><summary class="tool-btn">Display</summary>
           <div class="pop-body">
             <div class="fv-grid">
@@ -478,6 +481,10 @@ function viewCFD() {
             <label class="fv-ctl">Vertical scale <select id="fvScale">${opt('exaggerated', 'Exaggerated (fit)', FV.yScale)}${opt('true', 'True 1:1', FV.yScale)}</select></label>
           </fieldset>
           <fieldset class="fv-colours"><legend>Colours</legend><div id="fvColours"></div></fieldset>
+          <fieldset><legend>Contours</legend>
+            <label class="fv-ctl">Field <select id="fvContourField">${opt('same', 'Same as the colour field', FV.contourField)}${Object.entries(SCALARS).map(([k, d]) => opt(k, d.label, FV.contourField)).join('')}</select></label>
+            <p class="fv-note">Lines at the colour-band boundaries of the field's scale (10 when colours are smooth), their values printed; coloured by value when they follow the colour field, else in ink.</p>
+          </fieldset>
           <fieldset><legend>Mesh</legend>
             <label class="fv-chk"><input type="checkbox" id="fvMesh"${FV.mesh ? ' checked' : ''}> Show the mesh (element edges and nodes)</label>
             <label class="fv-chk${FV.mesh ? '' : ' is-off'}"><input type="checkbox" id="fvMeshQ"${FV.meshQuality ? ' checked' : ''}${FV.mesh ? '' : ' disabled'}> Shade elements by quality</label>
@@ -502,9 +509,9 @@ function viewCFD() {
             <p class="fv-note">One colour scale per plot: colouring the streamlines or vectors switches the field colours off.</p>
           </div>
         </details>
-        <button class="tool-btn" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}" title="Place named probes by clicking the plot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>${placeProbes ? 'Done placing' : 'Probes'}</button>
+        <button class="tool-btn" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}" title="Place named probes by clicking the plot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="hide-narrow">${placeProbes ? 'Done placing' : 'Probes'}</span></button>
         <span class="vp-spacer"></span>
-        <details class="vp-pop vp-pop-r" id="cfdExport" hidden><summary class="tool-btn">Export CSV</summary>
+        <details class="vp-pop vp-pop-r" id="cfdExport" hidden><summary class="tool-btn" title="Export CSV">Export</summary>
           <div class="pop-body pop-menu">
             <span class="fv-why" id="cfdExportWhat"></span>
             <button class="menu-item" type="button" id="cfdCsvField">Field (every node)</button>
@@ -621,6 +628,8 @@ function viewCFD() {
   bind('fvVecScale', 'vectorScale', Number);
   bind('fvVecNorm', 'vectorNormalize', Boolean, 'checked');
   bind('fvVecColor', 'vectorColor', Boolean, 'checked');
+  bind('fvContours', 'contours', Boolean, 'checked');
+  bind('fvContourField', 'contourField');
   document.getElementById('fvMesh').addEventListener('change', e => {
     FV.mesh = e.target.checked;
     const q = document.getElementById('fvMeshQ');
@@ -1196,6 +1205,7 @@ function paintPlot(el, fast) {
     probes: cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
     view: zoom, fast,
     mesh: FV.mesh && f.curv ? { quality: FV.meshQuality ? meshQuality(f) : null } : null,
+    contours: contourSpec(f, ranges, zoom, ctx.fields),
   });
   el._map = map;
   if (zoom) FV.zoom[i] = map.view;            // (kept as clamped to the domain)
@@ -1215,6 +1225,33 @@ function paintPlot(el, fast) {
     ex.parentElement.title = ex.parentElement.textContent;   // (the caption line may be cut short)
   }
   return map;
+}
+
+/** The contour key: the colour field, or the field chosen for the lines. */
+const contourKey = () => FV.contourField === 'same' ? FV.base : FV.contourField;
+/** The field's colours are what the plot shows (no line / vector / mesh-quality colouring in their place). */
+const fieldColoursShown = () => FV.base !== 'none' && !(FV.streamlines && FV.lineColor !== 'none') && !(FV.vectors && FV.vectorColor) && !(FV.mesh && FV.meshQuality);
+/**
+ * Contour lines for one plot: at the band boundaries of the contour field's colour scale (its
+ * range in this plot, its log / manual settings; 10 lines when smooth), coloured by value when
+ * they follow the field whose colours are shown, else ink.
+ */
+function contourSpec(f, ranges, zoom, fields) {
+  const ck = contourKey(), d = SCALARS[ck];
+  if (!FV.contours || !d || !f.curv) return null;
+  const same = ck === FV.base && fieldColoursShown() && ranges.base;
+  const cr = same ? ranges.base : scalarRange(ck, zoom ? [f] : fields, zoom);
+  const N = cr.levels > 1 ? cr.levels : 11, levels = [];
+  for (let k = 1; k < N; k++) {
+    const t = k / N;
+    levels.push(cr.log ? Math.exp(Math.log(cr.min) + t * (Math.log(cr.max) - Math.log(cr.min))) : cr.min + t * (cr.max - cr.min));
+  }
+  const lut = same ? getLut(cr.kind) : null, smooth = { ...cr, levels: 0 };
+  return {
+    sets: contourLines(f, d.arr(f), d.scale, levels),
+    colorOf: same ? v => lutColor(lut, scaleT(smooth, v)) : null,
+    fmt: v => fmtNum(v),
+  };
 }
 
 /** Zoom windows for the one-click presets (m), from a location's solution. */
@@ -1400,6 +1437,10 @@ function renderLegend() {
     items.push(`<span class="lg"><i class="lg-seed${FV.seedMode === 'manual' ? ' man' : ''}"></i>${FV.seedMode === 'manual' ? 'your seed' : 'seed'}</span>`);
   }
   if (FV.vectors) items.push(`<span class="lg"><i class="lg-vec"></i>velocity vector${FV.vectorNormalize ? ' (direction only)' : ' (length ∝ |V|)'}</span>`);
+  if (FV.contours && SCALARS[contourKey()]) {
+    const d = SCALARS[contourKey()];
+    items.push(`<span class="lg"><i class="lg-line lg-contour${contourKey() === FV.base && fieldColoursShown() ? ' by-value' : ''}"></i>contour line of ${d.short} (${d.unit}; values printed along them)</span>`);
+  }
   if (FV.mesh) {
     items.push('<span class="lg"><i class="lg-line lg-mesh"></i>element edge</span><span class="lg"><i class="lg-node"></i>corner node</span><span class="lg"><i class="lg-node mid"></i>mid node</span>');
     if (FV.meshQuality) items.push('<span class="lg"><i class="lg-worst"></i>worst element, and any below quality 0.2</span>');
