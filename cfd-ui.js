@@ -109,6 +109,7 @@ const FV = {
   vectors: false, vectorDensity: 'medium', vectorScale: 1, vectorNormalize: false, vectorColor: false,
   yScale: 'exaggerated', settingsOpen: false,
   manualSeeds: [],        // [x, y] in metres, shared by all locations so comparisons are like for like
+  across: 'film',         // quantity plotted against position across the web
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -394,6 +395,11 @@ function viewCFD() {
       <div id="cfdProbes"></div>
     </section>
     <section class="cfd-block"><div class="cfd-head"><h3>Flow metrics</h3></div><div id="cfdMetrics"></div></section>
+    <section class="cfd-block">
+      <div class="cfd-head"><h3>Across the web</h3></div>
+      <div class="fv-bar"><label class="fv-ctl">Quantity <select id="xlMetric">${Object.entries(ACROSS).map(([k, m]) => opt(k, m.l, FV.across)).join('')}</select></label></div>
+      <div id="cfdAcross"></div>
+    </section>
     <section class="cfd-block"><div class="cfd-head"><h3>Fibre (porous web)</h3></div><div id="cfdFibre"></div></section>
     <section class="cfd-block"><div class="cfd-head"><h3 id="cfdProfTitle">Profiles</h3></div><div id="cfdProfiles"></div></section>`;
 
@@ -409,6 +415,7 @@ function viewCFD() {
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('cfdCaseSave').onclick = saveCase;
+  document.getElementById('xlMetric').addEventListener('change', e => { FV.across = e.target.value; renderAcross(); });
   document.getElementById('cfdCsvField').onclick = () => exportField();
   document.getElementById('cfdCsvBound').onclick = () => exportBoundaries();
   document.getElementById('cfdCsvMetrics').onclick = () => exportMetrics();
@@ -464,6 +471,7 @@ function renderCFD() {
   renderProbes();
   renderExportBar();
   renderMetrics();
+  renderAcross();
   renderFibre();
   renderProfiles();
 }
@@ -1021,6 +1029,149 @@ function renderFibre() {
     ${row('Drying air: pore Reynolds number ρ(u/ε)d/μ', '', `${fmtNum(Re)} <small>${Re < 1 ? "Darcy's law holds (below 1)" : "above 1: inertial losses add to Darcy's law (not included)"}</small>`)}
   </tbody></table></div>
     <p class="fv-note">The slurry sees the fibre as a solid, porous surface: nothing crosses it, but the slurry slips over it (Beavers–Joseph). The drying air's numbers follow from Darcy's law for the speed you set; its path through the fibre in the oven (up through it, along it, or with a porous film) is not known, so its pressure field is not solved.</p>`;
+}
+
+// ---- across the web: the four locations side by side ----
+
+// Location colours (categorical slots 1-4 of the dataviz reference palette,
+// validated on this app's surfaces: light #fff -- two slots below 3:1, so
+// every chart carries direct labels and a table -- and dark #161b22).
+const LOC_COLORS = { light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100'], dark: ['#3987e5', '#d95926', '#199e70', '#c98500'] };
+const locColor = i => LOC_COLORS[isDarkTheme() ? 'dark' : 'light'][i];
+const ACROSS = {
+  film: { l: 'Wet film thickness, Q/U', u: 'mm', f: r => r.result.Q / r.geo.U * 1000 },
+  gap: { l: 'Gap at the metering edge', u: 'mm', f: r => r.geo.H * 1000 },
+  ratio: { l: 'Wet film / gap', u: '', f: r => r.result.Q / r.geo.U / r.geo.H },
+  cl: { l: 'Contact line height above the web', u: 'mm', f: r => r.result.clY * 1000 },
+  pmax: { l: 'Peak pressure', u: 'Pa', f: r => r.result.pMax },
+  vmax: { l: 'Max |V|', u: 'mm/s', f: r => r.metrics.vmax * 1000 },
+  tres: { l: 'Residence time to the edge, flux-weighted mean', u: 's', f: r => cfdFieldNumbers(r).res.mean },
+  diss: { l: 'Viscous dissipation', u: 'mW per m width', f: r => cfdFieldNumbers(r).dissTot * 1000 },
+  q: { l: 'Through-flow Q', u: 'mm²/s', f: r => r.result.Q * 1e6 },
+};
+
+/** Direct labels at the right-hand ends of the series: a short line in the series colour, the name in ink, nudged apart. */
+function endLabels(cv, map, series) {
+  const c = cv.getContext('2d'), ink = cssVar('--ink');
+  const items = series.filter(s => s.pts.length).map(s => { const [x, y] = s.pts[s.pts.length - 1]; return { s, x: map.X(x), y: map.Y(y) }; }).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < items.length; k++) if (items[k].y - items[k - 1].y < 13) items[k].y = items[k - 1].y + 13;
+  // keep the stack inside the plot: shift it up if it runs past the bottom, down if past the top
+  const over = items.length ? items[items.length - 1].y - (map.rect.b - 7) : 0;
+  if (over > 0) items.forEach(it => { it.y -= over; });
+  const under = items.length ? map.rect.t + 7 - items[0].y : 0;
+  if (under > 0) items.forEach(it => { it.y += under; });
+  c.font = `11px ${cssVar('--mono')}`; c.textBaseline = 'middle'; c.textAlign = 'left';
+  for (const it of items) {
+    const x = Math.min(it.x + 4, map.rect.r - 34);
+    c.strokeStyle = it.s.color; c.lineWidth = 2; c.beginPath(); c.moveTo(x, it.y); c.lineTo(x + 10, it.y); c.stroke();
+    labelOn(c, it.s.short, x + 13, it.y, ink, 'left');
+  }
+}
+
+/**
+ * Hover read-out for a chart: a guide line and a tooltip with each series'
+ * value at the pointer (interpolated along the independent axis 'x' or 'y').
+ */
+function chartHover(wrap, cv, map, series, o) {
+  const tip = wrap.querySelector('.fv-tip'), guide = wrap.querySelector('.xl-guide');
+  const along = (pts, t) => {
+    const i0 = o.by === 'y' ? 1 : 0, i1 = 1 - i0;
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1][i0], b = pts[k][i0];
+      if ((t - a) * (t - b) <= 0 && a !== b) return pts[k - 1][i1] + (t - a) / (b - a) * (pts[k][i1] - pts[k - 1][i1]);
+    }
+    return null;
+  };
+  cv.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    if (px < map.rect.l || px > map.rect.r || py < map.rect.t || py > map.rect.b) { tip.hidden = true; guide.hidden = true; return; }
+    const t = o.by === 'y' ? map.invY(py) : map.invX(px);
+    const rows = series.map(s => { const v = along(s.pts, t); return v == null ? '' : `<span><i class="xl-sw" style="background:${s.color}"></i>${s.name}: ${o.fmt(v)}</span>`; }).join('');
+    if (!rows) { tip.hidden = true; guide.hidden = true; return; }
+    tip.innerHTML = `<b>${o.head(t)}</b>${rows}`;
+    tip.hidden = false;
+    guide.hidden = false;
+    if (o.by === 'y') Object.assign(guide.style, { left: map.rect.l + 'px', width: (map.rect.r - map.rect.l) + 'px', top: py + 'px', height: '1px' });
+    else Object.assign(guide.style, { left: px + 'px', width: '1px', top: map.rect.t + 'px', height: (map.rect.b - map.rect.t) + 'px' });
+    const tw = tip.offsetWidth, th = tip.offsetHeight, W = cv.clientWidth, Hh = cv.clientHeight;
+    tip.style.left = (px + 14 + tw > W ? px - tw - 14 : px + 14) + 'px';
+    tip.style.top = Math.max(0, Math.min(py + 14, Hh - th)) + 'px';
+  });
+  cv.addEventListener('pointerleave', () => { tip.hidden = true; guide.hidden = true; });
+}
+
+function renderAcross() {
+  const host = document.getElementById('cfdAcross');
+  if (!host) return;
+  const locs = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field);
+  if (locs.length < 2) { host.innerHTML = '<p class="cap">Needs at least two solved locations.</p>'; return; }
+  const m = ACROSS[FV.across], stale = i => cfdIsStale(i);
+  const name = i => `Location ${i + 1} · z ${CFD_LOCS[i].z} mm${stale(i) ? ' (out of date)' : ''}`;
+  const legend = `<div class="xl-legend">${locs.map(i => `<span class="lg"><i class="xl-sw" style="background:${locColor(i)}"></i>${name(i)}</span>`).join('')}</div>`;
+  const chart = id => `<div class="xl-chart"><canvas id="${id}" role="img"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div>`;
+  const vals = locs.map(i => ({ i, z: CFD_LOCS[i].z, v: m.f(cfdRuns[i]) }));
+  host.innerHTML = `${legend}
+    ${chart('xlMetricChart')}
+    <div class="table-wrap"><table class="cfd-table xl-table"><thead><tr><th>${m.l}${m.u ? `<small>${m.u}</small>` : ''}</th>${vals.map(o => `<th><i class="xl-sw" style="background:${locColor(o.i)}"></i> L${o.i + 1}<small>z ${o.z} mm</small></th>`).join('')}</tr></thead>
+      <tbody><tr><th scope="row">value</th>${vals.map(o => `<td>${fmtNum(o.v)}${stale(o.i) ? ' <small>out of date</small>' : ''}</td>`).join('')}</tr></tbody></table></div>
+    <p class="cap"><b>${m.l}</b> at each location's position across the web${FV.across === 'film' || FV.across === 'gap' ? ' (the gap varies with the blade waviness and fibre-thickness variation set in the sidebar, or a location\'s own gap)' : ''}.</p>
+    ${chart('xlSurf')}
+    <p class="cap"><b>Free surface</b> from the contact line into the film: height above the web against distance downstream of the metering edge.</p>
+    ${chart('xlPress')}
+    <p class="cap"><b>Pressure along the web</b>, inlet to the end of the 2D domain (the dotted line marks the metering edge).</p>
+    ${chart('xlProf')}
+    <p class="cap"><b>u(y) just upstream of the metering edge</b> (0.3 gap before it).</p>`;
+
+  // 1. the chosen quantity against z: markers in the location colours, a neutral line joining them in z order
+  {
+    const cv = document.getElementById('xlMetricChart'), pts = vals.slice().sort((a, b) => a.z - b.z);
+    let lo = Math.min(...pts.map(o => o.v)), hi = Math.max(...pts.map(o => o.v));
+    const pad = (hi - lo) * 0.25 || Math.abs(hi) * 0.05 || 1; lo -= pad; hi += pad;
+    cv.setAttribute('aria-label', `${m.l} against position across the web`);
+    const map = plotChart(cv, 0.32, { x0: 0, x1: CFD_WEB_WIDTH_MM, y0: lo, y1: hi, xl: 'z across the web (mm)', yl: `${m.l}${m.u ? ' (' + m.u + ')' : ''}`, xd: 0, yd: Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(hi - lo || 1)))),
+      s: [{ p: pts.map(o => [o.z, o.v]), c: cssVar('--muted'), w: 1.5 }] });
+    const c = cv.getContext('2d'), surf = cssVar('--surface'), ink = cssVar('--ink');
+    c.font = `11px ${cssVar('--mono')}`; c.textBaseline = 'middle';
+    for (const o of pts) {
+      const x = map.X(o.z), y = map.Y(o.v);
+      c.beginPath(); c.arc(x, y, 5, 0, 7); c.fillStyle = stale(o.i) ? surf : locColor(o.i); c.fill();
+      c.lineWidth = 2; c.strokeStyle = stale(o.i) ? locColor(o.i) : surf; c.stroke();
+      labelOn(c, `L${o.i + 1}`, x + 8, y - 11, ink, 'left');
+    }
+    const wrap = cv.parentElement, tip = wrap.querySelector('.fv-tip');
+    cv.addEventListener('pointermove', e => {
+      const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+      const near = pts.reduce((a, o) => Math.abs(map.X(o.z) - px) < Math.abs(map.X(a.z) - px) ? o : a);
+      if (Math.abs(map.X(near.z) - px) > 30 || py < map.rect.t - 10 || py > map.rect.b + 10) { tip.hidden = true; return; }
+      tip.innerHTML = `<b><i class="xl-sw" style="background:${locColor(near.i)}"></i> ${name(near.i)}</b><span>${m.l}: ${fmtNum(near.v)}${m.u ? ' ' + m.u : ''}</span>`;
+      tip.hidden = false;
+      const tw = tip.offsetWidth, x = map.X(near.z);
+      tip.style.left = (x + 14 + tw > cv.clientWidth ? x - tw - 14 : x + 14) + 'px'; tip.style.top = Math.max(0, map.Y(near.v) - 10) + 'px';
+    });
+    cv.addEventListener('pointerleave', () => { tip.hidden = true; });
+  }
+
+  // 2-4. overlays, one series per location
+  const overlay = (id, aspect, series, o) => {
+    const cv = document.getElementById(id);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const s of series) for (const [x, y] of s.pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    if (o.y0 != null) y0 = o.y0;
+    const pad = 0.06 * (y1 - y0 || 1);
+    cv.setAttribute('aria-label', o.aria);
+    const map = plotChart(cv, aspect, { x0: o.x0 ?? x0, x1: o.x1 ?? x1, y0: o.y0 ?? y0 - pad, y1: y1 + pad, xl: o.xl, yl: o.yl, xd: o.xd ?? 0, yd: o.yd ?? 2,
+      s: series.map(s => ({ p: s.pts, c: s.color, w: 2, dash: s.stale ? [4, 3] : null })), vl: o.vl || [] });
+    endLabels(cv, map, series);
+    chartHover(cv.parentElement, cv, map, series, o);
+  };
+  const ser = (i, pts) => ({ name: name(i), short: `L${i + 1}`, color: locColor(i), stale: stale(i), pts });
+  overlay('xlSurf', 0.32, locs.map(i => { const r = cfdRuns[i].result, pts = []; for (let k = r.iCL; k < r.nx; k++) pts.push([(r.xTop[k] - r.xe) * 1000, r.yTop[k] * 1000]); return ser(i, pts); }),
+    { aria: 'Free surface shape at each location', xl: 'distance downstream of the metering edge (mm)', yl: 'height above the web (mm)', xd: 1, yd: 2, y0: 0, by: 'x', head: t => `${t.toFixed(2)} mm from the edge`, fmt: v => v.toFixed(3) + ' mm' });
+  overlay('xlPress', 0.32, locs.map(i => { const r = cfdRuns[i].result; return ser(i, r.xWeb.map((x, k) => [x * 1000, r.pWeb[k]])); }),
+    { aria: 'Pressure along the web at each location', xl: 'x (mm), inlet → metering edge → film', yl: 'pressure along the web (Pa)', xd: 0, yd: 0, by: 'x', head: t => `x ${t.toFixed(2)} mm`, fmt: v => fmtNum(v) + ' Pa',
+      vl: [{ x: cfdRuns[locs[0]].result.xe * 1000, c: cssVar('--line'), t: 'edge' }] });
+  overlay('xlProf', 0.4, locs.map(i => { const run = cfdRuns[i], x = run.result.xe - 0.3 * run.geo.H; return ser(i, cfdColumn(run.field, run.field.u, x).map(([u, y]) => [u * 1000, y * 1000])); }),
+    { aria: 'Velocity profile just upstream of the metering edge at each location', xl: 'velocity u (mm/s)', yl: 'height above the web y (mm)', xd: 1, yd: 2, y0: 0, by: 'y', head: t => `y ${t.toFixed(3)} mm`, fmt: v => fmtNum(v) + ' mm/s' });
 }
 
 // ---- profiles for one location ----

@@ -309,6 +309,11 @@ details > summary::-webkit-details-marker { display: none; }
 .loc-meta { font-size: 12px; color: var(--muted); }
 .loc-meta b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
 .loc-card .btn { justify-self: start; }
+.xl-chart { position: relative; margin-top: 8px; }
+.xl-guide { position: absolute; background: var(--muted); opacity: .45; pointer-events: none; }
+.xl-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink); }
+.xl-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.xl-table th .xl-sw { margin-right: 2px; }
 .case-table td.case-act, .probe-table td.case-act { white-space: nowrap; text-align: right; }
 .probe-table td small { display: block; }
 .cfd-block .probe-table input.probe-name { width: 110px; font: inherit; font-weight: 600; padding: 2px 4px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ink); }
