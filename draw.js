@@ -48,7 +48,7 @@ function outlinedText(c, text, x, y, color) {
  *   hl: [{y, c:color, t:label}]   horizontal reference lines
  *   vl: [{x, c:color, t:label}]   vertical reference lines
  * Returns the {X,Y} data->pixel mapping functions in case the caller wants
- * to draw something extra on top.
+ * to draw something extra on top, their inverses invX/invY and the plot rect.
  */
 function plotChart(cv, aspectRatio, opts) {
   const { c, w, h } = setupCanvas(cv, aspectRatio);
@@ -107,7 +107,8 @@ function plotChart(cv, aspectRatio, opts) {
     c.setLineDash([]);
   });
 
-  return { X, Y };
+  // (inverse mapping and plot rectangle too, for hover read-outs)
+  return { X, Y, invX: px => opts.x0 + (px - margin.l) / plotW * (opts.x1 - opts.x0), invY: py => opts.y0 + (margin.t + plotH - py) / plotH * (opts.y1 - opts.y0), rect: { l: margin.l, t: margin.t, r: margin.l + plotW, b: margin.t + plotH } };
 }
 
 /** Small status-badge HTML snippet, e.g. pill('Contact line steady', 'ok'). */

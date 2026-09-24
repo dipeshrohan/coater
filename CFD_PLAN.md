@@ -6,7 +6,23 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Remaining feature list, in order:
-## 11. cross-location plots, 12. convergence history plot.
+## 12. convergence history plot.
+
+### Item 11 (done): cross-location plots
+
+"Across the web" section: a chosen quantity (wet film, gap, film/gap,
+contact-line height, peak pressure, max |V|, residence time, dissipation,
+Q) against the locations' positions z -- markers in the location colours,
+a neutral line joining them in z order, direct labels, and a value table;
+and three overlays of all four locations: the free surface from the
+contact line into the film, the pressure along the web, and u(y) just
+upstream of the edge. Location colours = categorical slots 1-4 of the
+dataviz reference palette, validated on this app's surfaces (light #fff:
+two below 3:1, so direct labels + table; dark #161b22: all pass, own dark
+steps). Legend and direct labels on every chart (text in ink, colour on
+the mark), hover read-outs (guide line + every location's value), out-of-
+date runs dashed / hollow. plotChart (draw.js) now also returns its
+inverse mapping and plot rectangle for hover.
 
 ### Item 10 (done): saved / named probes
 
