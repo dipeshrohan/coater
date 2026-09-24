@@ -117,6 +117,7 @@ function femQuality(m, st) {
  *   freeze: surface heights fixed (flow only); s0, h0(c): starting contact-line distance / heights
  *   homotopy: if Newton stalls, follow R(x) = (1 - lambda) R(x_start), lambda 0 -> 1
  *   flatEnd: no flow -- the outlet end of the surface is set flat instead of its kinematic row
+ *   webSlip: alpha / sqrt(k) (1/m) -- Beavers-Joseph slip over the porous web instead of no slip
  *   tol, maxIter, onIteration
  */
 function solveFEM(o) {
@@ -159,8 +160,12 @@ function solveFEM(o) {
   // ---- Dirichlet conditions ----
   const dirVal = new Float64Array(ND), isDir = new Uint8Array(ND);
   const setDir = (d, v) => { isDir[d] = 1; dirVal[d] = v; };
+  // web: no flow through it; tangentially either moving with the web (no slip) or, with webSlip =
+  // alpha / sqrt(k) (1/m), the Beavers-Joseph condition du/dy = (alpha / sqrt k)(u - U) (boundary term below)
+  const lamS = o.webSlip ? o.webSlip * Hr : 0;
   for (let c = 0; c < NC; c++) {
-    setDir(dU[nid(c, 0)], Us); setDir(dV[nid(c, 0)], 0);                // web
+    if (!lamS) setDir(dU[nid(c, 0)], Us);
+    setDir(dV[nid(c, 0)], 0);                                            // web
     if (kind(c) !== 'free') { setDir(dU[nid(c, NR - 1)], Uts); setDir(dV[nid(c, NR - 1)], 0); } // blade / face / contact line
   }
   for (let k = 0; k < NR; k++) setDir(dV[nid(0, k)], 0);                 // inlet: no cross-flow
@@ -272,7 +277,37 @@ function solveFEM(o) {
   const localDofs = (nodes, pn) => { const d = new Int32Array(22); for (let a = 0; a < 9; a++) { d[a] = dU[nodes[a]]; d[9 + a] = dV[nodes[a]]; } for (let i = 0; i < 4; i++) d[18 + i] = dP[pn[i]]; return d; };
 
   /** Boundary terms: inlet/outlet traction, free-surface tension, kinematic rows. Adds into R (and K for the flow dofs). */
+  /**
+   * Beavers-Joseph slip along the web (bottom edge of element row 0): the wall shear stress
+   * tau = mu (du/dy) with du/dy = lamS (u - U), as the boundary term + int tau w_x ds (for u's
+   * test functions; v = 0 there). mu is the local apparent viscosity at the wall, so for any
+   * rheology this imposes the velocity-gradient form of the condition exactly. out: the 3 edge
+   * nodes' u rows.
+   */
+  const B0 = q2(-1), dB0 = dq2(-1);
+  function slipEdge(ex, out) {
+    out.fill(0);
+    const nodes = elemNodes(ex, 0);
+    for (const e of FEM_EDGE) {
+      let xs = 0, xt = 0, ys = 0, yt = 0, us = 0, ut = 0, vs = 0, vt = 0, u = 0;
+      for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+        const n = nodes[b * 3 + a], Ns = e.dN[a] * B0[b], Nt = e.N[a] * dB0[b], uu = sol[dU[n]], vv = sol[dV[n]];
+        xs += X[n] * Ns; xt += X[n] * Nt; ys += Y[n] * Ns; yt += Y[n] * Nt;
+        us += uu * Ns; ut += uu * Nt; vs += vv * Ns; vt += vv * Nt; u += uu * e.N[a] * B0[b];
+      }
+      const J = xs * yt - xt * ys;
+      const ux = (yt * us - ys * ut) / J, uy = (xs * ut - xt * us) / J, vx = (yt * vs - ys * vt) / J, vy = (xs * vt - xt * vs) / J;
+      const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx)), ds = Math.hypot(xs, ys);
+      const tau = muStar(gd) * lamS * (u - Us);
+      for (let a = 0; a < 3; a++) out[a] += e.w * tau * e.N[a] * ds;
+    }
+  }
+  const slipTmp = new Float64Array(3);
   function boundary(R, addK, exFrom = 0, exTo = nEx - 1) {
+    if (lamS) for (let ex = exFrom; ex <= exTo; ex++) {
+      slipEdge(ex, slipTmp);
+      for (let a = 0; a < 3; a++) R[dU[nid(2 * ex + a, 0)]] += slipTmp[a];
+    }
     // inlet (c = 0) and outlet traction: -int t . w ds, t = -p_b(y) n
     const edgeX = (c, side) => {
       const pf = side === 'in' ? o.inlet.p : o.outlet.p, nsgn = side === 'in' ? -1 : 1;
@@ -383,6 +418,19 @@ function solveFEM(o) {
       for (let a = 0; a < 22; a++) { const r = ld[a]; if (isDir[r]) continue; for (let b = 0; b < 22; b++) { const v = KL[a * 22 + b]; if (v !== 0) LU[r * W + ld[b] - r + kl] += v; } }
     }
     boundary(new Float64Array(ND), addK);
+    if (lamS) {
+      // the slip term's Jacobian (incl. the wall viscosity's shear-rate dependence), by finite differences per element
+      const b0 = new Float64Array(3), b1 = new Float64Array(3);
+      for (let ex = 0; ex < nEx; ex++) {
+        slipEdge(ex, b0);
+        for (const n of elemNodes(ex, 0)) for (const d of [dU[n], dV[n]]) {
+          if (isDir[d]) continue;
+          const keep = sol[d], h = 1e-7 * Math.max(1, Math.abs(keep));
+          sol[d] = keep + h; slipEdge(ex, b1); sol[d] = keep;
+          for (let a = 0; a < 3; a++) { const r = dU[nid(2 * ex + a, 0)]; if (!isDir[r]) LU[r * W + d - r + kl] += (b1[a] - b0[a]) / h; }
+        }
+      }
+    }
     for (let d = 0; d < ND; d++) if (isDir[d]) LU[d * W + kl] = 1;
     // geometry columns by finite differences, from the elements that hold the
     // perturbed spine(s) only (a free spine's height moves that spine's nodes
@@ -703,7 +751,8 @@ function staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd,
  * opts: hFn (blade height over [0, xe]), xe, faceDeg, contactDeg, U, Pup, rho, g, gamma,
  *       mu(gd), gdMin, Ld (free film kept in the domain), nEb, nEf, nEs, nEy, gradeB,
  *       gradeS, gradeY, fInfGuess (film thickness guess for the static start; default H),
- *       mode ('pinned' | 'climbed', no flow only: force it), onStage(text), onIteration,
+ *       mode ('pinned' | 'climbed', no flow only: force it), webSlip (alpha / sqrt k, 1/m: Beavers-Joseph
+ *       slip over the porous web; omitted = no slip), onStage(text), onIteration,
  *       onMesh / onLayout (test hooks: the mesh chosen, each layout's quality)
  * Returns solveFEM's result plus meshInfo { mode, cCL, cCorner, nEy, quality } and
  * meniscus { mode, alphaMaxDeg, s, leaveDeg, static }, or { error } for an unsupported case.
@@ -714,7 +763,8 @@ function solveCoaterFEM(opts) {
   const nEb = opts.nEb ?? 40, nEf = opts.nEf ?? 6, nEs = opts.nEs ?? 24, nEy = opts.nEy ?? 8, gradeB = opts.gradeB ?? 1.6, gradeS = opts.gradeS ?? 1.4, gradeY = opts.gradeY ?? 1.5;
   const xEnd = xe + Ld;
   const base = { U, rho, g, gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: H, Ur: Math.abs(U) || 1e-3,
-    inlet: { type: 'traction', p: y => Pup - rho * g * y }, outlet: { type: 'plug' }, flatEnd: !U, tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration };
+    inlet: { type: 'traction', p: y => Pup - rho * g * y }, outlet: { type: 'plug' }, flatEnd: !U, webSlip: opts.webSlip,
+    tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration };
 
   function buildMesh(mode, s0, stat, fan) {
     // face elements: nEf for a climb of H or more, fewer (at least one) for a short one
@@ -1041,7 +1091,7 @@ function coaterGrid(r, geo) {
     iCorner, iCL, mode: r.meniscus.mode, sCL: r.meniscus.mode === 'climbed' ? r.surface.s : 0,
     clX: g.gx[top(iCL)], clY: g.gy[top(iCL)], leaveDeg: r.meniscus.leaveDeg, alphaMaxDeg: r.meniscus.alphaMaxDeg,
     xEnd: g.gx[top(nx - 1)], hEnd: g.gy[top(nx - 1)],
-    xWeb, pWeb, xTop, yTop, pTop, pMax, pMaxLoc: [g.gx[kMax], g.gy[kMax]], pMin, pMinLoc: [g.gx[kMin], g.gy[kMin]],
+    xWeb, pWeb, uWeb: Array.from({ length: nx }, (_, i) => g.u[i]), xTop, yTop, pTop, pMax, pMaxLoc: [g.gx[kMax], g.gy[kMax]], pMin, pMinLoc: [g.gx[kMin], g.gy[kMin]],
     pMinAtCorner: Math.hypot(g.gx[kMin] - geo.xe, g.gy[kMin] - geo.H) < 0.3 * geo.H,       // in the edge corner's singular zone
     mesh: { nEx: (nx - 1) / 2, nEy: (ny - 1) / 2, quality: r.meshInfo.quality },
   };

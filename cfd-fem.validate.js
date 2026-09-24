@@ -20,6 +20,10 @@
  *     solver (cfd-gap-solver.js), an independent method.
  *  7. Coating flow of a yield-stress fluid with the meniscus: converges,
  *     conserves mass, and the nodal viscosity follows the law.
+ *  8. Beavers-Joseph slip over the porous web: Couette-Poiseuille with the
+ *     slip condition, exact; a yield-stress fluid meets the condition
+ *     du/dy = (alpha / sqrt k)(u - U) pointwise, converging with the mesh;
+ *     the coating flow with slip converges and conserves mass.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -156,6 +160,35 @@ section('7. Coating flow of a yield-stress fluid with the meniscus');
   const eps = 1e-3 * U / H;
   for (let k = 0; k < r.mu.length; k++) e = Math.max(e, Math.abs(r.mu[k] / law(Math.sqrt(r.gd[k] ** 2 + eps * eps)) - 1));
   check(e < 1e-12, `nodal viscosity = the law at the nodal shear rate (${e.toExponential(1)})`);
+}
+
+// ---------------------------------------------------------------------
+section('8. Beavers-Joseph slip over the porous web');
+{
+  const Hc = 1e-3, L = 5e-3, U = 0.1, mu = 2, dp = 50, G = dp / L;
+  for (const lam of [1e3, 1e5]) {
+    const r = solveFEM({ mesh: { nEx: 6, nEy: 4, spineFoot: c => c / 12 * L, spineTop: c => [c / 12 * L, Hc] }, U, rho: 0, mu: () => mu, Hr: Hc, Ur: U, webSlip: lam,
+      inlet: { type: 'traction', p: () => dp }, outlet: { type: 'traction', p: () => 0 }, tol: 1e-12 });
+    // exact: u = -G y^2 / (2 mu) + B y + C, u(H) = 0, u'(0) = lam (u(0) - U)
+    const C = (G * Hc * Hc / (2 * mu) + lam * U * Hc) / (1 + lam * Hc), B = lam * (C - U), Qex = -G * Hc ** 3 / (6 * mu) + B * Hc * Hc / 2 + C * Hc;
+    let e = 0;
+    for (let n = 0; n < r.x.length; n++) e = Math.max(e, Math.abs(r.u[n] - (-G * r.y[n] ** 2 / (2 * mu) + B * r.y[n] + C)));
+    check(r.converged && Math.abs(r.Q / Qex - 1) < 1e-9 && e / U < 1e-9, `slip length ${(1e6 / lam).toFixed(0)} um: flow rate and velocity exact (${Math.abs(r.Q / Qex - 1).toExponential(1)}, ${(e / U).toExponential(1)}), slip ${((C - U) / U * 100).toFixed(2)}% of U`);
+  }
+  const Ug = 0.28 / 60, Hg = 1.7e-3, Lg = 0.01, lam = 2e4, errs = [];
+  for (const nEy of [8, 16, 32]) {
+    const r = solveFEM({ mesh: { nEx: 10, nEy, spineFoot: c => c * Lg / 20, spineTop: c => [c * Lg / 20, Hg] }, U: Ug, rho, g, mu: gd => S.muEffLocal(gd, 10.5, 5, 0.6), Hr: Hg, Ur: Ug, webSlip: lam,
+      inlet: { type: 'traction', p: y => 720 - rho * g * y }, outlet: { type: 'traction', p: y => -rho * g * y } });
+    let w = 0;
+    for (let c = 4; c < r.NC - 4; c++) { const n = c * r.NR; w = Math.max(w, Math.abs(r.tauXY[n] / r.mu[n] - lam * (r.u[n] - Ug)) / Math.abs(lam * (r.u[n] - Ug))); }
+    errs.push(r.converged ? w : Infinity);
+  }
+  check(errs[1] < errs[0] / 3 && errs[2] < errs[1] / 3 && errs[2] < 1e-3, `yield-stress fluid: du/dy - (alpha/sqrt k)(u - U) at the web ${errs.map(e => (e * 100).toFixed(3) + '%').join(' -> ')} as the rows double`);
+  const r = solveCoaterFEM({ hFn: () => H, xe: xe0, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 12e-3,
+    nEb: 10, nEf: 6, nEs: 24, nEy: 6, fInfGuess: 0.5 * H, webSlip: 1 / 20e-6 });
+  const gr = coaterGrid(r, { xe: xe0, H, faceDeg: 90, contactDeg: 35, U: 0.1 });
+  check(r.converged && Math.abs(gr.massError) < 1e-4 && Math.abs(gr.uWeb[gr.nx - 1] - 0.1) < 1e-12,
+    `coating flow with 20 um slip length: converged, ${r.meniscus.mode}, film ${(r.Q / 0.1 * 1e3).toFixed(4)} mm, mass ${(gr.massError * 100).toFixed(4)}%, plug (no slip) at the outlet`);
 }
 
 console.log(allPass ? '\nALL PASS' : '\nSOME CHECKS FAILED');

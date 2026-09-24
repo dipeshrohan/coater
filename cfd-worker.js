@@ -6,7 +6,9 @@
  * domain to the oven (cfd-solver.js's solveDownstreamFilm).
  *
  * Message in:  { geometry: 'round'|'flat', H, L, R, Xup, exitAngle, contactDeg,
- *                U, Pup, rho, muRef, ty, n, muRep, gamma, g, ovenDistance }
+ *                U, Pup, rho, muRef, ty, n, muRep, gamma, g, ovenDistance,
+ *                webSlip (alpha / sqrt(k), 1/m: Beavers-Joseph slip over the porous
+ *                fibre; 0 = no slip) }
  *              lengths in m, angles in degrees, U in m/s, Pup in Pa,
  *              muRef = the slider's viscosity at 2.7 1/s (the rheology
  *              law's own reference), muRep = mu at the representative
@@ -48,7 +50,7 @@ onmessage = e => {
     const nEb = Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
     const r = solveCoaterFEM({
       hFn: shape.h, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg,
-      U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
+      U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H, webSlip: o.webSlip || 0,
       Ld: Math.max(12e-3, 8 * H), nEb, nEf: 6, nEs: 24, nEy: 6, fInfGuess: qLub / o.U,
       onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration: post,
     });
@@ -64,8 +66,9 @@ onmessage = e => {
       let i = 1;
       while (i < g.iCorner - 1 && g.xWeb[i] < 0.5 * xe) i++;
       const G = -(g.pWeb[i + 1] - g.pWeb[i - 1]) / (g.xWeb[i + 1] - g.xWeb[i - 1]);
-      const p1 = solveFullyDeveloped1D({ Ly: o.H, U: o.U, G, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
-      prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd), x: g.xWeb[i], G };
+      // (with slip over the fibre, the wall moves at the solution's own web-surface velocity there)
+      const p1 = solveFullyDeveloped1D({ Ly: o.H, U: g.uWeb[i], G, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
+      prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd), x: g.xWeb[i], G, uWall: g.uWeb[i] };
     }
 
     // Beyond the 2D domain: the 1D thin-film development (a reuse of the

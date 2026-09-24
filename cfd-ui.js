@@ -27,7 +27,25 @@
 //    web in the machine direction (90 = square to the web). The meniscus
 //    meets it; its contact angle there is the sidebar's contact angle on the
 //    blade, varied across the web as the Contact line tab does.
-const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90 };
+//  Fibre (the porous web): the slurry does not enter it (it is there to let
+//    the drying air through), but slips over its porous surface (Beavers-
+//    Joseph). fd fibre diameter (um), por porosity, kozeny the Kozeny constant
+//    (permeability by Kozeny-Carman), alphaBJ the Beavers-Joseph coefficient.
+//  Drying air through the fibre in the oven: airU its superficial speed
+//    (m/s), airT its temperature (C) -- for the Darcy numbers only (the air's
+//    path through the fibre is not modelled).
+const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, fd: 10, por: 0.85, kozeny: 5, alphaBJ: 1, airU: 1, airT: 100 };
+
+/** Fibre permeability (m^2), Kozeny-Carman for a bed of fibres: k = d^2 eps^3 / (16 K (1 - eps)^2). */
+function fibrePermeability() {
+  const d = CFDG.fd * 1e-6, e = CFDG.por;
+  return d * d * e ** 3 / (16 * CFDG.kozeny * (1 - e) ** 2);
+}
+/** Air viscosity (Sutherland's law) and density (ideal gas at 1 atm) at T degC. */
+function airProps(Tc) {
+  const T = Tc + 273.15;
+  return { mu: 1.716e-5 * Math.pow(T / 273.15, 1.5) * (273.15 + 110.4) / (T + 110.4), rho: 101325 / (287.05 * T) };
+}
 const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab already uses
 const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z }));
 const cfdRuns = CFD_LOCS.map(() => ({ status: 'idle' }));
@@ -77,14 +95,14 @@ function cfdGeometry(z) {
   const H = cfdLocalGapMm(z) / 1000;        // mm -> m, gap at the metering edge
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
-    contactDeg: cfdLocalContactDeg(z),
+    contactDeg: cfdLocalContactDeg(z), webSlip: CFDG.alphaBJ / Math.sqrt(fibrePermeability()),
     Pup: P.Pup * 1000,                      // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: P.mu,                            // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
     muRep: muEff(U / H),                    // at the representative shear rate U/H: one-viscosity estimates only
     ty: P.ty, n: P.n, rho: RHO, gamma: P.g, g: GRAVITY, ovenDistance: P.oven,
   };
 }
-const cfdInputsKey = geo => JSON.stringify([geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
+const cfdInputsKey = geo => JSON.stringify([geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(CFD_LOCS[i].z));
 
 function runLocation(i) {
@@ -116,7 +134,7 @@ function runLocation(i) {
   };
   worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; renderCFD(); };
   worker.postMessage({
-    geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg,
+    geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
     U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
     gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance,
   });
@@ -196,6 +214,7 @@ function viewCFD() {
       <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the yield-stress / shear-thinning model of the other tabs says. Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
       <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
+      <b>Fibre.</b> The slurry does not enter the fibre (its pores are there to let the drying air through), so no slurry crosses the web surface; over that porous surface the slurry slips (Beavers&ndash;Joseph: du/dy = (&alpha;/&radic;k)(u &minus; U) at the surface), with the fibre's permeability k from Kozeny&ndash;Carman. Drying air: Darcy's law for the air speed and temperature you set; the air's path through the fibre in the oven is not modelled.
       <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Flat land: the lubrication model's geometry, for comparison. The film is followed in 2D for a stretch downstream of the edge, then by the 1D thin-film model to the oven (under Profiles).
       <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses.
       <b>Flow tracking.</b> Streamlines are integrated (RK4) through the interpolated velocity field and checked against the stream function, which is constant along a true streamline; the drift is reported under Flow metrics.
@@ -213,6 +232,20 @@ function viewCFD() {
         <label class="fv-ctl"${CFDG.shape === 'round' ? '' : ' hidden'}>Pool edge <input type="number" id="cfdPool" min="5" max="150" step="5" value="${CFDG.pool}"> mm upstream</label>
         <label class="fv-ctl">Exit face <input type="number" id="cfdExit" min="30" max="150" step="5" value="${CFDG.exitAngle}"> &deg; to the web</label>
         <span class="fv-why" id="cfdGeoNote"></span>
+      </div>
+      <div class="fv-bar cfd-geo">
+        <span class="fv-ctl"><b>Fibre</b> (web, porous)</span>
+        <label class="fv-ctl">Fibre diameter <input type="number" id="cfdFd" min="0.5" max="200" step="0.5" value="${CFDG.fd}"> µm</label>
+        <label class="fv-ctl">Porosity <input type="number" id="cfdPor" min="0.3" max="0.99" step="0.01" value="${CFDG.por}"></label>
+        <label class="fv-ctl">Kozeny constant <input type="number" id="cfdKoz" min="1" max="20" step="0.5" value="${CFDG.kozeny}"></label>
+        <label class="fv-ctl">Beavers–Joseph α <input type="number" id="cfdAlpha" min="0.01" max="10" step="0.05" value="${CFDG.alphaBJ}"></label>
+        <span class="fv-why">assumed: set to your fibre</span>
+      </div>
+      <div class="fv-bar cfd-geo">
+        <span class="fv-ctl"><b>Drying air</b> through the fibre</span>
+        <label class="fv-ctl">Air speed <input type="number" id="cfdAirU" min="0" max="50" step="0.1" value="${CFDG.airU}"> m/s</label>
+        <label class="fv-ctl">Air temperature <input type="number" id="cfdAirT" min="0" max="400" step="5" value="${CFDG.airT}"> °C</label>
+        <span class="fv-why">assumed</span>
       </div>
     </section>
 
@@ -265,6 +298,7 @@ function viewCFD() {
     </section>
 
     <section class="cfd-block"><div class="cfd-head"><h3>Flow metrics</h3></div><div id="cfdMetrics"></div></section>
+    <section class="cfd-block"><div class="cfd-head"><h3>Fibre (porous web)</h3></div><div id="cfdFibre"></div></section>
     <section class="cfd-block"><div class="cfd-head"><h3 id="cfdProfTitle">Profiles</h3></div><div id="cfdProfiles"></div></section>`;
 
   document.getElementById('cfdRunAll').onclick = runAllLocations;
@@ -274,6 +308,8 @@ function viewCFD() {
     el.addEventListener('change', () => { const v = +el.value; if (Number.isFinite(v)) CFDG[key] = Math.min(hi, Math.max(lo, v)); el.value = CFDG[key]; renderCFD(); });
   };
   geoNum('cfdR', 'R', 10, 500); geoNum('cfdPool', 'pool', 5, 150); geoNum('cfdExit', 'exitAngle', 30, 150);
+  geoNum('cfdFd', 'fd', 0.5, 200); geoNum('cfdPor', 'por', 0.3, 0.99); geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAlpha', 'alphaBJ', 0.01, 10);
+  geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400);
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('fvMore').addEventListener('toggle', e => { FV.settingsOpen = e.target.open; });
 
@@ -315,6 +351,7 @@ function renderCFD() {
   renderFlowPlots();
   renderLegend();
   renderMetrics();
+  renderFibre();
   renderProfiles();
 }
 
@@ -611,6 +648,39 @@ function renderMetrics() {
     <p class="fv-note">Pressure is gauge pressure, ambient air = 0, including the hydrostatic head; at the free surface it balances surface tension. Left out on purpose: velocity at the active metering edge (a no-slip solid corner, so 0 by definition).</p>`;
 }
 
+/** Fibre results: permeability and slip for the gap flow, and the drying air's Darcy numbers. */
+function renderFibre() {
+  const host = document.getElementById('cfdFibre');
+  if (!host) return;
+  const compare = FV.view === 'compare', idx = compare ? CFD_LOCS.map((_, i) => i) : [FV.view];
+  const k = fibrePermeability(), eps = CFDG.por, d = CFDG.fd * 1e-6, air = airProps(CFDG.airT), ua = CFDG.airU;
+  const G = air.mu * ua / k, Re = air.rho * (ua / eps) * d / air.mu, tf = P.tf / 1000;
+  // slip along the web under the blade, from each run
+  const slip = r => {
+    const q = r.result;
+    let s = 0, m = 0, n = 0;
+    for (let i = 0; i <= q.iCorner; i++) { const v = (q.uWeb[i] - r.geo.U) / r.geo.U; s += v; m = Math.min(m, v); n++; }
+    return `${(s / n * 100).toFixed(3)} <small>most ${(m * 100).toFixed(3)}</small>`;
+  };
+  const perLoc = [
+    ['Darcy number k/H²', 'at the metering edge', r => (k / (r.geo.H * r.geo.H)).toExponential(2)],
+    ['Slip at the fibre surface under the blade, (u − U)/U', '% (mean; most negative)', r => r.result.uWeb ? slip(r) : '—'],
+  ];
+  const head = compare ? `<tr><th>Per location</th>${idx.map(i => `<th>Location ${i + 1}<small>z ${CFD_LOCS[i].z} mm</small></th>`).join('')}</tr>` : '';
+  const locRows = idx.some(i => cfdRuns[i].field) ? perLoc.map(([name, unit, fn]) => `<tr><th scope="row">${name}${unit ? `<small>${unit}</small>` : ''}</th>${idx.map(i => `<td>${cfdRuns[i].field ? fn(cfdRuns[i]) : '—'}</td>`).join('')}</tr>`).join('') : '';
+  const row = (name, unit, val) => `<tr><th scope="row">${name}${unit ? `<small>${unit}</small>` : ''}</th><td${compare ? ` colspan="${idx.length}"` : ''}>${val}</td></tr>`;
+  host.innerHTML = `<div class="table-wrap"><table class="cfd-table${compare ? ' cmp' : ''}">${head ? `<thead>${head}</thead>` : ''}<tbody>
+    ${row('Permeability k, Kozeny–Carman', 'm² (darcy)', `${k.toExponential(2)} <small>${fmtNum(k / 9.869233e-13)} D</small>`)}
+    ${row('Slip length √k / α', 'µm', fmtNum(Math.sqrt(k) / CFDG.alphaBJ * 1e6))}
+    ${locRows}
+    ${row('Drying air: viscosity, density', `at ${CFDG.airT} °C`, `${(air.mu * 1e6).toFixed(2)} µPa·s, ${air.rho.toFixed(3)} kg/m³`)}
+    ${row('Drying air: pressure gradient along its path in the fibre, μu/k', 'kPa per mm of path', fmtNum(G / 1e6))}
+    ${row('Drying air: pressure drop across the fibre thickness', `Pa, if it crosses the ${P.tf} mm fibre`, fmtNum(G * tf))}
+    ${row('Drying air: pore Reynolds number ρ(u/ε)d/μ', '', `${fmtNum(Re)} <small>${Re < 1 ? "Darcy's law holds (below 1)" : "above 1: inertial losses add to Darcy's law (not included)"}</small>`)}
+  </tbody></table></div>
+    <p class="fv-note">The slurry sees the fibre as a solid, porous surface: nothing crosses it, but the slurry slips over it (Beavers–Joseph). The drying air's numbers follow from Darcy's law for the speed you set; its path through the fibre in the oven (up through it, along it, or with a porous film) is not known, so its pressure field is not solved.</p>`;
+}
+
 // ---- profiles for one location ----
 
 /** Height of the top boundary at x (m) beyond the metering edge (free surface or face); for telling air from blade. */
@@ -744,7 +814,7 @@ function renderProfiles() {
   const hOven = filmOk ? r.film.h[r.film.h.length - 1] : null;
   host.innerHTML = `
     <canvas id="cfdProfile" role="img" aria-label="Velocity profiles across the gap at three stations"></canvas>
-    <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to just upstream of the metering edge${r.prof1D ? `, against the exact fully developed profile (dashed) for the pressure gradient the solution has at mid-land (${fmtNum(r.prof1D.G / 1000)} kPa/m): they must coincide at mid-land` : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p>
+    <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to just upstream of the metering edge${r.prof1D ? `, against the exact fully developed profile (dashed) for the pressure gradient (${fmtNum(r.prof1D.G / 1000)} kPa/m) and fibre-surface velocity (slip ${((r.prof1D.uWall / geo.U - 1) * 100).toFixed(2)}% of U) the solution has at mid-land: they must coincide there` : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p>
     <canvas id="cfdPress" role="img" aria-label="Pressure along the web and the top boundary"></canvas>
     <p class="cap"><b>Pressure along the flow</b>: along the web (solid) and along the top boundary (dashed: blade, exit face, then the free surface, where it balances surface tension), from the bead pressure at the inlet, through the metering edge, into the film.${round ? ' The web drags slurry into the narrowing gap, which builds pressure above the bead pressure before it falls toward the edge.' : ''} The axis leaves out the edge corner itself, where pressure is singular.</p>
     <canvas id="cfdVisc" role="img" aria-label="Apparent viscosity across the gap"></canvas>
