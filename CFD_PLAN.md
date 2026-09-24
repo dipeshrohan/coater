@@ -7,10 +7,28 @@ drift out of sync with what's actually built.
 
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
-## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines,
+## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots, 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-5 (done): cut lines
+
+User's choices: drawn by clicking two points on the plot; several lines,
+named (C1, C2 ... renamable), their charts stacked (one chart per chosen
+field, all charted lines overlaid); a 'Cut lines' tab in the results dock;
+one location at a time, in Compare one chosen line with the four
+locations overlaid; CSV export.
+- Lines in metres, shared by all locations, kept in local storage and in
+  saved cases. 'Cut line' in the toolbar arms placing (rubber band from
+  the start to the pointer, Esc cancels); placing a line opens the tab.
+- cutProfile samples 200 points; points outside the fluid (blade, air)
+  are gaps in the charts and empty cells in the CSV (inside_fluid 0).
+- Up to four lines charted at once, in categorical slots 5-8 (slots 1-4
+  are the locations' colours); others listed, muted. Direct end labels
+  plus a legend; hover reads every line at the same distance.
+- Charts of never-negative fields start at zero. Below 1600 px the Cut
+  line and Probes buttons show icons only (toolbar stays on one line).
 
 ### GUI-4 (done): contour lines
 

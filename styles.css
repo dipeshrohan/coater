@@ -670,6 +670,9 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .cfd-wb .vp-bar { gap: 6px 8px; }
 .vp-bar #fvBase { max-width: 172px; }
 .cfd-wb .vp-bar .fv-chk { font-size: 12.5px; }
+@media (max-width: 1599px) {
+  .hide-mid { display: none; }
+}
 @media (max-width: 1365px) {
   .hide-narrow { display: none; }
   .wb-body { grid-template-columns: var(--tree-w, 292px) 5px minmax(0, 1fr); }

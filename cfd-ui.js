@@ -171,6 +171,33 @@ function addProbe(x, y, name) {
   cfdProbes.push({ name: (name || '').trim() || 'P' + n, x, y });
   saveProbes();
 }
+// Cut lines: named straight lines (m) shared by all locations, kept in local storage; the fields
+// along them are charted in the Cut lines tab. placeCut: null, or 'start' / { x1, y1 } while drawing one.
+// While charted (show), each has one of the categorical slots 5-8 (slots 1-4 are the locations').
+const CUTS_KEY = 'bladeCoatDefectLab.cfdCuts.v1';
+const CUT_COLORS = { light: ['#e87ba4', '#008300', '#4a3aa7', '#e34948'], dark: ['#d55181', '#008300', '#9085e9', '#e66767'] };
+const cutColor = q => q.slot != null ? CUT_COLORS[isDarkTheme() ? 'dark' : 'light'][q.slot] : cssVar('--muted');
+let cfdCuts = (() => { try { const a = JSON.parse(localStorage.getItem(CUTS_KEY) || '[]'); return Array.isArray(a) ? a.filter(q => q && typeof q.name === 'string' && ['x1', 'y1', 'x2', 'y2'].every(k => Number.isFinite(q[k]))) : []; } catch (e) { return []; } })();
+let placeCut = null;
+function saveCuts() { try { localStorage.setItem(CUTS_KEY, JSON.stringify(cfdCuts)); } catch (e) { /* storage blocked: cut lines live for this session only */ } }
+const freeCutSlot = () => [0, 1, 2, 3].find(k => !cfdCuts.some(q => q.show && q.slot === k));
+function addCut(x1, y1, x2, y2) {
+  let n = cfdCuts.length + 1;
+  while (cfdCuts.some(q => q.name === 'C' + n)) n++;
+  const slot = freeCutSlot();
+  cfdCuts.push({ name: 'C' + n, x1, y1, x2, y2, show: slot != null, slot: slot ?? null });
+  FV.cutSel = cfdCuts.length - 1;
+  saveCuts();
+}
+/** A field's values along a cut line: n points from its start; s = distance (m); v = null where the point is outside the fluid. */
+function cutProfile(f, q, arr, scale, n = 200) {
+  const L = Math.hypot(q.x2 - q.x1, q.y2 - q.y1), out = [];
+  for (let k = 0; k < n; k++) {
+    const t = k / (n - 1), x = q.x1 + t * (q.x2 - q.x1), y = q.y1 + t * (q.y2 - q.y1);
+    out.push({ s: t * L, x, y, v: fieldInside(f, x, y) ? sampleField(f, arr, x, y) * scale : null });
+  }
+  return out;
+}
 const cfdWorkers = CFD_LOCS.map(() => null);
 let cfdAutoStarted = false;
 
@@ -188,6 +215,8 @@ const FV = {
   convOpen: false,        // convergence: solve-sequence table expanded
   tree: { geo: true, rheo: true, fibre: false, air: false, locs: true },   // model tree: CFD groups open
   dock: 'metrics',        // results panel shown
+  cutFields: ['speed', 'pressure'],   // fields charted along the cut lines
+  cutSel: 0,              // Compare view: the cut line charted (its four locations overlaid)
   zoom: {},               // flow plots: each location's zoom window { x0, x1, y0, y1 } (m); none = the whole domain
   boxZoom: false,         // toolbar toggle: a drag draws a zoom box (else Shift+drag does)
   cmap: 'jet',            // colour map of the fields: 'jet' (rainbow) or 'blue' (the colour-blind safe blue / blue-red)
@@ -509,7 +538,8 @@ function viewCFD() {
             <p class="fv-note">One colour scale per plot: colouring the streamlines or vectors switches the field colours off.</p>
           </div>
         </details>
-        <button class="tool-btn" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}" title="Place named probes by clicking the plot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="hide-narrow">${placeProbes ? 'Done placing' : 'Probes'}</span></button>
+        <button class="tool-btn" type="button" id="cfdCutPlace" aria-pressed="${!!placeCut}" title="Draw a cut line: click its start, then its end on the plot (Esc cancels)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5l11-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M1.2 10.9l2.6 3.2M12.2 1.9l2.6 3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="hide-mid">${placeCut ? 'Cancel line' : 'Cut line'}</span></button>
+        <button class="tool-btn" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}" title="Place named probes by clicking the plot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="hide-mid">${placeProbes ? 'Done placing' : 'Probes'}</span></button>
         <span class="vp-spacer"></span>
         <details class="vp-pop vp-pop-r" id="cfdExport" hidden><summary class="tool-btn" title="Export CSV">Export</summary>
           <div class="pop-body pop-menu">
@@ -518,6 +548,7 @@ function viewCFD() {
             <button class="menu-item" type="button" id="cfdCsvBound">Boundaries (web, blade, face, free surface)</button>
             <button class="menu-item" type="button" id="cfdCsvMetrics">Flow metrics table</button>
             <button class="menu-item" type="button" id="cfdCsvProbes">Probes</button>
+            <button class="menu-item" type="button" id="cfdCsvCuts">Cut lines (every field along each line)</button>
           </div>
         </details>
       </div>
@@ -531,7 +562,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('cases', 'Saved cases')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('cases', 'Saved cases')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
         </div>
         <div class="dock-body">
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
@@ -544,6 +575,7 @@ function viewCFD() {
               <span class="fv-why">or use Place probes in the toolbar and click the plot</span>
             </div>
             <div id="cfdProbes"></div>`)}
+          ${panel('cuts', '<div id="cfdCuts"></div>')}
           ${panel('across', `<div class="fv-bar"><label class="fv-ctl">Quantity <select id="xlMetric">${Object.entries(ACROSS).map(([k, m]) => opt(k, m.l, FV.across)).join('')}</select></label></div>
             <div id="cfdAcross"></div>`)}
           ${panel('profiles', '<h3 class="dock-h" id="cfdProfTitle">Profiles</h3><div id="cfdProfiles"></div>')}
@@ -599,7 +631,9 @@ function viewCFD() {
   document.getElementById('cfdCsvBound').onclick = () => exportBoundaries();
   document.getElementById('cfdCsvMetrics').onclick = () => exportMetrics();
   document.getElementById('cfdCsvProbes').onclick = () => exportProbes();
-  document.getElementById('cfdProbePlace').onclick = () => { placeProbes = !placeProbes; viewCFD(); };
+  document.getElementById('cfdCsvCuts').onclick = () => exportCuts();
+  document.getElementById('cfdProbePlace').onclick = () => { placeProbes = !placeProbes; if (placeProbes) placeCut = null; viewCFD(); };
+  document.getElementById('cfdCutPlace').onclick = () => { placeCut = placeCut ? null : 'start'; if (placeCut) { placeProbes = false; FV.dock = 'cuts'; } viewCFD(); };
   document.getElementById('cfdProbeAdd').onclick = () => {
     const x = parseFloat(document.getElementById('cfdProbeX').value), y = parseFloat(document.getElementById('cfdProbeY').value);
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) return;
@@ -689,6 +723,7 @@ function renderCFD() {
   renderLegend();
   renderCases();
   renderProbes();
+  renderCuts();
   renderExportBar();
   renderMetrics();
   renderAcross();
@@ -789,6 +824,88 @@ function exportProbes() {
   downloadCSV(`cfd-probes-${csvStamp()}.csv`, rows);
 }
 
+/**
+ * The Cut lines tab: the list (name, ends, length, charted, delete), the fields to chart, and one
+ * chart per field stacked on the distance along the line -- the charted lines in their colours
+ * (one location), or the chosen line through the four locations in theirs (Compare).
+ */
+function renderCuts() {
+  const host = document.getElementById('cfdCuts');
+  if (!host) return;
+  const esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const hint = placeCut ? `<span class="warn-text">${placeCut === 'start' ? 'Click the start of the line on the plot.' : 'Now click its end.'}</span> (Esc cancels)` : 'Draw one with <b>Cut line</b> in the toolbar: click its start, then its end.';
+  if (!cfdCuts.length) { host.innerHTML = `<p class="cap">No cut lines yet. ${hint}</p>`; return; }
+  const compare = FV.view === 'compare', locs = exportLocs();
+  FV.cutSel = Math.min(Math.max(0, FV.cutSel), cfdCuts.length - 1);
+  const fieldsBar = `<div class="fv-bar"><span class="fv-ctl">Chart</span>${Object.entries(SCALARS).map(([k, d]) => `<label class="fv-chk"><input type="checkbox" data-cf="${k}"${FV.cutFields.includes(k) ? ' checked' : ''}> ${d.short}</label>`).join('')}
+    ${compare ? `<label class="fv-ctl">Line <select id="cutSel">${cfdCuts.map((q, k) => `<option value="${k}"${k === FV.cutSel ? ' selected' : ''}>${esc(q.name)}</option>`).join('')}</select></label>` : ''}
+    <span class="fv-why">${hint}</span></div>`;
+  const list = `<div class="table-wrap"><table class="cfd-table probe-table"><thead><tr><th>Line</th><th>From → to <small>x, y (mm)</small></th><th>Length <small>mm</small></th><th>${compare ? '' : 'Charted <small>up to 4</small>'}</th><th></th></tr></thead><tbody>
+    ${cfdCuts.map((q, k) => `<tr><th scope="row"><i class="xl-sw" style="background:${cutColor(q)}"></i><input type="text" class="probe-name" data-cn="${k}" value="${esc(q.name)}" maxlength="24" aria-label="Cut line name"></th>
+      <td>(${(q.x1 * 1000).toFixed(2)}, ${(q.y1 * 1000).toFixed(3)}) → (${(q.x2 * 1000).toFixed(2)}, ${(q.y2 * 1000).toFixed(3)})</td>
+      <td>${(Math.hypot(q.x2 - q.x1, q.y2 - q.y1) * 1000).toFixed(3)}</td>
+      <td>${compare ? '' : `<label class="fv-chk"><input type="checkbox" data-cshow="${k}"${q.show ? ' checked' : ''}${!q.show && freeCutSlot() == null ? ' disabled title="Four lines are charted already"' : ''}> chart</label>`}</td>
+      <td class="case-act"><button class="btn btn-secondary btn-sm" type="button" data-cdel="${k}" aria-label="Delete cut line ${esc(q.name)}">Delete</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+  // the series: charted lines (one location) or the chosen line in each location (Compare)
+  const series = [];
+  if (locs.length) {
+    if (compare) { const q = cfdCuts[FV.cutSel]; for (const L of locs) series.push({ q, L, name: `Location ${L + 1} · z ${CFD_LOCS[L].z} mm`, short: `L${L + 1}`, color: locColor(L) }); }
+    else for (const q of cfdCuts.filter(q => q.show)) series.push({ q, L: locs[0], name: q.name, short: q.name, color: cutColor(q) });
+  }
+  const fields = FV.cutFields.filter(k => SCALARS[k]);
+  host.innerHTML = fieldsBar + (series.length && fields.length ? `<div class="xl-legend">${series.map(sr => `<span class="lg"><i class="xl-sw" style="background:${sr.color}"></i>${esc(sr.name)}</span>`).join('')}</div>
+    <div class="dock-grid">${fields.map(k => `<figure class="dock-fig"><div class="xl-chart"><canvas data-cutchart="${k}" role="img" aria-label="${SCALARS[k].label} along the cut line${series.length > 1 ? 's' : ''}"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div></figure>`).join('')}</div>`
+    : `<p class="cap">${!locs.length ? 'No solved location in view.' : !fields.length ? 'Tick a field to chart.' : 'Tick “chart” on a line to plot it.'}</p>`) + list
+    + '<p class="fv-note">Cut lines are shared by all locations and kept in this browser (and in saved cases); gaps in a chart are where the line leaves the fluid (blade or air).</p>';
+  // charts: one per field, the same distance axis
+  if (series.length) {
+    const sMax = Math.max(...series.map(sr => Math.hypot(sr.q.x2 - sr.q.x1, sr.q.y2 - sr.q.y1))) * 1000;
+    for (const k of fields) {
+      const d = SCALARS[k], cv = host.querySelector(`canvas[data-cutchart="${k}"]`);
+      const ss = series.map(sr => {
+        const pr = cutProfile(cfdRuns[sr.L].field, sr.q, d.arr(cfdRuns[sr.L].field), d.scale);
+        // (split at gaps: a series per stretch inside the fluid, drawn in the same colour)
+        const runs = []; let cur = [];
+        for (const p of pr) { if (p.v == null) { if (cur.length) runs.push(cur); cur = []; } else cur.push([p.s * 1000, p.v]); }
+        if (cur.length) runs.push(cur);
+        return { ...sr, runs, pts: runs.flat() };
+      });
+      let lo = Infinity, hi = -Infinity;
+      for (const sr of ss) for (const [, v] of sr.pts) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      if (!(hi > lo)) { hi = (Number.isFinite(lo) ? lo : 0) + 1; lo = hi - 2; }
+      const pad = 0.06 * (hi - lo);
+      const map = plotChart(cv, 0.42, { x0: 0, x1: sMax, y0: lo >= 0 ? Math.max(0, lo - pad) : lo - pad, y1: hi + pad, xl: 'distance along the line (mm)', yl: `${d.short} (${d.unit})`, xd: sMax < 2 ? 2 : 1,
+        yd: Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(hi - lo || 1)))),
+        s: ss.flatMap(sr => sr.runs.map(r => ({ p: r, c: sr.color, w: 2 }))) });
+      endLabels(cv, map, ss);
+      chartHover(cv.parentElement, cv, map, ss, { by: 'x', head: t => `${t.toFixed(3)} mm along`, fmt: v => `${fmtNum(v)} ${d.unit}` });
+    }
+  }
+  host.querySelectorAll('input[data-cf]').forEach(inp => inp.addEventListener('change', () => {
+    FV.cutFields = Object.keys(SCALARS).filter(k => k === inp.dataset.cf ? inp.checked : FV.cutFields.includes(k));
+    renderCuts();
+  }));
+  const sel = host.querySelector('#cutSel');
+  if (sel) sel.addEventListener('change', () => { FV.cutSel = +sel.value; renderCFD(); });
+  host.querySelectorAll('input[data-cn]').forEach(inp => inp.addEventListener('change', () => { const t = inp.value.trim(); if (t) { cfdCuts[+inp.dataset.cn].name = t; saveCuts(); } renderCFD(); }));
+  host.querySelectorAll('input[data-cshow]').forEach(inp => inp.addEventListener('change', () => {
+    const q = cfdCuts[+inp.dataset.cshow];
+    if (inp.checked) { const sl = freeCutSlot(); if (sl == null) return; q.show = true; q.slot = sl; } else { q.show = false; q.slot = null; }
+    saveCuts(); renderCFD();
+  }));
+  host.querySelectorAll('button[data-cdel]').forEach(b => { b.onclick = () => { cfdCuts.splice(+b.dataset.cdel, 1); saveCuts(); renderCFD(); }; });
+}
+function exportCuts() {
+  const keys = Object.keys(SCALARS);
+  const rows = [['line', 'location', 'z_mm', 'distance_mm', 'x_mm', 'y_mm', 'inside_fluid', ...keys.map(k => `${k}_${SCALARS[k].unit.replace(/[^A-Za-z0-9]+/g, '_')}`)]];
+  for (const q of cfdCuts) for (const L of exportLocs()) {
+    const f = cfdRuns[L].field, prof = keys.map(k => cutProfile(f, q, SCALARS[k].arr(f), SCALARS[k].scale));
+    prof[0].forEach((p, n) => rows.push([q.name, L + 1, CFD_LOCS[L].z, p.s * 1e3, p.x * 1e3, p.y * 1e3, p.v == null ? 0 : 1, ...prof.map(pr => pr[n].v ?? '')]));
+  }
+  downloadCSV(`cfd-cut-lines-${csvStamp()}.csv`, rows);
+}
+
 // ---------------------------------------------------------------------
 // Saved cases (browser local storage): every input that defines a run --
 // the sidebar's, this tab's blade / fibre / rheology-model inputs, and the
@@ -817,6 +934,7 @@ function saveCase() {
     CFDG: { ...CFDG },
     locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over } })),
     probes: cfdProbes.map(q => ({ ...q })),
+    cuts: cfdCuts.map(q => ({ ...q })),
     summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
   };
   const at = list.findIndex(x => x.name === name);
@@ -839,6 +957,7 @@ function loadCase(name) {
   for (const k of Object.keys(CFDG)) if (c.CFDG && k in c.CFDG) CFDG[k] = c.CFDG[k];   // (older cases: fields since renamed are skipped)
   c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; } });
   if (Array.isArray(c.probes)) { cfdProbes = c.probes.map(q => ({ ...q })); saveProbes(); }
+  if (Array.isArray(c.cuts)) { cfdCuts = c.cuts.map(q => ({ ...q })); saveCuts(); }
   cfdEditLoc = null;
   viewCFD();
   caseMsg(`Loaded "${name}": solving its four locations.`);
@@ -915,6 +1034,7 @@ function renderCfdStatus() {
 function renderDockCounts() {
   const set = (k, n) => { const el = document.querySelector(`.tab-n[data-n="${k}"]`); if (el) el.textContent = n ? String(n) : ''; };
   set('probes', cfdProbes.length);
+  set('cuts', cfdCuts.length);
   set('cases', (readCases() || []).length);
   set('msgs', cfdLog.length);
 }
@@ -1128,7 +1248,12 @@ document.addEventListener('click', e => {
   const pop = document.getElementById('cbarPop');
   if (pop && !pop.hidden && !pop.contains(e.target) && !(e.target.closest && e.target.closest('.fv-plot.on-cbar'))) pop.hidden = true;
 });
-document.addEventListener('keydown', e => { const pop = document.getElementById('cbarPop'); if (e.key === 'Escape' && pop && !pop.hidden) pop.hidden = true; });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const pop = document.getElementById('cbarPop');
+  if (pop && !pop.hidden) pop.hidden = true;
+  if (placeCut) { placeCut = null; if (document.getElementById('cfdCutPlace')) viewCFD(); }
+});
 
 function renderFlowPlots() {
   const host = document.getElementById('cfdPlots');
@@ -1206,6 +1331,7 @@ function paintPlot(el, fast) {
     view: zoom, fast,
     mesh: FV.mesh && f.curv ? { quality: FV.meshQuality ? meshQuality(f) : null } : null,
     contours: contourSpec(f, ranges, zoom, ctx.fields),
+    cuts: cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
   });
   el._map = map;
   if (zoom) FV.zoom[i] = map.view;            // (kept as clamped to the domain)
@@ -1371,7 +1497,7 @@ function wirePlotProbe(el) {
   const i = +el.dataset.i, run = cfdRuns[i], f = run.field, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over'), tip = el.querySelector('.fv-tip');
   const oc = over.getContext('2d');
   const size = () => [cv.clientWidth, parseFloat(cv.style.height) || cv.clientHeight];
-  cv.style.cursor = placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : '';
+  cv.style.cursor = placeCut || placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : '';
   const sb = document.getElementById('sbCoord');
   const clear = () => { const [w, h] = size(); oc.clearRect(0, 0, w, h); tip.hidden = true; if (sb) sb.textContent = ''; };
   const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -1388,6 +1514,13 @@ function wirePlotProbe(el) {
     oc.beginPath(); oc.arc(px, py, 3.5, 0, 7); oc.fillStyle = cssVar('--surface'); oc.fill(); oc.strokeStyle = cssVar('--ink'); oc.stroke();
 
     const [x, y] = p, s = a => sampleField(f, a, x, y);
+    if (placeCut && placeCut !== 'start') {
+      // the line being drawn, from its start to the pointer
+      const [sx, sy] = map.toScreen(placeCut.x1, placeCut.y1);
+      oc.strokeStyle = cssVar('--accent'); oc.lineWidth = 2; oc.setLineDash([5, 3]);
+      oc.beginPath(); oc.moveTo(sx, sy); oc.lineTo(px, py); oc.stroke(); oc.setLineDash([]);
+      oc.beginPath(); oc.arc(sx, sy, 3.5, 0, 7); oc.fillStyle = cssVar('--accent'); oc.fill();
+    }
     if (sb) sb.textContent = `L${i + 1} · x ${(x * 1000).toFixed(3)} mm · y ${(y * 1000).toFixed(3)} mm${fieldInside(f, x, y) ? ` · |V| ${fmtNum(Math.hypot(s(f.u), s(f.v)) * 1000)} mm/s${f.p ? ` · p ${fmtNum(s(f.p))} Pa` : ''}` : ''}`;
     if (!fieldInside(f, x, y)) {
       tip.innerHTML = `<b>x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm</b><span class="fv-why">outside the fluid (${f.curv && x > f.xe && y > cfdTopAt(f, x) ? 'air' : 'blade'})</span>`;
@@ -1407,7 +1540,7 @@ function wirePlotProbe(el) {
       <span>shear ${fmtNum(s(f.shear))} 1/s · ${muTxt}</span>
       ${f.omega ? `<span>ω ${fmtNum(s(f.omega))} 1/s</span>` : ''}
       ${f.p ? `<span>p ${fmtNum(s(f.p))} Pa</span>` : ''}
-      ${placeProbes ? '<span class="fv-why">click to place a probe here</span>' : FV.seedMode === 'manual' && FV.streamlines ? '<span class="fv-why">click to add a seed here</span>' : ''}`;
+      ${placeCut ? `<span class="fv-why">click to ${placeCut === 'start' ? 'start' : 'end'} the cut line here</span>` : placeProbes ? '<span class="fv-why">click to place a probe here</span>' : FV.seedMode === 'manual' && FV.streamlines ? '<span class="fv-why">click to add a seed here</span>' : ''}`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     tip.style.left = (px + 14 + tw > cssW ? px - tw - 14 : px + 14) + 'px';
@@ -1420,6 +1553,11 @@ function wirePlotProbe(el) {
     if (el._suppressClick) return;                // (the end of a pan or a zoom box)
     const p = el._map.toPhys(...at(e));
     if (!p) return;
+    if (placeCut) {
+      if (placeCut === 'start') { placeCut = { x1: p[0], y1: p[1] }; renderCuts(); return; }
+      if (Math.hypot(p[0] - placeCut.x1, p[1] - placeCut.y1) > 1e-6) { addCut(placeCut.x1, placeCut.y1, p[0], p[1]); placeCut = null; viewCFD(); }
+      return;
+    }
     if (placeProbes) { addProbe(p[0], p[1]); renderCFD(); return; }
     if (FV.seedMode !== 'manual' || !FV.streamlines) return;
     FV.manualSeeds.push(p);

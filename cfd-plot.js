@@ -161,6 +161,7 @@ const rasterCache = new WeakMap();
  *   view         { x0, x1, y0, y1 } (m): the window shown (zoom); omitted = the whole domain. The plot
  *                keeps its size; the window fills it (so its shape sets the vertical scale)
  *   fast         draw the colour raster at half resolution (while zooming / panning)
+ *   cuts         [{ name, x1, y1, x2, y2, color }] -- cut lines (m), drawn with end ticks and their names
  *   contours     { sets: [{ v, lines }] (contourLines), colorOf: v => css colour | null (null = ink), fmt: v => label }
  *   mesh         { quality: meshQuality(f) | null } -- draw the finite elements' edges (curved through
  *                their mid nodes) and nodes over the field; with quality, the elements are filled by
@@ -490,6 +491,19 @@ function drawFlowPlot(cv, s) {
       c.lineWidth = 1.5; c.strokeStyle = ink; c.stroke();
       if (q.inside) { c.fillStyle = cssVar('--warn'); c.fill(); }
       labelOn(c, q.name, px + r + 3, py, ink, 'left');
+    }
+  }
+
+  // cut lines: a halo, the line in its colour with a tick at each end, its name at the start
+  if (s.cuts) {
+    c.font = `${compact ? 9.5 : 10.5}px ${mono}`; c.textBaseline = 'middle';
+    for (const q of s.cuts) {
+      const [ax, ay] = [X(q.x1), Y(q.y1)], [bx, by] = [X(q.x2), Y(q.y2)], len = Math.hypot(bx - ax, by - ay) || 1;
+      const nx = -(by - ay) / len * 5, ny = (bx - ax) / len * 5;
+      const path = () => { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.moveTo(ax - nx, ay - ny); c.lineTo(ax + nx, ay + ny); c.moveTo(bx - nx, by - ny); c.lineTo(bx + nx, by + ny); };
+      path(); c.strokeStyle = surface; c.lineWidth = 4.5; c.lineCap = 'round'; c.stroke();
+      path(); c.strokeStyle = q.color; c.lineWidth = 2; c.stroke();
+      labelOn(c, q.name, ax + (ax <= bx ? -8 : 8), ay - 9, ink, ax <= bx ? 'right' : 'left');
     }
   }
 
