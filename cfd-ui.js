@@ -190,6 +190,10 @@ const FV = {
   dock: 'metrics',        // results panel shown
   zoom: {},               // flow plots: each location's zoom window { x0, x1, y0, y1 } (m); none = the whole domain
   boxZoom: false,         // toolbar toggle: a drag draws a zoom box (else Shift+drag does)
+  cmap: 'jet',            // colour map of the fields: 'jet' (rainbow) or 'blue' (the colour-blind safe blue / blue-red)
+  levels: 0,              // colour levels: 0 = smooth, else that many bands
+  crange: {},             // per field: a manual colour range { min, max } (either may be null = automatic), display units
+  clog: {},               // per field: logarithmic colour scale (positive fields only)
   mesh: false,            // draw the finite elements (edges and nodes) over the field
   meshQuality: false,     // ... filled by their quality instead of the field colours
   dockH: 300,             // results panel height (px)
@@ -209,6 +213,8 @@ const SCALARS = {
   strain1: { label: 'Principal strain rate, stretching', short: 'λ₁', unit: '1/s', scale: 1, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.strain1 },
   dissip: { label: 'Viscous dissipation μγ̇²', short: 'Φ', unit: 'kW/m³', scale: 1e-3, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.dissipation },
 };
+// Fields that are never negative: a logarithmic colour scale is offered for these
+const LOG_OK = new Set(['speed', 'shear', 'mu', 'strain1', 'dissip']);
 // Line colouring by each streamline's own travel time (not a field)
 const TIME_SCALAR = { key: 'time', label: 'Time along the line', short: 't', unit: 's', scale: 1, kind: 'seq', perLine: true, capped: false };
 // skipCorner: the colour range leaves out the metering edge corner's singular zone (values there are clamped, and the colorbar says so)
@@ -348,21 +354,39 @@ function scalarRange(key, fields, win) {
     }
   }
   if (!(max >= min)) return scalarRange(key, fields);   // (nothing of the fluid in view)
-  const kind = d.kind === 'auto' ? (min < -(d.autoTol ?? 1e-3) * Math.abs(max) ? 'div' : 'seq') : d.kind;
-  if (kind === 'div') {
+  const dataMin = min, dataMax = max;
+  let kind = d.kind === 'auto' ? (min < -(d.autoTol ?? 1e-3) * Math.abs(max) ? 'div' : 'seq') : d.kind;
+  if (FV.cmap === 'jet') {
+    // Jet: the data's own min to max (a signed field's zero lands wherever it falls); never-negative fields from 0
+    if (d.zeroMin) min = 0;
+    kind = 'jet';
+  } else if (kind === 'div') {
     // symmetric about zero; a floor keeps numerical noise in a ~zero field from being stretched into bold colour
     const m = Math.max(Math.abs(min), Math.abs(max), (d.floorFrac || 0) * vref) || 1;
     min = -m; max = m;
   } else if (d.zeroMin || (d.kind === 'auto' && min < 0)) min = 0;
-  if (!(max > min)) max = min + 1;
+  if (!(max > min)) max = min + (Math.abs(min) || 1) * 1e-3;
+  // logarithmic (never-negative fields): the automatic lower end is 1/1000 of the top
+  const log = !!(FV.clog[key] && LOG_OK.has(key));
+  if (log) min = Math.max(dataMin, max * 1e-3);
+  const autoMin = min, autoMax = max;
+  // a manual range (either end) replaces the automatic one; values beyond it are pinned to its ends
+  const man = FV.crange[key];
+  if (man) {
+    if (Number.isFinite(man.min)) min = man.min;
+    if (Number.isFinite(man.max)) max = man.max;
+    if (log && !(min > 0)) min = autoMin;
+    if (!(max > min)) { min = autoMin; max = autoMax; }
+    if (dataMax > max || dataMin < min) capped = true;
+  }
   if (d.skipCorner) for (const f of fields) { const a = d.arr(f); if (a && f.cornerZone) for (let k = 0; k < a.length; k++) if (f.cornerZone[k] && (a[k] * d.scale > max || a[k] * d.scale < min)) capped = true; }
-  return { key, label: d.label, short: d.short, unit: d.unit, scale: d.scale, kind, min, max, capped };
+  return { key, label: d.label, short: d.short, unit: d.unit, scale: d.scale, kind, min, max, capped, log, levels: FV.levels, autoMin, autoMax, manual: !!man };
 }
 /** Colour range for time along the lines: 0 to the 90th percentile of the lines' total times (a few slow lines would wash the rest out; they are capped, and the colorbar says so). */
 function timeRange(list) {
   const ends = list.flatMap(i => streamlinesFor(cfdRuns[i]).lines.map(l => l.t[l.t.length - 1])).sort((a, b) => a - b);
   const max = ends.length ? Math.max(1e-9, ends[Math.min(ends.length - 1, Math.floor(0.9 * ends.length))]) : 1;
-  return { ...TIME_SCALAR, min: 0, max, capped: ends.some(t => t > max) };
+  return { ...TIME_SCALAR, kind: FV.cmap === 'jet' ? 'jet' : 'seq', levels: FV.levels, min: 0, max, capped: ends.some(t => t > max) };
 }
 const scalarFor = (range, f) => range && (range.perLine ? range : { ...range, arr: SCALARS[range.key].arr(f) });
 
@@ -453,6 +477,7 @@ function viewCFD() {
           <fieldset><legend>View</legend>
             <label class="fv-ctl">Vertical scale <select id="fvScale">${opt('exaggerated', 'Exaggerated (fit)', FV.yScale)}${opt('true', 'True 1:1', FV.yScale)}</select></label>
           </fieldset>
+          <fieldset class="fv-colours"><legend>Colours</legend><div id="fvColours"></div></fieldset>
           <fieldset><legend>Mesh</legend>
             <label class="fv-chk"><input type="checkbox" id="fvMesh"${FV.mesh ? ' checked' : ''}> Show the mesh (element edges and nodes)</label>
             <label class="fv-chk${FV.mesh ? '' : ' is-off'}"><input type="checkbox" id="fvMeshQ"${FV.meshQuality ? ' checked' : ''}${FV.mesh ? '' : ' disabled'}> Shade elements by quality</label>
@@ -490,6 +515,7 @@ function viewCFD() {
         </details>
       </div>
       <div class="viewport" id="cfdViewport">
+        <div class="cbar-pop" id="cbarPop" role="dialog" aria-label="Colour scale" hidden></div>
         <div id="cfdBusy"></div>
         <div id="cfdSeeds"></div>
         <div id="cfdPlots"></div>
@@ -650,6 +676,7 @@ function renderCFD() {
   renderSeedPanel();
   updateBusy();
   renderFlowPlots();
+  renderColourControls();
   renderLegend();
   renderCases();
   renderProbes();
@@ -1018,6 +1045,82 @@ function locationTitle(i) {
   return `Location ${i + 1} · z = ${CFD_LOCS[i].z} mm · gap at edge ${(r.geo.H * 1000).toFixed(3)} mm${r.geo.own && r.geo.own.length ? ` · own ${r.geo.own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ')}` : ''}`;
 }
 
+// ---- colour scale controls: the Display pop-over's Colours section and the colour bar's panel ----
+
+/** What the plots' colour bar shows: mesh quality, the streamlines' or vectors' colouring, or the field. */
+function carrierKey() {
+  if (FV.mesh && FV.meshQuality) return 'quality';
+  if (FV.streamlines && FV.lineColor !== 'none') return FV.lineColor;
+  if (FV.vectors && FV.vectorColor) return 'speed';
+  return FV.base;
+}
+/** The controls for one colouring (map, levels; for a field also its range and log scale). */
+function colourControls(key) {
+  const opt = (v, t, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${t}</option>`;
+  const head = `<label class="fv-ctl">Colour map <select data-cc="map">${opt('jet', 'Jet (rainbow)', FV.cmap)}${opt('blue', 'Blue / blue–red (colour-blind safe)', FV.cmap)}</select></label>
+    <label class="fv-ctl">Levels <select data-cc="levels">${[0, 8, 10, 12, 16, 20, 32].map(n => opt(n, n ? n + ' bands' : 'Smooth', FV.levels)).join('')}</select></label>`;
+  if (key === 'quality') return `<div class="cc">${head}<p class="fv-note">Mesh quality keeps its own scale (worse = stronger), from the worst element to 1.</p></div>`;
+  if (key === 'none' || !SCALARS[key]) return `<div class="cc">${head}${key === 'time' ? '<p class="fv-note">Time along the lines: 0 to the 90th percentile of the lines\' times (automatic).</p>' : ''}</div>`;
+  const d = SCALARS[key], locs = (FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].field);
+  const r = locs.length ? scalarRange(key, locs.map(i => cfdRuns[i].field)) : null, man = FV.crange[key] || {};
+  const num = v => Number.isFinite(v) ? +v.toPrecision(4) : '';
+  const logOk = LOG_OK.has(key);
+  return `<div class="cc" data-key="${key}">
+    ${head}
+    <div class="cc-range"><span class="fv-ctl"><b>${d.short}</b> range (${d.unit})</span>
+      <input type="number" data-cc="min" step="any" value="${Number.isFinite(man.min) ? man.min : ''}" placeholder="${r ? num(r.autoMin) : 'auto'}" aria-label="Colour range minimum, ${d.unit}"> to
+      <input type="number" data-cc="max" step="any" value="${Number.isFinite(man.max) ? man.max : ''}" placeholder="${r ? num(r.autoMax) : 'auto'}" aria-label="Colour range maximum, ${d.unit}">
+      <button type="button" class="btn btn-secondary btn-sm" data-cc="auto"${FV.crange[key] ? '' : ' disabled'}>Auto</button></div>
+    <label class="fv-chk${logOk ? '' : ' is-off'}"${logOk ? '' : ' title="Only for fields that are never negative"'}><input type="checkbox" data-cc="log"${FV.clog[key] && logOk ? ' checked' : ''}${logOk ? '' : ' disabled'}> Logarithmic scale</label>
+    <p class="fv-note">${FV.crange[key] ? 'Manual range: values beyond it take its end colours. ' : 'Empty = automatic (shown faint). '}Per field: ${d.label.toLowerCase()} keeps its own range.</p>
+  </div>`;
+}
+function renderColourControls() {
+  const key = carrierKey();
+  const box = document.getElementById('fvColours');
+  if (box) box.innerHTML = colourControls(key);
+  const pop = document.getElementById('cbarPop');
+  if (pop && !pop.hidden) { pop.innerHTML = `<div class="cbar-pop-head"><b>Colour scale</b><button type="button" class="icon-btn" data-cc="close" aria-label="Close">✕</button></div>${colourControls(key)}`; placeCbarPop(); }
+}
+/** Open the colour bar's panel next to location i's colour bar. */
+function openCbarPop(i) {
+  const pop = document.getElementById('cbarPop');
+  FV.cbarLoc = i; pop.hidden = false;
+  renderColourControls();
+  const first = pop.querySelector('select, input'); if (first) first.focus();
+}
+function placeCbarPop() {
+  const pop = document.getElementById('cbarPop'), vp = document.getElementById('cfdViewport');
+  const el = document.querySelector(`.fv-plot[data-i="${FV.cbarLoc}"]`) || document.querySelector('.fv-plot');
+  if (!el || !el._map || !el._map.cbar) { pop.hidden = true; return; }
+  const vr = vp.getBoundingClientRect(), er = el.getBoundingClientRect(), cb = el._map.cbar;
+  const left = er.left - vr.left + cb.x - pop.offsetWidth - 10, top = Math.max(4, Math.min(er.top - vr.top + cb.y, vp.clientHeight - pop.offsetHeight - 4));
+  pop.style.left = Math.max(4, left) + 'px'; pop.style.top = top + 'px';
+}
+// (one set of handlers for both places the controls appear)
+document.addEventListener('change', e => {
+  const el = e.target.closest && e.target.closest('[data-cc]');
+  if (!el || !el.closest('.cc')) return;
+  const cc = el.dataset.cc, key = el.closest('.cc').dataset.key;
+  if (cc === 'map') FV.cmap = el.value;
+  else if (cc === 'levels') FV.levels = +el.value;
+  else if (cc === 'log') FV.clog[key] = el.checked;
+  else if (cc === 'min' || cc === 'max') {
+    const v = el.value.trim() === '' ? null : +el.value;
+    const man = { ...(FV.crange[key] || {}) }; man[cc] = Number.isFinite(v) ? v : null;
+    if (man.min == null && man.max == null) delete FV.crange[key]; else FV.crange[key] = man;
+  } else return;
+  renderCFD();
+});
+document.addEventListener('click', e => {
+  const el = e.target.closest && e.target.closest('[data-cc]');
+  if (el && el.dataset.cc === 'auto') { delete FV.crange[el.closest('.cc').dataset.key]; renderCFD(); return; }
+  if (el && el.dataset.cc === 'close') { document.getElementById('cbarPop').hidden = true; return; }
+  const pop = document.getElementById('cbarPop');
+  if (pop && !pop.hidden && !pop.contains(e.target) && !(e.target.closest && e.target.closest('.fv-plot.on-cbar'))) pop.hidden = true;
+});
+document.addEventListener('keydown', e => { const pop = document.getElementById('cbarPop'); if (e.key === 'Escape' && pop && !pop.hidden) pop.hidden = true; });
+
 function renderFlowPlots() {
   const host = document.getElementById('cfdPlots');
   const compare = FV.view === 'compare';
@@ -1148,11 +1251,16 @@ function wirePlotZoom(el) {
   const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const inPlot = ([px, py]) => { const p = el._map.plot; return px >= p.l && px <= p.r && py >= p.t && py <= p.b; };
 
+  const onCbar = ([px, py]) => { const b = el._map.cbar; return b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h; };
+  cv.addEventListener('pointermove', e => { if (!drag) el.classList.toggle('on-cbar', onCbar(at(e))); });
+  cv.addEventListener('pointerleave', () => el.classList.remove('on-cbar'));
+  cv.addEventListener('click', e => { if (!el._suppressClick && onCbar(at(e))) openCbarPop(i); });
   cv.addEventListener('wheel', e => {
     const pt = at(e);
     if (!inPlot(pt)) return;
     e.preventDefault();
     const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    document.getElementById('cbarPop').hidden = true;
     const k = Math.exp(Math.max(-0.5, Math.min(0.5, d * 0.0015)));
     const [cx, cy] = el._map.toPhysAny(...pt);
     setView(scaleAbout(cx, cy, k), true);
@@ -1301,6 +1409,7 @@ function renderLegend() {
   if (cfdRuns.some(r => r.result && r.result.mode === 'climbed')) items.push('<span class="lg"><i class="lg-seed lg-cl"></i>contact line on the exit face</span>');
   let note = '';
   if (FV.mesh && FV.meshQuality) note += 'Mesh quality: each element\'s smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 or below = degenerate); it replaces the field colours while shown. ';
+  note += 'Click the colour bar to change the colour map, range, log scale or levels. ';
   if (FV.streamlines && FV.seedMode === 'auto') note += 'Automatic seeds are spaced by equal flow rate, so lines crowd where the flow is fast. ';
   if (FV.streamlines && FV.direction !== 'forward' && FV.seedMode === 'auto') note += `Seeds sit ${FV.direction === 'backward' ? 'on the outflow' : 'mid-channel'} for ${FV.direction} tracing. `;
   host.innerHTML = items.join('') + (note ? `<p class="fv-note">${note}</p>` : '');

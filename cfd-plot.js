@@ -67,7 +67,18 @@ function normalizeHex(c) {
 function getLut(kind) {
   const dark = isDarkTheme(), key = kind + (dark ? ':d' : ':l');
   if (LUTS[key]) return LUTS[key];
-  if (kind === 'seq') {
+  if (kind === 'jet') {
+    // the classic CFD rainbow (MATLAB jet): dark blue, blue, cyan, yellow, red, dark red -- piecewise linear in RGB
+    const st = [[0, 0, 0.5], [0, 0, 1], [0, 1, 1], [1, 1, 0], [1, 0, 0], [0.5, 0, 0]], at = [0, 0.125, 0.375, 0.625, 0.875, 1];
+    const lut = new Uint8ClampedArray(LUT_N * 3);
+    for (let n = 0; n < LUT_N; n++) {
+      const t = n / (LUT_N - 1);
+      let i = 0; while (i < at.length - 2 && t > at[i + 1]) i++;
+      const u = (t - at[i]) / (at[i + 1] - at[i]);
+      for (let ch = 0; ch < 3; ch++) lut[n * 3 + ch] = Math.round(255 * (st[i][ch] + (st[i + 1][ch] - st[i][ch]) * u));
+    }
+    LUTS[key] = lut;
+  } else if (kind === 'seq') {
     const stops = SEQ_BLUE.map(h => rgbToOklab(hexRgb(h)));
     LUTS[key] = buildLut(dark ? stops.slice().reverse() : stops);
   } else {
@@ -78,6 +89,25 @@ function getLut(kind) {
   }
   return LUTS[key];
 }
+/**
+ * Where a value falls on a colour scale sc ({ min, max, log?, levels? }), 0..1: linear, or
+ * logarithmic (sc.log; values below min pinned to it), then banded into sc.levels steps
+ * (0 or 1 = smooth).
+ */
+function scaleT(sc, v) {
+  let t = sc.log ? (Math.log(Math.max(v, sc.min)) - Math.log(sc.min)) / ((Math.log(sc.max) - Math.log(sc.min)) || 1) : (v - sc.min) / ((sc.max - sc.min) || 1);
+  t = Math.min(1, Math.max(0, t));
+  return sc.levels > 1 ? Math.min(sc.levels - 1, Math.floor(t * sc.levels)) / (sc.levels - 1) : t;
+}
+/** Tick values for a colour scale: nice linear ticks, or on a log scale 1-2-5 steps (or whole decades when it spans many). */
+function scaleTicks(sc, count) {
+  if (!sc.log) return niceTicks(sc.min, sc.max, count);
+  const out = [], d0 = Math.floor(Math.log10(sc.min)), d1 = Math.ceil(Math.log10(sc.max));
+  const mult = d1 - d0 > 3 ? [1] : d1 - d0 > 1 ? [1, 3] : [1, 2, 5];
+  for (let d = d0; d <= d1; d++) for (const m of mult) { const v = m * 10 ** d; if (v >= sc.min * 0.999 && v <= sc.max * 1.001) out.push(v); }
+  return out;
+}
+
 function lutColor(lut, t) {
   const n = Math.round(Math.min(1, Math.max(0, t)) * (LUT_N - 1)) * 3;
   return `rgb(${lut[n]},${lut[n + 1]},${lut[n + 2]})`;
@@ -207,14 +237,13 @@ function drawFlowPlot(cv, s) {
     let perField = rasterCache.get(f);
     if (!perField) { perField = new Map(); rasterCache.set(f, perField); }
     const dark = isDarkTheme();
-    const key = [sc.key, pw, ph, sc.min, sc.max, sc.kind, dark, zoomed ? [v.x0, v.x1, v.y0, v.y1].join(',') : 'full'].join('|');
+    const key = [sc.key, pw, ph, sc.min, sc.max, sc.kind, sc.log ? 'log' : 'lin', sc.levels || 0, dark, zoomed ? [v.x0, v.x1, v.y0, v.y1].join(',') : 'full'].join('|');
     let off = perField.get(key);
     if (!off) {
       // (only the whole-domain rasters are kept; a zoomed one replaces the last zoomed one)
       if (zoomed) for (const k of [...perField.keys()]) if (!k.endsWith('|full')) perField.delete(k);
       off = document.createElement('canvas'); off.width = pw; off.height = ph;
       const oc = off.getContext('2d'), img = oc.createImageData(pw, ph), lut = getLut(sc.kind);
-      const span = sc.max - sc.min || 1;
       const gx0 = v.x0 + (vl - pl) / plotW * vw, gxs = (vr - vl) / plotW * vw, gy1 = v.y0 + (pb - vt) / plotH * vh, gys = (vb - vt) / plotH * vh;
       for (let py = 0; py < ph; py++) {
         const y = gy1 - (py + 0.5) / ph * gys;
@@ -223,7 +252,7 @@ function drawFlowPlot(cv, s) {
           let val;
           if (f.curv) { const at = f.locate(x, y); if (!at) continue; val = sampleIdx(f, sc.arr, at[0], at[1]) * sc.scale; } // outside: blade or air
           else { if (y > bladeHeightAt(f, x)) continue; val = sampleField(f, sc.arr, x, y) * sc.scale; } // inside the blade: drawn as solid below
-          const n = Math.round(Math.min(1, Math.max(0, (val - sc.min) / span)) * (LUT_N - 1)) * 3;
+          const n = Math.round(scaleT(sc, val) * (LUT_N - 1)) * 3;
           const p = (py * pw + px) * 4;
           img.data[p] = lut[n]; img.data[p + 1] = lut[n + 1]; img.data[p + 2] = lut[n + 2]; img.data[p + 3] = 255;
         }
@@ -371,7 +400,7 @@ function drawFlowPlot(cv, s) {
         for (let i = 1; i < pts.length; i++) {
           const xm = (pts[i][0] + pts[i - 1][0]) / 2, ym = (pts[i][1] + pts[i - 1][1]) / 2;
           const val = sc.perLine ? 0.5 * (ln.t[i] + ln.t[i - 1]) : sampleField(f, sc.arr, xm, ym);
-          c.strokeStyle = lutColor(lineLut, (val * sc.scale - sc.min) / span);
+          c.strokeStyle = lutColor(lineLut, scaleT(sc, sc.perLine ? val : val * sc.scale));
           c.beginPath(); c.moveTo(X(pts[i - 1][0]), Y(pts[i - 1][1])); c.lineTo(X(pts[i][0]), Y(pts[i][1])); c.stroke();
         }
       } else {
@@ -387,7 +416,7 @@ function drawFlowPlot(cv, s) {
 
   if (vectors) {
     const sx = plotW / xRange, sy = plotH / yRange; // px per metre, incl. vertical exaggeration
-    const vecLut = s.vectorColor ? getLut('seq') : null;
+    const vecLut = s.vectorColor ? getLut(s.vectorScalar.kind) : null;
     const vs = s.vectorScalar;
     for (const q of vectors) {
       const px = X(q.x), py = Y(q.y);
@@ -396,7 +425,7 @@ function drawFlowPlot(cv, s) {
       const len = s.vectorNormalize ? 0.72 * s.vectorSpacing : 0.9 * s.vectorSpacing * (q.speed / s.vectorVmax) * (s.vectorScale || 1);
       if (len < 1.5) { c.fillStyle = ink; c.fillRect(px - 0.75, py - 0.75, 1.5, 1.5); continue; }
       const dxs = ex / em * len, dys = ey / em * len;
-      const col = vecLut ? lutColor(vecLut, (q.speed * vs.scale - vs.min) / ((vs.max - vs.min) || 1)) : ink;
+      const col = vecLut ? lutColor(vecLut, scaleT(vs, q.speed * vs.scale)) : ink;
       drawVectorArrow(c, px - dxs / 2, py - dys / 2, px + dxs / 2, py + dys / 2, col, surface, compact ? 3.5 : 4.5);
     }
   }
@@ -471,28 +500,33 @@ function drawFlowPlot(cv, s) {
   }
 
   // ---- colorbar ----------------------------------------------------------
+  let cbar = null;   // (its area on screen, returned: a click there opens the colour controls)
   if (carrier) {
     const bx = pr + 16, bw = compact ? 9 : 11, by0 = vt, by1 = vb, lut = getLut(carrier.kind);
+    // (the bar is linear in the scale's own coordinate: log values on a log scale; bands as bands)
+    const band = t => carrier.levels > 1 ? Math.min(carrier.levels - 1, Math.floor(t * carrier.levels)) / (carrier.levels - 1) : t;
     for (let py = Math.floor(by0); py < by1; py++) {
-      const rel = 1 - (py - by0) / (by1 - by0);
+      const rel = band(Math.min(1, Math.max(0, 1 - (py + 0.5 - by0) / (by1 - by0))));
       c.fillStyle = lutColor(lut, carrier.reverse ? 1 - rel : rel);   // (reverse: low values in the strong colour)
       c.fillRect(bx, py, bw, 1);
     }
     c.strokeStyle = cssVar('--line'); c.lineWidth = 1; c.strokeRect(bx + 0.5, by0 + 0.5, bw - 1, by1 - by0 - 1);
     c.fillStyle = muted; c.font = `${compact ? 9.5 : 10.5}px ${mono}`; c.textAlign = 'left'; c.textBaseline = 'middle';
-    const ticks = niceTicks(carrier.min, carrier.max, compact ? 3 : 4);
+    const ticks = scaleTicks(carrier, compact ? 3 : 4);
+    const relOf = t => carrier.log ? (Math.log(t) - Math.log(carrier.min)) / ((Math.log(carrier.max) - Math.log(carrier.min)) || 1) : (t - carrier.min) / ((carrier.max - carrier.min) || 1);
     for (const t of ticks) {
-      const py = by1 - (t - carrier.min) / ((carrier.max - carrier.min) || 1) * (by1 - by0);
+      const py = by1 - relOf(t) * (by1 - by0);
       if (py < by0 - 0.5 || py > by1 + 0.5) continue;
-      c.fillText(Math.abs(t) >= 1e4 ? t.toExponential(1) : tickTxt(t, ticks), bx + bw + 4, py);
+      c.fillText(Math.abs(t) >= 1e4 || (carrier.log && Math.abs(t) < 1e-2) ? t.toExponential(0) : carrier.log ? String(+t.toPrecision(2)) : tickTxt(t, ticks), bx + bw + 4, py);
     }
     c.textBaseline = 'alphabetic'; c.fillStyle = ink;
-    c.fillText(carrier.short + (carrier.capped ? ' ↑cap' : ''), bx, by0 - (compact ? 5 : 20));
+    c.fillText(carrier.short + (carrier.capped ? ' ↑cap' : '') + (carrier.log ? ' (log)' : ''), bx, by0 - (compact ? 5 : 20));
     if (!compact) { c.fillStyle = muted; c.fillText(carrier.unit, bx, by0 - 8); }
+    cbar = { x: bx - 4, y: by0 - (compact ? 16 : 30), w: w - bx + 4, h: by1 - by0 + (compact ? 20 : 36) };
   }
 
   return {
-    left: vl, right: vr, top: vt, bottom: vb, exaggeration, zoomed, view: v, full,
+    left: vl, right: vr, top: vt, bottom: vb, exaggeration, zoomed, view: v, full, cbar,
     plot: { l: pl, r: pr, t: pt, b: pb },
     toPhys(px, py) {
       if (px < vl || px > vr || py < vt || py > vb) return null;
@@ -530,7 +564,7 @@ function drawLineArrows(c, pts, X, Y, spacing, firstAt, size, color, halo, lut, 
       const t = acc / seg, ax = x0 + (x1 - x0) * t, ay = y0 + (y1 - y0) * t;
       const ang = Math.atan2(y1 - y0, x1 - x0);
       let col = color;
-      if (lut) { const span = sc.max - sc.min || 1, val = sc.perLine ? times[i] : sampleField(f, sc.arr, pts[i][0], pts[i][1]); col = lutColor(lut, (val * sc.scale - sc.min) / span); }
+      if (lut) { const val = sc.perLine ? times[i] : sampleField(f, sc.arr, pts[i][0], pts[i][1]) * sc.scale; col = lutColor(lut, scaleT(sc, val)); }
       c.save(); c.translate(ax, ay); c.rotate(ang);
       c.beginPath(); c.moveTo(size, 0); c.lineTo(-size, -size * 0.8); c.lineTo(-size * 0.4, 0); c.lineTo(-size, size * 0.8); c.closePath();
       c.lineWidth = 2; c.strokeStyle = halo; c.stroke(); c.fillStyle = col; c.fill();

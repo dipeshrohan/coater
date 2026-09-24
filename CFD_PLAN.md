@@ -7,10 +7,29 @@ drift out of sync with what's actually built.
 
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
-## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls, 4 contour lines, 5 cut lines,
+## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines, 5 cut lines,
 ## 6 difference plots, 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-3 (done): colour map controls
+
+User's choices: Jet (rainbow) as the default map, the current blue /
+blue-red kept selectable; Jet spans the data's min to max (signed fields
+not zero-centred); manual min / max per field; log scale for the
+never-negative fields (|V|, shear, viscosity, strain, dissipation; floor
+1/1000 of the max, editable); smooth or banded levels; controls both on a
+click of the colour bar (a panel next to it) and in the Display pop-over.
+- getLut('jet'): MATLAB jet, piecewise linear in RGB. scaleT(sc, v) maps a
+  value to 0..1 (linear or log, then banded) for the raster, streamline
+  and vector colours and the colour bar (drawn in the scale's own
+  coordinate; log ticks 1-2-5 / decades).
+- scalarRange applies the map (kind 'jet'), log, manual range (values
+  beyond it pinned; '↑cap' shown) and levels; returns autoMin / autoMax
+  for the placeholders. A manual range also wins over a zoom's rescale.
+- The controls act on what the colour bar shows (carrierKey: mesh
+  quality, line / vector colouring, or the field); mesh quality keeps its
+  own scale.
 
 ### GUI-2 (done): mesh display
 
