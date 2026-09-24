@@ -5,10 +5,38 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Remaining feature list, in order: 4. porous
-## fibre coupling, 5. remaining output fields, 6. independent inputs per location,
+## Status (latest first). Remaining feature list, in order: 5. remaining
+## output fields, 6. independent inputs per location,
 ## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Item 4 (done): the porous fibre
+
+User's physics: "there is no binding between fibre and slurry. The fiber
+allows hot air to dry the film." So no slurry enters the fibre (the
+planned Darcy penetration of slurry does not apply). Decisions (user):
+Beavers-Joseph slip at the fibre surface under the blade; permeability
+from the fibre structure (Kozeny-Carman); the drying air's Darcy flow,
+driven by an air speed input, with an air temperature input. The air's
+path through the fibre in the oven is not known (user: "I do not know"),
+so its 2D pressure field is not solved -- only path-independent Darcy
+numbers are reported.
+
+- `cfd-fem.js`: `webSlip` = alpha / sqrt(k): the web's tangential velocity
+  is free, with the wall stress mu (alpha / sqrt k)(u - U) as a boundary
+  term (mu the local apparent viscosity, so du/dy = (alpha/sqrt k)(u - U)
+  holds for any rheology); no slurry crosses the web.
+- k = d^2 eps^3 / (16 K (1 - eps)^2) (Kozeny-Carman for fibres, K = 5 by
+  default); inputs fibre diameter, porosity, K, alpha (defaults assumed:
+  10 um, 0.85, 5, 1), air speed and temperature (1 m/s, 100 C, assumed).
+- Air: Sutherland viscosity, ideal-gas density; gradient mu u / k along
+  the path, the drop across the fibre thickness if it crosses it, pore
+  Reynolds number rho (u/eps) d / mu (Darcy valid below ~1).
+- Validation (`cfd-fem.validate.js` section 8): slip channel exact to
+  1e-14; a yield-stress fluid meets the slip condition pointwise to
+  0.78% -> 0.18% -> 0.044% as the rows double; coating flow with slip
+  converges, conserves mass. Flat-land reference profile uses the
+  solution's own wall velocity (exact for fully developed flow).
 
 ### Item 3 (done): 2D free surface / meniscus beyond the edge
 
