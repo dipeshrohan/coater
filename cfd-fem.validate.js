@@ -121,12 +121,18 @@ const staticCase = (face, contact, f = 1) => {
 // ---------------------------------------------------------------------
 section('5. Coating flow with the meniscus (web 0.1 m/s, 1 Pa s, Ca 1.4)');
 {
-  const run = f => {
+  const run = (f, hooks = {}) => {
     const r = solveCoaterFEM({ hFn: () => H, xe: xe0, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 12e-3,
-      nEb: 10 * f, nEf: 6 * f, nEs: 24 * f, nEy: 6 * f, fInfGuess: 0.5 * H });
+      nEb: 10 * f, nEf: 6 * f, nEs: 24 * f, nEy: 6 * f, fInfGuess: 0.5 * H, ...hooks });
     return { r, gr: coaterGrid(r, { xe: xe0, H, faceDeg: 90, contactDeg: 35, U: 0.1 }) };
   };
-  const a = run(1), b = run(2);
+  // convergence record: every solve the strategy ran, and which one the result is
+  const solves = [];
+  let open = null;
+  const a = run(1, { onSolveStart: label => { open = { label, ended: false }; solves.push(open); return solves.length - 1; }, onSolveEnd: e => { Object.assign(open, e, { ended: true }); } }), b = run(2);
+  const used = solves[a.gr.solveId];
+  check(solves.length >= 2 && solves.every(sv => sv.ended && sv.label) && used && used.converged && used.residual === a.r.residual && used.residual < 1e-8,
+    `convergence record: ${solves.length} solves, all labelled and ended; the result is solve ${a.gr.solveId + 1} ("${used && used.label}"), residual ${used && used.residual.toExponential(1)}`);
   check(a.r.converged && b.r.converged, `converged (${a.r.meniscus.mode}, contact line ${(a.r.surface.s * 1e3).toFixed(3)} mm up the face)`);
   check(Math.abs(a.gr.massError) < 1e-4 && Math.abs(b.gr.massError) < 1e-4, `mass: outflow vs inflow ${(a.gr.massError * 100).toFixed(4)}%, ${(b.gr.massError * 100).toFixed(4)}% (fine mesh)`);
   const hEnd = a.gr.hEnd, Qu = a.r.Q / 0.1;
