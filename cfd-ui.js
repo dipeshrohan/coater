@@ -548,6 +548,12 @@ function viewCFD() {
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
 
   const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${t}<span class="tab-n" data-n="${k}"></span></button>`;
+  // (the tabs used less, in a menu at the end of the row: the one open shows as a tab)
+  const dockMore = (...items) => {
+    const cur = items.find(([k]) => k === FV.dock);
+    return `${cur ? dockTab(cur[0], cur[1]) : ''}<details class="vp-pop dock-more"><summary class="dock-more-s" title="More results panels">More<span class="tab-n" data-n="more"></span></summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="More results panels">${items.filter(([k]) => k !== FV.dock).map(([k, t]) => `<button class="menu-item" type="button" role="menuitem" data-dock-more="${k}">${t}<span class="tab-n" data-n="${k}"></span></button>`).join('')}</div></details>`;
+  };
   const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
   view.innerHTML = `
     <div class="cfd-wb" id="cfdWb" style="--dock-h: ${FV.dockH}px">
@@ -614,6 +620,7 @@ function viewCFD() {
             <button class="menu-item" type="button" id="cfdCsvCuts">Cut lines (every field along each line)</button>
           </div>
         </details>
+        ${aboutButton()}
       </div>
       <div class="viewport" id="cfdViewport">
         <div class="cbar-pop" id="cbarPop" role="dialog" aria-label="Colour scale" hidden></div>
@@ -626,7 +633,8 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('mesh', 'Mesh study')}${dockTab('cases', 'Saved cases')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History')}${dockTab('method', 'Method')}
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}
+          ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'])}
         </div>
         <div class="dock-body">
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
@@ -650,10 +658,11 @@ function viewCFD() {
           ${panel('cases', `<div class="fv-bar">
               <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
               <button class="btn btn-secondary btn-sm" type="button" id="cfdCaseSave">Save current case</button>
-              <span class="fv-why" id="cfdCaseMsg">Kept in this browser (local storage).</span>
+              <span class="fv-why" id="cfdCaseMsg"></span>
             </div>
+            <p class="fv-note case-note"><b>Saved cases</b> are quick snapshots of the CFD setup, the inputs, probes and cut lines, to switch between variants; they are kept in this browser and saved inside the project file too. <b>File > Save</b> keeps the whole project: every tab, the results, the DOE and the measured data.</p>
             <div id="cfdCases"></div>`)}
-          ${panel('msgs', `<div class="fv-bar"><span class="fv-ctl" id="cfdMsgCount"></span><button class="btn btn-secondary btn-sm" type="button" id="cfdMsgClear">Clear</button></div>
+          ${panel('msgs', `${msgsBar()}
             <div class="msg-log" id="cfdMsgs" role="log"></div>`)}
           ${panel('history', '<div class="history-host"></div>')}
           ${panel('method', `<p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything shown is post-processed from the stored solutions: display settings never re-run the solver.</p><p class="cap"><b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
@@ -667,9 +676,13 @@ function viewCFD() {
         </div>
       </section>
     </div>`;
-  document.querySelectorAll('.dock-tabs button').forEach(b => {
+  document.querySelectorAll('[data-dock-more]').forEach(b => { b.onclick = () => { FV.dock = b.dataset.dockMore; viewCFD(); }; });
+  document.querySelectorAll('.dock-tabs button[data-dock]').forEach(b => {
     b.onclick = () => {
+      // (leaving a panel from the More menu: the row is drawn again without it)
+      const MORE = ['mesh', 'cases', 'history', 'method'], wasMore = MORE.includes(FV.dock);
       FV.dock = b.dataset.dock;
+      if (wasMore && !MORE.includes(FV.dock)) { viewCFD(); return; }
       document.querySelectorAll('.dock-tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
       document.querySelectorAll('.dock-panel').forEach(pn => { pn.hidden = pn.id !== 'dock-' + FV.dock; });
       renderCFD();   // (charts in the panel now showing size to it)
@@ -713,7 +726,6 @@ function viewCFD() {
   document.getElementById('cfdSolverReset').onclick = () => { undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
   document.getElementById('cfdStudyOpen').onclick = () => { FV.dock = 'mesh'; viewCFD(); };
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
-  document.getElementById('cfdMsgClear').onclick = () => { cfdLog.length = 0; renderMessages(); };
   document.getElementById('cfdCaseSave').onclick = saveCase;
   document.getElementById('xlMetric').addEventListener('change', e => { FV.across = e.target.value; renderAcross(); });
   document.getElementById('cfdCsvField').onclick = () => exportField();
@@ -762,7 +774,6 @@ function viewCFD() {
   bind('fvMeshQ', 'meshQuality', Boolean, 'checked');
 
   renderCFD();
-  if (!cfdAutoStarted && cfdRuns.every(r => r.status === 'idle')) { cfdAutoStarted = true; runAllLocations(); }
 }
 
 /** The results panel's height: drag the splitter above it (or arrow keys on it). */
@@ -1097,7 +1108,7 @@ function renderMeshStudy() {
   const head = `<div class="fv-bar"><label class="fv-ctl">Location <select id="studyLoc"${running ? ' disabled' : ''}>${CFD_LOCS.map((l, i) => `<option value="${i}"${i === pick ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('')}</select></label>
     ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="studyStop">Stop</button>' : '<button type="button" class="btn btn-primary btn-sm" id="studyRun">Run mesh study</button>'}
     <span class="fv-why">Solves the location on its mesh ÷ 1.5, its mesh (${MESH_PRESETS[s.mesh].l.toLowerCase()}) and its mesh × 1.5 in each direction, then compares the results. The fine run takes about ten times as long as the medium one.</span></div>`;
-  if (!st) { host.innerHTML = head + '<p class="cap">No mesh study yet.</p>'; wireStudy(host); return; }
+  if (!st) { host.innerHTML = head + '<p class="cap">No mesh study yet. It solves one location on a coarser and a finer mesh too, to show how much the results depend on the mesh.</p>'; wireStudy(host); return; }
   const stale = cfdInputsKey(cfdGeometry(st.loc)) !== st.key;
   const lines = `<ul class="study-runs">${st.runs.map((r, n) => `<li><b>${r.name}</b> <span class="mono">${r.solver.nEb} + ${r.solver.nEf} + ${r.solver.nEs} by ${r.solver.nEy}</span> · <span data-study="${n}"${r.status === 'error' ? ' class="warn-text"' : ''}>${studyRunText(r)}</span></li>`).join('')}</ul>`;
   const done = st.runs.map(r => r.status === 'done' ? r : null);
@@ -1215,7 +1226,7 @@ function renderCases() {
   if (!host) return;
   const list = readCases();
   if (!list) { host.innerHTML = '<p class="cap">Local storage is not available in this browser, so cases cannot be saved here.</p>'; return; }
-  if (!list.length) { host.innerHTML = '<p class="cap">No saved cases yet.</p>'; return; }
+  if (!list.length) { host.innerHTML = '<p class="cap">No saved cases yet: name one above and press Save current case.</p>'; return; }
   const esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table case-table"><thead><tr><th>Case</th><th>Blade · model</th><th>Wet film, locations 1–4 (mm)</th><th></th></tr></thead><tbody>${list.map((c, k) => {
     const g = c.CFDG || {}, films = (c.summary || []).map(x => x ? x.film.toFixed(3) : '—').join(' · ');
@@ -1245,6 +1256,7 @@ function renderGeoNote() {
 function renderRunChips() {
   const el = document.getElementById('cfdStatus');
   if (!el) return;
+  el.classList.toggle('busy', cfdRuns.some(r => r.status === 'running'));   // (shown on the other tabs only while solving)
   el.innerHTML = CFD_LOCS.map((loc, i) => {
     const r = cfdRuns[i];
     let cls = '', txt = '—', tip = 'not run yet';
@@ -1271,11 +1283,12 @@ function renderCfdStatus() {
 
 /** Counts on the results tabs: probes, saved cases, messages. */
 function renderDockCounts() {
-  const set = (k, n) => { const el = document.querySelector(`.tab-n[data-n="${k}"]`); if (el) el.textContent = n ? String(n) : ''; };
+  const set = (k, n) => document.querySelectorAll(`#view .tab-n[data-n="${k}"]`).forEach(el => { el.textContent = n ? String(n) : ''; });
   set('probes', cfdProbes.length);
   set('cuts', cfdCuts.length);
   set('cases', (readCases() || []).length);
   set('msgs', cfdLog.length);
+  set('more', [meshStudy && meshStudy.status === 'running' ? 1 : 0].reduce((a, b) => a + b, 0));
 }
 
 /** While a location in view is solving: a line over the plot with its stage and residual (kept current as progress comes in). */
@@ -1314,16 +1327,19 @@ function liveAdd(live, pr) {
 }
 
 /** The Messages tab: the solver's log, oldest first, kept at the bottom while new lines come in. */
+/** The bar over a message log: the count, and Clear. */
+const msgsBar = () => `<div class="fv-bar"><span class="fv-ctl msg-count"></span><button class="btn btn-secondary btn-sm" type="button" data-msg-clear>Clear</button><span class="fv-why">CFD runs, the DOE and measured-data solves all write here.</span></div>`;
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('[data-msg-clear]')) { cfdLog.length = 0; renderMessages(); renderDockCounts(); } });
 function renderMessages() {
-  const host = document.getElementById('cfdMsgs');
-  if (!host) return;
+  document.querySelectorAll('#view .msg-log').forEach(renderMessageLog);
+  document.querySelectorAll('#view .msg-count').forEach(n => { n.textContent = `${cfdLog.length} message${cfdLog.length === 1 ? '' : 's'}`; });
+}
+function renderMessageLog(host) {
   const sc = host.closest('.dock-body') || host, atEnd = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 30;
   const hh = d => d.toTimeString().slice(0, 8);
   host.innerHTML = cfdLog.length ? cfdLog.map(m => `<div class="msg ${m.kind}"><time>${hh(m.t)}</time><span class="msg-loc">${m.i == null ? '' : `<i class="loc-dot" style="background:${locColor(m.i)}"></i>L${m.i + 1}`}</span><span class="msg-t">${String(m.text).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</span></div>`).join('')
     : '<p class="cap">No messages yet: each run writes what the solver does here.</p>';
   if (atEnd && !host.closest('[hidden]')) sc.scrollTop = sc.scrollHeight;
-  const n = document.getElementById('cfdMsgCount');
-  if (n) n.textContent = `${cfdLog.length} message${cfdLog.length === 1 ? '' : 's'}`;
 }
 
 function renderLocCards() {
@@ -1554,7 +1570,12 @@ function renderFlowPlots() {
   const list = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field && (compare || i === FV.view));
   if (!list.length && FV.view !== 'diff') {
     const running = cfdRuns.some(r => r.status === 'running');
-    host.innerHTML = running && viewLocs().some(i => cfdRuns[i].status === 'running') ? '' : `<p class="cap fv-empty">${running ? '<i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
+    const none = !cfdRuns.some(r => r.field);
+    host.innerHTML = running && viewLocs().some(i => cfdRuns[i].status === 'running') ? '' : running ? '<p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.</p>'
+      : emptyHint(none ? 'Nothing solved yet' : compare ? 'No location has a result yet' : `Location ${FV.view + 1} has no result yet`,
+        `Set the inputs in the Model bar (the shared ones and the CFD setup), then run: each of the four locations across the web takes about 10 s, solved at the same time.`,
+        `<button type="button" class="btn btn-primary btn-sm" data-hint-run>Run all 4 locations</button>${keyLabel('run.run') ? `<span class="fv-why">or ${keyLabel('run.run')}</span>` : ''}`);
+    const hb = host.querySelector('[data-hint-run]'); if (hb) hb.onclick = runAllLocations;
     return;
   }
   const zoomBtn = (act, title, icon) => `<button type="button" class="zb" data-z="${act}" title="${title}" aria-label="${title}"><svg viewBox="0 0 16 16" aria-hidden="true">${icon}</svg></button>`;
@@ -2076,7 +2097,7 @@ function renderMetrics() {
   const host = document.getElementById('cfdMetrics');
   const compare = multiView();
   const idx = viewLocs();
-  if (!idx.some(i => cfdRuns[i].field)) { host.innerHTML = '<p class="cap">No result to measure yet.</p>'; return; }
+  if (!idx.some(i => cfdRuns[i].field)) { host.innerHTML = '<p class="cap">No results yet: press Run in the toolbar to solve the four locations; their flow metrics appear here.</p>'; return; }
   const unyieldedPct = r => {
     const f = r.field;
     if (!f.unyielded) return 0;
@@ -2576,7 +2597,7 @@ function renderProfiles() {
   const i = multiView() ? FV.profileLoc : FV.view;
   document.getElementById('cfdProfTitle').textContent = `Profiles · Location ${i + 1}` + (multiView() ? ' (pick a single location above to change)' : '');
   const run = cfdRuns[i];
-  if (!run.field) { host.innerHTML = '<p class="cap">No result for this location yet.</p>'; return; }
+  if (!run.field) { host.innerHTML = '<p class="cap">No result for this location yet: press Run in the toolbar.</p>'; return; }
   const r = run.result, geo = run.geo, round = geo.shape === 'round';
   const qDiff = (r.Q / r.qLub - 1) * 100;
   const lubNote = `${Math.abs(qDiff).toFixed(1)}% ${qDiff > 0 ? 'above' : 'below'} the one-viscosity lubrication estimate for the same bead pressure and zero pressure at the edge (the meniscus sets the real edge pressure${geo.ty === 0 && geo.n === 1 ? '' : ', and this fluid\'s viscosity varies across the gap'})`;

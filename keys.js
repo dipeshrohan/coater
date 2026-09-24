@@ -9,6 +9,7 @@
  */
 
 const KEYS_STORE = 'bladeCoatDefectLab.keys.v1';
+const KEYS_CAPTURE = { on: false };   // (a key is being recorded in the key editor)
 const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || '');
 /** The tab showing's solving, if any. */
 const tabRunning = () => tab === 4 ? cfdRuns.some(r => r.status === 'running') || !!(meshStudy && meshStudy.status === 'running')
@@ -81,7 +82,7 @@ const typingIn = t => t && (t.tagName === 'TEXTAREA' || t.isContentEditable || t
 const textBox = t => t && (t.tagName === 'TEXTAREA' || t.isContentEditable || (t.tagName === 'INPUT' && ['text', 'search', 'email', 'url'].includes(t.type)));
 /** Esc is taken by something open (a menu, a dialog, the colour panel, placing probes or a cut, a help card). */
 function escTaken() {
-  if (document.querySelector('dialog[open], .vp-pop[open]')) return true;
+  if (document.querySelector('dialog[open], .vp-pop[open], .tree.tree-flyout')) return true;
   const cb = document.getElementById('cbarPop'); if (cb && !cb.hidden) return true;
   const hc = document.getElementById('helpCard'); if (hc && !hc.hidden) return true;
   return !!(typeof placeCut !== 'undefined' && placeCut) || !!(typeof placeProbes !== 'undefined' && placeProbes);
@@ -104,10 +105,12 @@ document.addEventListener('keydown', e => {
 
 // ---- the Model bar and the bottom panel, hidden or shown (remembered in this browser) ----
 const PANELS_STORE = 'bladeCoatDefectLab.panels.v1';
-const PANELS = (() => { try { return { model: false, dock: false, ...JSON.parse(localStorage.getItem(PANELS_STORE) || '{}') }; } catch (e) { return { model: false, dock: false }; } })();
-const panelHidden = k => !!PANELS[k];
+// (the four simple tabs' bottom panel holds only their history: hidden to its tab row until opened)
+const PANELS = (() => { const d = { model: false, dock: false, modDock: true }; try { return { ...d, ...JSON.parse(localStorage.getItem(PANELS_STORE) || '{}') }; } catch (e) { return d; } })();
+const panelKey = k => k === 'dock' && (typeof tab === 'number' ? tab : 0) <= 3 ? 'modDock' : k;   // (tab: ui.js, loaded after)
+const panelHidden = k => !!PANELS[panelKey(k)];
 function setPanelHidden(k, hide) {
-  PANELS[k] = !!hide;
+  PANELS[panelKey(k)] = !!hide;
   try { localStorage.setItem(PANELS_STORE, JSON.stringify(PANELS)); } catch (e) { /* not kept */ }
   applyPanels();
   render();
@@ -115,12 +118,12 @@ function setPanelHidden(k, hide) {
 function applyPanels() {
   const body = document.getElementById('wbBody');
   if (body) body.classList.toggle('tree-off', PANELS.model);
-  document.getElementById('work').classList.toggle('dock-off', PANELS.dock);
+  document.getElementById('work').classList.toggle('dock-off', panelHidden('dock'));
   const tb = document.getElementById('treeToggle');
   if (tb) { const l = `${PANELS.model ? 'Show' : 'Hide'} the Model bar${keyLabel('panel.model') ? ` (${keyLabel('panel.model')})` : ''}`; tb.title = l; tb.setAttribute('aria-label', l); tb.setAttribute('aria-expanded', String(!PANELS.model)); }
 }
 // (a click on a bottom-panel tab while the panel is hidden shows it again)
-document.addEventListener('click', e => { if (PANELS.dock && e.target.closest && e.target.closest('#view .dock-tabs button')) setPanelHidden('dock', false); }, true);
+document.addEventListener('click', e => { if (panelHidden('dock') && e.target.closest && e.target.closest('#view .dock-tabs button')) setPanelHidden('dock', false); }, true);
 (function panelButtons() {
   const t = document.getElementById('treeToggle');
   if (t) t.onclick = () => setPanelHidden('model', !PANELS.model);
@@ -138,7 +141,6 @@ function applyKeyLabels() {
 }
 
 // ---- changing keys (the Keyboard shortcuts page of the help) ----
-const KEYS_CAPTURE = { on: false };
 /** The shortcut list with its keys, a Change button each, and Reset. */
 function renderKeyEditor(host) {
   const groups = [...new Set(KEY_ACTIONS.map(a => a.g))];

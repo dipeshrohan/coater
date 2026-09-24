@@ -514,14 +514,13 @@ function measRemove(id) {
 function viewMeasured() {
   const ds = measSelected();
   if (ds) MEAS.sel = ds.id;
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${MEAS.dock === k}" aria-controls="meas-${k}">${t}${k === 'history' ? '<span class="tab-n" data-n="history"></span>' : ''}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${MEAS.dock === k}" aria-controls="meas-${k}">${t}${k === 'history' || k === 'msgs' ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   const panel = (k, body) => `<div class="dock-panel" id="meas-${k}" role="tabpanel"${MEAS.dock === k ? '' : ' hidden'}>${body}</div>`;
   document.getElementById('setupExtra').innerHTML = `<div class="tree-sep">Measured data</div>
     <details class="grp" open><summary>Datasets</summary>
       <div class="meas-list">${MEAS.sets.length ? MEAS.sets.map(d => `<div class="meas-item${d.id === MEAS.sel ? ' on' : ''}">
         <button type="button" class="meas-pick" data-id="${d.id}" aria-pressed="${d.id === MEAS.sel}"><b>${mEsc(d.name)}</b><small>${mEsc(MEAS_KINDS[d.kind].l)} · ${d.rows.length} points</small></button>
-        <button type="button" class="icon-btn" data-rm="${d.id}" aria-label="Remove ${mEsc(d.name)}" title="Remove">✕</button></div>`).join('') : '<p class="prop-note">None yet.</p>'}</div>
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="measImport2">Import CSV…</button></div>
+        <button type="button" class="icon-btn" data-rm="${d.id}" aria-label="Remove ${mEsc(d.name)}" title="Remove">✕</button></div>`).join('') : '<p class="prop-note">None yet: Import CSV in the toolbar above the plot.</p>'}</div>
     </details>`;
   view.innerHTML = `
     <div class="cfd-wb meas-wb" id="measWb" style="--dock-h: ${MEAS.dockH}px">
@@ -534,20 +533,21 @@ function viewMeasured() {
         <span class="doe-status" id="measStatus" role="status"></span>
         <span class="vp-spacer"></span>
         <button class="tool-btn" type="button" id="measCsv" title="Export the comparison as CSV"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>CSV</button>
+        ${aboutButton()}
       </div>
       <div class="viewport" id="measViewport"><div class="doe-plots meas-plots" id="measPlots"></div><div class="xl-legend mod-legend" id="measLegend"></div></div>
       <div class="split split-h" id="measSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the measured-data panel" tabindex="0"></div>
       <section class="dock" aria-label="Measured data">
-        <div class="dock-tabs" role="tablist" aria-label="Measured data">${dockTab('compare', 'Comparison')}${dockTab('fit', 'Fit')}${dockTab('history', 'History')}</div>
+        <div class="dock-tabs" role="tablist" aria-label="Measured data">${dockTab('compare', 'Comparison')}${dockTab('fit', 'Fit')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History')}</div>
         <div class="dock-body">
           ${panel('compare', '<div id="measTable"></div>')}
           ${panel('fit', '<div id="measFit"></div>')}
+          ${panel('msgs', `${msgsBar()}<div class="msg-log" role="log"></div>`)}
           ${panel('history', '<div class="history-host"></div>')}
         </div>
       </section>
     </div>`;
   document.getElementById('measImport').onclick = importMeasured;
-  document.getElementById('measImport2').onclick = importMeasured;
   document.getElementById('measSel').onchange = e => { MEAS.sel = e.target.value; viewMeasured(); };
   document.querySelectorAll('.meas-pick').forEach(b => { b.onclick = () => { MEAS.sel = b.dataset.id; viewMeasured(); }; });
   document.querySelectorAll('[data-rm]').forEach(b => { b.onclick = () => measRemove(b.dataset.rm); });
@@ -580,6 +580,7 @@ function renderMeasured() {
   const cfdOk = ds && MEAS_KINDS[ds.kind].cfd;
   const b = document.getElementById('measCfd');
   b.hidden = running; b.disabled = !cfdOk;
+  document.getElementById('measCsv').disabled = !ds; document.getElementById('measSel').disabled = !ds;
   b.title = !ds ? 'Import a dataset first' : cfdOk ? 'Solve each point of this dataset in the CFD (each different point is one run)' : 'The CFD does not model this quantity (only the fast model does)';
   document.getElementById('measStop').hidden = !running;
   const st = document.getElementById('measStatus');
@@ -589,6 +590,7 @@ function renderMeasured() {
   renderMeasTable();
   renderMeasFit();
   renderHistory();
+  renderMessages(); renderDockCounts();
   applyHelp();
   updateProjectTitle();
 }
@@ -622,7 +624,12 @@ function renderMeasPlot() {
   const host = document.getElementById('measPlots'), lg = document.getElementById('measLegend');
   if (!host) return;
   const ds = measSelected();
-  if (!ds) { host.innerHTML = '<p class="cap fv-empty">No measured data yet. Import a CSV (File > Import measured data…, or Import CSV above): the columns are matched from their names and units, and you can check them before importing.</p>'; lg.innerHTML = ''; return; }
+  if (!ds) {
+    host.innerHTML = emptyHint('No measured data yet', 'Import a CSV with a header row (for example "z (mm), wet film (µm)" or "web speed, viscosity, coat weight (g/m²)"): the columns are matched from their names and units, and you check them before importing. Each point is then compared with the models, and a fit can adjust the uncertain inputs to your data.',
+      '<button type="button" class="btn btn-primary btn-sm" data-hint-import>Import CSV…</button>');
+    host.querySelector('[data-hint-import]').onclick = importMeasured;
+    lg.innerHTML = ''; return;
+  }
   const { K, fast, c, stale } = measRows(ds);
   const cap = `Predicted against measured · ${K.yl} (${K.yu})`;
   host.innerHTML = `<figure class="pane"><figcaption>${mEsc(ds.name)} · ${mEsc(cap)}</figcaption><div class="xl-chart"><canvas role="img" aria-label="${mEsc(ds.name)}: ${mEsc(cap)}"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div></figure>`;
