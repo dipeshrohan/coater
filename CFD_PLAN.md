@@ -10,7 +10,32 @@ drift out of sync with what's actually built.
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
-## 14 session memory (done), 15 undo/redo (done), 16 run report, 17 import measured data, 18 shortcuts/help.
+## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data, 18 shortcuts/help.
+
+### GUI-16 (done): run report
+
+User's choices: PDF and HTML (pick when saving); inputs, results tables,
+plots, checks and messages; sections chosen in a dialog; File > Report…;
+header with title, project, author, date and app version, notes; CFD plots
+as shown now; out-of-date results included and flagged; A4.
+- report.js: the dialog (title, author remembered, notes, a tick box per
+  section with what it holds now: Inputs, the four modules, CFD Analysis,
+  Mesh study, DOE); Save HTML or PDF… (a hidden frame printed by the
+  browser: Save as PDF; @page A4).
+- Building switches to each chosen view behind a veil, takes its tables from
+  the app's own (buttons and inputs replaced by their values; tables wider
+  than A4 split, the key columns repeated) and its plots as PNG images
+  (snapshotTarget / composeImage from the image export, white, 1.5×), then
+  puts the view, location shown and dock tabs back; undo sees none of it
+  (undoQuiet).
+- CFD: setup (blade, slurry, fibre, air; solver and mesh; locations with
+  their own inputs), results status per location (solved / out of date /
+  failed, film, contact line, convergence, time), flow metrics, probes, cut
+  lines, a flow plot per solved location with the current display settings
+  (and the Difference plot when shown), the across-web, profile, cut-line
+  and convergence charts, problems, solver messages (last 200).
+- A self-contained HTML of the whole project with four results is ~3 MB
+  (21 images), 18 A4 pages; built in ~10 s.
 
 ### GUI-15 (done): undo / redo
 

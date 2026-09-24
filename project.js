@@ -7,7 +7,7 @@
  * (Ctrl+Shift+S), recent projects where the browser can reopen files (File System Access API).
  * The project's name (• when it has unsaved changes) is in the title bar and the browser tab.
  */
-const PROJ_FORMAT = 1, PROJ_APP = 'Blade Coat Defect Lab';
+const PROJ_FORMAT = 1, PROJ_APP = 'Blade Coat Defect Lab', APP_VERSION = '2026.09';
 const PROJ = { name: 'Untitled', handle: null, savedKey: null };
 // (the defaults, for New: taken before anything is changed)
 const CFDG_DEFAULTS = JSON.parse(JSON.stringify(CFDG));
