@@ -131,7 +131,7 @@ function airProps(Tc) {
 const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab already uses
 // Each location reads its own inputs (over) first, falling back to the shared values: the
 // sidebar's, and for the gap and the contact angle the across-web variation at its z.
-const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z, over: {} }));
+const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z, over: {}, solver: {} }));
 // Inputs a location can set for itself, in the sidebar's units.
 const LOC_INPUTS = [
   { k: 'gap', l: 'Gap at edge', u: 'mm', step: 0.001, d: 3 },
@@ -152,6 +152,38 @@ function locShared(i, k) {
 }
 /** A location's effective value of an input: its own if set, else the shared one. */
 const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
+
+// ---- solver and mesh settings: shared by the locations; a location may set its own (loc.solver) ----
+// A mesh preset scales the default element counts (along the blade about 0.6 gap per element, 12..40;
+// up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
+// the counts given (along the blade empty = from the blade's length, as Medium).
+const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8 };
+const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' } };
+const SOLVER_INPUTS = [
+  { k: 'nEb', l: 'Elements along the blade', u: '', lo: 6, hi: 120, step: 1, d: 0, custom: true },
+  { k: 'nEf', l: 'Elements up the exit face', u: '', lo: 1, hi: 30, step: 1, d: 0, custom: true },
+  { k: 'nEs', l: 'Elements along the free surface', u: '', lo: 6, hi: 120, step: 1, d: 0, custom: true },
+  { k: 'nEy', l: 'Elements across the gap', u: '', lo: 2, hi: 20, step: 1, d: 0, custom: true },
+  { k: 'gradeB', l: 'Grading toward the edge', u: '', lo: 1, hi: 3, step: 0.1, d: 1 },
+  { k: 'gradeS', l: 'Grading toward the contact line', u: '', lo: 1, hi: 3, step: 0.1, d: 1 },
+  { k: 'gradeY', l: 'Grading toward the blade and surface', u: '', lo: 1, hi: 3, step: 0.1, d: 1 },
+  { k: 'maxIter', l: 'Newton iterations, at most', u: '', lo: 10, hi: 300, step: 1, d: 0 },
+  { k: 'ldGaps', l: 'Free film solved in 2D', u: 'gaps', lo: 3, hi: 30, step: 1, d: 0 },
+];
+const SOLVER_TOLS = [1e-6, 1e-7, 1e-8, 1e-9, 1e-10];
+const CFDS = { ...SOLVER_DEFAULTS };
+/** A location's solver and mesh settings: its own where set, else the shared ones. */
+const solverOf = i => ({ ...CFDS, ...CFD_LOCS[i].solver });
+/** Element counts of settings s for a blade xe long with gap H (m). */
+function meshCounts(s, xe, H) {
+  const auto = Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
+  if (s.mesh === 'custom') return { nEb: s.nEb ?? auto, nEf: s.nEf, nEs: s.nEs, nEy: s.nEy };
+  return scaleCounts({ nEb: auto, nEf: 6, nEs: 24, nEy: 6 }, (MESH_PRESETS[s.mesh] || MESH_PRESETS.medium).f);
+}
+const scaleCounts = (c, f) => ({ nEb: Math.max(6, Math.round(c.nEb * f)), nEf: Math.max(1, Math.round(c.nEf * f)), nEs: Math.max(6, Math.round(c.nEs * f)), nEy: Math.max(2, Math.round(c.nEy * f)) });
+const fmtTol = t => t.toExponential(0).replace('e-', '×10⁻').replace(/\d+$/, d => [...d].map(c => '⁰¹²³⁴⁵⁶⁷⁸⁹'[c]).join(''));
+/** Clamp a solver setting to its range (counts whole). */
+const solverValue = (q, v) => { v = Math.min(q.hi, Math.max(q.lo, v)); return q.d === 0 ? Math.round(v) : +v.toFixed(q.d); };
 /** The rheology law (as physics.js muEff) for given parameters. */
 function muLaw(gd, muRef, ty, n) {
   gd = Math.max(gd, 1e-6);
@@ -213,7 +245,7 @@ const FV = {
   manualSeeds: [],        // [x, y] in metres, shared by all locations so comparisons are like for like
   across: 'film',         // quantity plotted against position across the web
   convOpen: false,        // convergence: solve-sequence table expanded
-  tree: { geo: true, rheo: true, fibre: false, air: false, locs: true },   // model tree: CFD groups open
+  tree: { geo: true, rheo: true, fibre: false, air: false, solver: false, locs: true },   // model tree: CFD groups open
   dock: 'metrics',        // results panel shown
   cutFields: ['speed', 'pressure'],   // fields charted along the cut lines
   cutSel: 0,              // Compare view: the cut line charted (its four locations overlaid)
@@ -279,9 +311,21 @@ function cfdGeometry(i) {
     muRep: muLaw(U / H, v('mu'), ty, n),    // at the representative shear rate U/H: one-viscosity estimates only
     model: CFDG.model, ty, n, rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven,
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
+    solver: cfdSolverFor(i, H), solverOwn: Object.keys(CFD_LOCS[i].solver),
   };
 }
-const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
+/** The settings sent to the solver for a location: its mesh as element counts, grading, convergence, film length. */
+function cfdSolverFor(i, H) {
+  const s = solverOf(i), xe = CFDG.shape === 'round' ? Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000 : P.L / 1000;
+  return { mesh: s.mesh, ...meshCounts(s, xe, H), gradeB: s.gradeB, gradeS: s.gradeS, gradeY: s.gradeY, tol: s.tol, maxIter: s.maxIter, ldGaps: s.ldGaps };
+}
+const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver]);
+/** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
+const cfdWorkerMessage = (geo, solver = geo.solver) => ({
+  geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
+  U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
+  gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
+});
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
 // ---- solver messages: what each run did, in order (the Messages tab) ----
@@ -302,7 +346,7 @@ function runLocation(i) {
   const t0 = performance.now();
   run.status = 'running'; run.error = null; run.progress = null;
   let lastStage = null;
-  logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : 'flat land'}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°`);
+  logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : 'flat land'}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
     if (e.data.progress) {
@@ -333,11 +377,7 @@ function runLocation(i) {
     renderCFD();
   };
   worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); };
-  worker.postMessage({
-    geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
-    U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
-    gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance,
-  });
+  worker.postMessage(cfdWorkerMessage(geo));
   renderRunChips();
   renderCFD();
 }
@@ -345,6 +385,7 @@ function runLocation(i) {
 function runAllLocations() { CFD_LOCS.forEach((_, i) => runLocation(i)); }
 
 function cancelAllLocations() {
+  stopMeshStudy();
   cfdWorkers.forEach((w, i) => {
     if (!w) return;
     w.terminate(); cfdWorkers[i] = null;
@@ -483,6 +524,14 @@ function viewCFD() {
       ${prop('Air temperature', 'cfdAirT', `min="0" max="400" step="5" value="${CFDG.airT}"`, '°C')}
       ${prop('Plenum length', 'cfdPlenum', `min="1" max="5000" step="10" value="${CFDG.plenum}"`, 'mm')}
       <p class="prop-note">Assumed values.</p>`)}
+    ${tree('solver', 'Solver and mesh', `
+      ${propSel('Mesh', 'cfdMesh', Object.entries(MESH_PRESETS).map(([k, m]) => opt(k, m.l + (k === 'medium' ? ' (default)' : ''), CFDS.mesh)).join(''))}
+      ${SOLVER_INPUTS.filter(q => q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k] ?? ''}"${q.k === 'nEb' ? ' placeholder="auto"' : ''}`, q.u, CFDS.mesh !== 'custom')).join('')}
+      <p class="prop-note" id="cfdMeshNote"></p>
+      ${SOLVER_INPUTS.filter(q => !q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k]}"`, q.u)).join('')}
+      ${propSel('Newton tolerance', 'cfdTol', SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join(''))}
+      <p class="prop-note">Grading: 1 = evenly spaced, higher crowds the elements toward the metering edge, the contact line, or the blade and free surface. The free film solved in 2D is at least 12 mm long; beyond it the 1D film model takes over. A location can set its own (its inputs button).</p>
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="cfdSolverReset">Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="cfdStudyOpen">Mesh study…</button></div>`)}
     ${tree('locs', 'Locations across the web', `
       <div class="loc-list" id="cfdLocs"></div>
       <div class="loc-edit" id="cfdLocEdit" hidden></div>`)}`;
@@ -566,7 +615,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('cases', 'Saved cases')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('mesh', 'Mesh study')}${dockTab('cases', 'Saved cases')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
         </div>
         <div class="dock-body">
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
@@ -585,6 +634,7 @@ function viewCFD() {
           ${panel('profiles', '<h3 class="dock-h" id="cfdProfTitle">Profiles</h3><div id="cfdProfiles"></div>')}
           ${panel('fibre', '<div id="cfdFibre"></div>')}
           ${panel('conv', '<div id="cfdConv"></div>')}
+          ${panel('mesh', '<div id="cfdMeshStudy"></div>')}
           ${panel('cases', `<div class="fv-bar">
               <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
               <button class="btn btn-secondary btn-sm" type="button" id="cfdCaseSave">Save current case</button>
@@ -627,6 +677,29 @@ function viewCFD() {
   document.getElementById('cfdDFrom').addEventListener('change', e => { CFDG.dFrom = e.target.value; viewCFD(); });
   geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400); geoNum('cfdPlenum', 'plenum', 1, 5000);
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
+  document.getElementById('cfdMesh').addEventListener('change', e => {
+    const was = CFDS.mesh; CFDS.mesh = e.target.value;
+    if (CFDS.mesh === 'custom' && was !== 'custom') {
+      // (starts from the counts the preset gave the location in view; along the blade stays automatic for Medium)
+      const i = typeof FV.view === 'number' ? FV.view : 0, H = locInput(i, 'gap') / 1000;
+      CFDS.mesh = was; const c = cfdSolverFor(i, H); CFDS.mesh = 'custom';
+      Object.assign(CFDS, { nEb: was === 'medium' ? null : c.nEb, nEf: c.nEf, nEs: c.nEs, nEy: c.nEy });
+    }
+    viewCFD();
+  });
+  for (const q of SOLVER_INPUTS) {
+    const el = document.getElementById('cfdS_' + q.k);
+    el.addEventListener('change', () => {
+      const raw = el.value.trim(), v = +raw;
+      if (q.k === 'nEb' && raw === '') CFDS.nEb = null;
+      else if (raw !== '' && Number.isFinite(v)) CFDS[q.k] = solverValue(q, v);
+      el.value = CFDS[q.k] ?? '';
+      renderCFD();
+    });
+  }
+  document.getElementById('cfdTol').addEventListener('change', e => { CFDS.tol = +e.target.value; renderCFD(); });
+  document.getElementById('cfdSolverReset').onclick = () => { Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
+  document.getElementById('cfdStudyOpen').onclick = () => { FV.dock = 'mesh'; viewCFD(); };
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('cfdMsgClear').onclick = () => { cfdLog.length = 0; renderMessages(); };
   document.getElementById('cfdCaseSave').onclick = saveCase;
@@ -744,6 +817,8 @@ function renderCFD() {
   renderFibre();
   renderProfiles();
   renderConvergence();
+  renderSolverNote();
+  renderMeshStudy();
   decorateImageButtons();
 }
 
@@ -929,6 +1004,128 @@ function exportCuts() {
 // locations again (results are not stored: a run takes seconds).
 // ---------------------------------------------------------------------
 const CASES_KEY = 'bladeCoatDefectLab.cfdCases.v1';
+// ---------------------------------------------------------------------
+// Solver and mesh: the element counts in the model tree, and the mesh study (one location
+// solved on its mesh / 1.5, its mesh and its mesh x 1.5, the results compared)
+// ---------------------------------------------------------------------
+function renderSolverNote() {
+  const el = document.getElementById('cfdMeshNote');
+  if (!el) return;
+  el.innerHTML = 'Along the blade + up the exit face (when the contact line climbs) + along the free surface, by rows across the gap: '
+    + CFD_LOCS.map((_, i) => { const g = cfdGeometry(i), s = g.solver; return `L${i + 1} <b>${s.nEb} + ${s.nEf} + ${s.nEs}</b> by <b>${s.nEy}</b>${g.solverOwn.length ? ' (own)' : ''}`; }).join(' · ') + '.';
+}
+
+let meshStudy = null;   // { loc, key, status, runs: [{ name, f, solver, status, progress, r, metrics, ms, error, worker }] }
+const STUDY_STEPS = [['Coarse', 1 / 1.5], ['Medium', 1], ['Fine', 1.5]];
+function runMeshStudy(i) {
+  if (meshStudy && meshStudy.status === 'running') return;
+  const geo = cfdGeometry(i), base = geo.solver, key = cfdInputsKey(geo), run0 = cfdRuns[i];
+  meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : scaleCounts(base, f)) }, status: 'running', progress: null })) };
+  logCFD(i, `mesh study started: ${meshStudy.runs.map(r => `${r.name.toLowerCase()} ${r.solver.nEb} + ${r.solver.nEf} + ${r.solver.nEs} by ${r.solver.nEy}`).join(', ')}`);
+  const study = meshStudy;
+  for (const run of study.runs) {
+    // (the medium mesh is the location's own: its current result is reused when up to date)
+    if (run.f === 1 && run0.field && run0.key === key) { Object.assign(run, { status: 'done', r: run0.result, metrics: run0.metrics, ms: run0.elapsedMs, reused: true }); continue; }
+    const w = new Worker('cfd-worker.js'), t0 = performance.now();
+    run.worker = w;
+    const end = () => { w.terminate(); run.worker = null; run.ms = performance.now() - t0; };
+    w.onmessage = e => {
+      if (e.data.progress) { run.progress = e.data.progress; updateStudyStatus(); return; }
+      end();
+      const r = e.data.ok ? e.data.result : null;
+      if (!r) Object.assign(run, { status: 'error', error: e.data.error });
+      else if (!r.converged && !(r.stalled && r.residual < 1e-4)) Object.assign(run, { status: 'error', error: `did not converge (residual ${r.residual.toExponential(1)})` });
+      else Object.assign(run, { status: 'done', r, metrics: flowMetrics(makeFlowField(r, { rho: geo.rho, ty: geo.ty })) });
+      studyRunEnded(study);
+    };
+    w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); studyRunEnded(study); };
+    w.postMessage(cfdWorkerMessage(geo, run.solver));
+  }
+  studyRunEnded(study);
+}
+function studyRunEnded(study) {
+  if (study !== meshStudy) return;
+  if (study.status === 'running' && study.runs.every(r => r.status !== 'running')) {
+    study.status = study.runs.every(r => r.status === 'done') ? 'done' : 'error';
+    const [c, m, f] = study.runs.map(r => r.r ? r.r.Q : null), pct = (a, b) => a && b ? `${((b - a) / Math.abs(a) * 100).toFixed(2)} %` : '—';
+    logCFD(study.loc, study.status === 'done' ? `mesh study finished: wet film changes ${pct(c, m)} coarse to medium, ${pct(m, f)} medium to fine` : 'mesh study: a run failed', study.status === 'done' ? '' : 'bad');
+  }
+  renderMeshStudy();
+}
+function stopMeshStudy() {
+  if (!meshStudy || meshStudy.status !== 'running') return;
+  for (const r of meshStudy.runs) if (r.worker) { r.worker.terminate(); r.worker = null; r.status = 'cancelled'; }
+  meshStudy.status = 'cancelled';
+  logCFD(meshStudy.loc, 'mesh study stopped');
+  renderMeshStudy();
+}
+const studyRunText = r => r.status === 'running' ? (r.progress ? `solving · ${cfdStageText(r.progress.stage)}` : 'starting…')
+  : r.status === 'done' ? `${r.r.mesh.nEx} × ${r.r.mesh.nEy} elements · ${r.reused ? 'the location\'s result' : `${(r.ms / 1000).toFixed(1)} s`}`
+    : r.status === 'error' ? `failed: ${r.error}` : 'stopped';
+/** While solving: the three runs' lines only (the rest of the panel stays as it is). */
+function updateStudyStatus() {
+  if (!meshStudy) return;
+  meshStudy.runs.forEach((r, n) => { const el = document.querySelector(`#cfdMeshStudy [data-study="${n}"]`); if (el) el.textContent = studyRunText(r); });
+}
+function renderMeshStudy() {
+  const host = document.getElementById('cfdMeshStudy');
+  if (!host) return;
+  const st = meshStudy, running = st && st.status === 'running';
+  const pick = st ? st.loc : typeof FV.view === 'number' ? FV.view : FV.profileLoc;
+  const s = solverOf(pick);
+  const head = `<div class="fv-bar"><label class="fv-ctl">Location <select id="studyLoc"${running ? ' disabled' : ''}>${CFD_LOCS.map((l, i) => `<option value="${i}"${i === pick ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('')}</select></label>
+    ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="studyStop">Stop</button>' : '<button type="button" class="btn btn-primary btn-sm" id="studyRun">Run mesh study</button>'}
+    <span class="fv-why">Solves the location on its mesh ÷ 1.5, its mesh (${MESH_PRESETS[s.mesh].l.toLowerCase()}) and its mesh × 1.5 in each direction, then compares the results. The fine run takes about ten times as long as the medium one.</span></div>`;
+  if (!st) { host.innerHTML = head + '<p class="cap">No mesh study yet.</p>'; wireStudy(host); return; }
+  const stale = cfdInputsKey(cfdGeometry(st.loc)) !== st.key;
+  const lines = `<ul class="study-runs">${st.runs.map((r, n) => `<li><b>${r.name}</b> <span class="mono">${r.solver.nEb} + ${r.solver.nEf} + ${r.solver.nEs} by ${r.solver.nEy}</span> · <span data-study="${n}"${r.status === 'error' ? ' class="warn-text"' : ''}>${studyRunText(r)}</span></li>`).join('')}</ul>`;
+  const done = st.runs.map(r => r.status === 'done' ? r : null);
+  // the outputs compared: [label, unit, value from the run (a number, or text when it does not scale)]
+  const gradAt = q => { const i = q.iCorner; return -(q.pWeb[i + 1] - q.pWeb[i - 1]) / (q.xWeb[i + 1] - q.xWeb[i - 1]) / 1000; };
+  const U = cfdGeometry(st.loc).U;
+  const rows = [
+    ['Elements', '', r => r.r.mesh.nEx * r.r.mesh.nEy, 0],
+    ['Wet film thickness, Q/U', 'mm', r => r.r.Q / U * 1000, 4],
+    ['Through-flow Q', 'mm²/s per mm width', r => r.r.Q * 1e6, 4],
+    ['Peak pressure', 'Pa, gauge', r => r.r.pMax, 2],
+    ['−dp/dx along the web under the edge', 'kPa/m', r => gradAt(r.r), 3],
+    ['Contact line up the exit face', 'mm', r => r.r.mode === 'climbed' ? r.r.sCL * 1000 : 'pinned', 4],
+    ['Surface leaves the contact line at', '°', r => r.r.leaveDeg, 2],
+    ['Film at the end of the 2D domain', 'mm', r => r.r.hEnd * 1000, 4],
+    ['Max |V|', 'mm/s', r => r.metrics.vmax * 1000, 3],
+    ['Area-mean |V|', 'mm/s', r => r.metrics.meanSpeed * 1000, 4],
+    ['Mass check: outflow vs inflow', '% difference', r => r.r.massError * 100, 4, true],
+    ['Newton steps', '', r => r.r.iterations, 0, true],
+  ];
+  rows[0].push(true);   // (counts and checks: no % change)
+  const cell = (v, d) => typeof v === 'number' ? (Number.isFinite(v) ? v.toFixed(d) : '—') : v;
+  const change = (a, b) => {
+    if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b) || a === 0) return '<td>—</td>';
+    const p = (b - a) / Math.abs(a) * 100;
+    return `<td class="${Math.abs(p) > 2 ? 'warn-text' : ''}">${p > 0 ? '+' : ''}${p.toFixed(2)} %</td>`;
+  };
+  const table = `<div class="table-wrap"><table class="cfd-table cmp study-table"><thead><tr><th>Output</th>${st.runs.map(r => `<th>${r.name}</th>`).join('')}<th>Coarse → medium</th><th>Medium → fine</th></tr></thead><tbody>
+    ${rows.map(([l, u, fn, d, plain]) => {
+      const v = done.map(r => r ? fn(r) : null);
+      return `<tr><th scope="row">${l}${u ? `<small>${u}</small>` : ''}</th>${v.map(x => `<td>${x == null ? '—' : cell(x, d)}</td>`).join('')}${plain ? '<td></td><td></td>' : change(v[0], v[1]) + change(v[1], v[2])}</tr>`;
+    }).join('')}
+  </tbody></table></div>`;
+  let verdict = '';
+  if (st.status === 'done') {
+    const q = done.map(r => r.r.Q), a = Math.abs((q[1] - q[0]) / q[0] * 100), b = Math.abs((q[2] - q[1]) / q[1] * 100);
+    const big = rows.filter(([, , fn, , plain]) => { if (plain) return false; const v = done.map(fn); return typeof v[1] === 'number' && typeof v[2] === 'number' && v[1] !== 0 && Math.abs((v[2] - v[1]) / v[1]) > 0.02; }).map(([l]) => l.toLowerCase());
+    verdict = `<p class="fv-note"><b>Wet film thickness</b> changes ${a.toFixed(2)} % from coarse to medium and ${b.toFixed(2)} % from medium to fine: ${b < 0.5 ? 'the medium mesh is fine enough for it' : b < 2 ? 'the medium mesh is within about 2 %' : 'the medium mesh is too coarse for it: use the fine mesh'}${b < a ? '' : ' (the change grew with refinement, so this is not yet a clean convergence trend)'}.
+      ${big.length ? `Still changing by more than 2 % from medium to fine: ${big.join(', ')}${big.some(l => l.startsWith('contact line')) ? ' (the contact line sits at a singular point of this model, so its position depends on the mesh)' : ''}. ` : ''}Changes over 2 % are marked. The corner values (peak shear, lowest pressure) are singular and not compared.</p>`;
+  }
+  host.innerHTML = head + `<p class="cap">Location ${st.loc + 1} · z ${CFD_LOCS[st.loc].z} mm${stale ? ' · <span class="warn-text">out of date: inputs or settings changed since this study</span>' : ''}</p>` + lines + (done.some(Boolean) ? table : '') + verdict;
+  wireStudy(host);
+}
+function wireStudy(host) {
+  const run = host.querySelector('#studyRun'), stop = host.querySelector('#studyStop');
+  if (run) run.onclick = () => runMeshStudy(+host.querySelector('#studyLoc').value);
+  if (stop) stop.onclick = stopMeshStudy;
+}
+
 function readCases() {
   try { const a = JSON.parse(localStorage.getItem(CASES_KEY) || '[]'); return Array.isArray(a) ? a : []; }
   catch (e) { return null; }                 // storage not available (e.g. blocked in this browser)
@@ -947,7 +1144,8 @@ function saveCase() {
     name, saved: new Date().toISOString(),
     P: Object.fromEntries(CFG.map(q => [q.k, P[q.k]])),
     CFDG: { ...CFDG },
-    locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over } })),
+    CFDS: { ...CFDS },
+    locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes.map(q => ({ ...q })),
     cuts: cfdCuts.map(q => ({ ...q })),
     summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
@@ -970,7 +1168,8 @@ function loadCase(name) {
     if (sl) { sl.value = c.P[q.k]; sl.dispatchEvent(new Event('input')); } else P[q.k] = c.P[q.k];
   }
   for (const k of Object.keys(CFDG)) if (c.CFDG && k in c.CFDG) CFDG[k] = c.CFDG[k];   // (older cases: fields since renamed are skipped)
-  c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; } });
+  Object.assign(CFDS, SOLVER_DEFAULTS, c.CFDS || {});   // (older cases: the default solver settings)
+  c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; CFD_LOCS[i].solver = { ...(l.solver || {}) }; } });
   if (Array.isArray(c.probes)) { cfdProbes = c.probes.map(q => ({ ...q })); saveProbes(); }
   if (Array.isArray(c.cuts)) { cfdCuts = c.cuts.map(q => ({ ...q })); saveCuts(); }
   cfdEditLoc = null;
@@ -1091,7 +1290,7 @@ function renderLocCards() {
     else if (r.field && cfdIsStale(i)) { cls = 'warn'; txt = 'out of date'; }
     else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `solved · ${(r.elapsedMs / 1000).toFixed(1)} s${r.result.converged ? '' : ' · partly converged'}`; }
     else if (r.status === 'cancelled') { cls = 'warn'; txt = 'cancelled'; }
-    const sel = FV.view === i ? ' sel' : '', own = Object.keys(loc.over).length;
+    const sel = FV.view === i ? ' sel' : '', own = Object.keys(loc.over).length + Object.keys(loc.solver).length;
     return `<div class="loc-row${sel}">
       <button class="loc-pick" type="button" data-pick="${i}" aria-pressed="${FV.view === i}" title="Show location ${loc.id} in the viewport"><i class="loc-dot" style="background:${locColor(i)}"></i>L${loc.id}</button>
       <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
@@ -1104,10 +1303,18 @@ function renderLocCards() {
   const edit = document.getElementById('cfdLocEdit');
   if (cfdEditLoc == null) { edit.hidden = true; edit.innerHTML = ''; }
   else {
-    const i = cfdEditLoc, loc = CFD_LOCS[i], own = Object.keys(loc.over).length;
+    const i = cfdEditLoc, loc = CFD_LOCS[i], own = Object.keys(loc.over).length + Object.keys(loc.solver).length, sv = solverOf(i);
+    const sOpt = (v, t, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${t}</option>`;
+    const solverGrid = `<div class="loc-edit-head"><b>Solver and mesh</b><span class="fv-why">empty = shared</span></div>
+      <div class="loc-in-grid">
+        <label><span>Mesh</span><select data-ls="${i}" data-k="mesh" aria-label="Location ${loc.id}: mesh">${sOpt('', `Shared (${MESH_PRESETS[CFDS.mesh].l})`, loc.solver.mesh ?? '')}${Object.entries(MESH_PRESETS).map(([k, m]) => sOpt(k, m.l, loc.solver.mesh ?? '')).join('')}</select></label>
+        ${SOLVER_INPUTS.filter(q => !q.custom || sv.mesh === 'custom').map(q => `<label><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-ls="${i}" data-k="${q.k}" value="${loc.solver[q.k] ?? ''}" placeholder="${CFDS[q.k] ?? 'auto'}" aria-label="Location ${loc.id}: ${q.l} (empty = shared value)"></label>`).join('')}
+        <label><span>Newton tolerance</span><select data-ls="${i}" data-k="tol" aria-label="Location ${loc.id}: Newton tolerance">${sOpt('', `Shared (${fmtTol(CFDS.tol)})`, loc.solver.tol ?? '')}${SOLVER_TOLS.map(t => sOpt(t, fmtTol(t), loc.solver.tol ?? '')).join('')}</select></label>
+      </div>`;
     edit.hidden = false;
     edit.innerHTML = `<div class="loc-edit-head"><b>Location ${loc.id}: its own inputs</b><span class="fv-why">empty = the shared value (shown faint)</span></div>
       <div class="loc-in-grid">${LOC_INPUTS.map(q => { const off = (q.k === 'n' || q.k === 'ty') && !RHEO_MODELS[CFDG.model].uses.includes(q.k); return `<label${off ? ` title="not used by the ${RHEO_MODELS[CFDG.model].l} model"` : ''}><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}${off ? ' <small>(not used)</small>' : ''}</span><input type="number" step="${q.step}" data-li="${i}" data-k="${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}"${off ? ' disabled' : ''} aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`; }).join('')}</div>
+      ${solverGrid}
       <div class="loc-edit-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear="${i}"${own ? '' : ' disabled'}>Use shared values</button><button class="btn btn-secondary btn-sm" type="button" data-edit="${i}">Close</button></div>`;
   }
   host.querySelectorAll('input[data-i]').forEach(inp => inp.addEventListener('change', () => {
@@ -1124,7 +1331,15 @@ function renderLocCards() {
     else if (Number.isFinite(v) && ok) loc.over[k] = v;
     renderCFD();
   }));
-  edit.querySelectorAll('button[data-clear]').forEach(b => { b.onclick = () => { CFD_LOCS[+b.dataset.clear].over = {}; renderCFD(); }; });
+  edit.querySelectorAll('[data-ls]').forEach(el => el.addEventListener('change', () => {
+    const loc = CFD_LOCS[+el.dataset.ls], k = el.dataset.k, raw = el.value.trim(), q = SOLVER_INPUTS.find(x => x.k === k);
+    if (raw === '') delete loc.solver[k];
+    else if (k === 'mesh') loc.solver.mesh = raw;
+    else if (k === 'tol') loc.solver.tol = +raw;
+    else if (q && Number.isFinite(+raw)) loc.solver[k] = solverValue(q, +raw);
+    renderCFD();
+  }));
+  edit.querySelectorAll('button[data-clear]').forEach(b => { b.onclick = () => { CFD_LOCS[+b.dataset.clear].over = {}; CFD_LOCS[+b.dataset.clear].solver = {}; renderCFD(); }; });
   host.querySelectorAll('button[data-run]').forEach(b => { b.onclick = () => runLocation(+b.dataset.run); });
 }
 
@@ -1186,7 +1401,7 @@ function renderSeedPanel() {
 
 function locationTitle(i) {
   const r = cfdRuns[i];
-  return `Location ${i + 1} · z = ${CFD_LOCS[i].z} mm · gap at edge ${(r.geo.H * 1000).toFixed(3)} mm${r.geo.own && r.geo.own.length ? ` · own ${r.geo.own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ')}` : ''}`;
+  return `Location ${i + 1} · z = ${CFD_LOCS[i].z} mm · gap at edge ${(r.geo.H * 1000).toFixed(3)} mm${r.geo.own && r.geo.own.length ? ` · own ${r.geo.own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ')}` : ''}${r.geo.solverOwn && r.geo.solverOwn.length ? ' · own solver settings' : ''}`;
 }
 
 // ---- colour scale controls: the Display pop-over's Colours section and the colour bar's panel ----
@@ -1856,6 +2071,7 @@ function renderMetrics() {
     ['Capillary number μ(U/H)U/γ', 'viscosity at the shear rate U/H', r => (r.geo.muRep * r.geo.U / r.geo.gamma).toExponential(2)],
     ['Capillary number at the meniscus, μ_s U/γ', 'μ_s = mean along the yielded free surface within 5 gaps of the contact line', r => { const q = cfdFieldNumbers(r); return q.muS == null ? 'surface unyielded there <small>no viscous stress scale: the yield stress holds it</small>' : `${(q.muS * r.geo.U / r.geo.gamma).toExponential(2)} <small>μ_s ${fmtNum(q.muS)} Pa·s${q.surfUnyielded ? `; ${q.surfUnyielded} of ${q.surfUnyielded + q.surfYielded} surface nodes unyielded, left out` : ''}</small>`; }],
     ['Streamline check: ψ drift along lines', '% of ψ range', r => { const sl = FV.streamlines ? streamlinesFor(r) : null; return sl && sl.psiDev != null ? (sl.psiDev * 100).toFixed(3) : '—'; }],
+    ['Mesh', 'elements along × across; settings', r => { const s = r.geo.solver; return s ? `${r.result.mesh.nEx} × ${r.result.mesh.nEy} <small>${MESH_PRESETS[s.mesh].l.toLowerCase()}${r.geo.solverOwn && r.geo.solverOwn.length ? ' (own settings)' : ''}; grading ${s.gradeB} · ${s.gradeS} · ${s.gradeY}; tolerance ${fmtTol(s.tol)}; free film ${s.ldGaps} gaps</small>` : `${r.result.mesh.nEx} × ${r.result.mesh.nEy}`; }],
     ['Solver', '', r => `${r.result.converged ? 'converged' : 'partly converged'} <small>${r.result.iterations} Newton steps, residual ${r.result.residual.toExponential(1)}, ${(r.elapsedMs / 1000).toFixed(1)} s</small>`],
   ];
   const head = compare ? `<tr><th>Metric</th>${idx.map(i => `<th>Location ${i + 1}<small>z ${CFD_LOCS[i].z} mm</small></th>`).join('')}</tr>` : '';

@@ -8,9 +8,30 @@ drift out of sync with what's actually built.
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
-## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings, 9 parametric sweep/DOE,
+## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-8 (done): solver and mesh settings, mesh study
+
+User's choices: a 'Solver and mesh' group in the model tree; mesh density
+(presets Coarse / Medium / Fine, or custom counts), grading, convergence
+(tolerance, Newton iterations), the length of free film kept in 2D;
+shared by the locations, each able to set its own; a mesh study in its
+own dock tab, steps x1.5, a table with % changes.
+- CFDS (shared) and loc.solver (per location); cfdSolverFor turns them
+  into the counts sent to the worker (blade elements: about 0.6 gap each,
+  12..40, for Medium; presets x 1/1.5, 1, 1.5). They are in the stale key,
+  the saved cases, the run's log line and a 'Mesh' metrics row.
+- Mesh study: the location solved on its mesh / 1.5, its mesh (its current
+  result reused when up to date) and x 1.5, in parallel workers; table of
+  film thickness, Q, peak pressure, -dp/dx, contact line, leave angle, end
+  film, max / mean |V|, mass check, Newton steps; changes over 2 % marked;
+  a verdict on the film thickness.
+- First study (L1, defaults): film 1.6968 / 1.6974 / 1.6909 mm (+0.04 %,
+  -0.38 %); the contact line climbs 0.77 / 0.83 / 1.03 mm: it sits at a
+  singular point, so its position is mesh-dependent. Fine = 96 x 9
+  elements, about 10x the medium run's time.
 
 ### GUI-7 (done): image export
 
