@@ -546,7 +546,7 @@ async function exportWindow(opt) {
     rerenderView();
     const app = document.querySelector('.app');
     const cv = await h2c(app, { scale: opt.scale, backgroundColor: opt.bg === 'white' ? '#ffffff' : null, logging: false, onclone: prepareClone,
-      ignoreElements: el => el.id === 'imgToast' || el.id === 'imgDlg' || (el.classList && el.classList.contains('img-btn')) });
+      ignoreElements: el => el.id === 'imgToast' || el.id === 'imgDlg' || el.id === 'helpCard' || (el.classList && el.classList.contains('img-btn')) });
     return cv;
   } finally {
     window.EXPORT_DPR = 0;

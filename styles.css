@@ -758,3 +758,18 @@ input.invalid, select.invalid { border-color: var(--bad) !important; box-shadow:
 @keyframes flashRow { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 2px transparent; } }
 .flash { animation: flashRow 1.4s ease-out; border-radius: 4px; }
 .prob-table td:nth-child(2), .prob-table td:nth-child(3) { font-family: var(--sans); font-size: 12.5px; }
+
+/* ---- help cards ---- */
+.help-card { position: fixed; z-index: 60; width: max-content; max-width: min(340px, calc(100vw - 16px)); padding: 9px 11px 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-lg); font-size: 12px; line-height: 1.45; pointer-events: none; }
+.help-card[hidden] { display: none; }
+.help-card .hc-t { display: block; font-size: 12.5px; margin-bottom: 3px; }
+.help-card p { margin: 4px 0 0; }
+.help-card .hc-r { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.help-card .hc-u { color: var(--muted); }
+.help-card .hc-bad { color: var(--bad); }
+.help-i { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 5px; vertical-align: 1px; border: 1px solid var(--line); border-radius: 50%; font: italic 600 9.5px/1 Georgia, serif; color: var(--muted); cursor: help; opacity: 0; transition: opacity .12s; }
+.prop:hover .help-i, .prop:focus-within .help-i, .help-i:focus-visible { opacity: 1; }
+@media (hover: none) { .help-i { opacity: .8; } }
+[data-help] { cursor: help; }
+input[data-help], select[data-help], button[data-help], summary[data-help], [data-help] button { cursor: auto; }
+button[data-help], summary[data-help] { cursor: pointer; }
