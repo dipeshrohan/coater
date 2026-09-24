@@ -9,8 +9,29 @@ drift out of sync with what's actually built.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
-## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file,
+## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-13 (done): project files
+
+User's choices: everything in the file (inputs, probes, cut lines, cases,
+view settings, the DOE) and the solved results; a File menu in the title
+bar; Ctrl+S / Ctrl+O; the project's name in the title; a warning before
+losing unsaved changes.
+- project.js, .bcdl files (JSON; typed arrays as base64, non-finite
+  numbers kept): about 1 MB with four locations' results. Opening rebuilds
+  the fields from the solutions (no solving), restores the view (module,
+  display, zoom, dock), the DOE and mesh study, the messages; a project's
+  saved cases join this browser's list.
+- New / Open / Save / Save as. Where the browser has the File System Access
+  API (Chrome, Edge) Save writes back to the file and the last five
+  projects are listed under Recent (handles in IndexedDB); elsewhere Open
+  is a file upload and Save a download (named in a small dialog).
+- Unsaved changes = the inputs, probes, cut lines, DOE design differ from
+  when last saved (not the view, not solving again): • after the name in
+  the title bar and tab, a Save / Don't save / Cancel dialog before New or
+  Open, and the browser's prompt before leaving.
+- Title bar below 1200 px: the brand text and project name hide.
 
 ### GUI-12 (done): help cards
 

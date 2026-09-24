@@ -518,6 +518,7 @@ function render() {
   [viewA, view1, view2, view3, viewCFD, viewDOE][tab]();
   decorateImageButtons();
   applyHelp();
+  updateProjectTitle();
   titleStatus();
   updateScope();
 }

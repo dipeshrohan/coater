@@ -24,6 +24,17 @@
       <svg class="tb-logo" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="currentColor" opacity=".16"/><path d="M2 12.5h12" stroke="currentColor" stroke-width="1.3"/><path d="M3 12.5c2.5-.2 4-1.6 5.2-4.4L10 3.5h3.5l-2.6 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
       <h1 class="brand">Blade Coat Defect Lab</h1>
     </div>
+    <details class="vp-pop tb-file" id="fileMenu"><summary class="tb-menu">File</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="File">
+        <button class="menu-item" type="button" id="fmNew" role="menuitem">New project</button>
+        <button class="menu-item" type="button" id="fmOpen" role="menuitem">Open…<kbd>Ctrl+O</kbd></button>
+        <button class="menu-item" type="button" id="fmSave" role="menuitem">Save<kbd>Ctrl+S</kbd></button>
+        <button class="menu-item" type="button" id="fmSaveAs" role="menuitem">Save as…<kbd>Ctrl+Shift+S</kbd></button>
+        <div class="menu-sep" id="fmRecentSep" hidden><span>Recent projects</span></div>
+        <div id="fmRecent"></div>
+      </div>
+    </details>
+    <span class="tb-proj" id="projName">Untitled</span>
     <nav class="modules" role="tablist" aria-label="Modules" id="tabs"></nav>
     <div class="tb-actions">
       <button id="imgBtn" class="icon-btn tb-icon" type="button" aria-label="Save as image (PNG or SVG)" title="Save as image (PNG or SVG)">
@@ -80,6 +91,7 @@
 <script src="export-image.js"></script>
 <script src="validate.js"></script>
 <script src="help.js"></script>
+<script src="project.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

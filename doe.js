@@ -258,6 +258,7 @@ function renderDOE() {
   renderProblems();
   markInvalidInputs();
   applyHelp();
+  updateProjectTitle();
 }
 function doeStatusLine() {
   const el = document.getElementById('doeStatus');

@@ -773,3 +773,17 @@ input.invalid, select.invalid { border-color: var(--bad) !important; box-shadow:
 [data-help] { cursor: help; }
 input[data-help], select[data-help], button[data-help], summary[data-help], [data-help] button { cursor: auto; }
 button[data-help], summary[data-help] { cursor: pointer; }
+
+/* ---- project: File menu, name ---- */
+.tb-file { flex: 0 0 auto; align-self: center; margin-left: 6px; }
+.tb-menu { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border-radius: 6px; color: var(--chrome-ink); font-size: 13px; cursor: pointer; }
+.tb-menu::after { content: ''; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid currentColor; opacity: .7; }
+.tb-menu:hover, .tb-file[open] > .tb-menu { background: var(--chrome-2); }
+.tb-file .pop-body { top: calc(100% + 6px); min-width: 240px; color: var(--ink); }
+.menu-item kbd { margin-left: auto; padding-left: 16px; font: 11px var(--mono); color: var(--muted); }
+.menu-item { display: flex; align-items: center; }
+.menu-sep { margin: 4px 0 2px; padding: 6px 8px 2px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tb-proj { align-self: center; flex: 0 1 auto; min-width: 0; max-width: 220px; margin: 0 8px 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; color: var(--chrome-muted); }
+.tb-proj.dirty::after { content: ' •'; color: var(--chrome-accent); }
+@media (max-width: 1199px) { .tb-proj, .titlebar .brand { display: none; } }
+.proj-dlg { width: min(420px, calc(100vw - 32px)); }
