@@ -54,10 +54,10 @@ section('1. Flat channel, Couette-Poiseuille, Newtonian');
 }
 
 // ---------------------------------------------------------------------
-section('2. Flat channel, yield stress and shear thinning (vs the exact 1D solution)');
+section('2. Flat channel, power law, yield stress and shear thinning (vs the exact 1D solution)');
 {
   const U = 0.28 / 60, H = 1.7e-3, L = 0.01, Pup = 720;
-  for (const [ty, n, tol] of [[5, 1, 1e-3], [20, 0.5, 5e-3]]) {
+  for (const [ty, n, tol] of [[0, 0.5, 5e-3], [5, 1, 1e-3], [20, 0.5, 5e-3]]) {
     const r = solveFEM({ mesh: { nEx: 10, nEy: 8, spineFoot: c => c * L / 20, spineTop: c => [c * L / 20, H] },
       U, rho, g, mu: gd => S.muEffLocal(gd, 10.5, ty, n), Hr: H, Ur: U,
       inlet: { type: 'traction', p: y => Pup - rho * g * y }, outlet: { type: 'traction', p: y => -rho * g * y } });

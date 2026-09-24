@@ -34,7 +34,14 @@
 //  Drying air through the fibre in the oven: airU its superficial speed
 //    (m/s), airT its temperature (C) -- for the Darcy numbers only (the air's
 //    path through the fibre is not modelled).
-const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, fd: 10, por: 0.85, kozeny: 5, alphaBJ: 1, airU: 1, airT: 100 };
+//  model: the slurry's rheology model for the CFD runs (which of the sidebar's
+//    rheology inputs apply): Newtonian, power law, or Herschel-Bulkley.
+const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, model: 'hb', fd: 10, por: 0.85, kozeny: 5, alphaBJ: 1, airU: 1, airT: 100 };
+const RHEO_MODELS = {
+  newtonian: { l: 'Newtonian', uses: [], law: 'μ = the viscosity at 2.7 1/s; n and yield stress not used' },
+  power: { l: 'Power law', uses: ['n'], law: 'μ = μ(2.7 1/s) · (γ̇ / 2.7)^(n−1); yield stress not used' },
+  hb: { l: 'Herschel–Bulkley', uses: ['n', 'ty'], law: 'μ = τy / γ̇ + K (γ̇ / 2.7)^(n−1), K such that μ(2.7 1/s) is the viscosity input' },
+};
 
 /** Fibre permeability (m^2), Kozeny-Carman for a bed of fibres: k = d^2 eps^3 / (16 K (1 - eps)^2). */
 function fibrePermeability() {
@@ -124,20 +131,21 @@ function cfdLocalGapMm(z) {
 const cfdLocalContactDeg = z => P.th + P.dth * spatialNoise(z, 4.1);
 
 function cfdGeometry(i) {
-  const z = CFD_LOCS[i].z, v = k => locInput(i, k);
+  const z = CFD_LOCS[i].z, v = k => locInput(i, k), uses = RHEO_MODELS[CFDG.model].uses;
   const U = v('U') / 60;                    // m/min -> m/s
   const H = v('gap') / 1000;                // mm -> m, gap at the metering edge
+  const ty = uses.includes('ty') ? v('ty') : 0, n = uses.includes('n') ? v('n') : 1; // the model's parameters
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
     contactDeg: v('th'), webSlip: CFDG.alphaBJ / Math.sqrt(fibrePermeability()),
     Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
-    muRep: muLaw(U / H, v('mu'), v('ty'), v('n')), // at the representative shear rate U/H: one-viscosity estimates only
-    ty: v('ty'), n: v('n'), rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven,
+    muRep: muLaw(U / H, v('mu'), ty, n),    // at the representative shear rate U/H: one-viscosity estimates only
+    model: CFDG.model, ty, n, rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven,
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
   };
 }
-const cfdInputsKey = geo => JSON.stringify([geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
+const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
 function runLocation(i) {
@@ -253,7 +261,7 @@ function viewCFD() {
     <div class="status" id="cfdStatus"></div>
     <p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything below is post-processed from the stored solutions: display settings never re-run the solver.</p>
     <details class="cap-toggle"><summary>Method, validation and limits</summary><p class="cap">
-      <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the yield-stress / shear-thinning model of the other tabs says. Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
+      <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
       <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
       <b>Fibre.</b> The slurry does not enter the fibre (its pores are there to let the drying air through), so no slurry crosses the web surface; over that porous surface the slurry slips (Beavers&ndash;Joseph: du/dy = (&alpha;/&radic;k)(u &minus; U) at the surface), with the fibre's permeability k from Kozeny&ndash;Carman. Drying air: Darcy's law for the air speed and temperature you set; the air's path through the fibre in the oven is not modelled.
@@ -274,6 +282,10 @@ function viewCFD() {
         <label class="fv-ctl"${CFDG.shape === 'round' ? '' : ' hidden'}>Pool edge <input type="number" id="cfdPool" min="5" max="150" step="5" value="${CFDG.pool}"> mm upstream</label>
         <label class="fv-ctl">Exit face <input type="number" id="cfdExit" min="30" max="150" step="5" value="${CFDG.exitAngle}"> &deg; to the web</label>
         <span class="fv-why" id="cfdGeoNote"></span>
+      </div>
+      <div class="fv-bar cfd-geo">
+        <label class="fv-ctl"><b>Rheology model</b> <select id="cfdModel">${Object.entries(RHEO_MODELS).map(([k, m]) => opt(k, m.l, CFDG.model)).join('')}</select></label>
+        <span class="fv-why" id="cfdModelNote">${RHEO_MODELS[CFDG.model].law}</span>
       </div>
       <div class="fv-bar cfd-geo">
         <span class="fv-ctl"><b>Fibre</b> (web, porous)</span>
@@ -354,6 +366,7 @@ function viewCFD() {
   geoNum('cfdR', 'R', 10, 500); geoNum('cfdPool', 'pool', 5, 150); geoNum('cfdExit', 'exitAngle', 30, 150);
   geoNum('cfdFd', 'fd', 0.5, 200); geoNum('cfdPor', 'por', 0.3, 0.99); geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAlpha', 'alphaBJ', 0.01, 10);
   geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400);
+  document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('fvMore').addEventListener('toggle', e => { FV.settingsOpen = e.target.open; });
 
@@ -451,7 +464,7 @@ function renderLocCards() {
     const i = cfdEditLoc, loc = CFD_LOCS[i], own = Object.keys(loc.over).length;
     edit.hidden = false;
     edit.innerHTML = `<div class="loc-edit-head"><b>Location ${loc.id}: its own inputs</b><span class="fv-why">empty = the shared value (shown faint)</span></div>
-      <div class="loc-in-grid">${LOC_INPUTS.map(q => `<label><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}</span><input type="number" step="${q.step}" data-li="${i}" data-k="${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}" aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`).join('')}</div>
+      <div class="loc-in-grid">${LOC_INPUTS.map(q => { const off = (q.k === 'n' || q.k === 'ty') && !RHEO_MODELS[CFDG.model].uses.includes(q.k); return `<label${off ? ` title="not used by the ${RHEO_MODELS[CFDG.model].l} model"` : ''}><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}${off ? ' <small>(not used)</small>' : ''}</span><input type="number" step="${q.step}" data-li="${i}" data-k="${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}"${off ? ' disabled' : ''} aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`; }).join('')}</div>
       <div class="loc-edit-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear="${i}"${own ? '' : ' disabled'}>Use shared values</button><button class="btn btn-secondary btn-sm" type="button" data-edit="${i}">Close</button></div>`;
   }
   host.querySelectorAll('input[data-i]').forEach(inp => inp.addEventListener('change', () => {
@@ -705,6 +718,7 @@ function renderMetrics() {
   const pAt = (r, key) => where(r.field, r.result[key]);
   // [label, unit, value] -- units live in the label column so the values stay short enough to compare side by side
   const rows = [
+    ['Rheology model', '', r => RHEO_MODELS[r.geo.model || 'hb'].l],
     ['Inputs of this run', 'set for this location (others shared)', r => r.geo.own && r.geo.own.length ? r.geo.own.map(k => { const q = LOC_INPUTS.find(x => x.k === k); return `${q.l} ${r.geo.ownVals[k]}${q.u ? ' ' + q.u : ''}`; }).join('<br>') : 'shared'],
     ['Wet film thickness, Q/U', 'mm', r => (r.result.Q / r.geo.U * 1000).toFixed(3)],
     ['Through-flow Q', 'mm²/s per mm width', r => fmtNum(r.metrics.Q * 1e6)],

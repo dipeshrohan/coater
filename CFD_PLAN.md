@@ -6,8 +6,20 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Remaining feature list, in order:
-## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
+## 8. save/load cases, 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Item 7 (done): rheology model dropdown
+
+CFD tab dropdown (resolved decision: Newtonian / Power Law /
+Herschel-Bulkley). It selects which of the rheology inputs the runs use,
+all with the viscosity input as the value at 2.7 1/s: Newtonian mu =
+mu_2.7 (n and yield stress ignored); power law mu = mu_2.7 (gd/2.7)^(n-1)
+(yield stress ignored); Herschel-Bulkley as physics.js muEff. Shared by
+all locations (one slurry); the unused inputs are disabled in the
+per-location editor; each run records its model (first metrics row).
+Validation: power-law channel vs the exact 1D solution within 0.012%
+(cfd-fem.validate.js section 2).
 
 ### Item 6 (done): independent inputs per location
 
