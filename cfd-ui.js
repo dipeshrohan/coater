@@ -315,6 +315,16 @@ function viewCFD() {
     </section>
 
     <section class="cfd-block">
+      <div class="cfd-head"><h3>Saved cases</h3></div>
+      <div class="fv-bar">
+        <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
+        <button class="btn btn-secondary btn-sm" type="button" id="cfdCaseSave">Save current case</button>
+        <span class="fv-why" id="cfdCaseMsg">Kept in this browser (local storage).</span>
+      </div>
+      <div id="cfdCases"></div>
+    </section>
+
+    <section class="cfd-block">
       <div class="cfd-head"><h3>Flow field</h3><div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div></div>
       <div class="fv-bar">
         <label class="fv-ctl">Field <select id="fvBase">
@@ -368,6 +378,7 @@ function viewCFD() {
   geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400);
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
+  document.getElementById('cfdCaseSave').onclick = saveCase;
   document.getElementById('fvMore').addEventListener('toggle', e => { FV.settingsOpen = e.target.open; });
 
   const bind = (id, key, parse = v => v, prop = 'value') => {
@@ -407,9 +418,91 @@ function renderCFD() {
   renderSeedPanel();
   renderFlowPlots();
   renderLegend();
+  renderCases();
   renderMetrics();
   renderFibre();
   renderProfiles();
+}
+
+// ---------------------------------------------------------------------
+// Saved cases (browser local storage): every input that defines a run --
+// the sidebar's, this tab's blade / fibre / rheology-model inputs, and the
+// four locations (position and own inputs) -- plus a summary of the results
+// at the time of saving. Loading restores the inputs and runs the four
+// locations again (results are not stored: a run takes seconds).
+// ---------------------------------------------------------------------
+const CASES_KEY = 'bladeCoatDefectLab.cfdCases.v1';
+function readCases() {
+  try { const a = JSON.parse(localStorage.getItem(CASES_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch (e) { return null; }                 // storage not available (e.g. blocked in this browser)
+}
+function writeCases(list) {
+  try { localStorage.setItem(CASES_KEY, JSON.stringify(list)); return true; } catch (e) { return false; }
+}
+function caseMsg(t) { const el = document.getElementById('cfdCaseMsg'); if (el) el.textContent = t; }
+
+function saveCase() {
+  const el = document.getElementById('cfdCaseName'), name = el.value.trim();
+  if (!name) { caseMsg('Give the case a name first.'); el.focus(); return; }
+  const list = readCases();
+  if (!list) { caseMsg('Local storage is not available in this browser.'); return; }
+  const c = {
+    name, saved: new Date().toISOString(),
+    P: Object.fromEntries(CFG.map(q => [q.k, P[q.k]])),
+    CFDG: { ...CFDG },
+    locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over } })),
+    summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
+  };
+  const at = list.findIndex(x => x.name === name);
+  if (at >= 0) list[at] = c; else list.unshift(c);
+  if (!writeCases(list)) { caseMsg('Could not save: local storage is full or blocked.'); return; }
+  caseMsg(at >= 0 ? `Replaced "${name}".` : `Saved "${name}".`);
+  el.value = '';
+  renderCases();
+}
+
+function loadCase(name) {
+  const c = (readCases() || []).find(x => x.name === name);
+  if (!c) return;
+  // sidebar: set each slider as the reset button does, so everything that listens updates
+  for (const q of CFG) {
+    if (!(q.k in c.P)) continue;
+    const sl = document.getElementById('s_' + q.k);
+    if (sl) { sl.value = c.P[q.k]; sl.dispatchEvent(new Event('input')); } else P[q.k] = c.P[q.k];
+  }
+  Object.assign(CFDG, c.CFDG);
+  c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; } });
+  cfdEditLoc = null;
+  viewCFD();
+  caseMsg(`Loaded "${name}": solving its four locations.`);
+  runAllLocations();
+}
+
+function deleteCase(name) {
+  const list = readCases();
+  if (!list) return;
+  writeCases(list.filter(x => x.name !== name));
+  caseMsg(`Deleted "${name}".`);
+  renderCases();
+}
+
+function renderCases() {
+  const host = document.getElementById('cfdCases');
+  if (!host) return;
+  const list = readCases();
+  if (!list) { host.innerHTML = '<p class="cap">Local storage is not available in this browser, so cases cannot be saved here.</p>'; return; }
+  if (!list.length) { host.innerHTML = '<p class="cap">No saved cases yet.</p>'; return; }
+  const esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  host.innerHTML = `<div class="table-wrap"><table class="cfd-table case-table"><thead><tr><th>Case</th><th>Blade · model</th><th>Wet film, locations 1–4 (mm)</th><th></th></tr></thead><tbody>${list.map((c, k) => {
+    const g = c.CFDG || {}, films = (c.summary || []).map(x => x ? x.film.toFixed(3) : '—').join(' · ');
+    const own = (c.locs || []).filter(l => Object.keys(l.over || {}).length).length;
+    return `<tr><th scope="row">${esc(c.name)}<small>${new Date(c.saved).toLocaleString()}</small></th>
+      <td>${g.shape === 'flat' ? 'flat land' : `round entry R ${g.R} mm`}, face ${g.exitAngle}°<small>${RHEO_MODELS[g.model || 'hb'].l}${own ? ` · ${own} location${own > 1 ? 's' : ''} with own inputs` : ''}</small></td>
+      <td>${films}</td>
+      <td class="case-act"><button class="btn btn-secondary btn-sm" type="button" data-load="${k}">Load</button> <button class="btn btn-secondary btn-sm" type="button" data-del="${k}" aria-label="Delete case ${esc(c.name)}">Delete</button></td></tr>`;
+  }).join('')}</tbody></table></div>`;
+  host.querySelectorAll('button[data-load]').forEach(b => { b.onclick = () => loadCase(list[+b.dataset.load].name); });
+  host.querySelectorAll('button[data-del]').forEach(b => { b.onclick = () => deleteCase(list[+b.dataset.del].name); });
 }
 
 function renderGeoNote() {
