@@ -5,7 +5,24 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Feature list 1-12 complete; 13-14 done.
+## Status (latest first). Feature list 1-12 complete; 13-15 done.
+
+### Item 15 (done): fibre dropdown -- thin PET (130) / thick PP (RX001)
+
+User sent the thick fibre's report (RX001, PP, heat set, 0.90 mm, 600 g/m2,
+550 / 195 threads per 10 cm, 90 C continuous / 110 C momentary; air
+permeability: 127 Pa, 80 cm2, "Average flow 1 L" -- unit 1 L/s per the
+user; no filament data) and chose: a fibre dropdown; flow unit 1 L/s;
+filament diameter inferred from the air flow.
+- FIBRES presets fill the fibre inputs and the sidebar's fibre thickness
+  (slider max raised 0.4 -> 1.0 mm); edits flagged "edited from the report".
+- Filament diameter from the yarn (denier / filaments) or from the air
+  permeability: the Kozeny-Carman d that reproduces k = q mu(20 C) t / dp.
+- Thick PP: porosity 0.263 (PP 905 kg/m3, literature), k 1.61e-11 m2,
+  d 195 um (a yarn-scale equivalent: the air goes between yarns), top
+  surface air fraction = porosity 0.26 -> slip 5.4 um; gap 1.0 mm at the
+  default scraper height -> film about 0.82-0.85 mm (thin: 1.65-1.70).
+- Use-temperature row, warned when the oven air exceeds it (100 > 90 C).
 
 ### Item 14 (done): oven air, speed-driven
 

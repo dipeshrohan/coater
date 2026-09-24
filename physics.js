@@ -22,7 +22,7 @@
 const CFG = [
   { g: 'Process', k: 'U', l: 'Web speed', min: 0.1, max: 1.0, step: 0.01, u: 'm/min', d: 2, v: 0.28 },
   { k: 'Hm', l: 'Machine scraper height', min: 1.5, max: 2.3, step: 0.01, u: 'mm', d: 2, v: 1.90 },
-  { k: 'tf', l: 'Fibre thickness', min: 0.05, max: 0.4, step: 0.01, u: 'mm', d: 2, v: 0.20 },
+  { k: 'tf', l: 'Fibre thickness', min: 0.05, max: 1.0, step: 0.01, u: 'mm', d: 2, v: 0.20 },
   { k: 'oven', l: 'Distance to oven', min: 0.1, max: 2, step: 0.05, u: 'm', d: 2, v: 0.5 },
 
   { g: 'Slurry', k: 'mu', l: 'Apparent viscosity at 2.7 1/s', min: 2, max: 30, step: 0.5, u: 'Pa·s', d: 1, v: 10.5 },
