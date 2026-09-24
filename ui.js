@@ -148,11 +148,31 @@ function drawSection(cv, aspect = 0.66) {
 // ---------------------------------------------------------------------
 const workbenchFits = () => innerWidth >= 1024;
 function moduleFrame({ tools = '', panes, cols = 1, notes = '' }) {
-  return `<div class="mod-wb">
+  return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
     <div class="vp-bar" role="toolbar" aria-label="Module controls">${tools}<span class="vp-spacer"></span><div class="status" id="st"></div></div>
     <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.note ? `<p class="pane-note">${p.note}</p>` : ''}</figure>`).join('')}</div>
     <div class="mod-results"><div class="stats" id="ss"></div>${notes ? `<details class="vp-pop pop-up"><summary class="tool-btn">About this view</summary><div class="pop-body"><p class="cap">${notes}</p></div></details>` : ''}</div>
+    <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
+    <section class="dock mod-dock" aria-label="History">
+      <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">History<span class="tab-n" data-n="history"></span></button></div>
+      <div class="dock-body"><div class="dock-panel" id="mod-history" role="tabpanel"><div class="history-host"></div></div></div>
+    </section>
   </div>`;
+}
+/** The modules' dock (their history): its height, dragged on the splitter (or arrow keys on it). */
+let modDockH = 170;
+function wireModDock() {
+  const sp = document.getElementById('modSplit'), wb = document.getElementById('modWb');
+  if (!sp || !wb) return;
+  const setH = h => { modDockH = Math.round(Math.max(90, Math.min(wb.clientHeight - 260, h))); wb.style.setProperty('--dock-h', modDockH + 'px'); };
+  sp.addEventListener('pointerdown', e => {
+    e.preventDefault(); sp.setPointerCapture(e.pointerId);
+    const y0 = e.clientY, h0 = modDockH;
+    const move = ev => setH(h0 - (ev.clientY - y0));
+    const up = () => { sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); render(); };
+    sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
+  });
+  sp.addEventListener('keydown', e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); setH(modDockH + (e.key === 'ArrowUp' ? 30 : -30)); render(); } });
 }
 /** Height (px) a pane's canvas may take so that the viewport's panes fit its height (rows share it). */
 function paneRoom(cv) {
@@ -508,6 +528,7 @@ const work = document.getElementById('work');
 function titleStatus() { const st = document.getElementById('st'); if (st) st.title = [...st.children].map(p => p.textContent).join(' · '); }
 
 function render() {
+  undoBeforeRender();
   [...tabsEl.children].forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
   ANIM.stop();
   // module-specific setup (CFD) lives in the model tree; a module that fills the work area sets .fill itself
@@ -516,11 +537,13 @@ function render() {
   renderRunChips();
   work.classList.add('fill');
   [viewA, view1, view2, view3, viewCFD, viewDOE][tab]();
+  wireModDock();
   decorateImageButtons();
   applyHelp();
   updateProjectTitle();
   titleStatus();
   updateScope();
+  undoAfterRender();
 }
 
 // ---- theme: follows the system until switched here (remembered in this browser)
@@ -554,6 +577,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
 new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 document.getElementById('reset').onclick = () => {
+  undoHint('Reset inputs to defaults');
   CFG.forEach(c => {
     P[c.k] = c.v;
     const s = document.getElementById('s_' + c.k);

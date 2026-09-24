@@ -99,6 +99,7 @@ function applyProject(p) {
   cfdLog.length = 0; for (const m of p.messages || []) cfdLog.push({ ...m, t: new Date(m.t) });
   tab = Number.isInteger(p.view && p.view.module) && p.view.module < TABS.length ? p.view.module : tab;
   render();
+  undoReset();
 }
 
 // ---- menu actions ----
@@ -118,6 +119,7 @@ async function newProject() {
   for (const id of [...inputProblems.keys()]) clearRejected(id);
   Object.assign(PROJ, { name: 'Untitled', handle: null });
   render();
+  undoReset();
   PROJ.savedKey = projKey(); updateProjectTitle();
 }
 async function openProject(handle) {

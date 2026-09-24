@@ -34,6 +34,22 @@
         <div id="fmRecent"></div>
       </div>
     </details>
+    <details class="vp-pop tb-file" id="editMenu"><summary class="tb-menu">Edit</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Edit">
+        <button class="menu-item" type="button" id="emUndo" role="menuitem" disabled><span class="mi-l">Undo</span><kbd>Ctrl+Z</kbd></button>
+        <button class="menu-item" type="button" id="emRedo" role="menuitem" disabled><span class="mi-l">Redo</span><kbd>Ctrl+Y</kbd></button>
+        <div class="menu-sep"><span>This view</span></div>
+        <button class="menu-item" type="button" id="emHistory" role="menuitem">History</button>
+      </div>
+    </details>
+    <div class="tb-undo">
+      <button id="undoBtn" class="icon-btn tb-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5 2.5 6.5l3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 6.5h6.7a3.5 3.5 0 0 1 0 7H6.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button id="redoBtn" class="icon-btn tb-icon" type="button" aria-label="Redo (Ctrl+Y)" title="Redo (Ctrl+Y)" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.2 6.5H6.5a3.5 3.5 0 0 0 0 7h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+    </div>
     <span class="tb-proj" id="projName">Untitled</span>
     <nav class="modules" role="tablist" aria-label="Modules" id="tabs"></nav>
     <div class="tb-actions">
@@ -92,6 +108,7 @@
 <script src="validate.js"></script>
 <script src="help.js"></script>
 <script src="project.js"></script>
+<script src="undo.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

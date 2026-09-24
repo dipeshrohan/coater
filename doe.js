@@ -106,6 +106,7 @@ function runDOE() {
   if (DOE.status === 'running') return;
   const design = DOE.factors.map(fs => ({ ...fs, f: doeFactor(fs.k) })).filter(d => doeAvailable(d.f)).map(d => ({ ...d, levels: doeLevels(d) }));
   if (!design.length) return;
+  undoCommit();
   let combos = [[]];
   for (const d of design) combos = combos.flatMap(c => d.levels.map((_, j) => [...c, j]));
   Object.assign(DOE, {
@@ -113,6 +114,7 @@ function runDOE() {
     runs: combos.map((idx, n) => ({ n, idx, vals: idx.map((j, m) => design[m].levels[j]), status: 'pending' })),
   });
   DOE.x = Math.min(DOE.x, design.length - 1); DOE.mx = 0; DOE.my = Math.min(1, design.length - 1);
+  undoSync();   // (the plot axes follow the new design: not a step)
   logCFD(DOE.loc, `DOE started: ${DOE.runs.length} runs, ${design.map(d => `${d.f.l.toLowerCase()} ${d.levels.map(v => doeFmt(d.f, v)).join(' / ')}`).join('; ')}`);
   doePump();
   renderDOE();
@@ -190,7 +192,7 @@ function viewDOE() {
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">Edit in CFD Analysis</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${k === 'problems' ? '<span class="tab-n" data-n="problems"></span>' : ''}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${k === 'problems' || k === 'history' ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   view.innerHTML = `
     <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${DOE.dockH}px">
       <div class="vp-bar" role="toolbar" aria-label="DOE">
@@ -211,11 +213,12 @@ function viewDOE() {
       </div>
       <div class="split split-h" id="doeSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the DOE panel" tabindex="0"></div>
       <section class="dock" aria-label="DOE design and runs">
-        <div class="dock-tabs" role="tablist" aria-label="DOE">${dockTab('design', 'Design')}${dockTab('runs', 'Runs')}${dockTab('problems', 'Problems')}</div>
+        <div class="dock-tabs" role="tablist" aria-label="DOE">${dockTab('design', 'Design')}${dockTab('runs', 'Runs')}${dockTab('problems', 'Problems')}${dockTab('history', 'History')}</div>
         <div class="dock-body">
           <div class="dock-panel" id="doe-design" role="tabpanel"${DOE.dock === 'design' ? '' : ' hidden'}></div>
           <div class="dock-panel" id="doe-runs" role="tabpanel"${DOE.dock === 'runs' ? '' : ' hidden'}></div>
           <div class="dock-panel" id="doe-problems" role="tabpanel"${DOE.dock === 'problems' ? '' : ' hidden'}><div class="problems-host"></div></div>
+          <div class="dock-panel" id="doe-history" role="tabpanel"${DOE.dock === 'history' ? '' : ' hidden'}><div class="history-host"></div></div>
         </div>
       </section>
     </div>`;
@@ -256,6 +259,7 @@ function renderDOE() {
   renderDOERuns();
   renderDOEPlots();
   renderProblems();
+  renderHistory();
   markInvalidInputs();
   applyHelp();
   updateProjectTitle();
