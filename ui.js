@@ -465,7 +465,9 @@ function render() {
   [...tabsEl.children].forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
   ANIM.stop();
   // module-specific setup (CFD) lives in the model tree; a module that fills the work area sets .fill itself
-  if (tab !== 4) { document.getElementById('setupExtra').innerHTML = ''; document.getElementById('cfdStatus').innerHTML = ''; }
+  if (tab !== 4) document.getElementById('setupExtra').innerHTML = '';
+  document.getElementById('sbCoord').textContent = '';
+  renderRunChips();
   work.classList.toggle('fill', tab === 4);
   [viewA, view1, view2, view3, viewCFD][tab]();
   updateScope();
