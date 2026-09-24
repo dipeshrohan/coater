@@ -426,7 +426,7 @@ details > summary::-webkit-details-marker { display: none; }
 .cfd-table thead th small { display: block; font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  * { scroll-behavior: auto !important; transition: none !important; }
+  * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
 .conv-seq td:first-child { color: var(--muted); }
 .conv-seq tbody th { min-width: 240px; }
@@ -538,3 +538,22 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .tool-btn svg, .tool-run svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .tool-run { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; }
 .dock .cfd-table th, .dock .cfd-table td { padding: 5px 10px; }
+
+/* status bar: cursor read-out and the CFD runs */
+.sb-coord { flex: 0 1 auto; font-family: var(--mono); font-size: 11px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-cfd { gap: 12px; }
+.sb-run { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sb-run b { font-weight: 500; }
+.sb-run .loc-dot { width: 8px; height: 8px; }
+.sb-run.ok b { color: var(--ok); } .sb-run.warn b { color: var(--warn); } .sb-run.bad b { color: var(--bad); } .sb-run.run b { color: var(--accent); }
+.sb-run.run .loc-dot { animation: sb-pulse 1s ease-in-out infinite alternate; }
+@keyframes sb-pulse { from { opacity: 1; } to { opacity: .35; } }
+
+/* Messages tab: the solver log */
+.msg-log { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; max-height: none; }
+.msg { display: grid; grid-template-columns: 64px 34px minmax(0, 1fr); gap: 8px; padding: 1px 4px; border-radius: 3px; color: var(--ink); }
+.msg:hover { background: var(--soft); }
+.msg time { color: var(--muted); }
+.msg-loc { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.msg-loc .loc-dot { width: 7px; height: 7px; }
+.msg.ok .msg-t { color: var(--ok); } .msg.warn .msg-t { color: var(--warn); } .msg.bad .msg-t { color: var(--bad); }

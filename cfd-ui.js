@@ -239,6 +239,14 @@ function cfdGeometry(i) {
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance]);
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
+// ---- solver messages: what each run did, in order (the Messages tab) ----
+const cfdLog = [];
+function logCFD(i, text, kind = '') {
+  cfdLog.push({ t: new Date(), i, text, kind });
+  if (cfdLog.length > 500) cfdLog.splice(0, cfdLog.length - 500);
+  renderMessages();
+}
+
 function runLocation(i) {
   const run = cfdRuns[i];
   if (run.status === 'running') return;
@@ -247,9 +255,16 @@ function runLocation(i) {
   cfdWorkers[i] = worker;
   const t0 = performance.now();
   run.status = 'running'; run.error = null; run.progress = null;
+  let lastStage = null;
+  logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : 'flat land'}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
-    if (e.data.progress) { run.progress = e.data.progress; updateLocStates(); return; }
+    if (e.data.progress) {
+      run.progress = e.data.progress;
+      if (run.progress.stage && run.progress.stage !== lastStage) { lastStage = run.progress.stage; logCFD(i, lastStage); }
+      updateLocStates(); renderRunChips();
+      return;
+    }
     finish();
     const ms = performance.now() - t0;
     const r = e.data.ok ? e.data.result : null;
@@ -264,14 +279,20 @@ function runLocation(i) {
       });
       run.metrics = flowMetrics(run.field);
     }
+    if (run.status === 'done') {
+      const tr = r.trace;
+      logCFD(i, `solved in ${(ms / 1000).toFixed(1)} s: wet film ${(r.Q / geo.U * 1000).toFixed(3)} mm, contact line ${r.mode === 'climbed' ? `${(r.sCL * 1000).toFixed(3)} mm up the exit face` : 'pinned at the edge'}, residual ${r.residual.toExponential(1)}${tr ? `, ${tr.solves.length} solves / ${tr.r.length} Newton iterates` : ''}${r.converged ? '' : ' (partly converged)'}`, r.converged ? 'ok' : 'warn');
+    } else logCFD(i, `failed: ${run.error}`, 'bad');
+    renderRunChips();
     renderCFD();
   };
-  worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; renderCFD(); };
+  worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); };
   worker.postMessage({
     geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
     U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
     gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance,
   });
+  renderRunChips();
   renderCFD();
 }
 
@@ -282,7 +303,9 @@ function cancelAllLocations() {
     if (!w) return;
     w.terminate(); cfdWorkers[i] = null;
     cfdRuns[i].status = 'cancelled'; // any earlier result for this location is kept (and flagged if out of date)
+    logCFD(i, 'stopped', 'warn');
   });
+  renderRunChips();
   renderCFD();
 }
 
@@ -451,7 +474,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('cases', 'Saved cases')}${dockTab('method', 'Method')}
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('cases', 'Saved cases')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
         </div>
         <div class="dock-body">
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
@@ -475,6 +498,8 @@ function viewCFD() {
               <span class="fv-why" id="cfdCaseMsg">Kept in this browser (local storage).</span>
             </div>
             <div id="cfdCases"></div>`)}
+          ${panel('msgs', `<div class="fv-bar"><span class="fv-ctl" id="cfdMsgCount"></span><button class="btn btn-secondary btn-sm" type="button" id="cfdMsgClear">Clear</button></div>
+            <div class="msg-log" id="cfdMsgs" role="log"></div>`)}
           ${panel('method', `<p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything shown is post-processed from the stored solutions: display settings never re-run the solver.</p><p class="cap"><b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
       <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
@@ -510,6 +535,7 @@ function viewCFD() {
   geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400); geoNum('cfdPlenum', 'plenum', 1, 5000);
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
+  document.getElementById('cfdMsgClear').onclick = () => { cfdLog.length = 0; renderMessages(); };
   document.getElementById('cfdCaseSave').onclick = saveCase;
   document.getElementById('xlMetric').addEventListener('change', e => { FV.across = e.target.value; renderAcross(); });
   document.getElementById('cfdCsvField').onclick = () => exportField();
@@ -585,6 +611,7 @@ function renderCFD() {
   const dens = document.getElementById('fvDensity');
   if (dens) dens.disabled = custom.disabled = FV.seedMode === 'manual';
   renderCfdStatus();
+  renderMessages();
   renderGeoNote();
   renderLocCards();
   renderViewSeg();
@@ -788,19 +815,42 @@ function renderGeoNote() {
   }
 }
 
-function renderCfdStatus() {
+/** The CFD runs in the status bar, one chip per location (shown in every module: runs carry on in the background). */
+function renderRunChips() {
   const el = document.getElementById('cfdStatus');
-  const running = cfdRuns.filter(r => r.status === 'running').length;
-  const solved = cfdRuns.filter(r => r.field).length;
-  const failed = cfdRuns.filter(r => r.status === 'error').length;
-  const stale = CFD_LOCS.filter((_, i) => cfdIsStale(i)).length;
-  let html = running ? pill(`Solving ${running} of 4…`, '')
-    : pill(`${solved} of 4 locations solved`, solved === 4 ? 'ok' : solved ? 'warn' : '');
-  if (stale) html += pill(`${stale} out of date`, 'warn');
-  if (failed) html += pill(`${failed} failed`, 'bad');
-  el.innerHTML = html;
-  el.title = stale ? `${stale} location${stale > 1 ? 's' : ''} out of date: inputs changed since the run` : '';
-  document.getElementById('cfdCancel').hidden = !running;
+  if (!el) return;
+  el.innerHTML = CFD_LOCS.map((loc, i) => {
+    const r = cfdRuns[i];
+    let cls = '', txt = '—', tip = 'not run yet';
+    if (r.status === 'running') {
+      cls = 'run'; const pr = r.progress;
+      txt = pr && Number.isFinite(pr.residual) ? `r ${pr.residual.toExponential(0)}` : 'solving';
+      tip = `solving${pr ? ': ' + (pr.stage || 'starting') : ''}`;
+    } else if (r.status === 'error') { cls = 'bad'; txt = 'failed'; tip = r.error || 'failed'; }
+    else if (r.field && cfdIsStale(i)) { cls = 'warn'; txt = 'out of date'; tip = 'inputs changed since this run'; }
+    else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `${(r.elapsedMs / 1000).toFixed(1)} s`; tip = `solved in ${(r.elapsedMs / 1000).toFixed(1)} s, residual ${r.result.residual.toExponential(1)}`; }
+    else if (r.status === 'cancelled') { cls = 'warn'; txt = 'stopped'; tip = 'stopped'; }
+    return `<span class="sb-run ${cls}" title="Location ${loc.id} (z ${loc.z} mm): ${tip}"><i class="loc-dot" style="background:${locColor(i)}"></i>L${loc.id} <b>${txt}</b></span>`;
+  }).join('');
+}
+
+function renderCfdStatus() {
+  renderRunChips();
+  const cancel = document.getElementById('cfdCancel');
+  if (cancel) cancel.hidden = !cfdRuns.some(r => r.status === 'running');
+}
+
+/** The Messages tab: the solver's log, oldest first, kept at the bottom while new lines come in. */
+function renderMessages() {
+  const host = document.getElementById('cfdMsgs');
+  if (!host) return;
+  const sc = host.closest('.dock-body') || host, atEnd = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 30;
+  const hh = d => d.toTimeString().slice(0, 8);
+  host.innerHTML = cfdLog.length ? cfdLog.map(m => `<div class="msg ${m.kind}"><time>${hh(m.t)}</time><span class="msg-loc"><i class="loc-dot" style="background:${locColor(m.i)}"></i>L${m.i + 1}</span><span class="msg-t">${m.text}</span></div>`).join('')
+    : '<p class="cap">No messages yet: each run writes what the solver does here.</p>';
+  if (atEnd && !host.closest('[hidden]')) sc.scrollTop = sc.scrollHeight;
+  const n = document.getElementById('cfdMsgCount');
+  if (n) n.textContent = `${cfdLog.length} message${cfdLog.length === 1 ? '' : 's'}`;
 }
 
 function renderLocCards() {
@@ -971,7 +1021,8 @@ function wirePlotProbe(el, cv, map, run) {
   const oc = over.getContext('2d');
   oc.setTransform(dpr, 0, 0, dpr, 0, 0);
   cv.style.cursor = placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : 'default';
-  const clear = () => { oc.clearRect(0, 0, cssW, cssH); tip.hidden = true; };
+  const sb = document.getElementById('sbCoord');
+  const clear = () => { oc.clearRect(0, 0, cssW, cssH); tip.hidden = true; if (sb) sb.textContent = ''; };
   const at = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 
   const probe = e => {
@@ -984,6 +1035,7 @@ function wirePlotProbe(el, cv, map, run) {
     oc.beginPath(); oc.arc(px, py, 3.5, 0, 7); oc.fillStyle = cssVar('--surface'); oc.fill(); oc.strokeStyle = cssVar('--ink'); oc.stroke();
 
     const [x, y] = p, s = a => sampleField(f, a, x, y);
+    if (sb) sb.textContent = `L${run.geo ? CFD_LOCS.findIndex((_, k) => cfdRuns[k] === run) + 1 : ''} · x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm${fieldInside(f, x, y) ? ` · |V| ${fmtNum(Math.hypot(s(f.u), s(f.v)) * 1000)} mm/s${f.p ? ` · p ${fmtNum(s(f.p))} Pa` : ''}` : ''}`;
     if (!fieldInside(f, x, y)) {
       tip.innerHTML = `<b>x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm</b><span class="fv-why">outside the fluid (${f.curv && x > f.xe && y > cfdTopAt(f, x) ? 'air' : 'blade'})</span>`;
       tip.hidden = false;
