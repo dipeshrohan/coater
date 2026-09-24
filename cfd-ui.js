@@ -75,7 +75,11 @@ const SCALARS = {
   shear: { label: 'Shear rate', short: 'shear', unit: '1/s', scale: 1, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.shear },
   mu: { label: 'Apparent viscosity', short: 'μ', unit: 'Pa·s', scale: 1, kind: 'seq', cap: true, arr: f => f.mu },
   omega: { label: 'Vorticity', short: 'ω', unit: '1/s', scale: 1, kind: 'div', skipCorner: true, arr: f => f.omega },
+  strain1: { label: 'Principal strain rate, stretching', short: 'λ₁', unit: '1/s', scale: 1, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.strain1 },
+  dissip: { label: 'Viscous dissipation μγ̇²', short: 'Φ', unit: 'kW/m³', scale: 1e-3, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.dissipation },
 };
+// Line colouring by each streamline's own travel time (not a field)
+const TIME_SCALAR = { key: 'time', label: 'Time along the line', short: 't', unit: 's', scale: 1, kind: 'seq', perLine: true, capped: false };
 // skipCorner: the colour range leaves out the metering edge corner's singular zone (values there are clamped, and the colorbar says so)
 
 // ---------------------------------------------------------------------
@@ -182,7 +186,13 @@ function scalarRange(key, fields) {
   if (d.skipCorner) for (const f of fields) { const a = d.arr(f); if (a && f.cornerZone) for (let k = 0; k < a.length; k++) if (f.cornerZone[k] && (a[k] * d.scale > max || a[k] * d.scale < min)) capped = true; }
   return { key, label: d.label, short: d.short, unit: d.unit, scale: d.scale, kind, min, max, capped };
 }
-const scalarFor = (range, f) => range && { ...range, arr: SCALARS[range.key].arr(f) };
+/** Colour range for time along the lines: 0 to the 90th percentile of the lines' total times (a few slow lines would wash the rest out; they are capped, and the colorbar says so). */
+function timeRange(list) {
+  const ends = list.flatMap(i => streamlinesFor(cfdRuns[i]).lines.map(l => l.t[l.t.length - 1])).sort((a, b) => a - b);
+  const max = ends.length ? Math.max(1e-9, ends[Math.min(ends.length - 1, Math.floor(0.9 * ends.length))]) : 1;
+  return { ...TIME_SCALAR, min: 0, max, capped: ends.some(t => t > max) };
+}
+const scalarFor = (range, f) => range && (range.perLine ? range : { ...range, arr: SCALARS[range.key].arr(f) });
 
 function streamlinesFor(run) {
   const f = run.field;
@@ -195,6 +205,7 @@ function streamlinesFor(run) {
   if (!hit) {
     const seeds = manual || autoSeeds(f, n, FV.direction);
     const lines = seeds.map(p => traceStreamline(f, p, { direction: FV.direction }));
+    for (const l of lines) l.t = streamlineTimes(f, l);
     hit = { seeds, lines, psiDev: lines.length ? Math.max(...lines.map(l => streamlinePsiDeviation(f, l))) : null };
     run.streamCache.set(key, hit);
   }
@@ -265,6 +276,7 @@ function viewCFD() {
         <label class="fv-ctl">Field <select id="fvBase">
           ${opt('speed', 'Velocity magnitude |V|', FV.base)}${opt('ux', 'u_x (machine direction)', FV.base)}${opt('uy', 'u_y (normal to web)', FV.base)}
           ${opt('shear', 'Shear rate', FV.base)}${opt('mu', 'Apparent viscosity', FV.base)}${opt('omega', 'Vorticity', FV.base)}
+          ${opt('strain1', 'Principal strain rate', FV.base)}${opt('dissip', 'Viscous dissipation', FV.base)}
           ${opt('pressure', 'Pressure', FV.base)}${opt('none', 'None (geometry only)', FV.base)}
         </select></label>
         <label class="fv-chk"><input type="checkbox" id="fvStream"${FV.streamlines ? ' checked' : ''}> Streamlines</label>
@@ -279,7 +291,7 @@ function viewCFD() {
               <input type="number" id="fvCustomN" min="2" max="80" step="1" value="${FV.customN}" aria-label="Custom streamline count"${FV.density === 'custom' ? '' : ' hidden'}></label>
             <label class="fv-ctl">Seeds <select id="fvSeedMode">${opt('auto', 'Automatic', FV.seedMode)}${opt('manual', 'Manual', FV.seedMode)}</select></label>
             <label class="fv-ctl">Direction <select id="fvDir">${opt('forward', 'Forward', FV.direction)}${opt('backward', 'Backward', FV.direction)}${opt('both', 'Both', FV.direction)}</select></label>
-            <label class="fv-ctl">Colour <select id="fvLineColor">${opt('none', 'Plain', FV.lineColor)}${opt('speed', 'Velocity magnitude', FV.lineColor)}${opt('shear', 'Shear rate', FV.lineColor)}${opt('mu', 'Apparent viscosity', FV.lineColor)}${opt('pressure', 'Pressure', FV.lineColor)}</select></label>
+            <label class="fv-ctl">Colour <select id="fvLineColor">${opt('none', 'Plain', FV.lineColor)}${opt('speed', 'Velocity magnitude', FV.lineColor)}${opt('shear', 'Shear rate', FV.lineColor)}${opt('mu', 'Apparent viscosity', FV.lineColor)}${opt('pressure', 'Pressure', FV.lineColor)}${opt('time', 'Time along the line', FV.lineColor)}</select></label>
             <label class="fv-ctl">Width <select id="fvLineW">${opt('thin', 'Thin', FV.lineWidth)}${opt('normal', 'Normal', FV.lineWidth)}${opt('thick', 'Thick', FV.lineWidth)}</select></label>
             <label class="fv-chk"><input type="checkbox" id="fvArrows"${FV.arrows ? ' checked' : ''}> Direction arrows</label>
           </fieldset>
@@ -473,7 +485,9 @@ function renderFlowPlots() {
   const fields = list.map(i => cfdRuns[i].field);
   const ranges = {
     base: FV.base !== 'none' && SCALARS[FV.base] ? scalarRange(FV.base, fields) : null,
-    line: FV.streamlines && FV.lineColor !== 'none' ? scalarRange(FV.lineColor, fields) : null,
+    line: !FV.streamlines || FV.lineColor === 'none' ? null
+      : FV.lineColor === 'time' ? timeRange(list)
+        : scalarRange(FV.lineColor, fields),
     speed: scalarRange('speed', fields),
   };
   const yMax = Math.max(...fields.map(f => f.Ly));
@@ -600,6 +614,23 @@ function where(f, loc) {
   return `<small>at ${xs}, y ${(y * 1000).toFixed(3)}</small>`;
 }
 
+/** Numbers from the stored field (cached per run): residence times, dissipation, field viscosities for Re and Ca. */
+function cfdFieldNumbers(run) {
+  if (run.fieldNumbers) return run.fieldNumbers;
+  const f = run.field, r = run.result, N = f.nx * f.ny, top = (f.ny - 1) * f.nx;
+  let dissTot = 0, dissBlade = 0, a = 0, am = 0;
+  for (let k = 0; k < N; k++) {
+    const w = f.nodeArea[k], under = f.gx[k] <= r.xe;
+    dissTot += w * f.dissipation[k];
+    if (under) { dissBlade += w * f.dissipation[k]; if (!(f.unyielded && f.unyielded[k])) { a += w; am += w * f.mu[k]; } }
+  }
+  // free surface within 5 gaps of the contact line: yielded nodes only (an unyielded node's viscosity is the regularization's, not a property)
+  let ms = 0, ns = 0, nu = 0;
+  for (let i = r.iCL; i < f.nx && f.gx[top + i] <= r.clX + 5 * r.H; i++) { if (f.unyielded && f.unyielded[top + i]) nu++; else { ms += f.mu[top + i]; ns++; } }
+  run.fieldNumbers = { res: residenceTimes(f, r.xe), dissTot, dissBlade, muBar: am / a, muS: ns ? ms / ns : null, surfYielded: ns, surfUnyielded: nu };
+  return run.fieldNumbers;
+}
+
 function renderMetrics() {
   const host = document.getElementById('cfdMetrics');
   const compare = FV.view === 'compare';
@@ -637,8 +668,12 @@ function renderMetrics() {
     ['Recirculation, closed streamlines', 'mm²', r => r.metrics.recircArea > 0 ? `${fmtNum(r.metrics.recircArea * 1e6)} <small>${(r.metrics.recircFraction * 100).toFixed(1)}% of area</small>` : 'none'],
     ['Stagnation, |V| < 1% of max', 'x, y in mm', r => r.metrics.stagnation.length ? r.metrics.stagnation.slice(0, 4).map(s => `${(s.x * 1000).toFixed(2)}, ${(s.y * 1000).toFixed(3)}`).join('<br>') + (r.metrics.stagnation.length > 4 ? `<br><small>+${r.metrics.stagnation.length - 4} more</small>` : '') : 'none'],
     ['Unyielded fluid, stress below yield', '% of area', r => r.geo.ty > 0 ? (unyieldedPct(r) > 0 ? unyieldedPct(r).toFixed(1) : 'none <small>stress above yield everywhere</small>') : 'none <small>no yield stress</small>'],
-    ['Reynolds number ρUH/μ', '', r => (RHO * r.geo.U * r.geo.H / r.geo.muRep).toExponential(2)],
-    ['Capillary number μU/γ', '', r => (r.geo.muRep * r.geo.U / r.geo.gamma).toExponential(2)],
+    ['Residence time, inlet to the metering edge', 's (fastest · flux-weighted mean · slowest)', r => { const t = cfdFieldNumbers(r).res; return t.n ? `${fmtNum(t.min)} · ${fmtNum(t.mean)} · ${fmtNum(t.max)} <small>${t.n} equal-flux lines${t.turned ? `; ${t.turned} turned back` : ''}</small>` : '—'; }],
+    ['Viscous dissipation', 'mW per m of width (under the blade)', r => { const q = cfdFieldNumbers(r); return `${fmtNum(q.dissTot * 1e3)} <small>${fmtNum(q.dissBlade * 1e3)}</small>`; }],
+    ['Reynolds number ρUH/μ(U/H)', 'viscosity at the shear rate U/H', r => (RHO * r.geo.U * r.geo.H / r.geo.muRep).toExponential(2)],
+    ['Reynolds number from the field, ρQ/μ̄', 'μ̄ = area mean of the yielded fluid under the blade', r => { const q = cfdFieldNumbers(r); return `${(RHO * r.result.Q / q.muBar).toExponential(2)} <small>μ̄ ${fmtNum(q.muBar)} Pa·s</small>`; }],
+    ['Capillary number μ(U/H)U/γ', 'viscosity at the shear rate U/H', r => (r.geo.muRep * r.geo.U / r.geo.gamma).toExponential(2)],
+    ['Capillary number at the meniscus, μ_s U/γ', 'μ_s = mean along the yielded free surface within 5 gaps of the contact line', r => { const q = cfdFieldNumbers(r); return q.muS == null ? 'surface unyielded there <small>no viscous stress scale: the yield stress holds it</small>' : `${(q.muS * r.geo.U / r.geo.gamma).toExponential(2)} <small>μ_s ${fmtNum(q.muS)} Pa·s${q.surfUnyielded ? `; ${q.surfUnyielded} of ${q.surfUnyielded + q.surfYielded} surface nodes unyielded, left out` : ''}</small>`; }],
     ['Streamline check: ψ drift along lines', '% of ψ range', r => { const sl = FV.streamlines ? streamlinesFor(r) : null; return sl && sl.psiDev != null ? (sl.psiDev * 100).toFixed(3) : '—'; }],
     ['Solver', '', r => `${r.result.converged ? 'converged' : 'partly converged'} <small>${r.result.iterations} Newton steps, residual ${r.result.residual.toExponential(1)}, ${(r.elapsedMs / 1000).toFixed(1)} s</small>`],
   ];

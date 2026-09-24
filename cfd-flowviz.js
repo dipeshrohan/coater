@@ -80,10 +80,24 @@ function makeFlowField(r, opts = {}) {
     muCap = hasPlug ? flowMax * 1.3 : flowMax;
   }
 
+  // principal strain rates (eigenvalues of D = tau / (2 mu); strain1 >= strain2, stretching and
+  // compression; strainDir the stretching direction, rad from x) and viscous dissipation tau:D = mu gd^2
+  let strain1 = null, strain2 = null, strainDir = null, dissipation = null;
+  if (r.tauXY && r.tauXX && mu) {
+    strain1 = new Float64Array(N); strain2 = new Float64Array(N); strainDir = new Float64Array(N); dissipation = new Float64Array(N);
+    for (let k = 0; k < N; k++) {
+      const ux = r.tauXX[k] / (2 * mu[k]), vy = (r.tauYY ? r.tauYY[k] : -r.tauXX[k]) / (2 * mu[k]), sxy = r.tauXY[k] / (2 * mu[k]);
+      const m = 0.5 * (ux + vy), rr = Math.hypot(0.5 * (ux - vy), sxy);
+      strain1[k] = m + rr; strain2[k] = m - rr; strainDir[k] = 0.5 * Math.atan2(2 * sxy, ux - vy);
+      dissipation[k] = mu[k] * shear[k] * shear[k];
+    }
+  }
+
   const psi = r.psi || null;
   return {
     nx, ny, ...grid,
     u, v, speed, vmax, shear, mu, muCap, hasPlug, unyielded, psi, omega: r.omega || null, p: r.p || null,
+    strain1, strain2, strainDir, dissipation,
     psiWeb: psi ? psi[0] : null, psiLand: psi ? psi[(ny - 1) * nx] : null,
   };
 }
@@ -538,6 +552,40 @@ function flowMetrics(f) {
   };
 }
 
+/**
+ * Time along a streamline (its points in flow order): t[0] = 0 and dt = ds / |V| on each
+ * segment, |V| at the segment's middle -- the travel time of a fluid particle along it.
+ */
+function streamlineTimes(f, line) {
+  const pts = line.points, t = new Float64Array(pts.length);
+  for (let i = 1; i < pts.length; i++) {
+    const ds = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const sp = sampleField(f, f.speed, 0.5 * (pts[i][0] + pts[i - 1][0]), 0.5 * (pts[i][1] + pts[i - 1][1]));
+    t[i] = t[i - 1] + ds / Math.max(sp, 1e-12);
+  }
+  return t;
+}
+
+/**
+ * Residence time of the through-flow from the inlet to x = xStop (e.g. the metering edge):
+ * n streamlines seeded on the inlet at equal flux spacing, traced forward; each line's
+ * time to cross xStop. Lines that turn back to the inlet are counted, not timed. Equal flux
+ * per line, so the plain mean over the timed lines is the flux-weighted mean.
+ */
+function residenceTimes(f, xStop, n = 32) {
+  const times = [];
+  let turned = 0;
+  for (const seed of autoSeeds(f, n, 'forward').slice(0, n)) {
+    const line = traceStreamline(f, seed, { direction: 'forward', maxCells: 20 * (f.nx + f.ny) }), pts = line.points, t = streamlineTimes(f, line);
+    let hit = null;
+    for (let i = 1; i < pts.length; i++) if (pts[i - 1][0] < xStop && pts[i][0] >= xStop) { const a = (xStop - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]); hit = t[i - 1] + a * (t[i] - t[i - 1]); break; }
+    if (hit != null) times.push(hit); else turned++;
+  }
+  if (!times.length) return { n: 0, turned };
+  times.sort((a, b) => a - b);
+  return { n: times.length, turned, min: times[0], max: times[times.length - 1], mean: times.reduce((a, b) => a + b, 0) / times.length, times };
+}
+
 /** Largest deviation of psi along a traced line from its seed value, as a fraction of the psi range -- the streamline correctness check (psi is exactly constant along a true streamline of a steady 2D incompressible flow). */
 function streamlinePsiDeviation(f, line) {
   if (!f.psi) return null;
@@ -550,5 +598,5 @@ function streamlinePsiDeviation(f, line) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation };
+  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation, streamlineTimes, residenceTimes };
 }

@@ -5,10 +5,29 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Remaining feature list, in order: 5. remaining
-## output fields, 6. independent inputs per location,
+## Status (latest first). Remaining feature list, in order: 6. independent inputs per location,
 ## 7. rheology model dropdown, 8. save/load cases, 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Item 5 (done): remaining output fields
+
+- Principal strain rates: eigenvalues of D = tau / (2 mu) at the nodes
+  (stretching lambda1, compression lambda2, stretching direction); field
+  "Principal strain rate".
+- Viscous dissipation tau:D = mu gd^2: field, and totals (whole domain and
+  under the blade, W per m of width, nodal-area quadrature).
+- Residence time: travel time along streamlines (int ds / |V|); streamline
+  colouring "Time along the line" (range capped at the 90th percentile of
+  the lines' times, marked); metric: inlet to metering edge over 32
+  equal-flux lines (fastest, flux-weighted mean, slowest; lines turning
+  back counted).
+- Re and Ca from the field, next to the representative ones:
+  Re = rho Q / mu_bar (mu_bar = area mean of the yielded fluid under the
+  blade); Ca at the meniscus = mu_s U / gamma (mu_s = mean over the
+  yielded free-surface nodes within 5 gaps of the contact line; unyielded
+  nodes are left out -- their viscosity is the regularization's).
+- Validation (`cfd-fem.validate.js` section 9, Couette-Poiseuille): strain
+  rates exact (1e-14), dissipation total within 0.001%, travel times exact.
 
 ### Item 4 (done): the porous fibre
 
