@@ -18,12 +18,14 @@ function cssVar(name) {
  * to draw against (the transform already absorbs the DPR scaling).
  */
 function setupCanvas(cv, aspectRatio) {
-  const w = cv.parentElement.clientWidth || 600;
-  const dpr = window.devicePixelRatio || 1;
+  const par = cv.parentElement, pcs = getComputedStyle(par);
+  const w = (par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0)) || 600;   // (the canvas fills its parent's content box)
+  const dpr = window.EXPORT_DPR || window.devicePixelRatio || 1;   // (EXPORT_DPR: drawn for an image export)
   const h = w * aspectRatio;
   cv.style.height = h + 'px';
   cv.width = w * dpr;
   cv.height = h * dpr;
+  if (typeof recordCanvas === 'function') recordCanvas(cv, w, h);   // (its drawing is logged for vector / high-resolution image export)
   const c = cv.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   return { c, w, h };

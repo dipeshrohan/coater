@@ -515,6 +515,7 @@ function render() {
   renderRunChips();
   work.classList.add('fill');
   [viewA, view1, view2, view3, viewCFD][tab]();
+  decorateImageButtons();
   titleStatus();
   updateScope();
 }

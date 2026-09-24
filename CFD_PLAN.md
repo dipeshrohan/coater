@@ -8,9 +8,34 @@ drift out of sync with what's actually built.
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
-## 6 difference plots (done), 7 image export, 8 solver/mesh settings, 9 parametric sweep/DOE,
+## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings, 9 parametric sweep/DOE,
 ## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-7 (done): image export
+
+User's choices: the flow plot(s), the dock charts (one, or all of a tab)
+and the whole window; PNG and SVG; 1x / 2x / 4x; white or theme
+background; title, legend, inputs summary, date / app footer; a camera
+button in the title bar (dialog) and on each plot and chart; the whole
+window as PNG, or an SVG wrapping that picture; html2canvas from cdnjs,
+loaded on first use.
+- export-image.js. Canvases sized by setupCanvas get a recording 2D
+  context (HTMLCanvasElement.getContext is wrapped for them): every call
+  is drawn and logged. An export sets window.EXPORT_DPR = k, redraws the
+  view (setupCanvas and the field raster use k; the raster is not cached),
+  copies the logs, redraws normally.
+- The image is composed with canvas calls on a canvas (PNG) or SvgCtx, an
+  SVG writer implementing the calls used (paths with coordinates baked
+  in, clips as nested clipPaths, text with its matrix and baseline, the
+  field raster as an embedded PNG). Legend swatches redrawn from their
+  computed style; inputs read from the model tree.
+- White on the dark theme: drawn in the light theme for the export.
+- Whole window: html2canvas on a page copy with colour-mix() colours
+  made plain rgba, closed <details> content hidden, sliders drawn as a
+  track and thumb, SVG icons as pictures (summary icons as backgrounds).
+- Fixed on the way: setupCanvas used the parent's width including its
+  padding, so module-pane canvases were drawn 20 px too wide and squeezed.
 
 ### GUI-6 (done): difference plots
 
