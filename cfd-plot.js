@@ -127,6 +127,7 @@ const rasterCache = new WeakMap();
  *   probes       [{name, x, y, inside}] -- named probe points (filled when inside this field's fluid)
  *   exitAngle    blade exit face at the edge, degrees from the web (machine direction); default 90
  *   bladeLabel   text for the blade
+ *   maxH         the canvas's whole height may not exceed this (px): the plot then fills it
  * Returns the mapping for hit-testing and overlays.
  */
 function drawFlowPlot(cv, s) {
@@ -140,7 +141,7 @@ function drawFlowPlot(cv, s) {
   let plotH;
   if (s.yScale === 'true') plotH = plotW * yRange / xRange;
   else plotH = plotW * (compact ? 0.26 : 0.5);
-  plotH = Math.max(compact ? 70 : 110, Math.min(plotH, compact ? 190 : 420));
+  plotH = Math.max(compact ? 70 : 110, Math.min(plotH, s.maxH ? s.maxH - titleH - bladeBand - webBand - axisH : compact ? 190 : 420));
   const exaggeration = (plotH / plotW) * (xRange / yRange);
 
   const T = titleH + bladeBand;

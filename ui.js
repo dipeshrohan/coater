@@ -29,6 +29,11 @@ function syncSliderFill(input) {
   input.style.setProperty('--val', pct + '%');
 }
 
+// Each input is a property row, as in a CFD setup tree: its name, an editable
+// number with its unit, and a thin slider under it for quick sweeps. The
+// slider (s_<key>) stays the source of truth: typing a number sets it and
+// fires its 'input' event, exactly as dragging does (and as loading a case
+// or resetting does).
 (function buildSliders() {
   let currentGroup = null;
   CFG.forEach(c => {
@@ -43,14 +48,21 @@ function syncSliderFill(input) {
       currentGroup = details;
     }
     const row = document.createElement('div');
-    row.className = 'sl';
-    row.innerHTML = `<label for="s_${c.k}"><span class="lt">${c.l}</span><output id="o_${c.k}"></output></label><input type="range" id="s_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}">${c.h ? `<span class="h">${c.h}</span>` : ''}`;
+    row.className = 'prop';
+    row.innerHTML = `<label class="prop-l" for="n_${c.k}">${c.l}${c.h ? `<small>${c.h}</small>` : ''}</label>
+      <span class="prop-v"><input type="number" id="n_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${(+c.v).toFixed(c.d)}"><span class="prop-u">${c.u}</span></span>
+      <input type="range" class="prop-range" id="s_${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}" aria-label="${c.l}${c.u ? ', ' + c.u : ''}" tabindex="-1">`;
     currentGroup.appendChild(row);
 
-    const slider = row.querySelector('input'), output = row.querySelector('output');
-    const showValue = () => { output.textContent = (+slider.value).toFixed(c.d) + (c.u ? ' ' + c.u : ''); syncSliderFill(slider); };
+    const slider = row.querySelector('input[type=range]'), num = row.querySelector('input[type=number]');
+    const showValue = () => { if (document.activeElement !== num) num.value = (+slider.value).toFixed(c.d); syncSliderFill(slider); };
     showValue();
     slider.addEventListener('input', () => { P[c.k] = +slider.value; showValue(); queueRender(); });
+    num.addEventListener('change', () => {
+      const v = +num.value;
+      if (Number.isFinite(v)) { slider.value = Math.min(c.max, Math.max(c.min, v)); slider.dispatchEvent(new Event('input')); }
+      num.value = (+slider.value).toFixed(c.d);
+    });
   });
 })();
 
@@ -64,6 +76,7 @@ function updateScope(extra = '') {
   el.innerHTML = q.issues.length
     ? `<strong>${hard ? 'Result withheld' : 'Use with caution'}.</strong> ${q.issues.join('; ')}. Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`
     : `<strong>Within the thin-film checks.</strong> Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`;
+  el.title = el.textContent;   // (the status bar may cut it short)
 }
 
 /** Draw the static cross-section (blade, bead, meniscus, film) for the "Contact line at the blade" tab. */
@@ -428,11 +441,12 @@ function view3() {
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
 let tab = 0;
-const TABS = ['Slurry animation', 'Contact line at the blade', 'Web edge', 'Film surface', 'CFD Analysis'];
+const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis'];
 const tabsEl = document.getElementById('tabs');
 TABS.forEach((t, i) => {
   const b = document.createElement('button');
   b.textContent = t;
+  b.type = 'button';
   b.setAttribute('role', 'tab');
   b.onclick = () => { tab = i; render(); };
   b.onkeydown = e => {
@@ -445,13 +459,43 @@ TABS.forEach((t, i) => {
   tabsEl.appendChild(b);
 });
 const view = document.getElementById('view');
+const work = document.getElementById('work');
 
 function render() {
   [...tabsEl.children].forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
   ANIM.stop();
+  // module-specific setup (CFD) lives in the model tree; a module that fills the work area sets .fill itself
+  if (tab !== 4) { document.getElementById('setupExtra').innerHTML = ''; document.getElementById('cfdStatus').innerHTML = ''; }
+  work.classList.toggle('fill', tab === 4);
   [viewA, view1, view2, view3, viewCFD][tab]();
   updateScope();
 }
+
+// ---- theme: follows the system until switched here (remembered in this browser)
+const THEME_KEY = 'bladeCoatDefectLab.theme';
+try { const t = localStorage.getItem(THEME_KEY); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { /* storage blocked: follow the system */ }
+document.getElementById('themeBtn').onclick = () => {
+  const next = isDarkTheme() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* not remembered */ }
+};
+
+// ---- the model panel's width: drag the splitter (or arrow keys on it)
+(function treeSplitter() {
+  const sp = document.getElementById('treeSplit'), body = document.getElementById('wbBody');
+  const setW = w => { body.style.setProperty('--tree-w', Math.max(240, Math.min(520, w)) + 'px'); };
+  sp.addEventListener('pointerdown', e => {
+    e.preventDefault(); sp.setPointerCapture(e.pointerId); sp.classList.add('drag');
+    const x0 = e.clientX, w0 = body.querySelector('.tree').offsetWidth;
+    const move = ev => setW(w0 + ev.clientX - x0);
+    const up = () => { sp.classList.remove('drag'); sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); render(); };
+    sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
+  });
+  sp.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault(); setW(body.querySelector('.tree').offsetWidth + (e.key === 'ArrowRight' ? 20 : -20)); render();
+  });
+})();
 
 window.addEventListener('resize', render);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);

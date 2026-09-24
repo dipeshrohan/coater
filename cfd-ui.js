@@ -186,6 +186,9 @@ const FV = {
   manualSeeds: [],        // [x, y] in metres, shared by all locations so comparisons are like for like
   across: 'film',         // quantity plotted against position across the web
   convOpen: false,        // convergence: solve-sequence table expanded
+  tree: { geo: true, rheo: true, fibre: false, air: false, locs: true },   // model tree: CFD groups open
+  dock: 'metrics',        // results panel shown
+  dockH: 300,             // results panel height (px)
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -345,94 +348,69 @@ function streamlinesFor(run) {
 
 function viewCFD() {
   const opt = (v, t, cur, dis) => `<option value="${v}"${v === cur ? ' selected' : ''}${dis ? ' disabled' : ''}>${t}</option>`;
+  const tree = (key, title, body) => `<details class="grp cfd-grp" data-tree="${key}"${FV.tree[key] ? ' open' : ''}><summary>${title}</summary>${body}</details>`;
+  const prop = (label, id, attrs, unit, hidden) => `<div class="prop"${hidden ? ' hidden' : ''}><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><input type="number" id="${id}" ${attrs}><span class="prop-u">${unit}</span></span></div>`;
+  const propSel = (label, id, options) => `<div class="prop prop-sel"><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><select id="${id}">${options}</select></span></div>`;
+  document.getElementById('setupExtra').innerHTML = `
+    <div class="tree-sep">CFD setup</div>
+    ${tree('geo', 'Blade geometry', `
+      <div class="prop prop-seg"><span class="prop-l">Entry</span><div class="seg" role="tablist" aria-label="Blade shape" id="cfdShape">
+        <button type="button" role="tab" data-shape="round" aria-selected="${CFDG.shape === 'round'}">Round entry</button>
+        <button type="button" role="tab" data-shape="flat" aria-selected="${CFDG.shape === 'flat'}">Flat land</button>
+      </div></div>
+      ${prop('Radius', 'cfdR', `min="10" max="500" step="5" value="${CFDG.R}"`, 'mm', CFDG.shape !== 'round')}
+      ${prop('Pool edge upstream', 'cfdPool', `min="5" max="150" step="5" value="${CFDG.pool}"`, 'mm', CFDG.shape !== 'round')}
+      ${prop('Exit face to the web', 'cfdExit', `min="30" max="150" step="5" value="${CFDG.exitAngle}"`, '°')}
+      <p class="prop-note" id="cfdGeoNote"></p>`)}
+    ${tree('rheo', 'Rheology model', `
+      ${propSel('Model', 'cfdModel', Object.entries(RHEO_MODELS).map(([k, m]) => opt(k, m.l, CFDG.model)).join(''))}
+      <p class="prop-note" id="cfdModelNote">${RHEO_MODELS[CFDG.model].law}</p>`)}
+    ${tree('fibre', 'Fibre', `
+      ${propSel('Test report', 'cfdFibreSel', Object.entries(FIBRES).map(([k, f]) => opt(k, f.l, CFDG.fibre)).join(''))}
+      ${prop('Basis weight', 'cfdGsm', `min="10" max="3000" step="1" value="${CFDG.gsm}"`, 'g/m²')}
+      ${prop('Fibre density', 'cfdRhoF', `min="800" max="3000" step="5" value="${CFDG.rhoF}"`, 'kg/m³')}
+      ${propSel('Filament diameter from', 'cfdDFrom', opt('yarn', 'yarn denier / filaments', CFDG.dFrom) + opt('air', 'air permeability', CFDG.dFrom))}
+      ${prop('Yarn', 'cfdDen', `min="5" max="3000" step="1" value="${CFDG.den}"`, 'denier', CFDG.dFrom !== 'yarn')}
+      ${prop('Filaments per yarn', 'cfdNf', `min="1" max="1000" step="1" value="${CFDG.nf}"`, '', CFDG.dFrom !== 'yarn')}
+      ${prop('Air permeability', 'cfdAirPerm', `min="0.1" max="5000" step="0.5" value="${CFDG.airPerm}"`, '×10⁻³ m³/m²·s')}
+      ${prop('… at test pressure', 'cfdAirDP', `min="0" max="2000" step="1" value="${CFDG.airDP}"`, 'Pa')}
+      ${prop('Kozeny constant', 'cfdKoz', `min="1" max="20" step="0.5" value="${CFDG.kozeny}"`, '')}
+      ${prop('Air fraction, top surface', 'cfdAirFrac', `min="0.05" max="0.95" step="0.01" value="${CFDG.airFrac}"`, '')}
+      <p class="prop-note" id="cfdFibreNote">${fibreNote()}</p>`)}
+    ${tree('air', 'Drying air (oven)', `
+      ${prop('Air speed up into the fibre', 'cfdAirU', `min="0" max="50" step="0.1" value="${CFDG.airU}"`, 'm/s')}
+      ${prop('Air temperature', 'cfdAirT', `min="0" max="400" step="5" value="${CFDG.airT}"`, '°C')}
+      ${prop('Plenum length', 'cfdPlenum', `min="1" max="5000" step="10" value="${CFDG.plenum}"`, 'mm')}
+      <p class="prop-note">Assumed values.</p>`)}
+    ${tree('locs', 'Locations across the web', `
+      <div class="loc-list" id="cfdLocs"></div>
+      <div class="loc-edit" id="cfdLocEdit" hidden></div>`)}`;
+  document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
+
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${t}</button>`;
+  const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
   view.innerHTML = `
-    <div class="status" id="cfdStatus"></div>
-    <p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything below is post-processed from the stored solutions: display settings never re-run the solver.</p>
-    <details class="cap-toggle"><summary>Method, validation and limits</summary><p class="cap">
-      <b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
-      <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
-      <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
-      <b>Fibre.</b> The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface. Over the air between those filaments the slurry slips (du/dy = (u &minus; U)/b at the surface, slip length b from the filament spacing, Philip 1972). Porosity, filament diameter and permeability (Kozeny&ndash;Carman) follow from the fibre's test-report data. Drying air: blown up into the fibre from a plenum; with the wet film sealing its top, the air can only leave along the fibre, and the pressure the set speed needs for that follows (Darcy, the air compressing).
-      <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Flat land: the lubrication model's geometry, for comparison. The film is followed in 2D for a stretch downstream of the edge, then by the 1D thin-film model to the oven (under Profiles).
-      <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses. Any location can instead be given its own gap, contact angle, web speed, bead pressure, rheology or surface tension (Inputs on its card); the blade and the fibre are shared.
-      <b>Flow tracking.</b> Streamlines are integrated (RK4) through the interpolated velocity field and checked against the stream function, which is constant along a true streamline; the drift is reported under Flow metrics.
-      <b>Limits.</b> The sharp metering edge is a corner: stresses and pressure there are singular in any continuum model, so their values right at the corner depend on the mesh (the reported lowest pressure says when it sits there). Contact angle is the static one (no contact-line hysteresis). Upstream, the pool's own free surface is not modelled; flow that turns back leaves through the inlet. Steady solver: no pathlines.
-    </p></details>
-
-    <section class="cfd-block">
-      <div class="cfd-head"><h3>Blade geometry</h3></div>
-      <div class="fv-bar cfd-geo">
-        <div class="seg" role="tablist" aria-label="Blade shape" id="cfdShape">
-          <button type="button" role="tab" data-shape="round" aria-selected="${CFDG.shape === 'round'}">Round entry</button>
-          <button type="button" role="tab" data-shape="flat" aria-selected="${CFDG.shape === 'flat'}">Flat land</button>
-        </div>
-        <label class="fv-ctl"${CFDG.shape === 'round' ? '' : ' hidden'}>Radius <input type="number" id="cfdR" min="10" max="500" step="5" value="${CFDG.R}"> mm</label>
-        <label class="fv-ctl"${CFDG.shape === 'round' ? '' : ' hidden'}>Pool edge <input type="number" id="cfdPool" min="5" max="150" step="5" value="${CFDG.pool}"> mm upstream</label>
-        <label class="fv-ctl">Exit face <input type="number" id="cfdExit" min="30" max="150" step="5" value="${CFDG.exitAngle}"> &deg; to the web</label>
-        <span class="fv-why" id="cfdGeoNote"></span>
-      </div>
-      <div class="fv-bar cfd-geo">
-        <label class="fv-ctl"><b>Rheology model</b> <select id="cfdModel">${Object.entries(RHEO_MODELS).map(([k, m]) => opt(k, m.l, CFDG.model)).join('')}</select></label>
-        <span class="fv-why" id="cfdModelNote">${RHEO_MODELS[CFDG.model].law}</span>
-      </div>
-      <div class="fv-bar cfd-geo">
-        <label class="fv-ctl"><b>Fibre</b> <select id="cfdFibreSel">${Object.entries(FIBRES).map(([k, f]) => opt(k, f.l, CFDG.fibre)).join('')}</select></label>
-        <label class="fv-ctl">Basis weight <input type="number" id="cfdGsm" min="10" max="3000" step="1" value="${CFDG.gsm}"> g/m²</label>
-        <label class="fv-ctl">Fibre density <input type="number" id="cfdRhoF" min="800" max="3000" step="5" value="${CFDG.rhoF}"> kg/m³</label>
-        <label class="fv-ctl">Filament diameter from <select id="cfdDFrom">${opt('yarn', 'yarn denier / filaments', CFDG.dFrom)}${opt('air', 'air permeability (Kozeny–Carman)', CFDG.dFrom)}</select></label>
-        <label class="fv-ctl"${CFDG.dFrom === 'yarn' ? '' : ' hidden'}>Yarn <input type="number" id="cfdDen" min="5" max="3000" step="1" value="${CFDG.den}"> denier</label>
-        <label class="fv-ctl"${CFDG.dFrom === 'yarn' ? '' : ' hidden'}>Filaments <input type="number" id="cfdNf" min="1" max="1000" step="1" value="${CFDG.nf}"> per yarn</label>
-        <label class="fv-ctl">Air permeability <input type="number" id="cfdAirPerm" min="0.1" max="5000" step="0.5" value="${CFDG.airPerm}"> ×10⁻³ m³/m²·s at <input type="number" id="cfdAirDP" min="0" max="2000" step="1" value="${CFDG.airDP}"> Pa</label>
-        <label class="fv-ctl">Kozeny constant <input type="number" id="cfdKoz" min="1" max="20" step="0.5" value="${CFDG.kozeny}"></label>
-        <label class="fv-ctl">Air fraction of the top surface <input type="number" id="cfdAirFrac" min="0.05" max="0.95" step="0.01" value="${CFDG.airFrac}"></label>
-        <span class="fv-why" id="cfdFibreNote">${fibreNote()}</span>
-      </div>
-      <div class="fv-bar cfd-geo">
-        <span class="fv-ctl"><b>Drying air</b> up into the fibre from below</span>
-        <label class="fv-ctl">Air speed <input type="number" id="cfdAirU" min="0" max="50" step="0.1" value="${CFDG.airU}"> m/s</label>
-        <label class="fv-ctl">Air temperature <input type="number" id="cfdAirT" min="0" max="400" step="5" value="${CFDG.airT}"> °C</label>
-        <label class="fv-ctl">Plenum length <input type="number" id="cfdPlenum" min="1" max="5000" step="10" value="${CFDG.plenum}"> mm</label>
-        <span class="fv-why">assumed</span>
-      </div>
-    </section>
-
-    <section class="cfd-block">
-      <div class="cfd-head"><h3>Locations</h3>
-        <div class="cfd-actions">
-          <button id="cfdRunAll" class="btn btn-primary" type="button">Run all 4</button>
-          <button id="cfdCancel" class="btn btn-secondary" type="button" hidden>Cancel</button>
-        </div>
-      </div>
-      <div class="loc-grid" id="cfdLocs"></div>
-      <div class="loc-edit" id="cfdLocEdit" hidden></div>
-    </section>
-
-    <section class="cfd-block">
-      <div class="cfd-head"><h3>Saved cases</h3></div>
-      <div class="fv-bar">
-        <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdCaseSave">Save current case</button>
-        <span class="fv-why" id="cfdCaseMsg">Kept in this browser (local storage).</span>
-      </div>
-      <div id="cfdCases"></div>
-    </section>
-
-    <section class="cfd-block">
-      <div class="cfd-head"><h3>Flow field</h3><div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div></div>
-      <div class="fv-bar">
-        <label class="fv-ctl">Field <select id="fvBase">
+    <div class="cfd-wb" id="cfdWb" style="--dock-h: ${FV.dockH}px">
+      <div class="vp-bar" role="toolbar" aria-label="Solve and display">
+        <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run all 4</button>
+        <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
+        <span class="vp-sep" aria-hidden="true"></span>
+        <div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div>
+        <span class="vp-sep" aria-hidden="true"></span>
+        <label class="vp-ctl">Field <select id="fvBase">
           ${opt('speed', 'Velocity magnitude |V|', FV.base)}${opt('ux', 'u_x (machine direction)', FV.base)}${opt('uy', 'u_y (normal to web)', FV.base)}
           ${opt('shear', 'Shear rate', FV.base)}${opt('mu', 'Apparent viscosity', FV.base)}${opt('omega', 'Vorticity', FV.base)}
           ${opt('strain1', 'Principal strain rate', FV.base)}${opt('dissip', 'Viscous dissipation', FV.base)}
           ${opt('pressure', 'Pressure', FV.base)}${opt('none', 'None (geometry only)', FV.base)}
         </select></label>
         <label class="fv-chk"><input type="checkbox" id="fvStream"${FV.streamlines ? ' checked' : ''}> Streamlines</label>
-        <label class="fv-chk"><input type="checkbox" id="fvVec"${FV.vectors ? ' checked' : ''}> Velocity vectors</label>
-        <label class="fv-chk is-off" title="Pathlines need transient CFD data. This solver is steady-state, so there is no particle history to trace."><input type="checkbox" disabled> Pathlines <span class="fv-why">(steady solver)</span></label>
-        <label class="fv-ctl">Scale <select id="fvScale">${opt('exaggerated', 'y exaggerated', FV.yScale)}${opt('true', 'True 1:1', FV.yScale)}</select></label>
-      </div>
-      <details class="fv-more" id="fvMore"${FV.settingsOpen ? ' open' : ''}><summary>Streamline and vector settings</summary>
-        <div class="fv-grid">
+        <label class="fv-chk"><input type="checkbox" id="fvVec"${FV.vectors ? ' checked' : ''}> Vectors</label>
+        <details class="vp-pop" id="fvMore"${FV.settingsOpen ? ' open' : ''}><summary class="tool-btn">Display</summary>
+          <div class="pop-body">
+            <div class="fv-grid">
+          <fieldset><legend>View</legend>
+            <label class="fv-ctl">Vertical scale <select id="fvScale">${opt('exaggerated', 'Exaggerated (fit)', FV.yScale)}${opt('true', 'True 1:1', FV.yScale)}</select></label>
+          </fieldset>
           <fieldset><legend>Streamlines</legend>
             <label class="fv-ctl">Density <select id="fvDensity">${opt('low', 'Low (8)', FV.density)}${opt('medium', 'Medium (16)', FV.density)}${opt('high', 'High (32)', FV.density)}${opt('custom', 'Custom', FV.density)}</select>
               <input type="number" id="fvCustomN" min="2" max="80" step="1" value="${FV.customN}" aria-label="Custom streamline count"${FV.density === 'custom' ? '' : ' hidden'}></label>
@@ -449,41 +427,74 @@ function viewCFD() {
             <label class="fv-chk"><input type="checkbox" id="fvVecColor"${FV.vectorColor ? ' checked' : ''}> Colour by |V|</label>
           </fieldset>
         </div>
-        <p class="fv-note">One colour scale per plot: colouring the streamlines or vectors switches the field colours off.</p>
-      </details>
-      <div id="cfdSeeds"></div>
-      <div id="cfdPlots"></div>
-      <div class="fv-legend" id="cfdLegend"></div>
-      <div class="fv-bar cfd-export" id="cfdExport" hidden>
-        <span class="fv-ctl"><b>Export CSV</b> <span class="fv-why" id="cfdExportWhat"></span></span>
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvField">Field (every node)</button>
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvBound">Boundaries (web, blade, face, free surface)</button>
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvMetrics">Flow metrics table</button>
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdCsvProbes">Probes</button>
+            <label class="fv-chk is-off" title="Pathlines need transient CFD data. This solver is steady-state, so there is no particle history to trace."><input type="checkbox" disabled> Pathlines <span class="fv-why">(steady solver: not available)</span></label>
+            <p class="fv-note">One colour scale per plot: colouring the streamlines or vectors switches the field colours off.</p>
+          </div>
+        </details>
+        <button class="tool-btn" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}" title="Place named probes by clicking the plot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>${placeProbes ? 'Done placing' : 'Probes'}</button>
+        <span class="vp-spacer"></span>
+        <details class="vp-pop vp-pop-r" id="cfdExport" hidden><summary class="tool-btn">Export CSV</summary>
+          <div class="pop-body pop-menu">
+            <span class="fv-why" id="cfdExportWhat"></span>
+            <button class="menu-item" type="button" id="cfdCsvField">Field (every node)</button>
+            <button class="menu-item" type="button" id="cfdCsvBound">Boundaries (web, blade, face, free surface)</button>
+            <button class="menu-item" type="button" id="cfdCsvMetrics">Flow metrics table</button>
+            <button class="menu-item" type="button" id="cfdCsvProbes">Probes</button>
+          </div>
+        </details>
       </div>
-    </section>
-
-    <section class="cfd-block">
-      <div class="cfd-head"><h3>Probes</h3></div>
-      <div class="fv-bar">
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}">${placeProbes ? 'Done placing' : 'Place by clicking the plot'}</button>
-        <span class="fv-ctl">or</span>
-        <label class="fv-ctl">Name <input type="text" id="cfdProbeName" maxlength="24" placeholder="auto" aria-label="Probe name"></label>
-        <label class="fv-ctl">x <input type="number" id="cfdProbeX" step="0.1" min="0"> mm</label>
-        <label class="fv-ctl">y <input type="number" id="cfdProbeY" step="0.01" min="0"> mm</label>
-        <button class="btn btn-secondary btn-sm" type="button" id="cfdProbeAdd">Add</button>
+      <div class="viewport" id="cfdViewport">
+        <div id="cfdSeeds"></div>
+        <div id="cfdPlots"></div>
+        <div class="fv-legend" id="cfdLegend"></div>
       </div>
-      <div id="cfdProbes"></div>
-    </section>
-    <section class="cfd-block"><div class="cfd-head"><h3>Flow metrics</h3></div><div id="cfdMetrics"></div></section>
-    <section class="cfd-block">
-      <div class="cfd-head"><h3>Across the web</h3></div>
-      <div class="fv-bar"><label class="fv-ctl">Quantity <select id="xlMetric">${Object.entries(ACROSS).map(([k, m]) => opt(k, m.l, FV.across)).join('')}</select></label></div>
-      <div id="cfdAcross"></div>
-    </section>
-    <section class="cfd-block"><div class="cfd-head"><h3>Fibre (porous web)</h3></div><div id="cfdFibre"></div></section>
-    <section class="cfd-block"><div class="cfd-head"><h3 id="cfdProfTitle">Profiles</h3></div><div id="cfdProfiles"></div></section>
-    <section class="cfd-block"><div class="cfd-head"><h3>Convergence</h3></div><div id="cfdConv"></div></section>`;
+      <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
+      <section class="dock" aria-label="Results">
+        <div class="dock-tabs" role="tablist" aria-label="Results">
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('cases', 'Saved cases')}${dockTab('method', 'Method')}
+        </div>
+        <div class="dock-body">
+          ${panel('metrics', '<div id="cfdMetrics"></div>')}
+          ${panel('probes', `<div class="fv-bar">
+              <span class="fv-ctl">Add a probe at</span>
+              <label class="fv-ctl">Name <input type="text" id="cfdProbeName" maxlength="24" placeholder="auto" aria-label="Probe name"></label>
+              <label class="fv-ctl">x <input type="number" id="cfdProbeX" step="0.1" min="0"> mm</label>
+              <label class="fv-ctl">y <input type="number" id="cfdProbeY" step="0.01" min="0"> mm</label>
+              <button class="btn btn-secondary btn-sm" type="button" id="cfdProbeAdd">Add</button>
+              <span class="fv-why">or use Place probes in the toolbar and click the plot</span>
+            </div>
+            <div id="cfdProbes"></div>`)}
+          ${panel('across', `<div class="fv-bar"><label class="fv-ctl">Quantity <select id="xlMetric">${Object.entries(ACROSS).map(([k, m]) => opt(k, m.l, FV.across)).join('')}</select></label></div>
+            <div id="cfdAcross"></div>`)}
+          ${panel('profiles', '<h3 class="dock-h" id="cfdProfTitle">Profiles</h3><div id="cfdProfiles"></div>')}
+          ${panel('fibre', '<div id="cfdFibre"></div>')}
+          ${panel('conv', '<div id="cfdConv"></div>')}
+          ${panel('cases', `<div class="fv-bar">
+              <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
+              <button class="btn btn-secondary btn-sm" type="button" id="cfdCaseSave">Save current case</button>
+              <span class="fv-why" id="cfdCaseMsg">Kept in this browser (local storage).</span>
+            </div>
+            <div id="cfdCases"></div>`)}
+          ${panel('method', `<p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything shown is post-processed from the stored solutions: display settings never re-run the solver.</p><p class="cap"><b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
+      <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
+      <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
+      <b>Fibre.</b> The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface. Over the air between those filaments the slurry slips (du/dy = (u &minus; U)/b at the surface, slip length b from the filament spacing, Philip 1972). Porosity, filament diameter and permeability (Kozeny&ndash;Carman) follow from the fibre's test-report data. Drying air: blown up into the fibre from a plenum; with the wet film sealing its top, the air can only leave along the fibre, and the pressure the set speed needs for that follows (Darcy, the air compressing).
+      <b>Geometry.</b> Round entry: the blade's round surface converges onto the metering edge, its lowest point; the bead pressure acts at the pool edge. Flat land: the lubrication model's geometry, for comparison. The film is followed in 2D for a stretch downstream of the edge, then by the 1D thin-film model to the oven (under Profiles).
+      <b>Locations.</b> Each location's gap at the edge and contact angle on the blade use the across-web waviness, fibre-thickness and wetting variation from the sidebar, the same formulas the Contact line tab uses. Any location can instead be given its own gap, contact angle, web speed, bead pressure, rheology or surface tension (the settings button on its row in the model tree); the blade and the fibre are shared.
+      <b>Flow tracking.</b> Streamlines are integrated (RK4) through the interpolated velocity field and checked against the stream function, which is constant along a true streamline; the drift is reported under Flow metrics.
+      <b>Limits.</b> The sharp metering edge is a corner: stresses and pressure there are singular in any continuum model, so their values right at the corner depend on the mesh (the reported lowest pressure says when it sits there). Contact angle is the static one (no contact-line hysteresis). Upstream, the pool's own free surface is not modelled; flow that turns back leaves through the inlet. Steady solver: no pathlines.</p>`)}
+        </div>
+      </section>
+    </div>`;
+  document.querySelectorAll('.dock-tabs button').forEach(b => {
+    b.onclick = () => {
+      FV.dock = b.dataset.dock;
+      document.querySelectorAll('.dock-tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+      document.querySelectorAll('.dock-panel').forEach(pn => { pn.hidden = pn.id !== 'dock-' + FV.dock; });
+      renderCFD();   // (charts in the panel now showing size to it)
+    };
+  });
+  wireDockSplit();
 
   document.getElementById('cfdRunAll').onclick = runAllLocations;
   document.querySelectorAll('#cfdShape button').forEach(b => { b.onclick = () => { CFDG.shape = b.dataset.shape; viewCFD(); }; });
@@ -538,6 +549,34 @@ function viewCFD() {
   renderCFD();
   if (!cfdAutoStarted && cfdRuns.every(r => r.status === 'idle')) { cfdAutoStarted = true; runAllLocations(); }
 }
+
+/** The results panel's height: drag the splitter above it (or arrow keys on it). */
+function wireDockSplit() {
+  const sp = document.getElementById('dockSplit'), wb = document.getElementById('cfdWb');
+  const setH = h => { FV.dockH = Math.round(Math.max(120, Math.min(wb.clientHeight - 200, h))); wb.style.setProperty('--dock-h', FV.dockH + 'px'); };
+  sp.addEventListener('pointerdown', e => {
+    e.preventDefault(); sp.setPointerCapture(e.pointerId); sp.classList.add('drag');
+    const y0 = e.clientY, h0 = FV.dockH;
+    const move = ev => setH(h0 - (ev.clientY - y0));
+    const up = () => { sp.classList.remove('drag'); sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); renderCFD(); };
+    sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
+  });
+  sp.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault(); setH(FV.dockH + (e.key === 'ArrowUp' ? 30 : -30)); renderCFD();
+  });
+}
+// toolbar pop-overs (Display, Export): kept on screen, closed by a click elsewhere or Escape
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (!d.classList || !d.classList.contains('vp-pop') || !d.open) return;
+  const body = d.querySelector('.pop-body');
+  body.style.left = ''; body.style.right = '';
+  const r = body.getBoundingClientRect();
+  if (r.right > innerWidth - 8) { body.style.left = 'auto'; body.style.right = '0'; }
+}, true);
+document.addEventListener('click', e => { document.querySelectorAll('.vp-pop[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.vp-pop[open]').forEach(d => { d.open = false; }); });
 
 function renderCFD() {
   if (!document.getElementById('cfdLocs')) return; // tab not showing
@@ -757,9 +796,10 @@ function renderCfdStatus() {
   const stale = CFD_LOCS.filter((_, i) => cfdIsStale(i)).length;
   let html = running ? pill(`Solving ${running} of 4…`, '')
     : pill(`${solved} of 4 locations solved`, solved === 4 ? 'ok' : solved ? 'warn' : '');
-  if (stale) html += pill(`${stale} out of date: inputs changed since the run`, 'warn');
+  if (stale) html += pill(`${stale} out of date`, 'warn');
   if (failed) html += pill(`${failed} failed`, 'bad');
   el.innerHTML = html;
+  el.title = stale ? `${stale} location${stale > 1 ? 's' : ''} out of date: inputs changed since the run` : '';
   document.getElementById('cfdCancel').hidden = !running;
 }
 
@@ -774,13 +814,13 @@ function renderLocCards() {
     else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `solved · ${(r.elapsedMs / 1000).toFixed(1)} s${r.result.converged ? '' : ' · partly converged'}`; }
     else if (r.status === 'cancelled') { cls = 'warn'; txt = 'cancelled'; }
     const sel = FV.view === i ? ' sel' : '', own = Object.keys(loc.over).length;
-    return `<div class="loc-card${sel}">
-      <div class="loc-name">Location ${loc.id}</div>
-      <div class="loc-state ${cls}" data-state="${i}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
+    return `<div class="loc-row${sel}">
+      <button class="loc-pick" type="button" data-pick="${i}" aria-pressed="${FV.view === i}" title="Show location ${loc.id} in the viewport"><i class="loc-dot" style="background:${locColor(i)}"></i>L${loc.id}</button>
       <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
-      <div class="loc-meta">gap at edge <b>${locInput(i, 'gap').toFixed(3)}</b> mm · contact angle <b>${locInput(i, 'th').toFixed(1)}</b>&deg;</div>
-      <button class="loc-in-btn" type="button" data-edit="${i}" aria-expanded="${cfdEditLoc === i}" aria-controls="cfdLocEdit">Inputs · ${own ? `<b>${own} set here</b>` : 'shared'} <span aria-hidden="true">${cfdEditLoc === i ? '▾' : '▸'}</span></button>
-      <button class="btn btn-secondary btn-sm" type="button" data-run="${i}"${r.status === 'running' ? ' disabled' : ''}>Run</button>
+      <button class="icon-btn loc-in-btn${own ? ' on' : ''}" type="button" data-edit="${i}" aria-expanded="${cfdEditLoc === i}" aria-controls="cfdLocEdit" title="Inputs for location ${loc.id} only${own ? ` (${own} set here)` : ''}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h7M12 4h2M2 12h3M8 12h6M9 2.5v3M5 10.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>${own ? `<span class="badge">${own}</span>` : ''}</button>
+      <button class="icon-btn" type="button" data-run="${i}"${r.status === 'running' ? ' disabled' : ''} title="Run location ${loc.id}" aria-label="Run location ${loc.id}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg></button>
+      <div class="loc-state ${cls}" data-state="${i}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
+      <div class="loc-meta">gap <b>${locInput(i, 'gap').toFixed(3)}</b> mm · contact <b>${locInput(i, 'th').toFixed(1)}</b>&deg;</div>
     </div>`;
   }).join('');
   const edit = document.getElementById('cfdLocEdit');
@@ -798,6 +838,7 @@ function renderLocCards() {
     renderCFD();
   }));
   document.querySelectorAll('#cfdLocs button[data-edit], #cfdLocEdit button[data-edit]').forEach(b => { b.onclick = () => { cfdEditLoc = cfdEditLoc === +b.dataset.edit ? null : +b.dataset.edit; renderLocCards(); }; });
+  host.querySelectorAll('button[data-pick]').forEach(b => { b.onclick = () => { FV.view = +b.dataset.pick; FV.profileLoc = FV.view; renderCFD(); }; });
   edit.querySelectorAll('input[data-li]').forEach(inp => inp.addEventListener('change', () => {
     const loc = CFD_LOCS[+inp.dataset.li], k = inp.dataset.k, raw = inp.value.trim(), v = +raw;
     const ok = k === 'th' ? v > 0 && v < 180 : k === 'ty' || k === 'Pup' ? v >= 0 : v > 0;
@@ -829,8 +870,8 @@ function cfdStageText(stage) {
 
 function renderViewSeg() {
   const host = document.getElementById('cfdViewSeg');
-  const items = CFD_LOCS.map((l, i) => [i, `Location ${l.id}`]).concat([['compare', 'Compare all 4']]);
-  host.innerHTML = items.map(([v, t]) => `<button type="button" role="tab" aria-selected="${FV.view === v}" data-v="${v}">${t}</button>`).join('');
+  const items = CFD_LOCS.map((l, i) => [i, `L${l.id}`, `Location ${l.id}, z ${l.z} mm`]).concat([['compare', 'Compare', 'All four locations']]);
+  host.innerHTML = items.map(([v, t, title]) => `<button type="button" role="tab" aria-selected="${FV.view === v}" data-v="${v}" title="${title}">${t}</button>`).join('');
   host.querySelectorAll('button').forEach(b => {
     b.onclick = () => {
       FV.view = b.dataset.v === 'compare' ? 'compare' : +b.dataset.v;
@@ -876,7 +917,7 @@ function renderFlowPlots() {
   const list = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field && (compare || i === FV.view));
   if (!list.length) {
     const running = cfdRuns.some(r => r.status === 'running');
-    host.innerHTML = `<p class="cap fv-empty">${running ? 'Solving…' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet. Run it above.`}</p>`;
+    host.innerHTML = `<p class="cap fv-empty">${running ? 'Solving…' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
     return;
   }
   const fields = list.map(i => cfdRuns[i].field);
@@ -898,12 +939,15 @@ function renderFlowPlots() {
       <div class="fv-tip" hidden></div>
     </div>`).join('') + (compare ? '<p class="fv-note">Same colour range, axes (y up to the largest gap), streamline settings and vector scale in all four.</p>' : '');
 
+  // one location: the plot fills the viewport's height (what the caption leaves)
+  const cap = host.querySelector('.fv-caption');
+  const maxH = compare ? null : host.clientHeight - (cap ? cap.offsetHeight + 6 : 0) - 4;
   host.querySelectorAll('.fv-plot').forEach(el => {
     const i = +el.dataset.i, run = cfdRuns[i], f = run.field;
     const sl = FV.streamlines ? streamlinesFor(run) : null;
     const cv = el.querySelector('.fv-main');
     const map = drawFlowPlot(cv, {
-      f, webSpeed: run.geo.U, yMax, yScale: FV.yScale, compact: compare, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
+      f, webSpeed: run.geo.U, yMax, yScale: FV.yScale, compact: compare, maxH: maxH > 150 ? maxH : null, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
       exitAngle: run.geo.exitAngle, bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : 'blade land (fixed)',
       scalar: scalarFor(ranges.base, f), lineScalar: scalarFor(ranges.line, f),
       streamlines: sl ? sl.lines : null, lineWidth: LINE_W[FV.lineWidth] * (compare ? 0.8 : 1), arrows: FV.arrows,
