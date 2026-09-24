@@ -471,11 +471,11 @@ function autoSeeds(f, n, direction) {
 }
 
 /** Velocity vectors on a regular lattice (nCols x nRows over the plot's x and y range), keeping only points inside the fluid. */
-function sampleVectors(f, nCols, nRows) {
-  const out = [];
+function sampleVectors(f, nCols, nRows, win) {
+  const out = [], w = win || { x0: 0, x1: f.Lx, y0: 0, y1: f.Ly };   // (win: the zoom window, m)
   for (let r = 0; r < nRows; r++) {
     for (let c = 0; c < nCols; c++) {
-      const x = (c + 0.5) * f.Lx / nCols, y = (r + 0.5) * f.Ly / nRows;
+      const x = w.x0 + (c + 0.5) * (w.x1 - w.x0) / nCols, y = w.y0 + (r + 0.5) * (w.y1 - w.y0) / nRows;
       if (f.curv ? !f.locate(x, y) : y > bladeHeightAt(f, x) * (1 - 0.25 / nRows)) continue;
       const u = sampleField(f, f.u, x, y), v = sampleField(f, f.v, x, y);
       out.push({ x, y, u, v, speed: Math.hypot(u, v) });

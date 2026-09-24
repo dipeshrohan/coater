@@ -626,3 +626,19 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
   .dock-grid { grid-template-columns: minmax(0, 1fr); }
 }
 .tool-run[hidden] { display: none; }
+
+/* flow plot zoom: controls over the plot's top right, cursors for pan / box */
+.fv-plot .fv-main { cursor: grab; }
+.fv-plot.panning .fv-main { cursor: grabbing; }
+.fv-plot.box-mode .fv-main, .fv-plot.boxing .fv-main { cursor: crosshair; touch-action: none; }
+.zoom-ctl { position: absolute; z-index: 2; display: flex; align-items: center; gap: 1px; padding: 2px; background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow-sm); opacity: .72; transition: opacity .15s; }
+.fv-plot:hover .zoom-ctl, .zoom-ctl:focus-within { opacity: 1; }
+.zb { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 4px; font: inherit; font-size: 11px; color: var(--ink); background: none; border: 0; border-radius: 4px; cursor: pointer; }
+.zb svg { width: 14px; height: 14px; }
+.zb:hover { background: var(--soft); }
+.zb:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.zb[aria-pressed=true], .zb.on { color: var(--accent); }
+.zb[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.zb-sep { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
+.fv-plot.compact .zb-t { display: none; }
+.viewport .fv-caption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
