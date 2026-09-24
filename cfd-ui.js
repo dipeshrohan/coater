@@ -345,12 +345,13 @@ function runLocation(i) {
   cfdWorkers[i] = worker;
   const t0 = performance.now();
   run.status = 'running'; run.error = null; run.progress = null;
+  run.live = { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol };
   let lastStage = null;
   logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : 'flat land'}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
     if (e.data.progress) {
-      run.progress = e.data.progress;
+      run.progress = e.data.progress; liveAdd(run.live, run.progress);
       if (run.progress.stage && run.progress.stage !== lastStage) { lastStage = run.progress.stage; logCFD(i, lastStage); }
       updateLocStates(); renderRunChips(); updateBusy();
       return;
@@ -608,6 +609,7 @@ function viewCFD() {
       <div class="viewport" id="cfdViewport">
         <div class="cbar-pop" id="cbarPop" role="dialog" aria-label="Colour scale" hidden></div>
         <div id="cfdBusy"></div>
+        <div class="live-res" id="cfdLive" hidden><div class="xl-chart"><canvas role="img" aria-label="Newton residuals of the solves running"></canvas></div></div>
         <div id="cfdSeeds"></div>
         <div id="cfdPlots"></div>
         <div class="fv-legend" id="cfdLegend"></div>
@@ -1020,7 +1022,7 @@ const STUDY_STEPS = [['Coarse', 1 / 1.5], ['Medium', 1], ['Fine', 1.5]];
 function runMeshStudy(i) {
   if (meshStudy && meshStudy.status === 'running') return;
   const geo = cfdGeometry(i), base = geo.solver, key = cfdInputsKey(geo), run0 = cfdRuns[i];
-  meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : scaleCounts(base, f)) }, status: 'running', progress: null })) };
+  meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : scaleCounts(base, f)) }, status: 'running', progress: null, live: { r: [], solves: [], t0: performance.now(), tol: base.tol } })) };
   logCFD(i, `mesh study started: ${meshStudy.runs.map(r => `${r.name.toLowerCase()} ${r.solver.nEb} + ${r.solver.nEf} + ${r.solver.nEs} by ${r.solver.nEy}`).join(', ')}`);
   const study = meshStudy;
   for (const run of study.runs) {
@@ -1030,7 +1032,7 @@ function runMeshStudy(i) {
     run.worker = w;
     const end = () => { w.terminate(); run.worker = null; run.ms = performance.now() - t0; };
     w.onmessage = e => {
-      if (e.data.progress) { run.progress = e.data.progress; updateStudyStatus(); return; }
+      if (e.data.progress) { run.progress = e.data.progress; liveAdd(run.live, run.progress); updateStudyStatus(); return; }
       end();
       const r = e.data.ok ? e.data.result : null;
       if (!r) Object.assign(run, { status: 'error', error: e.data.error });
@@ -1059,13 +1061,15 @@ function stopMeshStudy() {
   logCFD(meshStudy.loc, 'mesh study stopped');
   renderMeshStudy();
 }
-const studyRunText = r => r.status === 'running' ? (r.progress ? `solving · ${cfdStageText(r.progress.stage)}` : 'starting…')
+const studyRunText = r => r.status === 'running' ? `${r.live ? `${((performance.now() - r.live.t0) / 1000).toFixed(0)} s · ` : ''}${r.progress ? `solving · ${cfdStageText(r.progress.stage)}` : 'starting…'}`
   : r.status === 'done' ? `${r.r.mesh.nEx} × ${r.r.mesh.nEy} elements · ${r.reused ? 'the location\'s result' : `${(r.ms / 1000).toFixed(1)} s`}`
     : r.status === 'error' ? `failed: ${r.error}` : 'stopped';
 /** While solving: the three runs' lines only (the rest of the panel stays as it is). */
 function updateStudyStatus() {
   if (!meshStudy) return;
   meshStudy.runs.forEach((r, n) => { const el = document.querySelector(`#cfdMeshStudy [data-study="${n}"]`); if (el) el.textContent = studyRunText(r); });
+  const cv = document.querySelector('#studyLive canvas'), runs = meshStudy.runs.filter(r => r.status === 'running' && r.live);
+  if (cv && runs.length) drawLiveResiduals(cv, 0.26, runs.map(r => ({ name: r.name, short: r.name, color: locColor(meshStudy.runs.indexOf(r)), live: r.live })));
 }
 function renderMeshStudy() {
   const host = document.getElementById('cfdMeshStudy');
@@ -1117,8 +1121,10 @@ function renderMeshStudy() {
     verdict = `<p class="fv-note"><b>Wet film thickness</b> changes ${a.toFixed(2)} % from coarse to medium and ${b.toFixed(2)} % from medium to fine: ${b < 0.5 ? 'the medium mesh is fine enough for it' : b < 2 ? 'the medium mesh is within about 2 %' : 'the medium mesh is too coarse for it: use the fine mesh'}${b < a ? '' : ' (the change grew with refinement, so this is not yet a clean convergence trend)'}.
       ${big.length ? `Still changing by more than 2 % from medium to fine: ${big.join(', ')}${big.some(l => l.startsWith('contact line')) ? ' (the contact line sits at a singular point of this model, so its position depends on the mesh)' : ''}. ` : ''}Changes over 2 % are marked. The corner values (peak shear, lowest pressure) are singular and not compared.</p>`;
   }
-  host.innerHTML = head + `<p class="cap">Location ${st.loc + 1} · z ${CFD_LOCS[st.loc].z} mm${stale ? ' · <span class="warn-text">out of date: inputs or settings changed since this study</span>' : ''}</p>` + lines + (done.some(Boolean) ? table : '') + verdict;
+  const live = running ? '<div class="live-res" id="studyLive"><div class="xl-chart"><canvas role="img" aria-label="Newton residuals of the mesh study runs"></canvas></div></div>' : '';
+  host.innerHTML = head + `<p class="cap">Location ${st.loc + 1} · z ${CFD_LOCS[st.loc].z} mm${stale ? ' · <span class="warn-text">out of date: inputs or settings changed since this study</span>' : ''}</p>` + lines + live + (done.some(Boolean) ? table : '') + verdict;
   wireStudy(host);
+  if (running) updateStudyStatus();
 }
 function wireStudy(host) {
   const run = host.querySelector('#studyRun'), stop = host.querySelector('#studyStop');
@@ -1259,12 +1265,33 @@ function busyLine() {
   if (!shown.length) return '';
   return `<div class="vp-busy" role="status"><i class="spin" aria-hidden="true"></i>${shown.map(i => {
     const pr = cfdRuns[i].progress;
-    return `<span><b>Solving L${i + 1}</b> ${pr ? cfdStageText(pr.stage) : 'starting'}${pr && Number.isFinite(pr.residual) ? ` <span class="mono">r ${pr.residual.toExponential(1)}</span>` : ''}</span>`;
+    const lv = cfdRuns[i].live, secs = lv ? ` <span class="mono">${((performance.now() - lv.t0) / 1000).toFixed(1)} s</span>` : '';
+    return `<span><i class="xl-sw" style="background:${locColor(i)}"></i><b>Solving L${i + 1}</b>${secs} ${pr ? cfdStageText(pr.stage) : 'starting'}${pr && Number.isFinite(pr.residual) ? ` <span class="mono">r ${pr.residual.toExponential(1)}</span>` : ''}</span>`;
   }).join(' · ')}${shown.some(i => cfdRuns[i].field) ? '<span class="fv-why">(showing the previous result meanwhile)</span>' : ''}</div>`;
 }
 function updateBusy() {
   const el = document.getElementById('cfdBusy');
   if (el) el.innerHTML = busyLine();
+  drawCfdLive();
+}
+/** The locations in view that are solving: their residuals so far, over the plots (or in their place, before the first result). */
+function drawCfdLive() {
+  const box = document.getElementById('cfdLive');
+  if (!box) return;
+  const shown = viewLocs().filter(i => cfdRuns[i].status === 'running' && cfdRuns[i].live);
+  box.hidden = !shown.length;
+  if (!shown.length) return;
+  const big = !viewLocs().some(i => cfdRuns[i].field);
+  box.classList.toggle('big', big);
+  const w = box.clientWidth || 600, h = big ? Math.max(160, box.clientHeight - 16) : 140;
+  drawLiveResiduals(box.querySelector('canvas'), h / w, shown.map(i => ({ name: `Location ${i + 1}`, short: `L${i + 1}`, color: locColor(i), live: cfdRuns[i].live })));
+}
+/** Add a progress message's residuals and solves to a live history. */
+function liveAdd(live, pr) {
+  if (!live || !pr) return;
+  if (pr.add) for (const v of pr.add) live.r.push(v);
+  if (pr.solves) live.solves = pr.solves;
+  live.stage = pr.stage;
 }
 
 /** The Messages tab: the solver's log, oldest first, kept at the bottom while new lines come in. */
@@ -1507,7 +1534,7 @@ function renderFlowPlots() {
   const list = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field && (compare || i === FV.view));
   if (!list.length && FV.view !== 'diff') {
     const running = cfdRuns.some(r => r.status === 'running');
-    host.innerHTML = `<p class="cap fv-empty">${running ? '<i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
+    host.innerHTML = running && viewLocs().some(i => cfdRuns[i].status === 'running') ? '' : `<p class="cap fv-empty">${running ? '<i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
     return;
   }
   const zoomBtn = (act, title, icon) => `<button type="button" class="zb" data-z="${act}" title="${title}" aria-label="${title}"><svg viewBox="0 0 16 16" aria-hidden="true">${icon}</svg></button>`;
@@ -2272,7 +2299,7 @@ function renderAcross() {
 
 const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
 const pow10Label = e => '10' + String(Math.round(e)).split('').map(ch => SUP[ch]).join('');
-const TOL_EXP = -8;       // solveFEM's tolerance, 1e-8: the solves a result comes from end below it
+const TOL_DEFAULT = 1e-8;  // solveFEM's tolerance unless the solver settings give another
 
 function renderConvergence() {
   const host = document.getElementById('cfdConv');
@@ -2313,7 +2340,8 @@ function renderConvergence() {
   const cv = document.getElementById('convChart');
   let lo = Infinity, hi = -Infinity, nMax = 1;
   for (const sr of series) for (const [k, v] of sr.pts) { lo = Math.min(lo, v); hi = Math.max(hi, v); nMax = Math.max(nMax, k); }
-  hi = Math.ceil(hi); lo = Math.min(Math.floor(lo), TOL_EXP - 1);
+  const TOL_EXP = Math.log10(Math.min(...locs.map(i => (cfdRuns[i].geo.solver || {}).tol || TOL_DEFAULT)));   // (the solves a result comes from end below it)
+  hi = Math.ceil(hi); lo = Math.min(Math.floor(lo), Math.floor(TOL_EXP) - 1);
   lo = hi - 4 * Math.ceil((hi - lo) / 4);                  // five ticks on whole powers of ten
   const soft = cssVar('--soft');
   const bands = one ? t0.solves.filter((_, k) => k % 2 === 0).map(sv => ({ x0: sv.k0 + 0.5, x1: sv.k0 + sv.n + 0.5, c: soft })) : [];
@@ -2355,6 +2383,53 @@ function renderConvergence() {
     tip.style.top = Math.max(0, Math.min(py + 14, cv.clientHeight - th)) + 'px';
   });
   cv.addEventListener('pointerleave', () => { tip.hidden = true; guide.hidden = true; });
+}
+
+/**
+ * Live residual chart: each solve-in-progress's Newton residuals so far (log scale), the tolerance
+ * dashed, the latest iterate a dot. One series: its solves as bands, each named; several: a tick
+ * where each of their solves starts, and end labels.
+ * series: [{ name, short, color, live: { r, solves: [[label, k0]], t0, tol } }]
+ */
+function drawLiveResiduals(cv, aspect, series) {
+  const lg10 = v => Math.log10(Math.max(v, 1e-16));
+  const tolE = Math.log10(Math.min(...series.map(s => s.live.tol || TOL_DEFAULT)));
+  let hi = -Infinity, lo = Math.floor(tolE) - 1, nMax = 8;
+  for (const s of series) { nMax = Math.max(nMax, s.live.r.length); for (const v of s.live.r) { const e = lg10(v); if (e > hi) hi = e; if (e < lo) lo = e; } }
+  if (!Number.isFinite(hi)) hi = 0;
+  hi = Math.ceil(hi); lo = Math.floor(lo); lo = hi - 4 * Math.max(1, Math.ceil((hi - lo) / 4));   // (five ticks on whole powers of ten)
+  const one = series.length === 1, muted = cssVar('--muted'), soft = cssVar('--soft'), surf = cssVar('--surface');
+  const sv = one ? series[0].live.solves : [], n0 = one ? series[0].live.r.length : 0;
+  const spans = sv.map(([, k0], k) => [k0, k + 1 < sv.length ? sv[k + 1][1] : Math.max(n0, k0 + 1)]);
+  const pts = series.map(s => s.live.r.map((v, k) => [k + 1, lg10(v)]));
+  const map = plotChart(cv, aspect, { x0: 0.5, x1: nMax + 0.5, y0: lo, y1: hi, xl: 'Newton iterate, all solves in sequence', yl: 'residual (scaled)', xd: 0, yf: pow10Label,
+    bands: spans.filter((_, k) => k % 2 === 0).map(([a, b]) => ({ x0: a + 0.5, x1: b + 0.5, c: soft })),
+    s: series.map((s, k) => ({ p: pts[k], c: s.color, w: 2 })), hl: [{ y: tolE, c: muted, t: '' }] });
+  const c = cv.getContext('2d');
+  c.font = `11px ${cssVar('--mono')}`; c.textBaseline = 'middle';
+  labelOn(c, `tolerance ${pow10Label(tolE)}`, map.rect.l + 6, map.Y(tolE) - 8, muted, 'left');
+  if (one) {
+    // each solve's name over its stretch, cut to fit
+    spans.forEach(([a, b], k) => {
+      const x0 = map.X(a + 0.5), room = map.X(b + 0.5) - x0 - 8;
+      let t = sv[k][0];
+      if (room < 40) return;
+      while (t.length > 4 && c.measureText(t).width > room) t = t.slice(0, -2).trimEnd() + '…';
+      labelOn(c, t, x0 + 4, map.rect.t + 9, muted, 'left');
+    });
+  } else {
+    series.forEach((s, k) => {
+      c.strokeStyle = s.color; c.lineWidth = 1.5;
+      for (const [, k0] of s.live.solves) if (k0 > 0 && k0 < pts[k].length) { const x = map.X(k0 + 0.5), y = map.Y(pts[k][k0][1]); c.beginPath(); c.moveTo(x, y - 6); c.lineTo(x, y + 6); c.stroke(); }
+    });
+  }
+  series.forEach((s, k) => {
+    const p = pts[k][pts[k].length - 1];
+    if (!p) return;
+    c.beginPath(); c.arc(map.X(p[0]), map.Y(p[1]), 4, 0, 7); c.fillStyle = s.color; c.fill(); c.lineWidth = 1.5; c.strokeStyle = surf; c.stroke();
+  });
+  if (!one) endLabels(cv, map, series.map((s, k) => ({ ...s, pts: pts[k] })));   // (after the dots: on top)
+  return map;
 }
 
 // ---- profiles for one location ----

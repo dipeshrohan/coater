@@ -9,8 +9,27 @@ drift out of sync with what's actually built.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
-## 10 live residual plot, 11 input validation, 12 input tooltips, 13 project file,
+## 10 live residual plot (done), 11 input validation, 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-10 (done): live residual plots
+
+User's choices: in the viewport while solving; residual history, the
+solve stages, the tolerance line, elapsed time; several locations
+overlaid; everywhere (locations, mesh study, DOE runs).
+- The worker's progress messages (every 150 ms at most) now carry the
+  residuals since the last one and the solves so far; each run keeps a
+  live history (liveAdd). drawLiveResiduals: log scale on whole decades,
+  the tolerance dashed (the run's own setting), the latest iterate a dot;
+  one series: its solves as named bands; several: a tick where each solve
+  starts, end labels.
+- CFD viewport: the chart takes the place of the field until a location in
+  view has a result, then sits above the plots (140 px); the busy line
+  gives each location's colour, elapsed time, stage and residual.
+- Mesh study: in its dock tab under the run list. DOE: in its viewport, a
+  line per run solving in a colour slot it keeps, a legend with the run's
+  factor values and time.
+- The Convergence tab's tolerance line follows the runs' own tolerance.
 
 ### GUI-9 (done): DOE module
 

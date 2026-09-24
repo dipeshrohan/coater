@@ -133,12 +133,14 @@ function doePump() {
 function doeStart(run) {
   const geo = doeGeometry(DOE.loc, DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] })));
   const w = new Worker('cfd-worker.js'), t0 = performance.now();
-  Object.assign(run, { status: 'running', worker: w, progress: null });
+  // (a colour slot per run while it solves: the lowest one free)
+  const used = new Set([...DOE.active].map(r => r.slot));
+  Object.assign(run, { status: 'running', worker: w, progress: null, slot: [0, 1, 2, 3, 4, 5, 6, 7].find(k => !used.has(k)) ?? 0, live: { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol } });
   DOE.active.add(run);
   const end = () => { w.terminate(); run.worker = null; DOE.active.delete(run); run.ms = performance.now() - t0; };
   const settle = () => { doePump(); renderDOE(); };
   w.onmessage = e => {
-    if (e.data.progress) { run.progress = e.data.progress; doeStatusLine(); return; }
+    if (e.data.progress) { run.progress = e.data.progress; liveAdd(run.live, run.progress); doeStatusLine(); drawDOELive(); return; }
     end();
     const r = e.data.ok ? e.data.result : null;
     if (!r) Object.assign(run, { status: 'error', error: e.data.error });
@@ -200,6 +202,7 @@ function viewDOE() {
       </div>
       <div class="viewport" id="doeViewport">
         <div class="fv-bar doe-plotbar" id="doePlotBar"></div>
+        <div class="live-res" id="doeLive" hidden><div class="xl-chart"><canvas role="img" aria-label="Newton residuals of the runs solving"></canvas></div><div class="xl-legend" id="doeLiveLegend"></div></div>
         <div class="doe-plots" id="doePlots"></div>
         <div class="xl-legend mod-legend" id="doeLegend"></div>
       </div>
@@ -263,7 +266,7 @@ function doeStatusLine() {
   // (the runs table's status cells, while solving)
   for (const r of DOE.runs) { const c = document.querySelector(`#doe-runs [data-rs="${r.n}"]`); if (c) c.textContent = doeRunState(r); }
 }
-const doeRunState = r => r.status === 'running' ? (r.progress ? `solving · ${cfdStageText(r.progress.stage)}` : 'starting…')
+const doeRunState = r => r.status === 'running' ? `${r.live ? `${((performance.now() - r.live.t0) / 1000).toFixed(0)} s · ` : ''}${r.progress ? `solving · ${cfdStageText(r.progress.stage)}` : 'starting…'}`
   : r.status === 'done' ? `${(r.ms / 1000).toFixed(1)} s` : r.status === 'error' ? `failed: ${r.error}` : r.status === 'stopped' ? 'stopped' : 'waiting';
 
 function renderDOEDesign() {
@@ -348,7 +351,8 @@ function renderDOEPlots() {
   const bind = (id, key) => { const el = bar.querySelector('#' + id); if (el) el.onchange = () => { DOE[key] = +el.value; if (key === 'mx' && DOE.mx === DOE.my) DOE.my = DOE.mx ? 0 : 1; if (key === 'my' && DOE.my === DOE.mx) DOE.mx = DOE.my ? 0 : 1; renderDOEPlots(); }; };
   bind('doeX', 'x'); bind('doeMX', 'mx'); bind('doeMY', 'my');
   lg.innerHTML = '';
-  if (!d || !done.length) { host.innerHTML = `<p class="cap fv-empty">${DOE.status === 'running' ? '<i class="spin" aria-hidden="true"></i>Solving: the plots fill in as runs finish.' : 'No results yet: set the factors in the Design tab below, then Run DOE.'}</p>`; return; }
+  drawDOELive();
+  if (!d || !done.length) { host.innerHTML = DOE.status === 'running' ? '' : '<p class="cap fv-empty">No results yet: set the factors in the Design tab below, then Run DOE.</p>'; return; }
   const val = r => r.out[o.k], ok = done.filter(r => Number.isFinite(val(r)));
   if (!ok.length) { host.innerHTML = `<p class="cap fv-empty">No run has a value for ${o.l.toLowerCase()}.</p>`; return; }
   let lo = Math.min(...ok.map(val)), hi = Math.max(...ok.map(val));
@@ -405,6 +409,22 @@ function renderDOEPlots() {
     });
     lg.innerHTML = `<span class="fv-why">Each point: the mean of “${o.l}” over the runs at that level (all the other factors' levels). The steeper the line, the stronger the factor.</span>`;
   }
+}
+/** The runs solving: their residuals so far, over the plots (in their place before the first result). */
+function drawDOELive() {
+  const box = document.getElementById('doeLive');
+  if (!box) return;
+  const runs = DOE.status === 'running' ? DOE.runs.filter(r => r.status === 'running' && r.live) : [];
+  const was = box.hidden;
+  box.hidden = !runs.length;
+  if (!runs.length) return;
+  const big = !DOE.runs.some(r => r.status === 'done');
+  box.classList.toggle('big', big);
+  if (was) return renderDOEPlots();   // (it takes room from the plots: lay them out again)
+  const name = r => `run ${r.n + 1}: ${r.vals.map((v, m) => doeFmt(DOE.design[m].f, v) + (DOE.design[m].f.u ? ' ' + DOE.design[m].f.u : '')).join(', ')}`;
+  const w = box.clientWidth || 600, h = big ? Math.max(160, box.clientHeight - 30) : 130;
+  drawLiveResiduals(box.querySelector('canvas'), h / w, runs.map(r => ({ name: name(r), short: `#${r.n + 1}`, color: doeColor(r.slot), live: r.live })));
+  document.getElementById('doeLiveLegend').innerHTML = runs.map(r => `<span class="lg"><i class="xl-sw" style="background:${doeColor(r.slot)}"></i>${name(r)} · ${((performance.now() - r.live.t0) / 1000).toFixed(0)} s</span>`).join('');
 }
 /** Hover: the level nearest the pointer and each line's value there. */
 function doeHover(cv, map, x, series, o) {
