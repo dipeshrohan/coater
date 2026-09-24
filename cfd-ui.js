@@ -134,14 +134,14 @@ const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab alread
 const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z, over: {}, solver: {} }));
 // Inputs a location can set for itself, in the sidebar's units.
 const LOC_INPUTS = [
-  { k: 'gap', l: 'Gap at edge', u: 'mm', step: 0.001, d: 3 },
-  { k: 'th', l: 'Contact angle', u: '°', step: 0.5, d: 1 },
-  { k: 'U', l: 'Web speed', u: 'm/min', step: 0.01, d: 2 },
-  { k: 'Pup', l: 'Bead pressure', u: 'kPa', step: 0.02, d: 2 },
-  { k: 'mu', l: 'Viscosity at 2.7 1/s', u: 'Pa·s', step: 0.5, d: 1 },
-  { k: 'n', l: 'Shear-thinning n', u: '', step: 0.05, d: 2 },
-  { k: 'ty', l: 'Yield stress', u: 'Pa', step: 0.5, d: 1 },
-  { k: 'g', l: 'Surface tension', u: 'N/m', step: 0.005, d: 3 },
+  { k: 'gap', l: 'Gap at edge', u: 'mm', step: 0.001, d: 3, lo: 0.01, hi: 10 },
+  { k: 'th', l: 'Contact angle', u: '°', step: 0.5, d: 1, lo: 1, hi: 179 },
+  { k: 'U', l: 'Web speed', u: 'm/min', step: 0.01, d: 2, lo: 0.01, hi: 10 },
+  { k: 'Pup', l: 'Bead pressure', u: 'kPa', step: 0.02, d: 2, lo: -5, hi: 20 },
+  { k: 'mu', l: 'Viscosity at 2.7 1/s', u: 'Pa·s', step: 0.5, d: 1, lo: 0.01, hi: 1000 },
+  { k: 'n', l: 'Shear-thinning n', u: '', step: 0.05, d: 2, lo: 0.1, hi: 1.5 },
+  { k: 'ty', l: 'Yield stress', u: 'Pa', step: 0.5, d: 1, lo: 0, hi: 500 },
+  { k: 'g', l: 'Surface tension', u: 'N/m', step: 0.005, d: 3, lo: 0.005, hi: 0.1 },
 ];
 /** A location's shared (not overridden) value of an input. */
 function locShared(i, k) {
@@ -340,6 +340,15 @@ function logCFD(i, text, kind = '') {
 function runLocation(i) {
   const run = cfdRuns[i];
   if (run.status === 'running') return;
+  // (inputs outside what the solver can do: not run, and listed under Problems)
+  const errs = checkLocation(i).filter(p => p.level === 'error');
+  if (errs.length) {
+    Object.assign(run, { status: 'blocked', error: errs.map(p => p.text).join(' ') });
+    logCFD(i, `not solved: ${run.error}`, 'bad');
+    const tabBtn = document.querySelector('.dock-tabs button[data-dock="problems"]');
+    if (tabBtn && FV.dock !== 'problems') tabBtn.click(); else renderCFD();
+    return;
+  }
   const geo = cfdGeometry(i);
   const worker = new Worker('cfd-worker.js');
   cfdWorkers[i] = worker;
@@ -617,7 +626,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('mesh', 'Mesh study')}${dockTab('cases', 'Saved cases')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('mesh', 'Mesh study')}${dockTab('cases', 'Saved cases')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
         </div>
         <div class="dock-body">
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
@@ -637,6 +646,7 @@ function viewCFD() {
           ${panel('fibre', '<div id="cfdFibre"></div>')}
           ${panel('conv', '<div id="cfdConv"></div>')}
           ${panel('mesh', '<div id="cfdMeshStudy"></div>')}
+          ${panel('problems', '<div class="problems-host"></div>')}
           ${panel('cases', `<div class="fv-bar">
               <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
               <button class="btn btn-secondary btn-sm" type="button" id="cfdCaseSave">Save current case</button>
@@ -669,8 +679,9 @@ function viewCFD() {
   document.getElementById('cfdRunAll').onclick = runAllLocations;
   document.querySelectorAll('#cfdShape button').forEach(b => { b.onclick = () => { CFDG.shape = b.dataset.shape; viewCFD(); }; });
   const geoNum = (id, key, lo, hi) => {
-    const el = document.getElementById(id);
-    el.addEventListener('change', () => { const v = +el.value; if (Number.isFinite(v)) CFDG[key] = Math.min(hi, Math.max(lo, v)); el.value = CFDG[key]; renderCFD(); });
+    const el = document.getElementById(id), row = el.closest('.prop');
+    const label = row ? firstText(row.querySelector('.prop-l')) : key, unit = row ? cleanText(row.querySelector('.prop-u')) : '';
+    el.addEventListener('change', () => { guardNumber(el, { label, lo, hi, unit }, v => { CFDG[key] = v; }); el.value = CFDG[key]; renderCFD(); });
   };
   geoNum('cfdR', 'R', 10, 500); geoNum('cfdPool', 'pool', 5, 150); geoNum('cfdExit', 'exitAngle', 30, 150);
   geoNum('cfdGsm', 'gsm', 10, 3000); geoNum('cfdRhoF', 'rhoF', 800, 3000); geoNum('cfdDen', 'den', 5, 3000); geoNum('cfdNf', 'nf', 1, 1000);
@@ -692,9 +703,7 @@ function viewCFD() {
   for (const q of SOLVER_INPUTS) {
     const el = document.getElementById('cfdS_' + q.k);
     el.addEventListener('change', () => {
-      const raw = el.value.trim(), v = +raw;
-      if (q.k === 'nEb' && raw === '') CFDS.nEb = null;
-      else if (raw !== '' && Number.isFinite(v)) CFDS[q.k] = solverValue(q, v);
+      guardNumber(el, { label: q.l, lo: q.lo, hi: q.hi, unit: q.u, allowEmpty: q.k === 'nEb' }, v => { CFDS[q.k] = v == null ? null : solverValue(q, v); });
       el.value = CFDS[q.k] ?? '';
       renderCFD();
     });
@@ -789,6 +798,8 @@ function renderCFD() {
   if (custom) custom.hidden = FV.density !== 'custom';
   const dens = document.getElementById('fvDensity');
   if (dens) dens.disabled = custom.disabled = FV.seedMode === 'manual';
+  // (a location stopped by errors that are now fixed: back to its result, or not run)
+  cfdRuns.forEach((r, i) => { if (r.status === 'blocked' && !checkLocation(i).some(p => p.level === 'error')) r.status = r.field ? 'done' : 'idle'; });
   // (the difference view has no vectors, probes or cut lines on its plot)
   const isDiff = FV.view === 'diff';
   if (isDiff && (placeCut || placeProbes)) { placeCut = null; placeProbes = false; }
@@ -821,6 +832,8 @@ function renderCFD() {
   renderConvergence();
   renderSolverNote();
   renderMeshStudy();
+  renderProblems();
+  markInvalidInputs();
   decorateImageButtons();
 }
 
@@ -1235,6 +1248,7 @@ function renderRunChips() {
       txt = pr && Number.isFinite(pr.residual) ? `r ${pr.residual.toExponential(0)}` : 'solving';
       tip = `solving${pr ? ': ' + (pr.stage || 'starting') : ''}`;
     } else if (r.status === 'error') { cls = 'bad'; txt = 'failed'; tip = r.error || 'failed'; }
+    else if (r.status === 'blocked') { cls = 'bad'; txt = 'blocked'; tip = `not solved: ${r.error}`; }
     else if (r.field && cfdIsStale(i)) { cls = 'warn'; txt = 'out of date'; tip = 'inputs changed since this run'; }
     else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `${(r.elapsedMs / 1000).toFixed(1)} s`; tip = `solved in ${(r.elapsedMs / 1000).toFixed(1)} s, residual ${r.result.residual.toExponential(1)}`; }
     else if (r.status === 'cancelled') { cls = 'warn'; txt = 'stopped'; tip = 'stopped'; }
@@ -1314,13 +1328,14 @@ function renderLocCards() {
     let cls = '', txt = 'not run';
     if (r.status === 'running') { cls = 'run'; txt = r.progress ? `solving · ${cfdStageText(r.progress.stage)}${r.progress.s < 1 ? `, rheology ${Math.round(r.progress.s * 100)}%` : ''}` : 'solving…'; }
     else if (r.status === 'error') { cls = 'bad'; txt = 'failed'; }
+    else if (r.status === 'blocked') { cls = 'bad'; txt = 'not solved: see Problems'; }
     else if (r.field && cfdIsStale(i)) { cls = 'warn'; txt = 'out of date'; }
     else if (r.field) { cls = r.result.converged ? 'ok' : 'warn'; txt = `solved · ${(r.elapsedMs / 1000).toFixed(1)} s${r.result.converged ? '' : ' · partly converged'}`; }
     else if (r.status === 'cancelled') { cls = 'warn'; txt = 'cancelled'; }
     const sel = FV.view === i ? ' sel' : '', own = Object.keys(loc.over).length + Object.keys(loc.solver).length;
     return `<div class="loc-row${sel}">
       <button class="loc-pick" type="button" data-pick="${i}" aria-pressed="${FV.view === i}" title="Show location ${loc.id} in the viewport"><i class="loc-dot" style="background:${locColor(i)}"></i>L${loc.id}</button>
-      <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
+      <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" id="locz_${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
       <button class="icon-btn loc-in-btn${own ? ' on' : ''}" type="button" data-edit="${i}" aria-expanded="${cfdEditLoc === i}" aria-controls="cfdLocEdit" title="Inputs for location ${loc.id} only${own ? ` (${own} set here)` : ''}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h7M12 4h2M2 12h3M8 12h6M9 2.5v3M5 10.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>${own ? `<span class="badge">${own}</span>` : ''}</button>
       <button class="icon-btn" type="button" data-run="${i}"${r.status === 'running' ? ' disabled' : ''} title="Run location ${loc.id}" aria-label="Run location ${loc.id}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg></button>
       <div class="loc-state ${cls}" data-state="${i}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
@@ -1335,35 +1350,34 @@ function renderLocCards() {
     const solverGrid = `<div class="loc-edit-head"><b>Solver and mesh</b><span class="fv-why">empty = shared</span></div>
       <div class="loc-in-grid">
         <label><span>Mesh</span><select data-ls="${i}" data-k="mesh" aria-label="Location ${loc.id}: mesh">${sOpt('', `Shared (${MESH_PRESETS[CFDS.mesh].l})`, loc.solver.mesh ?? '')}${Object.entries(MESH_PRESETS).map(([k, m]) => sOpt(k, m.l, loc.solver.mesh ?? '')).join('')}</select></label>
-        ${SOLVER_INPUTS.filter(q => !q.custom || sv.mesh === 'custom').map(q => `<label><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-ls="${i}" data-k="${q.k}" value="${loc.solver[q.k] ?? ''}" placeholder="${CFDS[q.k] ?? 'auto'}" aria-label="Location ${loc.id}: ${q.l} (empty = shared value)"></label>`).join('')}
+        ${SOLVER_INPUTS.filter(q => !q.custom || sv.mesh === 'custom').map(q => `<label><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-ls="${i}" data-k="${q.k}" id="ls_${i}_${q.k}" value="${loc.solver[q.k] ?? ''}" placeholder="${CFDS[q.k] ?? 'auto'}" aria-label="Location ${loc.id}: ${q.l} (empty = shared value)"></label>`).join('')}
         <label><span>Newton tolerance</span><select data-ls="${i}" data-k="tol" aria-label="Location ${loc.id}: Newton tolerance">${sOpt('', `Shared (${fmtTol(CFDS.tol)})`, loc.solver.tol ?? '')}${SOLVER_TOLS.map(t => sOpt(t, fmtTol(t), loc.solver.tol ?? '')).join('')}</select></label>
       </div>`;
     edit.hidden = false;
     edit.innerHTML = `<div class="loc-edit-head"><b>Location ${loc.id}: its own inputs</b><span class="fv-why">empty = the shared value (shown faint)</span></div>
-      <div class="loc-in-grid">${LOC_INPUTS.map(q => { const off = (q.k === 'n' || q.k === 'ty') && !RHEO_MODELS[CFDG.model].uses.includes(q.k); return `<label${off ? ` title="not used by the ${RHEO_MODELS[CFDG.model].l} model"` : ''}><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}${off ? ' <small>(not used)</small>' : ''}</span><input type="number" step="${q.step}" data-li="${i}" data-k="${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}"${off ? ' disabled' : ''} aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`; }).join('')}</div>
+      <div class="loc-in-grid">${LOC_INPUTS.map(q => { const off = (q.k === 'n' || q.k === 'ty') && !RHEO_MODELS[CFDG.model].uses.includes(q.k); return `<label${off ? ` title="not used by the ${RHEO_MODELS[CFDG.model].l} model"` : ''}><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}${off ? ' <small>(not used)</small>' : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-li="${i}" data-k="${q.k}" id="li_${i}_${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}"${off ? ' disabled' : ''} aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`; }).join('')}</div>
       ${solverGrid}
       <div class="loc-edit-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear="${i}"${own ? '' : ' disabled'}>Use shared values</button><button class="btn btn-secondary btn-sm" type="button" data-edit="${i}">Close</button></div>`;
   }
   host.querySelectorAll('input[data-i]').forEach(inp => inp.addEventListener('change', () => {
-    const v = Math.min(CFD_WEB_WIDTH_MM, Math.max(0, +inp.value || 0));
-    CFD_LOCS[+inp.dataset.i].z = v;
+    const loc = CFD_LOCS[+inp.dataset.i];
+    guardNumber(inp, { label: `Location ${loc.id} position across the web`, lo: 0, hi: CFD_WEB_WIDTH_MM, unit: 'mm' }, v => { loc.z = v; });
+    inp.value = loc.z;
     renderCFD();
   }));
   document.querySelectorAll('#cfdLocs button[data-edit], #cfdLocEdit button[data-edit]').forEach(b => { b.onclick = () => { cfdEditLoc = cfdEditLoc === +b.dataset.edit ? null : +b.dataset.edit; renderLocCards(); }; });
   host.querySelectorAll('button[data-pick]').forEach(b => { b.onclick = () => { FV.view = +b.dataset.pick; FV.profileLoc = FV.view; renderCFD(); }; });
   edit.querySelectorAll('input[data-li]').forEach(inp => inp.addEventListener('change', () => {
-    const loc = CFD_LOCS[+inp.dataset.li], k = inp.dataset.k, raw = inp.value.trim(), v = +raw;
-    const ok = k === 'th' ? v > 0 && v < 180 : k === 'ty' || k === 'Pup' ? v >= 0 : v > 0;
-    if (raw === '') delete loc.over[k];
-    else if (Number.isFinite(v) && ok) loc.over[k] = v;
+    const loc = CFD_LOCS[+inp.dataset.li], k = inp.dataset.k, q = LOC_INPUTS.find(x => x.k === k);
+    guardNumber(inp, { label: `Location ${loc.id}: ${q.l}`, lo: q.lo, hi: q.hi, unit: q.u, allowEmpty: true }, v => { if (v == null) delete loc.over[k]; else loc.over[k] = v; });
     renderCFD();
   }));
   edit.querySelectorAll('[data-ls]').forEach(el => el.addEventListener('change', () => {
     const loc = CFD_LOCS[+el.dataset.ls], k = el.dataset.k, raw = el.value.trim(), q = SOLVER_INPUTS.find(x => x.k === k);
-    if (raw === '') delete loc.solver[k];
+    if (raw === '') { delete loc.solver[k]; if (el.id) clearRejected(el.id); }
     else if (k === 'mesh') loc.solver.mesh = raw;
     else if (k === 'tol') loc.solver.tol = +raw;
-    else if (q && Number.isFinite(+raw)) loc.solver[k] = solverValue(q, +raw);
+    else if (q) guardNumber(el, { label: `Location ${loc.id}: ${q.l}`, lo: q.lo, hi: q.hi, unit: q.u }, v => { loc.solver[k] = solverValue(q, v); });
     renderCFD();
   }));
   edit.querySelectorAll('button[data-clear]').forEach(b => { b.onclick = () => { CFD_LOCS[+b.dataset.clear].over = {}; CFD_LOCS[+b.dataset.clear].solver = {}; renderCFD(); }; });

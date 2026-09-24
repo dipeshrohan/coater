@@ -57,10 +57,10 @@ function syncSliderFill(input) {
     const slider = row.querySelector('input[type=range]'), num = row.querySelector('input[type=number]');
     const showValue = () => { if (document.activeElement !== num) num.value = (+slider.value).toFixed(c.d); syncSliderFill(slider); };
     showValue();
-    slider.addEventListener('input', () => { P[c.k] = +slider.value; showValue(); queueRender(); });
+    slider.addEventListener('input', () => { P[c.k] = +slider.value; if (inputProblems.has(num.id)) clearRejected(num.id); showValue(); queueRender(); });
+    // (a typed value outside the slider's range is rejected: see validate.js)
     num.addEventListener('change', () => {
-      const v = +num.value;
-      if (Number.isFinite(v)) { slider.value = Math.min(c.max, Math.max(c.min, v)); slider.dispatchEvent(new Event('input')); }
+      guardNumber(num, { label: c.l, lo: c.min, hi: c.max, unit: c.u }, v => { slider.value = v; slider.dispatchEvent(new Event('input')); });
       num.value = (+slider.value).toFixed(c.d);
     });
   });
