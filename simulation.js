@@ -48,8 +48,11 @@ const ANIM = (function () {
     CL.backing = cssVar('--soft'); CL.sfill = '0.16'; CL.sans = cssVar('--sans');
   }
 
+  // (a canvas's data-maxh, px, caps its height: it then narrows, keeping its proportions)
   function resizeCanvas() {
-    const w = cv.parentElement.clientWidth || 900;
+    const pw = cv.parentElement.clientWidth || 900, maxH = +cv.dataset.maxh || Infinity;
+    const w = Math.min(pw, maxH * (XMAX - XMIN) / (YMAX - YMIN));
+    cv.style.width = w + 'px';
     DPR = window.devicePixelRatio || 1;
     W = w;
     Hh = w * (YMAX - YMIN) / (XMAX - XMIN);
@@ -699,9 +702,9 @@ const ANIM = (function () {
   /** Render the magnified downstream-meniscus inset, sharing the same simulation state and clock as draw(). */
   function drawMag(t, sc) {
     if (!cv2 || !MAG) return;
-    const w = cv2.parentElement.clientWidth || 900, h = Math.round(w * 0.46);
+    const w = Math.min(cv2.parentElement.clientWidth || 900, (+cv2.dataset.maxh || Infinity) / 0.46), h = Math.round(w * 0.46);
     if (cv2.__w !== w || cv2.__d !== DPR) {
-      cv2.__w = w; cv2.__d = DPR; cv2.style.height = h + 'px';
+      cv2.__w = w; cv2.__d = DPR; cv2.style.height = h + 'px'; cv2.style.width = w + 'px';
       cv2.width = Math.round(w * DPR); cv2.height = Math.round(h * DPR);
     }
     const c = cv2.getContext('2d');
