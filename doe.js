@@ -132,6 +132,9 @@ function doePump() {
 }
 function doeStart(run) {
   const geo = doeGeometry(DOE.loc, DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] })));
+  // (inputs outside what the solver can do: the run is not solved)
+  const errs = checkGeometry(geo, null).filter(p => p.level === 'error');
+  if (errs.length) { Object.assign(run, { status: 'error', error: `not solved: ${errs.map(p => p.text).join(' ')}`, ms: 0 }); return; }
   const w = new Worker('cfd-worker.js'), t0 = performance.now();
   // (a colour slot per run while it solves: the lowest one free)
   const used = new Set([...DOE.active].map(r => r.slot));
@@ -187,7 +190,7 @@ function viewDOE() {
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">Edit in CFD Analysis</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${k === 'problems' ? '<span class="tab-n" data-n="problems"></span>' : ''}</button>`;
   view.innerHTML = `
     <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${DOE.dockH}px">
       <div class="vp-bar" role="toolbar" aria-label="DOE">
@@ -208,10 +211,11 @@ function viewDOE() {
       </div>
       <div class="split split-h" id="doeSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the DOE panel" tabindex="0"></div>
       <section class="dock" aria-label="DOE design and runs">
-        <div class="dock-tabs" role="tablist" aria-label="DOE">${dockTab('design', 'Design')}${dockTab('runs', 'Runs')}</div>
+        <div class="dock-tabs" role="tablist" aria-label="DOE">${dockTab('design', 'Design')}${dockTab('runs', 'Runs')}${dockTab('problems', 'Problems')}</div>
         <div class="dock-body">
           <div class="dock-panel" id="doe-design" role="tabpanel"${DOE.dock === 'design' ? '' : ' hidden'}></div>
           <div class="dock-panel" id="doe-runs" role="tabpanel"${DOE.dock === 'runs' ? '' : ' hidden'}></div>
+          <div class="dock-panel" id="doe-problems" role="tabpanel"${DOE.dock === 'problems' ? '' : ' hidden'}><div class="problems-host"></div></div>
         </div>
       </section>
     </div>`;
@@ -251,6 +255,8 @@ function renderDOE() {
   renderDOEDesign();
   renderDOERuns();
   renderDOEPlots();
+  renderProblems();
+  markInvalidInputs();
 }
 function doeStatusLine() {
   const el = document.getElementById('doeStatus');
@@ -280,8 +286,8 @@ function renderDOEDesign() {
     const levels = doeLevels(fs).map(v => doeFmt(f, v)).join(' · ');
     const mid = f.cat
       ? `<td colspan="3">${f.cat.map(v => `<label class="fv-chk"><input type="checkbox" data-fcat="${m}" value="${v}"${fs.vals.includes(v) ? ' checked' : ''}${dis}> ${f.cl(v)}</label>`).join(' ')}</td>`
-      : `<td><input type="number" data-fmin="${m}" step="any" value="${fs.min}"${dis} aria-label="${f.l}: from"></td>
-         <td><input type="number" data-fmax="${m}" step="any" value="${fs.max}"${dis} aria-label="${f.l}: to"></td>
+      : `<td><input type="number" data-fmin="${m}" id="doe_fmin_${m}" step="any" min="${f.lo}" max="${f.hi}" value="${fs.min}"${dis} aria-label="${f.l}: from"></td>
+         <td><input type="number" data-fmax="${m}" id="doe_fmax_${m}" step="any" min="${f.lo}" max="${f.hi}" value="${fs.max}"${dis} aria-label="${f.l}: to"></td>
          <td><select data-fn="${m}"${dis} aria-label="${f.l}: levels">${[2, 3, 4, 5].map(n => `<option value="${n}"${n === fs.n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>`;
     return `<tr${off ? ' class="is-off"' : ''}><th scope="row"><select data-fk="${m}"${dis} aria-label="Factor ${m + 1}">${pickOpts(fs.k)}</select>${off ? '<small class="warn-text">not used by the current model or blade: left out</small>' : ''}</th>${mid}
       <td class="mono doe-levels">${levels}</td>
@@ -293,8 +299,8 @@ function renderDOEDesign() {
       <span class="fv-why"><b>${N} runs</b> (every combination) at location ${DOE.loc + 1}: about ${doeClock(est * 1000)} with ${DOE.workers} at a time, a run taking about ${t.toFixed(0)} s here. Up to three factors, 2 to 5 levels each, evenly spaced.</span></div>`;
   host.querySelectorAll('[data-fk]').forEach(el => el.addEventListener('change', () => { DOE.factors[+el.dataset.fk] = doeNewFactor(el.value, DOE.loc); renderDOE(); }));
   const num = (sel, key) => host.querySelectorAll(sel).forEach(el => el.addEventListener('change', () => {
-    const fs = DOE.factors[+el.dataset[key]], f = doeFactor(fs.k), v = +el.value;
-    if (Number.isFinite(v)) fs[key === 'fmin' ? 'min' : 'max'] = +Math.min(f.hi, Math.max(f.lo, v)).toFixed(f.d + 2);
+    const fs = DOE.factors[+el.dataset[key]], f = doeFactor(fs.k);
+    guardNumber(el, { label: `${f.l}, ${key === 'fmin' ? 'from' : 'to'}`, lo: f.lo, hi: f.hi, unit: f.u }, v => { fs[key === 'fmin' ? 'min' : 'max'] = +v.toFixed(f.d + 2); });
     if (!(fs.max > fs.min)) { const t2 = fs.min; fs.min = Math.min(t2, fs.max); fs.max = Math.max(t2, fs.max); if (fs.max === fs.min) fs.max = +(fs.min + Math.max(1e-3, Math.abs(fs.min) * 0.1)).toFixed(f.d + 2); }
     renderDOE();
   }));

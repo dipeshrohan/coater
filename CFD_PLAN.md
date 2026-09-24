@@ -9,8 +9,32 @@ drift out of sync with what's actually built.
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
-## 10 live residual plot (done), 11 input validation, 12 input tooltips, 13 project file,
+## 10 live residual plot (done), 11 input validation (done), 12 input tooltips, 13 project file,
 ## 14 session memory, 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-11 (done): input validation
+
+User's choices: an entry outside its range is rejected (the last valid
+value kept, the field marked); checks before a run for solver limits,
+model validity and process sanity; errors stop the run, warnings do not;
+a Problems panel.
+- validate.js: guardNumber (every typed number: the sidebar, CFD setup,
+  solver settings, each location's position / own inputs / own solver
+  settings, DOE factor ranges), rejected entries kept until the field
+  gets a valid value (or 'Clear rejected entries'), marked again after a
+  redraw.
+- checkGeometry(geo): errors: web speed, gap at the edge, exit face +
+  contact angle (94-175 deg, as the solver), viscosity, n, yield stress,
+  surface tension, land length, fibre porosity. Warnings: Re > 50, Ca > 1,
+  n outside 0.2-1.2, yield stress above the driving stresses (the viscous
+  part of the law at U/H, and the bead pressure over the blade), tolerance
+  1e-6 or looser, pool edge beyond 0.8 R, gap under 0.1 mm, waviness +
+  fibre variation over 30 % of the gap, the oven within the 2D free film.
+- Problems tab (CFD and DOE docks, count on the tab): one entry per kind
+  of problem with the locations it applies to, 'Go to' opens the group
+  (or the location's inputs) and focuses the field. A location with errors
+  is not solved ('blocked', logged, Problems shown); a DOE run with errors
+  is not solved (its reason in the runs table).
 
 ### GUI-10 (done): live residual plots
 
