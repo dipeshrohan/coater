@@ -744,6 +744,7 @@ function renderCFD() {
   renderFibre();
   renderProfiles();
   renderConvergence();
+  decorateImageButtons();
 }
 
 // ---------------------------------------------------------------------
@@ -1304,6 +1305,7 @@ function renderFlowPlots() {
       <button type="button" class="zb zb-t" data-z="meniscus" title="Zoom to the exit face, contact line and free surface">Meniscus</button>
       <span class="zb-sep" aria-hidden="true"></span>
       <button type="button" class="zb" data-z="box" aria-pressed="${FV.boxZoom}" title="Box zoom: drag a rectangle (also Shift+drag)" aria-label="Box zoom"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="9" height="7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 1.6"/><path d="M10.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+      <button type="button" class="zb" data-z="img" title="Save the plot${compare ? 's' : ''} as an image" aria-label="Save as image">${CAMERA_SVG}</button>
     </div>`;
   if (FV.view === 'diff') { renderDiffPlot(host, zoomCtl); return; }
 
@@ -1647,6 +1649,7 @@ function wirePlotZoom(el) {
     if (z === 'in' || z === 'out') setView(scaleAbout((v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2, z === 'in' ? 1 / 1.5 : 1.5), false);
     else if (z === 'fit') setView(null, false);
     else if (z === 'edge' || z === 'meniscus') setView(zoomPreset(i, z), false);
+    else if (z === 'img') openImageDialog('plots');
     else if (z === 'box') { FV.boxZoom = !FV.boxZoom; document.querySelectorAll('.zoom-ctl [data-z="box"]').forEach(x => x.setAttribute('aria-pressed', FV.boxZoom)); document.querySelectorAll('.fv-plot').forEach(p => p.classList.toggle('box-mode', FV.boxZoom)); }
   });
   el.classList.toggle('box-mode', FV.boxZoom);

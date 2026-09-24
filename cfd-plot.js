@@ -235,7 +235,7 @@ function drawFlowPlot(cv, s) {
   c.fillStyle = surface; fluidPath(); c.fill();
   if (rasterOn && vr > vl && vb > vt) {
     // sampled over the part of the domain in view (half resolution while zooming / panning)
-    const q = s.fast ? 0.5 : 1;
+    const q = s.fast ? 0.5 : window.EXPORT_DPR || 1;   // (an image export samples at its own resolution)
     const sc = s.scalar, pw = Math.max(1, Math.round((vr - vl) * q)), ph = Math.max(1, Math.round((vb - vt) * q));
     let perField = rasterCache.get(f);
     if (!perField) { perField = new Map(); rasterCache.set(f, perField); }
@@ -263,7 +263,7 @@ function drawFlowPlot(cv, s) {
         }
       }
       oc.putImageData(img, 0, 0);
-      perField.set(key, off);
+      if (!window.EXPORT_DPR) perField.set(key, off);
     }
     c.imageSmoothingEnabled = true;
     c.drawImage(off, vl, vt, vr - vl, vb - vt);
