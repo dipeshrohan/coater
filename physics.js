@@ -187,6 +187,35 @@ function edgeBead() {
   return { h, R, mu, sig: growthRate, lam: wavelength, pc: capillaryPressure, arrest: arrested };
 }
 
+/** Edge scallop amplitude (mm) at x mm downstream of the blade (the Web edge tab's curve). */
+function edgeAmplitudeAt(xmm) {
+  const e = edgeBead(), U = P.U / 60;
+  return e.arrest ? P.a0e / 1000 : Math.min(P.a0e / 1000 * Math.exp(e.sig * xmm / 1000 / U), e.lam / 4);
+}
+
+/**
+ * Levelling of the film-surface ripple (the Film surface tab): the starting amplitude a0 (m, from
+ * the gap wobble through dh/dH plus vibration), the levelling time constant tau (s), the residual
+ * amplitude a yield stress leaves (m), the residence time to the oven (s), and the amplitude at
+ * time t after the blade: at(t), m.
+ */
+function rippleLevelling() {
+  const H = gapHeight(), h = contactLine(H, P.th).h / 1000;
+  const dhdH = (filmThickness(H + 0.01) - filmThickness(H - 0.01)) / 0.02; // film sensitivity to gap wobble
+  const a0 = (Math.abs(dhdH) * P.dH + P.vib) / 1e6;                          // starting ripple amplitude, m
+  const k = 2 * Math.PI / (P.lam / 1000);                                    // ripple wavenumber, 1/m
+  const mu = muEff(0.5);                                                     // slow, surface-tension-driven levelling
+  const tau = 3 * mu / (h * h * h * (P.g * k ** 4 + RHO * GRAVITY * k * k)); // levelling time constant, s
+  const residual = P.ty / (h * (P.g * k ** 3 + RHO * GRAVITY * k));
+  const asymptote = Math.min(a0, residual);
+  const tRes = P.oven / (P.U / 60);                                          // residence time to the oven, s
+  return { h, dhdH, a0, tau, residual, asymptote, tRes, at: t => asymptote + (a0 - asymptote) * Math.exp(-t / tau) };
+}
+
+/** Local gap (mm) and contact angle (deg) at position z (mm) across the web: waviness, fibre thickness and wetting variation. */
+const localGap = z => gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) - P.dt * spatialNoise(z, 1.7)) / 1000;
+const localContactAngle = z => P.th + P.dth * spatialNoise(z, 4.1);
+
 /**
  * Dimensionless checks on whether the thin-film/lubrication assumptions
  * still hold for the current inputs. Used to gate the "model validity"

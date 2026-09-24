@@ -115,6 +115,8 @@ const UNDO_UNITS = (() => {
     const [l, f] = FV_UNDO[k];
     u.push({ id: 'fv.' + k, get: () => FV[k], set: v => { FV[k] = v === undefined ? JSON.parse(JSON.stringify(FV_DEFAULTS[k])) : v; }, label: (a, b) => f === 0 ? l : undoChange(l, a, b, f || undefined) });
   }
+  u.push({ id: 'meas', get: () => MEAS.sets.map(({ cfd, ...d }) => d), label: (a, b) => undoListChange(a, b, 'measured dataset', []),
+    set: v => { MEAS.sets = (v || []).map(d => ({ ...d, cfd: measCfdCache.get(d.id) || null })); if (!MEAS.sets.some(d => d.id === MEAS.sel)) MEAS.sel = MEAS.sets.length ? MEAS.sets[0].id : null; } });
   for (const k of Object.keys(DOE_UNDO)) {
     const [l, f] = DOE_UNDO[k];
     u.push({ id: 'doe.' + k, get: () => DOE[k], set: v => { DOE[k] = v; }, label: (a, b) => k === 'factors' ? undoFactorsChange(a, b) : undoChange(l, a, b, f || undefined) });
@@ -207,7 +209,7 @@ function undoSchedule(e) {
   UNDO.timer = setTimeout(function tick() { if (UNDO.down) UNDO.timer = setTimeout(tick, 250); else undoCommit(); }, 600);
 }
 /** Name the next step (a button that changes several things at once); changes before it stay a step of their own. */
-function undoHint(label) { undoCommit(); UNDO.hint = label; UNDO.view = tab; undoSchedule(); }
+function undoHint(label, view = tab) { undoCommit(); UNDO.hint = label; UNDO.view = view; undoSchedule(); }
 /** Run f (may be async) with changes not picked up: what it changes and puts back is not a step. */
 async function undoQuiet(f) {
   undoCommit();

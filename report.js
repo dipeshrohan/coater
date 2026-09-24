@@ -13,7 +13,7 @@
 
 const REPORT_KEY = 'bladeCoatDefectLab.report.v1';
 const REP = (() => {
-  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'cfd', 'mesh', 'doe'] };
+  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'cfd', 'mesh', 'doe', 'meas'] };
   try { return { ...d, ...JSON.parse(localStorage.getItem(REPORT_KEY) || '{}') }; } catch (e) { return d; }
 })();
 const saveRepPrefs = () => { try { localStorage.setItem(REPORT_KEY, JSON.stringify(REP)); } catch (e) { /* not remembered */ } };
@@ -37,6 +37,7 @@ function reportSections() {
     { k: 'cfd', l: TABS[4], note: solved ? `${solved} of 4 locations solved${stale ? `, ${stale} out of date` : ''}` : 'nothing solved yet: setup and checks only' },
     { k: 'mesh', l: 'Mesh study', note: meshStudy ? `location ${meshStudy.loc + 1}, ${meshStudy.runs.filter(r => r.status === 'done').length} of ${meshStudy.runs.length} meshes solved` : 'not run', off: !meshStudy },
     { k: 'doe', l: TABS[5], note: DOE.runs.length ? `${DOE.runs.filter(r => r.status === 'done').length} of ${DOE.runs.length} runs solved` : 'not run: setup only' },
+    { k: 'meas', l: TABS[6], note: MEAS.sets.length ? `${MEAS.sets.length} dataset${MEAS.sets.length === 1 ? '' : 's'}${MEAS.fit ? ', a fit' : ''}` : 'none imported', off: !MEAS.sets.length },
   ];
 }
 
@@ -215,6 +216,28 @@ async function repDoe() {
   return html;
 }
 
+async function repMeasured() {
+  let html = '<p class="lede">Measured points against the fast models and, where solved, the CFD. Error = (predicted − measured) / measured.</p>';
+  for (const ds of MEAS.sets) {
+    MEAS.sel = ds.id; MEAS.dock = 'compare'; tab = TABS.indexOf('Measured data'); render(); await repFrame();
+    const stale = measCfdStale(ds);
+    html += `<h3>${repEsc(ds.name)}</h3><p class="lede">${repEsc(MEAS_KINDS[ds.kind].l)} · ${ds.rows.length} points · ${repEsc(ds.file)}${ds.cw ? ` · from ${ds.cw.dry ? 'dry' : 'wet'} coat weight, density ${ds.cw.rho} kg/m³${ds.cw.dry ? `, solids ${ds.cw.solids} %` : ''}` : ''}${stale ? ' · ' + repFlag() + ' CFD values are for earlier inputs' : ''}</p>`;
+    const sum = document.querySelector('#measTable .meas-sum');
+    if (sum) html += `<p>${repEsc(cleanText(sum))}</p>`;
+    html += repTable(document.querySelector('#measTable table'), { keep: 1, max: 9 });
+    const t = imageTargets().find(x => x.id === 'pane:0');
+    if (t) html += repFigure(t, `${ds.name} · ${t.title().replace(/^.*?· /, '')}`, stale ? repFlag() : '');
+  }
+  const f = MEAS.fit;
+  if (f) {
+    const c = k => CFG.find(q => q.k === k) || { l: k, u: '' };
+    html += `<h3>Fit</h3><p class="lede">${repEsc(new Date(f.t).toLocaleString())} · to ${repEsc(f.sets.map(id => (MEAS.sets.find(d => d.id === id) || { name: '(removed)' }).name).join(', '))} · RMS % error minimised on the fast model${f.applied ? ' · applied' : ' · not applied'}</p>`;
+    html += repRows(f.keys.map(k => [repEsc(c(k).l), repEsc(repUnit(f.before[k], c(k).u)), `<b>${repEsc(repUnit(f.vals[k], c(k).u))}</b>${f.atBound.includes(k) ? ' <span class="warn">at the end of its range</span>' : ''}`]), ['Input', 'Before', 'Fitted']);
+    html += repRows([['All chosen data', f.rmsBefore.toFixed(1), f.rmsAfter.toFixed(1), f.cfd && f.cfd.status === 'done' && f.cfd.rms != null ? f.cfd.rms.toFixed(1) : f.cfd && f.cfd.status === 'none' ? 'not modelled' : '—']], ['RMS error, %', 'Fast model before', 'Fast model fitted', 'CFD fitted']);
+  }
+  return html;
+}
+
 // ---------------------------------------------------------------------
 // The document
 // ---------------------------------------------------------------------
@@ -274,7 +297,7 @@ ${sections.map(s => `<section id="${s.id}"><h2>${repEsc(s.title)}</h2>${s.html}<
 }
 /** Build the report: each chosen section drawn in its view, then everything put back as it was. */
 async function buildReport(o) {
-  const keep = { tab, view: FV.view, dock: FV.dock, doeDock: DOE.dock };
+  const keep = { tab, view: FV.view, dock: FV.dock, doeDock: DOE.dock, measSel: MEAS.sel, measDock: MEAS.dock };
   const veil = document.createElement('div');
   veil.className = 'rep-veil'; veil.innerHTML = '<div><i class="spin" aria-hidden="true"></i>Building the report…</div>';
   document.body.appendChild(veil);
@@ -289,8 +312,9 @@ async function buildReport(o) {
         if (want.has('cfd')) out.push({ id: 'cfd', title: TABS[4], html: await repCfd(keep) });
         if (want.has('mesh') && meshStudy) out.push({ id: 'mesh', title: 'Mesh study', html: await repMesh() });
         if (want.has('doe')) out.push({ id: 'doe', title: TABS[5], html: await repDoe() });
+        if (want.has('meas') && MEAS.sets.length) out.push({ id: 'meas', title: TABS[6], html: await repMeasured() });
       } finally {
-        tab = keep.tab; FV.view = keep.view; FV.dock = keep.dock; DOE.dock = keep.doeDock;
+        tab = keep.tab; FV.view = keep.view; FV.dock = keep.dock; DOE.dock = keep.doeDock; MEAS.sel = keep.measSel; MEAS.dock = keep.measDock;
         render();
       }
     });

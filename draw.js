@@ -109,12 +109,15 @@ function plotChart(cv, aspectRatio, opts) {
     c.strokeStyle = series.c;
     c.lineWidth = series.w || 2;
     c.setLineDash(series.dash || []);
-    c.beginPath();
-    series.p.forEach((pt, i) => {
-      const x = X(pt[0]), y = Math.min(Math.max(Y(pt[1]), margin.t), margin.t + plotH);
-      i ? c.lineTo(x, y) : c.moveTo(x, y);
-    });
-    c.stroke();
+    // (series.line false: markers only)
+    if (series.line !== false) {
+      c.beginPath();
+      series.p.forEach((pt, i) => {
+        const x = X(pt[0]), y = Math.min(Math.max(Y(pt[1]), margin.t), margin.t + plotH);
+        i ? c.lineTo(x, y) : c.moveTo(x, y);
+      });
+      c.stroke();
+    }
     c.setLineDash([]);
     if (series.dots) {
       // (points: 8 px markers with a surface ring)

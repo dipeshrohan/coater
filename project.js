@@ -36,7 +36,7 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 
 // ---- the project as data, and back ----
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors]);
+const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d)]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs } : null;
@@ -56,6 +56,11 @@ function projectData() {
     results: cfdRuns.map(runOut),
     meshStudy: meshStudy ? { loc: meshStudy.loc, key: meshStudy.key, status: meshStudy.status === 'running' ? 'cancelled' : meshStudy.status, runs: meshStudy.runs.map(r => ({ name: r.name, f: r.f, solver: r.solver, status: r.status === 'running' ? 'cancelled' : r.status, r: r.r, ms: r.ms, error: r.error, reused: r.reused })) } : null,
     messages: cfdLog.map(m => ({ t: m.t, i: m.i, text: m.text, kind: m.kind })),
+    measured: {
+      sets: MEAS.sets.map(d => ({ ...d, cfd: d.cfd ? { ...d.cfd, status: d.cfd.status === 'running' ? 'stopped' : d.cfd.status } : null })),
+      sel: MEAS.sel, fit: MEAS.fit ? { ...MEAS.fit, cfd: MEAS.fit.cfd ? { ...MEAS.fit.cfd, status: MEAS.fit.cfd.status === 'running' ? 'stopped' : MEAS.fit.cfd.status } : null } : null,
+      fitKeys: MEAS.fitKeys, fitRange: MEAS.fitRange, fitSets: MEAS.fitSets, dock: MEAS.dock, dockH: MEAS.dockH,
+    },
   };
 }
 /** Set a sidebar input as its slider does (everything listening updates). */
@@ -64,7 +69,16 @@ function setInput(k, v) {
   if (sl) { sl.value = v; sl.dispatchEvent(new Event('input')); } else P[k] = v;
 }
 /** Stop whatever is solving. */
-function projStopAll() { cancelAllLocations(); stopDOE(); }
+function projStopAll() { cancelAllLocations(); stopDOE(); measStopCfd(); }
+/** The measured data of a project (none: empty). */
+function applyMeasured(m) {
+  m = m || {};
+  MEAS.sets = Array.isArray(m.sets) ? m.sets.map(d => ({ ...d })) : [];
+  measCfdCache.clear(); for (const d of MEAS.sets) if (d.cfd) measCfdCache.set(d.id, d.cfd);
+  MEAS.sel = MEAS.sets.some(d => d.id === m.sel) ? m.sel : MEAS.sets.length ? MEAS.sets[0].id : null;
+  MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
+  MEAS.dock = m.dock || 'compare'; MEAS.dockH = m.dockH || 300;
+}
 function applyProject(p) {
   if (!p || p.app !== PROJ_APP) throw new Error('this is not a Blade Coat Defect Lab project');
   if (p.format > PROJ_FORMAT) throw new Error('the project was saved by a newer version of the app');
@@ -97,6 +111,7 @@ function applyProject(p) {
   Object.assign(DOE, DOE_DEFAULTS, { loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: d.dockH || 300,
     design: d.design ? d.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null, runs: d.runs || [], status: d.runs && d.runs.length ? (d.status || 'done') : 'idle', key: d.key || null, t0: d.t0 || 0, t1: d.t1 || 0, active: new Set() });
   cfdLog.length = 0; for (const m of p.messages || []) cfdLog.push({ ...m, t: new Date(m.t) });
+  applyMeasured(p.measured);
   tab = Number.isInteger(p.view && p.view.module) && p.view.module < TABS.length ? p.view.module : tab;
   render();
   undoReset();
@@ -116,6 +131,7 @@ async function newProject() {
   cfdAutoStarted = false; meshStudy = null;
   Object.assign(DOE, DOE_DEFAULTS, { factors: null, design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, active: new Set() });
   cfdLog.length = 0;
+  applyMeasured(null);
   for (const id of [...inputProblems.keys()]) clearRejected(id);
   Object.assign(PROJ, { name: 'Untitled', handle: null });
   render();

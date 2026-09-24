@@ -10,7 +10,45 @@ drift out of sync with what's actually built.
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
-## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data, 18 shortcuts/help.
+## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help.
+
+### GUI-17 (done): measured data
+
+User's choices: film across the web, film vs settings, contact line /
+meniscus, surface / edge profile; CSV; comparison table, parity plot, fit
+inputs; saved in the project; File > Import measured data… plus a Measured
+data module; compared with the fast models and the CFD side by side; fit on
+contact angle, rheology, bead pressure or any input (1-3); columns matched
+automatically with a preview; fit on the fast model, then a CFD check; RMS %
+error; fitted values shown, then Apply (undoable); coat weight accepted.
+- measured.js. CSV: comma / semicolon / tab, quotes, decimal comma, header
+  row; each column's quantity and unit guessed from its header ("Wet film
+  (µm)", "z [mm]", "Coat weight (g/m2)", "web speed"...), shown in a preview
+  where the kind, each column and unit can be changed; rows that are not
+  numbers are skipped and counted. Coat weight: wet film = g/m² / density
+  (/ solids for dry weight).
+- Kinds: wet film across the web (z), wet film vs settings (any sidebar
+  input, or the gap at the edge; z optional), contact line across the web,
+  meniscus shape (surface height vs x from the edge), edge scallop amplitude
+  vs distance, surface ripple vs distance or time.
+- Fast model per point: the Contact line tab's local gap and contact angle
+  at z (physics.js localGap / localContactAngle), the static meniscus, the
+  Web edge curve (edgeAmplitudeAt), the Film surface levelling
+  (rippleLevelling); settings set for the moment (measWithP).
+- CFD per point: a location at that z (or the web without its variation,
+  with the settings), each different geometry solved once in a queue (the
+  DOE's 'at a time'); wet film Q/U, contact line up the face, the free
+  surface interpolated at x. Out of date when the inputs change since.
+- Errors (predicted − measured) / measured (points measured as 0: the mean
+  size); RMS, mean, largest; parity plot with 1:1 and ±10 % and hover.
+- Fit: Nelder–Mead in each input's range scaled to 0..1, from the current
+  values plus 8 seeded starts, then a refinement; values snapped to the
+  inputs' steps; then the fitted datasets solved in the CFD with the fitted
+  values (a new fit drops the old check). Test: data made with bead pressure
+  0.85 kPa: fit 0.86 (7.2 % → 0.7 %); contact line made with 30°: fit 30°.
+- A seventh module tab (brand text hidden below 1600 px, tab icons hidden
+  from 1024 to 1359 px so the tabs fit); project, undo (import, remove, apply
+  fit) and report (a Measured data section) include it.
 
 ### GUI-16 (done): run report
 

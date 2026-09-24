@@ -1319,7 +1319,7 @@ function renderMessages() {
   if (!host) return;
   const sc = host.closest('.dock-body') || host, atEnd = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 30;
   const hh = d => d.toTimeString().slice(0, 8);
-  host.innerHTML = cfdLog.length ? cfdLog.map(m => `<div class="msg ${m.kind}"><time>${hh(m.t)}</time><span class="msg-loc"><i class="loc-dot" style="background:${locColor(m.i)}"></i>L${m.i + 1}</span><span class="msg-t">${m.text}</span></div>`).join('')
+  host.innerHTML = cfdLog.length ? cfdLog.map(m => `<div class="msg ${m.kind}"><time>${hh(m.t)}</time><span class="msg-loc">${m.i == null ? '' : `<i class="loc-dot" style="background:${locColor(m.i)}"></i>L${m.i + 1}`}</span><span class="msg-t">${String(m.text).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</span></div>`).join('')
     : '<p class="cap">No messages yet: each run writes what the solver does here.</p>';
   if (atEnd && !host.closest('[hidden]')) sc.scrollTop = sc.scrollHeight;
   const n = document.getElementById('cfdMsgCount');
