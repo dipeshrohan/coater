@@ -534,6 +534,7 @@ function render() {
   titleStatus();
   updateScope();
   undoAfterRender();
+  applyKeyLabels();
 }
 
 // ---- theme: follows the system until switched here (remembered in this browser)
@@ -576,10 +577,6 @@ document.getElementById('reset').onclick = () => {
   });
 };
 
-// Ctrl+Enter (Cmd+Enter): solve all four locations, from the CFD module
-document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && tab === 4) { e.preventDefault(); runAllLocations(); }
-});
 
 if (matchMedia('(prefers-reduced-motion: reduce)').matches) ANIM.playing = false;
 

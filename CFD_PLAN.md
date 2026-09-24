@@ -10,7 +10,41 @@ drift out of sync with what's actually built.
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
-## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help.
+## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
+
+### GUI-18 (done): keyboard shortcuts and help
+
+User's choices: run / stop, view controls and panel keys (no tab keys);
+a help dialog from a Help menu with the shortcut list, a module guide, a
+search and methods & limits; run = Ctrl+Enter (Esc stops); view keys with
+Alt; Ctrl+B / Ctrl+J for the panels; shortcuts editable.
+- keys.js: one list of actions (File, Edit, Run, View (CFD flow plot),
+  Panels, Help), each with a default key (some none) that can be changed
+  in Help > Keyboard shortcuts (press the new key; Backspace clears; kept in
+  this browser; clashes shown); one capture-phase handler. The old handlers
+  (project.js Ctrl+S/O, undo.js Ctrl+Z/Y, ui.js Ctrl+Enter) are gone.
+  Keys without Ctrl or Alt are not taken while typing in a box; Ctrl+Z / Y in
+  a text box stay the browser's text undo; Esc stops only when nothing else
+  wants it (a menu, dialog, the colour panel, placing probes or a cut).
+  Letters and digits match by key position (e.code), so Alt on a Mac works;
+  Cmd counts as Ctrl and is shown as ⌘.
+- Run (Ctrl+Enter): CFD all four locations, DOE, the measured dataset in the
+  CFD. View (CFD): Alt+F fit, Alt+= / Alt+- zoom, Alt+E edge, Alt+M
+  meniscus, Alt+1..4 location, Alt+C compare, Alt+D difference. Panels:
+  Ctrl+B Model bar (collapses to a strip with a button to reopen; also
+  the chevron in its header), Ctrl+J bottom panel (collapses to its tab
+  row; clicking a tab reopens), Alt+] / Alt+[ next / previous panel tab;
+  both remembered in this browser. Menus and button titles show the keys
+  in use.
+- guide.js: the Help dialog (Help menu: Module guide, Methods and limits,
+  Keyboard shortcuts, Search help…): a guide per module (what it does,
+  inputs it uses, reading it, its keys; opens at the tab shown), the
+  methods with their limits, the key editor, and a search over every help
+  text (the input / control / result cards of help.js, the guide, the
+  methods, the shortcuts) with the words marked; an input found can be
+  shown (jumps to it).
+- Title bar with a Help menu: brand text below 1600 px hidden, project name
+  below 1200 px, tab icons from 1024 to 1439 px, tabs tighter below 1200 px.
 
 ### GUI-17 (done): measured data
 

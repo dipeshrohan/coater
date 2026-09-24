@@ -292,9 +292,9 @@ function undoJump(pos) {
 // ---- the Edit menu, the title-bar buttons and the History panel ----
 function undoUI() {
   const h = undoHist(tab), u = h.undo[h.undo.length - 1], r = h.redo[h.redo.length - 1];
-  for (const [id, mid, e, name, keys] of [['undoBtn', 'emUndo', u, 'Undo', 'Ctrl+Z'], ['redoBtn', 'emRedo', r, 'Redo', 'Ctrl+Y']]) {
-    const b = document.getElementById(id), m = document.getElementById(mid);
-    const tip = e ? `${name}: ${e.label} (${keys})` : `${name} (${keys}): nothing to ${name.toLowerCase()} in this view`;
+  for (const [id, mid, e, name, key] of [['undoBtn', 'emUndo', u, 'Undo', 'edit.undo'], ['redoBtn', 'emRedo', r, 'Redo', 'edit.redo']]) {
+    const b = document.getElementById(id), m = document.getElementById(mid), keys = typeof keyLabel === 'function' ? keyLabel(key) : '';
+    const tip = e ? `${name}: ${e.label}${keys ? ` (${keys})` : ''}` : `${name}${keys ? ` (${keys})` : ''}: nothing to ${name.toLowerCase()} in this view`;
     if (b) { b.disabled = !e; b.title = tip; b.setAttribute('aria-label', tip); }
     if (m) { m.disabled = !e; m.querySelector('.mi-l').textContent = e ? `${name}: ${e.label}` : name; m.title = e ? e.label : ''; }
   }
@@ -312,7 +312,7 @@ function renderHistory() {
   host.innerHTML = `<div class="fv-bar">
       <button class="btn btn-secondary btn-sm" type="button" data-hist="undo"${pos ? '' : ' disabled'}>Undo</button>
       <button class="btn btn-secondary btn-sm" type="button" data-hist="redo"${h.redo.length ? '' : ' disabled'}>Redo</button>
-      <span class="fv-why">${all.length ? `Changes made in this view, oldest first. Click a step to go back to it; the steps after it stay until you change something.` : 'No changes in this view yet. Each change you make here is listed, and can be undone (Ctrl+Z) and redone (Ctrl+Y).'}</span>
+      <span class="fv-why">${all.length ? `Changes made in this view, oldest first. Click a step to go back to it; the steps after it stay until you change something.` : `No changes in this view yet. Each change you make here is listed, and can be undone${keyLabel('edit.undo') ? ` (${keyLabel('edit.undo')})` : ''} and redone${keyLabel('edit.redo') ? ` (${keyLabel('edit.redo')})` : ''}.`}</span>
     </div>
     <ol class="hist-list">${row(0, h.trimmed ? `Oldest kept state (the history keeps the last ${UNDO_MAX} steps)` : 'Start', 0)}${all.map((e, k) => row(k + 1, e.label, e.t)).join('')}</ol>`;
   host.querySelector('[data-hist="undo"]').onclick = undo;
@@ -334,15 +334,5 @@ function showHistory() {
   const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = () => { close(); f(); }; };
   on('emUndo', undo); on('emRedo', redo); on('emHistory', showHistory);
   on('undoBtn', undo); on('redoBtn', redo);
-  document.addEventListener('keydown', e => {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    const k = e.key.toLowerCase();
-    if (k !== 'z' && k !== 'y') return;
-    // (typing in a text box: the browser's own undo of the text)
-    const t = e.target;
-    if (t && (t.tagName === 'TEXTAREA' || t.isContentEditable || (t.tagName === 'INPUT' && ['text', 'search', 'email', 'url'].includes(t.type)))) return;
-    if (document.querySelector('dialog[open]')) return;
-    e.preventDefault();
-    if (k === 'y' || e.shiftKey) redo(); else undo();
-  });
+  // (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z: keys.js; in a text box, the browser's own text undo)
 })();

@@ -26,23 +26,31 @@
     </div>
     <details class="vp-pop tb-file" id="fileMenu"><summary class="tb-menu">File</summary>
       <div class="pop-body pop-menu" role="menu" aria-label="File">
-        <button class="menu-item" type="button" id="fmNew" role="menuitem">New project</button>
-        <button class="menu-item" type="button" id="fmOpen" role="menuitem">Open…<kbd>Ctrl+O</kbd></button>
-        <button class="menu-item" type="button" id="fmSave" role="menuitem">Save<kbd>Ctrl+S</kbd></button>
-        <button class="menu-item" type="button" id="fmSaveAs" role="menuitem">Save as…<kbd>Ctrl+Shift+S</kbd></button>
+        <button class="menu-item" type="button" id="fmNew" role="menuitem">New project<kbd data-key="file.new"></kbd></button>
+        <button class="menu-item" type="button" id="fmOpen" role="menuitem">Open…<kbd data-key="file.open">Ctrl+O</kbd></button>
+        <button class="menu-item" type="button" id="fmSave" role="menuitem">Save<kbd data-key="file.save">Ctrl+S</kbd></button>
+        <button class="menu-item" type="button" id="fmSaveAs" role="menuitem">Save as…<kbd data-key="file.saveAs">Ctrl+Shift+S</kbd></button>
         <div class="menu-sep menu-sep-plain" aria-hidden="true"></div>
-        <button class="menu-item" type="button" id="fmImport" role="menuitem">Import measured data…</button>
-        <button class="menu-item" type="button" id="fmReport" role="menuitem">Report…</button>
+        <button class="menu-item" type="button" id="fmImport" role="menuitem">Import measured data…<kbd data-key="file.import"></kbd></button>
+        <button class="menu-item" type="button" id="fmReport" role="menuitem">Report…<kbd data-key="file.report"></kbd></button>
         <div class="menu-sep" id="fmRecentSep" hidden><span>Recent projects</span></div>
         <div id="fmRecent"></div>
       </div>
     </details>
     <details class="vp-pop tb-file" id="editMenu"><summary class="tb-menu">Edit</summary>
       <div class="pop-body pop-menu" role="menu" aria-label="Edit">
-        <button class="menu-item" type="button" id="emUndo" role="menuitem" disabled><span class="mi-l">Undo</span><kbd>Ctrl+Z</kbd></button>
-        <button class="menu-item" type="button" id="emRedo" role="menuitem" disabled><span class="mi-l">Redo</span><kbd>Ctrl+Y</kbd></button>
+        <button class="menu-item" type="button" id="emUndo" role="menuitem" disabled><span class="mi-l">Undo</span><kbd data-key="edit.undo">Ctrl+Z</kbd></button>
+        <button class="menu-item" type="button" id="emRedo" role="menuitem" disabled><span class="mi-l">Redo</span><kbd data-key="edit.redo">Ctrl+Y</kbd></button>
         <div class="menu-sep"><span>This view</span></div>
         <button class="menu-item" type="button" id="emHistory" role="menuitem">History</button>
+      </div>
+    </details>
+    <details class="vp-pop tb-file" id="helpMenu"><summary class="tb-menu">Help</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Help">
+        <button class="menu-item" type="button" role="menuitem" data-help-sec="guide">Module guide<kbd data-key="help.open"></kbd></button>
+        <button class="menu-item" type="button" role="menuitem" data-help-sec="methods">Methods and limits</button>
+        <button class="menu-item" type="button" role="menuitem" data-help-sec="keys">Keyboard shortcuts<kbd data-key="help.keys"></kbd></button>
+        <button class="menu-item" type="button" role="menuitem" data-help-sec="search">Search help…</button>
       </div>
     </details>
     <div class="tb-undo">
@@ -68,12 +76,15 @@
   <div class="wb-body" id="wbBody">
     <aside class="tree" aria-label="Model setup">
       <div class="tree-head">
+        <button id="treeToggle" class="icon-btn tree-toggle" type="button" aria-label="Hide the Model bar" title="Hide the Model bar" aria-expanded="true" aria-controls="treeScroll">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <span class="tree-title">Model</span>
         <button id="reset" class="icon-btn" type="button" title="Reset process inputs to their defaults" aria-label="Reset process inputs">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 6.2A5 5 0 1 1 3 9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2.6 2.8v3.6h3.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <div class="tree-scroll">
+      <div class="tree-scroll" id="treeScroll">
         <div id="params"></div>
         <div id="setupExtra"></div>
         <details class="grp tree-note">
@@ -114,6 +125,8 @@
 <script src="undo.js"></script>
 <script src="report.js"></script>
 <script src="measured.js"></script>
+<script src="keys.js"></script>
+<script src="guide.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>
