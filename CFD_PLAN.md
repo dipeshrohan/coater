@@ -6,7 +6,20 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Remaining feature list, in order:
-## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+## 11. cross-location plots, 12. convergence history plot.
+
+### Item 10 (done): saved / named probes
+
+Named probe points (x, y), shared by all four locations like the manual
+seeds (so comparisons are like for like), kept in local storage and in
+saved cases. Placed by clicking a plot ("Place by clicking the plot"
+toggle; takes precedence over seed clicks) or by typing x, y; renamed in
+place; deleted per probe. Drawn on every plot as a named diamond (hollow
+where the point is outside that location's fluid -- geometries differ by
+location). Table: |V|, u, v, p, shear rate, viscosity (unyielded marked)
+per probe for the location(s) in view, read from the stored fields;
+"outside the fluid" where it is in the blade or air. CSV export of the
+same (probe x location rows).
 
 ### Item 9 (done): export (CSV)
 
