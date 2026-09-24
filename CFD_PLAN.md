@@ -5,7 +5,32 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Feature list 1-12 complete; 13-15 done.
+## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
+
+### GUI (G1-G5, done): a CFD-workbench frontend
+
+User: "Focus on the gui, layout, user friendliness etc. We need to fix the
+frontend to make it look like a professional cfd application."
+- G1 shell: full-height app (no page scroll on desktop), dark title bar
+  with the modules (icons) and a light/dark toggle (remembered), a
+  resizable model tree (property rows: typed number + unit + thin slider;
+  the slider s_<key> stays the source of truth), a status bar.
+- G2 CFD: setup groups and location rows in the tree; viewport (toolbar:
+  Run/Stop sharing a slot, L1-L4/Compare, field, streamlines, vectors,
+  Display and Export pop-overs, probe placement; the single-location plot
+  fits the viewport height via drawFlowPlot's maxH); a resizable tabbed
+  results dock (metrics, probes, across the web, profiles, fibre,
+  convergence, saved cases, messages, method), charts two to a row.
+- G3 status bar: one chip per location in every module (residual while
+  solving, time when solved, out of date / failed / stopped), cursor
+  read-out over the flow plot, model validity; a Messages log per run
+  (inputs, solver stages, outcome); a solving line over the viewport.
+- G4 the other modules share one frame (moduleFrame): toolbar with their
+  controls and verdict pills, titled panes sized to the viewport height
+  (fitAspect / paneRoom; the animation canvases narrow via data-maxh),
+  results strip with an About pop-over; animation scenario in the tree.
+- G5 below 1024 px the frame becomes one column (work area first, then
+  the tree); Ctrl+Enter runs all four locations; tab counts on the dock.
 
 ### Item 15 (done): fibre dropdown -- thin PET (130) / thick PP (RX001)
 

@@ -477,10 +477,17 @@ function view3() {
 // ---------------------------------------------------------------------
 let tab = 0;
 const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis'];
+const TAB_ICONS = [
+  '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
+  '<path d="M3 2.5v11M3 5.5c4 0 5.5 3.5 10.5 3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5.5" r="1.4" fill="currentColor"/>',
+  '<path d="M1.5 9.5c1.6-3 3.2-3 4.8 0s3.2 3 4.8 0 2.4-2.2 3.4-1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M1.5 13.5h13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>',
+  '<path d="M1.5 7c1.2-1.4 2.4-1.4 3.6 0s2.4 1.4 3.6 0 2.4-1.4 3.6 0 1.6 1 2.2.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M1.5 11h13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>',
+  '<path d="M2 2.5h12v11H2zM2 6.2h12M2 9.8h12M6 2.5v11M10 2.5v11" fill="none" stroke="currentColor" stroke-width="1.1"/>',
+];
 const tabsEl = document.getElementById('tabs');
 TABS.forEach((t, i) => {
   const b = document.createElement('button');
-  b.textContent = t;
+  b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[i]}</svg><span>${t}</span>`;
   b.type = 'button';
   b.setAttribute('role', 'tab');
   b.onclick = () => { tab = i; render(); };
@@ -550,6 +557,11 @@ document.getElementById('reset').onclick = () => {
     s.dispatchEvent(new Event('input'));
   });
 };
+
+// Ctrl+Enter (Cmd+Enter): solve all four locations, from the CFD module
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && tab === 4) { e.preventDefault(); runAllLocations(); }
+});
 
 if (matchMedia('(prefers-reduced-motion: reduce)').matches) ANIM.playing = false;
 

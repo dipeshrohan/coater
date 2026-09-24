@@ -597,3 +597,32 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .mod-wb .vp-bar .status { flex: 0 1 auto; }
 .mod-wb .vp-time { flex: 0 1 300px; min-width: 150px; }
 .mod-results .stat strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* results dock: charts two (or more) to a row, key numbers above them */
+.dock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 14px 18px; align-items: start; }
+.dock-fig { margin: 0; min-width: 0; }
+.dock-fig .cap { margin: 6px 0 0; max-width: none; }
+.dock-stats { margin: 0 0 12px; }
+.tab-n { display: inline-block; min-width: 16px; margin-left: 6px; padding: 0 5px; border-radius: 8px; background: var(--soft); color: var(--muted); font: 500 10.5px/16px var(--mono); text-align: center; }
+.dock-tabs button[aria-selected=true] .tab-n { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.tab-n:empty { display: none; }
+
+/* module tabs: icon + name */
+.modules button { display: inline-flex; align-items: center; gap: 7px; }
+.modules button svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: .85; }
+
+/* solving indicator in the viewport */
+.vp-busy { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; padding: 5px 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 6px; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); font-size: 12px; color: var(--ink); }
+.vp-busy b { font-weight: 600; }
+.vp-busy .mono { font-family: var(--mono); color: var(--muted); }
+.spin { width: 13px; height: 13px; flex: 0 0 auto; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fv-empty .spin { display: inline-block; vertical-align: -2px; margin-right: 8px; }
+
+@media (max-width: 1023px) {
+  .wb-body { display: flex; flex-direction: column; }
+  .work { order: -1; }
+  .tree { border-top: 1px solid var(--line); }
+  .dock-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.tool-run[hidden] { display: none; }

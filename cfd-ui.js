@@ -245,6 +245,7 @@ function logCFD(i, text, kind = '') {
   cfdLog.push({ t: new Date(), i, text, kind });
   if (cfdLog.length > 500) cfdLog.splice(0, cfdLog.length - 500);
   renderMessages();
+  renderDockCounts();
 }
 
 function runLocation(i) {
@@ -262,7 +263,7 @@ function runLocation(i) {
     if (e.data.progress) {
       run.progress = e.data.progress;
       if (run.progress.stage && run.progress.stage !== lastStage) { lastStage = run.progress.stage; logCFD(i, lastStage); }
-      updateLocStates(); renderRunChips();
+      updateLocStates(); renderRunChips(); updateBusy();
       return;
     }
     finish();
@@ -410,12 +411,12 @@ function viewCFD() {
       <div class="loc-edit" id="cfdLocEdit" hidden></div>`)}`;
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
 
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${t}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${t}<span class="tab-n" data-n="${k}"></span></button>`;
   const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
   view.innerHTML = `
     <div class="cfd-wb" id="cfdWb" style="--dock-h: ${FV.dockH}px">
       <div class="vp-bar" role="toolbar" aria-label="Solve and display">
-        <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run all 4</button>
+        <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run all 4</button>
         <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
         <span class="vp-sep" aria-hidden="true"></span>
         <div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div>
@@ -467,6 +468,7 @@ function viewCFD() {
         </details>
       </div>
       <div class="viewport" id="cfdViewport">
+        <div id="cfdBusy"></div>
         <div id="cfdSeeds"></div>
         <div id="cfdPlots"></div>
         <div class="fv-legend" id="cfdLegend"></div>
@@ -612,10 +614,12 @@ function renderCFD() {
   if (dens) dens.disabled = custom.disabled = FV.seedMode === 'manual';
   renderCfdStatus();
   renderMessages();
+  renderDockCounts();
   renderGeoNote();
   renderLocCards();
   renderViewSeg();
   renderSeedPanel();
+  updateBusy();
   renderFlowPlots();
   renderLegend();
   renderCases();
@@ -836,8 +840,32 @@ function renderRunChips() {
 
 function renderCfdStatus() {
   renderRunChips();
-  const cancel = document.getElementById('cfdCancel');
-  if (cancel) cancel.hidden = !cfdRuns.some(r => r.status === 'running');
+  // Run and Stop share the toolbar slot: Stop while anything is solving
+  const cancel = document.getElementById('cfdCancel'), run = document.getElementById('cfdRunAll'), running = cfdRuns.some(r => r.status === 'running');
+  if (cancel) cancel.hidden = !running;
+  if (run) run.hidden = running;
+}
+
+/** Counts on the results tabs: probes, saved cases, messages. */
+function renderDockCounts() {
+  const set = (k, n) => { const el = document.querySelector(`.tab-n[data-n="${k}"]`); if (el) el.textContent = n ? String(n) : ''; };
+  set('probes', cfdProbes.length);
+  set('cases', (readCases() || []).length);
+  set('msgs', cfdLog.length);
+}
+
+/** While a location in view is solving: a line over the plot with its stage and residual (kept current as progress comes in). */
+function busyLine() {
+  const shown = (FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].status === 'running');
+  if (!shown.length) return '';
+  return `<div class="vp-busy" role="status"><i class="spin" aria-hidden="true"></i>${shown.map(i => {
+    const pr = cfdRuns[i].progress;
+    return `<span><b>Solving L${i + 1}</b> ${pr ? cfdStageText(pr.stage) : 'starting'}${pr && Number.isFinite(pr.residual) ? ` <span class="mono">r ${pr.residual.toExponential(1)}</span>` : ''}</span>`;
+  }).join(' · ')}${shown.some(i => cfdRuns[i].field) ? '<span class="fv-why">(showing the previous result meanwhile)</span>' : ''}</div>`;
+}
+function updateBusy() {
+  const el = document.getElementById('cfdBusy');
+  if (el) el.innerHTML = busyLine();
 }
 
 /** The Messages tab: the solver's log, oldest first, kept at the bottom while new lines come in. */
@@ -967,7 +995,7 @@ function renderFlowPlots() {
   const list = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field && (compare || i === FV.view));
   if (!list.length) {
     const running = cfdRuns.some(r => r.status === 'running');
-    host.innerHTML = `<p class="cap fv-empty">${running ? 'Solving…' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
+    host.innerHTML = `<p class="cap fv-empty">${running ? '<i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
     return;
   }
   const fields = list.map(i => cfdRuns[i].field);
@@ -1303,16 +1331,18 @@ function renderAcross() {
   const chart = id => `<div class="xl-chart"><canvas id="${id}" role="img"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div>`;
   const vals = locs.map(i => ({ i, z: CFD_LOCS[i].z, v: m.f(cfdRuns[i]) }));
   host.innerHTML = `${legend}
-    ${chart('xlMetricChart')}
+    <div class="dock-grid">
+    <figure class="dock-fig">${chart('xlMetricChart')}
     <div class="table-wrap"><table class="cfd-table xl-table"><thead><tr><th>${m.l}${m.u ? `<small>${m.u}</small>` : ''}</th>${vals.map(o => `<th><i class="xl-sw" style="background:${locColor(o.i)}"></i> L${o.i + 1}<small>z ${o.z} mm</small></th>`).join('')}</tr></thead>
       <tbody><tr><th scope="row">value</th>${vals.map(o => `<td>${fmtNum(o.v)}${stale(o.i) ? ' <small>out of date</small>' : ''}</td>`).join('')}</tr></tbody></table></div>
-    <p class="cap"><b>${m.l}</b> at each location's position across the web${FV.across === 'film' || FV.across === 'gap' ? ' (the gap varies with the blade waviness and fibre-thickness variation set in the sidebar, or a location\'s own gap)' : ''}.</p>
-    ${chart('xlSurf')}
-    <p class="cap"><b>Free surface</b> from the contact line into the film: height above the web against distance downstream of the metering edge.</p>
-    ${chart('xlPress')}
-    <p class="cap"><b>Pressure along the web</b>, inlet to the end of the 2D domain (the dotted line marks the metering edge).</p>
-    ${chart('xlProf')}
-    <p class="cap"><b>u(y) just upstream of the metering edge</b> (0.3 gap before it).</p>`;
+    <p class="cap"><b>${m.l}</b> at each location's position across the web${FV.across === 'film' || FV.across === 'gap' ? ' (the gap varies with the blade waviness and fibre-thickness variation set in the sidebar, or a location\'s own gap)' : ''}.</p></figure>
+    <figure class="dock-fig">${chart('xlSurf')}
+    <p class="cap"><b>Free surface</b> from the contact line into the film: height above the web against distance downstream of the metering edge.</p></figure>
+    <figure class="dock-fig">${chart('xlPress')}
+    <p class="cap"><b>Pressure along the web</b>, inlet to the end of the 2D domain (the dotted line marks the metering edge).</p></figure>
+    <figure class="dock-fig">${chart('xlProf')}
+    <p class="cap"><b>u(y) just upstream of the metering edge</b> (0.3 gap before it).</p></figure>
+    </div>`;
 
   // 1. the chosen quantity against z: markers in the location colours, a neutral line joining them in z order
   {
@@ -1587,21 +1617,23 @@ function renderProfiles() {
   const filmOk = !!r.film.x;
   const hOven = filmOk ? r.film.h[r.film.h.length - 1] : null;
   host.innerHTML = `
-    <canvas id="cfdProfile" role="img" aria-label="Velocity profiles across the gap at three stations"></canvas>
-    <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to just upstream of the metering edge${r.prof1D ? `, against the exact fully developed profile (dashed) for the pressure gradient (${fmtNum(r.prof1D.G / 1000)} kPa/m) and fibre-surface velocity (slip ${((r.prof1D.uWall / geo.U - 1) * 100).toFixed(2)}% of U) the solution has at mid-land: they must coincide there` : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p>
-    <canvas id="cfdPress" role="img" aria-label="Pressure along the web and the top boundary"></canvas>
-    <p class="cap"><b>Pressure along the flow</b>: along the web (solid) and along the top boundary (dashed: blade, exit face, then the free surface, where it balances surface tension), from the bead pressure at the inlet, through the metering edge, into the film.${round ? ' The web drags slurry into the narrowing gap, which builds pressure above the bead pressure before it falls toward the edge.' : ''} The axis leaves out the edge corner itself, where pressure is singular.</p>
-    <canvas id="cfdVisc" role="img" aria-label="Apparent viscosity across the gap"></canvas>
-    <p class="cap"><b>Apparent viscosity across the gap</b> ${round ? 'just upstream of the metering edge' : 'at mid-land'}. Flat when Newtonian; higher toward the low-shear core with shear-thinning or yield stress. Fluid whose stress is below the yield stress (unyielded) is pinned at the capped edge.</p>
-    <canvas id="cfdFilm" role="img" aria-label="Film height from the metering edge to the oven"></canvas>
-    <p class="cap"><b>Film from the metering edge to the oven</b> (${(geo.ovenDistance * 1000).toFixed(0)} mm): the 2D free surface (dark, from the contact line), then ${filmOk ? `the Slurry animation tab's 1D free-surface method from ${(r.filmStart * 1000).toFixed(1)} mm on, driven by this run's flow rate` : `no 1D film (${r.film.error || 'unknown error'})`}. Dashed: where mass conservation says it must end up.</p>
-    <div class="stats">${[
+    <div class="stats dock-stats">${[
       ['Wet film, Q/U', (r.Q / geo.U * 1000).toFixed(3) + ' mm'],
       ['Film at oven', filmOk ? (hOven * 1000).toFixed(3) + ' mm' + (r.film.converged ? '' : ' (still relaxing)') : '—'],
       ['Gap at edge / film', filmOk ? (geo.H / hOven).toFixed(3) : '—'],
       ['Lubrication estimate, one viscosity', (r.qLub / geo.U * 1000).toFixed(3) + ' mm'],
       ...(round ? [] : [['physics.js filmThickness()', (filmThickness(geo.H * 1000)).toFixed(3) + ' mm']]),
-    ].map(a => `<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}</div>`;
+    ].map(a => `<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}</div>
+    <div class="dock-grid">
+      <figure class="dock-fig"><canvas id="cfdProfile" role="img" aria-label="Velocity profiles across the gap at three stations"></canvas>
+      <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to just upstream of the metering edge${r.prof1D ? `, against the exact fully developed profile (dashed) for the pressure gradient (${fmtNum(r.prof1D.G / 1000)} kPa/m) and fibre-surface velocity (slip ${((r.prof1D.uWall / geo.U - 1) * 100).toFixed(2)}% of U) the solution has at mid-land: they must coincide there` : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p></figure>
+      <figure class="dock-fig"><canvas id="cfdPress" role="img" aria-label="Pressure along the web and the top boundary"></canvas>
+      <p class="cap"><b>Pressure along the flow</b>: along the web (solid) and along the top boundary (dashed: blade, exit face, then the free surface, where it balances surface tension), from the bead pressure at the inlet, through the metering edge, into the film.${round ? ' The web drags slurry into the narrowing gap, which builds pressure above the bead pressure before it falls toward the edge.' : ''} The axis leaves out the edge corner itself, where pressure is singular.</p></figure>
+      <figure class="dock-fig"><canvas id="cfdVisc" role="img" aria-label="Apparent viscosity across the gap"></canvas>
+      <p class="cap"><b>Apparent viscosity across the gap</b> ${round ? 'just upstream of the metering edge' : 'at mid-land'}. Flat when Newtonian; higher toward the low-shear core with shear-thinning or yield stress. Fluid whose stress is below the yield stress (unyielded) is pinned at the capped edge.</p></figure>
+      <figure class="dock-fig"><canvas id="cfdFilm" role="img" aria-label="Film height from the metering edge to the oven"></canvas>
+      <p class="cap"><b>Film from the metering edge to the oven</b> (${(geo.ovenDistance * 1000).toFixed(0)} mm): the 2D free surface (dark, from the contact line), then ${filmOk ? `the Slurry animation tab's 1D free-surface method from ${(r.filmStart * 1000).toFixed(1)} mm on, driven by this run's flow rate` : `no 1D film (${r.film.error || 'unknown error'})`}. Dashed: where mass conservation says it must end up.</p></figure>
+    </div>`;
   drawVelocityProfile(document.getElementById('cfdProfile'), run);
   drawPressureProfile(document.getElementById('cfdPress'), run);
   drawViscosityProfile(document.getElementById('cfdVisc'), run);
