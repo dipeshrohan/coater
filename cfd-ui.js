@@ -190,6 +190,8 @@ const FV = {
   dock: 'metrics',        // results panel shown
   zoom: {},               // flow plots: each location's zoom window { x0, x1, y0, y1 } (m); none = the whole domain
   boxZoom: false,         // toolbar toggle: a drag draws a zoom box (else Shift+drag does)
+  mesh: false,            // draw the finite elements (edges and nodes) over the field
+  meshQuality: false,     // ... filled by their quality instead of the field colours
   dockH: 300,             // results panel height (px)
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
@@ -451,6 +453,10 @@ function viewCFD() {
           <fieldset><legend>View</legend>
             <label class="fv-ctl">Vertical scale <select id="fvScale">${opt('exaggerated', 'Exaggerated (fit)', FV.yScale)}${opt('true', 'True 1:1', FV.yScale)}</select></label>
           </fieldset>
+          <fieldset><legend>Mesh</legend>
+            <label class="fv-chk"><input type="checkbox" id="fvMesh"${FV.mesh ? ' checked' : ''}> Show the mesh (element edges and nodes)</label>
+            <label class="fv-chk${FV.mesh ? '' : ' is-off'}"><input type="checkbox" id="fvMeshQ"${FV.meshQuality ? ' checked' : ''}${FV.mesh ? '' : ' disabled'}> Shade elements by quality</label>
+          </fieldset>
           <fieldset><legend>Streamlines</legend>
             <label class="fv-ctl">Density <select id="fvDensity">${opt('low', 'Low (8)', FV.density)}${opt('medium', 'Medium (16)', FV.density)}${opt('high', 'High (32)', FV.density)}${opt('custom', 'Custom', FV.density)}</select>
               <input type="number" id="fvCustomN" min="2" max="80" step="1" value="${FV.customN}" aria-label="Custom streamline count"${FV.density === 'custom' ? '' : ' hidden'}></label>
@@ -589,6 +595,13 @@ function viewCFD() {
   bind('fvVecScale', 'vectorScale', Number);
   bind('fvVecNorm', 'vectorNormalize', Boolean, 'checked');
   bind('fvVecColor', 'vectorColor', Boolean, 'checked');
+  document.getElementById('fvMesh').addEventListener('change', e => {
+    FV.mesh = e.target.checked;
+    const q = document.getElementById('fvMeshQ');
+    q.disabled = !FV.mesh; q.parentElement.classList.toggle('is-off', !FV.mesh);
+    renderCFD();
+  });
+  bind('fvMeshQ', 'meshQuality', Boolean, 'checked');
 
   renderCFD();
   if (!cfdAutoStarted && cfdRuns.every(r => r.status === 'idle')) { cfdAutoStarted = true; runAllLocations(); }
@@ -1079,6 +1092,7 @@ function paintPlot(el, fast) {
     seeds: sl ? sl.seeds : null, manualSeeds: FV.seedMode === 'manual',
     probes: cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
     view: zoom, fast,
+    mesh: FV.mesh && f.curv ? { quality: FV.meshQuality ? meshQuality(f) : null } : null,
   });
   el._map = map;
   if (zoom) FV.zoom[i] = map.view;            // (kept as clamped to the domain)
@@ -1093,7 +1107,8 @@ function paintPlot(el, fast) {
   const ex = el.previousElementSibling && el.previousElementSibling.querySelector && el.previousElementSibling.querySelector('.fv-ex');
   if (ex) {
     const vs = map.exaggeration > 1.05 ? `vertical scale ×${map.exaggeration.toFixed(1)}` : map.exaggeration < 0.95 ? `vertical scale ×${map.exaggeration.toFixed(2)}` : 'true 1:1 scale';
-    ex.textContent = zoom ? `zoomed: x ${(map.view.x0 * 1000).toFixed(2)}–${(map.view.x1 * 1000).toFixed(2)} mm, y ${(map.view.y0 * 1000).toFixed(3)}–${(map.view.y1 * 1000).toFixed(3)} mm · ${vs} · colours span the view` : vs;
+    const mqTxt = FV.mesh && FV.meshQuality && f.curv ? ` · mesh quality worst ${meshQuality(f).worst.toFixed(2)}` : '';
+    ex.textContent = (zoom ? `zoomed: x ${(map.view.x0 * 1000).toFixed(2)}–${(map.view.x1 * 1000).toFixed(2)} mm, y ${(map.view.y0 * 1000).toFixed(3)}–${(map.view.y1 * 1000).toFixed(3)} mm · ${vs} · colours span the view` : vs) + mqTxt;
     ex.parentElement.title = ex.parentElement.textContent;   // (the caption line may be cut short)
   }
   return map;
@@ -1277,11 +1292,16 @@ function renderLegend() {
     items.push(`<span class="lg"><i class="lg-seed${FV.seedMode === 'manual' ? ' man' : ''}"></i>${FV.seedMode === 'manual' ? 'your seed' : 'seed'}</span>`);
   }
   if (FV.vectors) items.push(`<span class="lg"><i class="lg-vec"></i>velocity vector${FV.vectorNormalize ? ' (direction only)' : ' (length ∝ |V|)'}</span>`);
+  if (FV.mesh) {
+    items.push('<span class="lg"><i class="lg-line lg-mesh"></i>element edge</span><span class="lg"><i class="lg-node"></i>corner node</span><span class="lg"><i class="lg-node mid"></i>mid node</span>');
+    if (FV.meshQuality) items.push('<span class="lg"><i class="lg-worst"></i>worst element, and any below quality 0.2</span>');
+  }
   items.push('<span class="lg"><i class="lg-edge"></i>active metering edge</span>');
   items.push('<span class="lg"><i class="lg-line lg-surf"></i>free surface (air above)</span>');
   if (cfdRuns.some(r => r.result && r.result.mode === 'climbed')) items.push('<span class="lg"><i class="lg-seed lg-cl"></i>contact line on the exit face</span>');
   let note = '';
-  if (FV.streamlines && FV.seedMode === 'auto') note = 'Automatic seeds are spaced by equal flow rate, so lines crowd where the flow is fast. ';
+  if (FV.mesh && FV.meshQuality) note += 'Mesh quality: each element\'s smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 or below = degenerate); it replaces the field colours while shown. ';
+  if (FV.streamlines && FV.seedMode === 'auto') note += 'Automatic seeds are spaced by equal flow rate, so lines crowd where the flow is fast. ';
   if (FV.streamlines && FV.direction !== 'forward' && FV.seedMode === 'auto') note += `Seeds sit ${FV.direction === 'backward' ? 'on the outflow' : 'mid-channel'} for ${FV.direction} tracing. `;
   host.innerHTML = items.join('') + (note ? `<p class="fv-note">${note}</p>` : '');
 }

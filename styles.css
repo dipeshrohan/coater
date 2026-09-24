@@ -642,3 +642,7 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .zb-sep { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
 .fv-plot.compact .zb-t { display: none; }
 .viewport .fv-caption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-mesh { height: 1px; opacity: .6; }
+.lg-node { width: 5px; height: 5px; border-radius: 50%; background: var(--ink); opacity: .7; }
+.lg-node.mid { width: 5px; height: 5px; background: none; border: 1px solid var(--ink); }
+.lg-worst { width: 12px; height: 9px; border: 2px solid var(--bad); border-radius: 1px; }
