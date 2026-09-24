@@ -10,7 +10,30 @@ drift out of sync with what's actually built.
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
-## 14 session memory (done), 15 undo/redo, 16 run report, 17 import measured data, 18 shortcuts/help.
+## 14 session memory (done), 15 undo/redo (done), 16 run report, 17 import measured data, 18 shortcuts/help.
+
+### GUI-15 (done): undo / redo
+
+User's choices: what Undo covers depends on the view (each view has its own
+history and takes back only changes made in it); an undo restores the old
+results; Ctrl+Z / Ctrl+Y, title-bar buttons, an Edit menu and a History list
+(a dock tab; the four simple modules got a small dock for it); 50 steps.
+- undo.js: the state as units (each sidebar input, the animation scenario,
+  CFD setup and solver settings, each location's position / own inputs /
+  own solver, probes, cut lines, saved cases, plot-view settings, DOE setup
+  and plot choices). A step keeps only the units it changed (before, after),
+  so undoing in one view leaves other views' changes alone.
+- Changes are picked up 0.6 s after input settles (a slider drag or wheel
+  zoom = one step; not while a pointer is down); a view switch closes the
+  pending step for the view left; what a view sets up on opening is not a
+  step. Steps are named from what changed ("Web speed: 0.28 → 0.40 m/min",
+  "Add probe P1", "Load case X", "Reset inputs to defaults").
+- Results: solved CFD results (by inputs key) and DOE results (by design
+  and base-case key) are remembered (last 24); after an undo / redo any
+  location or DOE whose inputs match a remembered result gets it back.
+- History list: steps with time, current and undone marked; click a step to
+  go to it. Opening or starting a project clears every history.
+- Ctrl+Z in a text box is the browser's own text undo.
 
 ### GUI-14 (done): session memory
 

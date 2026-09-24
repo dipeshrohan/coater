@@ -626,7 +626,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('mesh', 'Mesh study')}${dockTab('cases', 'Saved cases')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('method', 'Method')}
+          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('mesh', 'Mesh study')}${dockTab('cases', 'Saved cases')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History')}${dockTab('method', 'Method')}
         </div>
         <div class="dock-body">
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
@@ -655,6 +655,7 @@ function viewCFD() {
             <div id="cfdCases"></div>`)}
           ${panel('msgs', `<div class="fv-bar"><span class="fv-ctl" id="cfdMsgCount"></span><button class="btn btn-secondary btn-sm" type="button" id="cfdMsgClear">Clear</button></div>
             <div class="msg-log" id="cfdMsgs" role="log"></div>`)}
+          ${panel('history', '<div class="history-host"></div>')}
           ${panel('method', `<p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything shown is post-processed from the stored solutions: display settings never re-run the solver.</p><p class="cap"><b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
       <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
@@ -709,7 +710,7 @@ function viewCFD() {
     });
   }
   document.getElementById('cfdTol').addEventListener('change', e => { CFDS.tol = +e.target.value; renderCFD(); });
-  document.getElementById('cfdSolverReset').onclick = () => { Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
+  document.getElementById('cfdSolverReset').onclick = () => { undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
   document.getElementById('cfdStudyOpen').onclick = () => { FV.dock = 'mesh'; viewCFD(); };
   document.getElementById('cfdCancel').onclick = cancelAllLocations;
   document.getElementById('cfdMsgClear').onclick = () => { cfdLog.length = 0; renderMessages(); };
@@ -833,6 +834,7 @@ function renderCFD() {
   renderSolverNote();
   renderMeshStudy();
   renderProblems();
+  renderHistory();
   markInvalidInputs();
   decorateImageButtons();
   applyHelp();
@@ -1182,6 +1184,7 @@ function saveCase() {
 function loadCase(name) {
   const c = (readCases() || []).find(x => x.name === name);
   if (!c) return;
+  undoHint(`Load case ${name}`);
   // sidebar: set each slider as the reset button does, so everything that listens updates
   for (const q of CFG) {
     if (!(q.k in c.P)) continue;
