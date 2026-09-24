@@ -116,6 +116,15 @@ const HELP = {
   'doe.loc': { t: 'Location', d: 'The location whose base case (gap, contact angle, own inputs) the DOE varies.' },
   'doe.workers': { t: 'At a time', d: 'Runs solved at the same time, each on its own processor core.' },
   'doe.csv': { t: 'Export CSV', d: 'Save the runs table: factor values, outputs, status and time.' },
+  'meas.import': { t: 'Import measured data', d: 'Read a CSV with a header row. Its columns are matched to quantities from their names and units (position, wet film or coat weight, contact line, surface height, edge or ripple amplitude, settings); check and change them in the preview before importing.' },
+  'meas.sel': { t: 'Dataset', d: 'The measured dataset shown: its parity plot, comparison table and CSV.' },
+  'meas.cfd': { t: 'Solve in CFD', d: 'Solve each point of the dataset in the 2D CFD (each different point is one run, as in the DOE; as many at a time as the DOE uses). Wet film, contact line and meniscus shape only.' },
+  'meas.stop': { t: 'Stop', d: 'Stop the CFD solves of measured points (and a fit\'s check).' },
+  'meas.csv': { t: 'Export CSV', d: 'Save the comparison: each point, its measured value, the fast model and the CFD with their % errors.' },
+  'meas.fit': { t: 'Fit', d: 'Adjust the chosen inputs (1 to 3, within their ranges) to minimise the RMS % error of the fast model over the chosen datasets; then the best fit is solved in the CFD to check it. Nothing changes until Apply.' },
+  'meas.apply': { t: 'Apply fitted values', d: 'Set the inputs to the fitted values. Undo (Ctrl+Z) takes them back.' },
+  'meas.grp': { t: 'Inputs to adjust', d: 'Contact angle: the blade contact angle and its variation across the web. Rheology: viscosity, shear-thinning index, yield stress. Bead pressure. Or add any input.' },
+  'meas.range': { t: 'Range searched', d: 'The fit keeps the input between these values (at most the input\'s own range). A fitted value at an end of the range means the best fit may lie beyond it.' },
   'doe.factor': { t: 'Factor', d: 'An input to vary: process and slurry inputs, blade geometry, or mesh / solver. The others stay at the base case.' },
   'doe.from': { t: 'From', d: 'Lowest level of the factor.' },
   'doe.to': { t: 'To', d: 'Highest level of the factor.' },
@@ -181,6 +190,7 @@ const HELP_BY_ID = {
   fvDir: 'dp.dir', fvLineColor: 'dp.lineColor', fvLineW: 'dp.lineW', fvArrows: 'dp.arrows', fvVecDensity: 'dp.vecDensity', fvVecScale: 'dp.vecScale',
   fvVecNorm: 'dp.vecNorm', fvVecColor: 'dp.vecColor',
   doeRun: 'doe.run', doeStop: 'doe.stop', doeLoc: 'doe.loc', doeWorkers: 'doe.workers', doeCsv: 'doe.csv', doeOut: 'doe.out',
+  measImport: 'meas.import', measImport2: 'meas.import', measSel: 'meas.sel', measCfd: 'meas.cfd', measStop: 'meas.stop', measCsv: 'meas.csv', measFitGo: 'meas.fit', measApply: 'meas.apply',
 };
 const HELP_BY_SELECTOR = [
   ['#fvMore > summary', 'tb.display'], ['#cfdExport > summary', 'tb.export'],
@@ -188,6 +198,7 @@ const HELP_BY_SELECTOR = [
   ['.zoom-ctl [data-z="meniscus"]', 'zm.meniscus'], ['.zoom-ctl [data-z="box"]', 'zm.box'], ['.zoom-ctl [data-z="img"]', 'zm.img'],
   ['#cfdLocs input[data-i]', 'loc.z'], ['#cfdLocs [data-edit]', 'loc.own'], ['#cfdLocs [data-run]', 'loc.run'], ['#cfdLocs [data-pick]', 'loc.pick'],
   ['#doe-design [data-fk]', 'doe.factor'], ['#doe-design [data-fmin]', 'doe.from'], ['#doe-design [data-fmax]', 'doe.to'], ['#doe-design [data-fn]', 'doe.levels'],
+  ['#measFit [data-grp]', 'meas.grp'], ['#measFit [data-lo]', 'meas.range'], ['#measFit [data-hi]', 'meas.range'],
   ['#doeAdd', 'doe.add'], ['#doePlotSeg [data-p="response"]', 'doe.response'], ['#doePlotSeg [data-p="map"]', 'doe.map'], ['#doePlotSeg [data-p="effects"]', 'doe.effects'],
 ];
 /** The help of a key: title, the parts, the range line (the sidebar's inputs: from CFG). */

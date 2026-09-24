@@ -311,8 +311,7 @@ function view1() {
   let mx = 0, mn = 1e9, over = 0, hmn = 1e9, hmx = 0;
   for (let i = 0; i < N; i++) {
     const z = i / (N - 1) * WIDTH;
-    const H = gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) - P.dt * spatialNoise(z, 1.7)) / 1000;
-    const th = P.th + P.dth * spatialNoise(z, 4.1);
+    const H = localGap(z), th = localContactAngle(z);
     const r = contactLine(H, th);
     pts.push([z, r.s]);
     mx = Math.max(mx, r.s); mn = Math.min(mn, r.s);
@@ -350,7 +349,7 @@ function view1() {
 // ---------------------------------------------------------------------
 function view2() {
   const e = edgeBead(), U = P.U / 60, ovenDistanceMm = P.oven * 1000;
-  const scallopAt = x => Math.min(P.a0e / 1000 * Math.exp(e.sig * x / 1000 / U), e.lam / 4);
+  const scallopAt = edgeAmplitudeAt;
 
   view.innerHTML = moduleFrame({
     panes: [
@@ -423,18 +422,8 @@ function view2() {
 // Tab 4: Film surface
 // ---------------------------------------------------------------------
 function view3() {
-  const H = gapHeight(), h = contactLine(H, P.th).h / 1000;
-  const dhdH = (filmThickness(H + 0.01) - filmThickness(H - 0.01)) / 0.02; // film sensitivity to gap wobble
-  const a0 = (Math.abs(dhdH) * P.dH + P.vib) / 1e6; // starting ripple amplitude, m
-  const k = 2 * Math.PI / (P.lam / 1000); // ripple wavenumber, 1/m
-  const gd = 0.5; // representative shear rate for leveling flow (slow, surface-tension-driven)
-  const mu = muEff(gd);
-
-  const tau = 3 * mu / (h * h * h * (P.g * k ** 4 + RHO * GRAVITY * k * k)); // leveling time constant, s
-  const residualFromYield = P.ty / (h * (P.g * k ** 3 + RHO * GRAVITY * k));
-  const asymptote = Math.min(a0, residualFromYield);
-  const tRes = P.oven / (P.U / 60); // residence time to the oven, s
-  const aEnd = asymptote + (a0 - asymptote) * Math.exp(-tRes / tau);
+  const lv = rippleLevelling(), { h, dhdH, a0, tau, residual: residualFromYield, asymptote, tRes } = lv;   // (physics.js)
+  const aEnd = lv.at(tRes);
 
   view.innerHTML = moduleFrame({
     panes: [
@@ -496,7 +485,7 @@ function view3() {
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
 let tab = 0;
-const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis', 'DOE'];
+const TABS = ['Slurry animation', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis', 'DOE', 'Measured data'];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
   '<path d="M3 2.5v11M3 5.5c4 0 5.5 3.5 10.5 3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5.5" r="1.4" fill="currentColor"/>',
@@ -504,6 +493,7 @@ const TAB_ICONS = [
   '<path d="M1.5 7c1.2-1.4 2.4-1.4 3.6 0s2.4 1.4 3.6 0 2.4-1.4 3.6 0 1.6 1 2.2.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M1.5 11h13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>',
   '<path d="M2 2.5h12v11H2zM2 6.2h12M2 9.8h12M6 2.5v11M10 2.5v11" fill="none" stroke="currentColor" stroke-width="1.1"/>',
   '<circle cx="4" cy="4" r="1.6" fill="currentColor"/><circle cx="12" cy="4" r="1.6" fill="currentColor"/><circle cx="4" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M4 4h8v8H4z" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>',
+  '<path d="M2.5 2.5v11h11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".6"/><path d="M3.5 12.5l9.5-9.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="1.6 1.6"/><circle cx="6" cy="9.4" r="1.4" fill="currentColor"/><circle cx="9" cy="7.4" r="1.4" fill="currentColor"/><circle cx="11.6" cy="4.8" r="1.4" fill="currentColor"/>',
 ];
 const tabsEl = document.getElementById('tabs');
 TABS.forEach((t, i) => {
@@ -536,7 +526,7 @@ function render() {
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD, viewDOE][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured][tab]();
   wireModDock();
   decorateImageButtons();
   applyHelp();
