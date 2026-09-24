@@ -228,6 +228,7 @@ const FV = {
   mesh: false,            // draw the finite elements (edges and nodes) over the field
   meshQuality: false,     // ... filled by their quality instead of the field colours
   dockH: 300,             // results panel height (px)
+  diff: { a: 0, b: 1, pct: false, cmap: 'div' },   // Difference view: B − A on A's geometry, absolute or percent, diverging or Jet colours
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -246,6 +247,9 @@ const SCALARS = {
 };
 // Fields that are never negative: a logarithmic colour scale is offered for these
 const LOG_OK = new Set(['speed', 'shear', 'mu', 'strain1', 'dissip']);
+/** The locations the view shows: one, all four (Compare), or the difference's reference A and B. */
+const viewLocs = () => FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : FV.view === 'diff' ? [...new Set([FV.diff.a, FV.diff.b])] : [FV.view];
+const multiView = () => typeof FV.view !== 'number';
 // Line colouring by each streamline's own travel time (not a field)
 const TIME_SCALAR = { key: 'time', label: 'Time along the line', short: 't', unit: 's', scale: 1, kind: 'seq', perLine: true, capped: false };
 // skipCorner: the colour range leaves out the metering edge corner's singular zone (values there are clamped, and the colorbar says so)
@@ -489,12 +493,12 @@ function viewCFD() {
   view.innerHTML = `
     <div class="cfd-wb" id="cfdWb" style="--dock-h: ${FV.dockH}px">
       <div class="vp-bar" role="toolbar" aria-label="Solve and display">
-        <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run all 4</button>
+        <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run<span class="hide-mid"> all 4</span></button>
         <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
         <span class="vp-sep" aria-hidden="true"></span>
         <div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div>
         <span class="vp-sep" aria-hidden="true"></span>
-        <label class="vp-ctl"><span class="hide-narrow">Field</span> <select id="fvBase" aria-label="Field">
+        <label class="vp-ctl"><span class="hide-mid">Field</span> <select id="fvBase" aria-label="Field">
           ${opt('speed', 'Velocity magnitude |V|', FV.base)}${opt('ux', 'u_x (machine direction)', FV.base)}${opt('uy', 'u_y (normal to web)', FV.base)}
           ${opt('shear', 'Shear rate', FV.base)}${opt('mu', 'Apparent viscosity', FV.base)}${opt('omega', 'Vorticity', FV.base)}
           ${opt('strain1', 'Principal strain rate', FV.base)}${opt('dissip', 'Viscous dissipation', FV.base)}
@@ -541,7 +545,7 @@ function viewCFD() {
         <button class="tool-btn" type="button" id="cfdCutPlace" aria-pressed="${!!placeCut}" title="Draw a cut line: click its start, then its end on the plot (Esc cancels)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 12.5l11-9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M1.2 10.9l2.6 3.2M12.2 1.9l2.6 3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="hide-mid">${placeCut ? 'Cancel line' : 'Cut line'}</span></button>
         <button class="tool-btn" type="button" id="cfdProbePlace" aria-pressed="${placeProbes}" title="Place named probes by clicking the plot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="hide-mid">${placeProbes ? 'Done placing' : 'Probes'}</span></button>
         <span class="vp-spacer"></span>
-        <details class="vp-pop vp-pop-r" id="cfdExport" hidden><summary class="tool-btn" title="Export CSV">Export</summary>
+        <details class="vp-pop vp-pop-r" id="cfdExport" hidden><summary class="tool-btn" title="Export CSV" aria-label="Export CSV"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="hide-mid">Export</span></summary>
           <div class="pop-body pop-menu">
             <span class="fv-why" id="cfdExportWhat"></span>
             <button class="menu-item" type="button" id="cfdCsvField">Field (every node)</button>
@@ -710,6 +714,16 @@ function renderCFD() {
   if (custom) custom.hidden = FV.density !== 'custom';
   const dens = document.getElementById('fvDensity');
   if (dens) dens.disabled = custom.disabled = FV.seedMode === 'manual';
+  // (the difference view has no vectors, probes or cut lines on its plot)
+  const isDiff = FV.view === 'diff';
+  if (isDiff && (placeCut || placeProbes)) { placeCut = null; placeProbes = false; }
+  for (const id of ['fvVec', 'cfdCutPlace', 'cfdProbePlace']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.disabled = isDiff;
+    const wrap = el.closest('.fv-chk') || el;
+    wrap.classList.toggle('is-off', isDiff);
+  }
   renderCfdStatus();
   renderMessages();
   renderDockCounts();
@@ -718,9 +732,9 @@ function renderCFD() {
   renderViewSeg();
   renderSeedPanel();
   updateBusy();
+  renderLegend();          // (before the plots: its height sets theirs)
   renderFlowPlots();
   renderColourControls();
-  renderLegend();
   renderCases();
   renderProbes();
   renderCuts();
@@ -744,7 +758,7 @@ function downloadCSV(name, rows) {
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
-const exportLocs = () => (FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].field);
+const exportLocs = () => viewLocs().filter(i => cfdRuns[i].field);
 const csvStamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function renderExportBar() {
   const bar = document.getElementById('cfdExport');
@@ -788,7 +802,7 @@ function exportMetrics() {
   if (!table) return;
   const cell = c => [...c.childNodes].map(n => n.textContent.trim()).filter(Boolean).join(' | ');
   const rows = [...table.querySelectorAll('tr')].map(tr => [...tr.children].map(cell));
-  if (FV.view !== 'compare') rows.unshift(['Metric', `Location ${FV.view + 1}`]);
+  if (!multiView()) rows.unshift(['Metric', `Location ${FV.view + 1}`]);
   downloadCSV(`cfd-metrics-${csvStamp()}.csv`, rows);
 }
 
@@ -835,7 +849,7 @@ function renderCuts() {
   const esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const hint = placeCut ? `<span class="warn-text">${placeCut === 'start' ? 'Click the start of the line on the plot.' : 'Now click its end.'}</span> (Esc cancels)` : 'Draw one with <b>Cut line</b> in the toolbar: click its start, then its end.';
   if (!cfdCuts.length) { host.innerHTML = `<p class="cap">No cut lines yet. ${hint}</p>`; return; }
-  const compare = FV.view === 'compare', locs = exportLocs();
+  const compare = multiView(), locs = exportLocs();
   FV.cutSel = Math.min(Math.max(0, FV.cutSel), cfdCuts.length - 1);
   const fieldsBar = `<div class="fv-bar"><span class="fv-ctl">Chart</span>${Object.entries(SCALARS).map(([k, d]) => `<label class="fv-chk"><input type="checkbox" data-cf="${k}"${FV.cutFields.includes(k) ? ' checked' : ''}> ${d.short}</label>`).join('')}
     ${compare ? `<label class="fv-ctl">Line <select id="cutSel">${cfdCuts.map((q, k) => `<option value="${k}"${k === FV.cutSel ? ' selected' : ''}>${esc(q.name)}</option>`).join('')}</select></label>` : ''}
@@ -1041,7 +1055,7 @@ function renderDockCounts() {
 
 /** While a location in view is solving: a line over the plot with its stage and residual (kept current as progress comes in). */
 function busyLine() {
-  const shown = (FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].status === 'running');
+  const shown = viewLocs().filter(i => cfdRuns[i].status === 'running');
   if (!shown.length) return '';
   return `<div class="vp-busy" role="status"><i class="spin" aria-hidden="true"></i>${shown.map(i => {
     const pr = cfdRuns[i].progress;
@@ -1133,12 +1147,12 @@ function cfdStageText(stage) {
 
 function renderViewSeg() {
   const host = document.getElementById('cfdViewSeg');
-  const items = CFD_LOCS.map((l, i) => [i, `L${l.id}`, `Location ${l.id}, z ${l.z} mm`]).concat([['compare', 'Compare', 'All four locations']]);
+  const items = CFD_LOCS.map((l, i) => [i, `L${l.id}`, `Location ${l.id}, z ${l.z} mm`]).concat([['compare', 'Compare', 'All four locations'], ['diff', 'Diff<span class="hide-mid">erence</span>', 'Difference: the change between two locations, B − A']]);
   host.innerHTML = items.map(([v, t, title]) => `<button type="button" role="tab" aria-selected="${FV.view === v}" data-v="${v}" title="${title}">${t}</button>`).join('');
   host.querySelectorAll('button').forEach(b => {
     b.onclick = () => {
-      FV.view = b.dataset.v === 'compare' ? 'compare' : +b.dataset.v;
-      if (FV.view !== 'compare') FV.profileLoc = FV.view;
+      FV.view = b.dataset.v === 'compare' || b.dataset.v === 'diff' ? b.dataset.v : +b.dataset.v;
+      if (!multiView()) FV.profileLoc = FV.view;
       renderCFD();
     };
   });
@@ -1178,6 +1192,7 @@ function locationTitle(i) {
 
 /** What the plots' colour bar shows: mesh quality, the streamlines' or vectors' colouring, or the field. */
 function carrierKey() {
+  if (FV.view === 'diff' && SCALARS[FV.base]) return 'diff';
   if (FV.mesh && FV.meshQuality) return 'quality';
   if (FV.streamlines && FV.lineColor !== 'none') return FV.lineColor;
   if (FV.vectors && FV.vectorColor) return 'speed';
@@ -1186,13 +1201,27 @@ function carrierKey() {
 /** The controls for one colouring (map, levels; for a field also its range and log scale). */
 function colourControls(key) {
   const opt = (v, t, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${t}</option>`;
+  const levels = `<label class="fv-ctl">Levels <select data-cc="levels">${[0, 8, 10, 12, 16, 20, 32].map(n => opt(n, n ? n + ' bands' : 'Smooth', FV.levels)).join('')}</select></label>`;
   const head = `<label class="fv-ctl">Colour map <select data-cc="map">${opt('jet', 'Jet (rainbow)', FV.cmap)}${opt('blue', 'Blue / blue–red (colour-blind safe)', FV.cmap)}</select></label>
-    <label class="fv-ctl">Levels <select data-cc="levels">${[0, 8, 10, 12, 16, 20, 32].map(n => opt(n, n ? n + ' bands' : 'Smooth', FV.levels)).join('')}</select></label>`;
+    ${levels}`;
+  const num = v => Number.isFinite(v) ? +v.toPrecision(4) : '';
+  if (key === 'diff') {
+    const dk = diffKey(), d = SCALARS[FV.base], man = FV.crange[dk] || {}, unit = FV.diff.pct ? '% of A' : d.unit;
+    const r = cfdRuns[FV.diff.a].field && cfdRuns[FV.diff.b].field ? diffRange(diffSampler(FV.base), null) : null;
+    return `<div class="cc" data-key="${dk}">
+    <label class="fv-ctl">Colour map <select data-cc="dmap">${opt('div', 'Blue–red, centred on 0 (no change)', FV.diff.cmap)}${opt('jet', 'Jet (rainbow)', FV.diff.cmap)}</select></label>
+    ${levels}
+    <div class="cc-range"><span class="fv-ctl"><b>Δ${d.short}</b> range (${unit})</span>
+      <input type="number" data-cc="min" step="any" value="${Number.isFinite(man.min) ? man.min : ''}" placeholder="${r ? num(r.autoMin) : 'auto'}" aria-label="Colour range minimum, ${unit}"> to
+      <input type="number" data-cc="max" step="any" value="${Number.isFinite(man.max) ? man.max : ''}" placeholder="${r ? num(r.autoMax) : 'auto'}" aria-label="Colour range maximum, ${unit}">
+      <button type="button" class="btn btn-secondary btn-sm" data-cc="auto"${FV.crange[dk] ? '' : ' disabled'}>Auto</button></div>
+    <p class="fv-note">The difference B − A of ${d.label.toLowerCase()}${FV.diff.pct ? ' as a percentage of |A|' : ''}. ${FV.diff.cmap === 'div' ? 'Blue–red is symmetric about zero, its middle colour = no change. ' : 'Jet spans the smallest to the largest difference. '}${FV.crange[dk] ? 'Manual range: values beyond it take its end colours.' : 'Empty = automatic (shown faint).'}</p>
+  </div>`;
+  }
   if (key === 'quality') return `<div class="cc">${head}<p class="fv-note">Mesh quality keeps its own scale (worse = stronger), from the worst element to 1.</p></div>`;
   if (key === 'none' || !SCALARS[key]) return `<div class="cc">${head}${key === 'time' ? '<p class="fv-note">Time along the lines: 0 to the 90th percentile of the lines\' times (automatic).</p>' : ''}</div>`;
-  const d = SCALARS[key], locs = (FV.view === 'compare' ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].field);
+  const d = SCALARS[key], locs = viewLocs().filter(i => cfdRuns[i].field);
   const r = locs.length ? scalarRange(key, locs.map(i => cfdRuns[i].field)) : null, man = FV.crange[key] || {};
-  const num = v => Number.isFinite(v) ? +v.toPrecision(4) : '';
   const logOk = LOG_OK.has(key);
   return `<div class="cc" data-key="${key}">
     ${head}
@@ -1232,6 +1261,7 @@ document.addEventListener('change', e => {
   if (!el || !el.closest('.cc')) return;
   const cc = el.dataset.cc, key = el.closest('.cc').dataset.key;
   if (cc === 'map') FV.cmap = el.value;
+  else if (cc === 'dmap') FV.diff.cmap = el.value;
   else if (cc === 'levels') FV.levels = +el.value;
   else if (cc === 'log') FV.clog[key] = el.checked;
   else if (cc === 'min' || cc === 'max') {
@@ -1259,7 +1289,7 @@ function renderFlowPlots() {
   const host = document.getElementById('cfdPlots');
   const compare = FV.view === 'compare';
   const list = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field && (compare || i === FV.view));
-  if (!list.length) {
+  if (!list.length && FV.view !== 'diff') {
     const running = cfdRuns.some(r => r.status === 'running');
     host.innerHTML = `<p class="cap fv-empty">${running ? '<i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.' : compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet: run it (toolbar, or its row in the model tree).`}</p>`;
     return;
@@ -1275,6 +1305,7 @@ function renderFlowPlots() {
       <span class="zb-sep" aria-hidden="true"></span>
       <button type="button" class="zb" data-z="box" aria-pressed="${FV.boxZoom}" title="Box zoom: drag a rectangle (also Shift+drag)" aria-label="Box zoom"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="9" height="7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 1.6"/><path d="M10.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
     </div>`;
+  if (FV.view === 'diff') { renderDiffPlot(host, zoomCtl); return; }
 
   host.innerHTML = list.map(i => `
     ${compare ? '' : `<div class="fv-caption">${locationTitle(i)} · ${cfdRuns[i].result.mesh.nEx} × ${cfdRuns[i].result.mesh.nEy} finite elements · <span class="fv-ex"></span>${cfdIsStale(i) ? ' · <span class="warn-text">out of date: inputs changed since this run</span>' : ''}${cfdRuns[i].result.converged ? '' : ` · <span class="warn-text">converged only to residual ${cfdRuns[i].result.residual.toExponential(1)}</span>`}</div>`}
@@ -1313,28 +1344,28 @@ function plotRanges(fields, list, win) {
 
 /** Draw (or redraw) one flow plot at its location's current zoom; fast = half-resolution colours (while zooming / panning). */
 function paintPlot(el, fast) {
-  const ctx = el._ctx, i = +el.dataset.i, run = cfdRuns[i], f = run.field, compare = ctx.compare;
-  const zoom = FV.zoom[i] || null;
-  const ranges = zoom ? plotRanges([f], [i], zoom) : ctx.shared;
+  const ctx = el._ctx, i = +el.dataset.i, run = cfdRuns[i], f = run.field, compare = ctx.compare, ds = ctx.ds;
+  const zk = el.dataset.zk || i, zoom = FV.zoom[zk] || null;
+  const ranges = ds ? { base: zoom ? diffRange(ds, zoom) : ctx.shared.base, line: null, speed: ctx.shared.speed } : zoom ? plotRanges([f], [i], zoom) : ctx.shared;
   const sl = FV.streamlines ? streamlinesFor(run) : null;
   const cv = el.querySelector('.fv-main');
   const map = drawFlowPlot(cv, {
     f, webSpeed: run.geo.U, yMax: ctx.yMax, yScale: FV.yScale, compact: compare, maxH: ctx.maxH, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
     exitAngle: run.geo.exitAngle, bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : 'blade land (fixed)',
-    scalar: scalarFor(ranges.base, f), lineScalar: scalarFor(ranges.line, f),
+    scalar: ds ? { ...ranges.base, key: `${ranges.base.key}|${fieldId(ds.fb)}` } : scalarFor(ranges.base, f), lineScalar: scalarFor(ranges.line, f),
     streamlines: sl ? sl.lines : null, lineWidth: LINE_W[FV.lineWidth] * (compare ? 0.8 : 1), arrows: FV.arrows,
-    vectorSample: FV.vectors ? (nc, nr, win) => sampleVectors(f, nc, nr, win) : null,
+    vectorSample: FV.vectors && !ds ? (nc, nr, win) => sampleVectors(f, nc, nr, win) : null,
     vectorSpacing: VEC_SPACING[FV.vectorDensity] * (compare ? 0.8 : 1), vectorScale: FV.vectorScale,
     vectorNormalize: FV.vectorNormalize, vectorVmax: ctx.vmax, vectorColor: FV.vectorColor, vectorScalar: scalarFor(ranges.speed, f),
     seeds: sl ? sl.seeds : null, manualSeeds: FV.seedMode === 'manual',
-    probes: cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
+    probes: ds ? [] : cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
     view: zoom, fast,
-    mesh: FV.mesh && f.curv ? { quality: FV.meshQuality ? meshQuality(f) : null } : null,
-    contours: contourSpec(f, ranges, zoom, ctx.fields),
-    cuts: cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
+    mesh: FV.mesh && f.curv ? { quality: FV.meshQuality && !ds ? meshQuality(f) : null } : null,
+    contours: ds ? diffContours(ds, ranges.base) : contourSpec(f, ranges, zoom, ctx.fields),
+    cuts: ds ? [] : cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
   });
   el._map = map;
-  if (zoom) FV.zoom[i] = map.view;            // (kept as clamped to the domain)
+  if (zoom) FV.zoom[zk] = map.view;           // (kept as clamped to the domain)
   // overlay canvas (crosshair, zoom box) matches the plot
   const over = el.querySelector('.fv-over'), dpr = window.devicePixelRatio || 1;
   over.width = cv.width; over.height = cv.height; over.style.width = cv.clientWidth + 'px'; over.style.height = cv.style.height;
@@ -1346,11 +1377,140 @@ function paintPlot(el, fast) {
   const ex = el.previousElementSibling && el.previousElementSibling.querySelector && el.previousElementSibling.querySelector('.fv-ex');
   if (ex) {
     const vs = map.exaggeration > 1.05 ? `vertical scale ×${map.exaggeration.toFixed(1)}` : map.exaggeration < 0.95 ? `vertical scale ×${map.exaggeration.toFixed(2)}` : 'true 1:1 scale';
-    const mqTxt = FV.mesh && FV.meshQuality && f.curv ? ` · mesh quality worst ${meshQuality(f).worst.toFixed(2)}` : '';
+    const mqTxt = FV.mesh && FV.meshQuality && f.curv && !ds ? ` · mesh quality worst ${meshQuality(f).worst.toFixed(2)}` : '';
     ex.textContent = (zoom ? `zoomed: x ${(map.view.x0 * 1000).toFixed(2)}–${(map.view.x1 * 1000).toFixed(2)} mm, y ${(map.view.y0 * 1000).toFixed(3)}–${(map.view.y1 * 1000).toFixed(3)} mm · ${vs} · colours span the view` : vs) + mqTxt;
     ex.parentElement.title = ex.parentElement.textContent;   // (the caption line may be cut short)
+    if (ds) ex.textContent += ranges.base.capped ? ' · colours clamped at the ends of the range' : '';
   }
   return map;
+}
+
+// ---- the difference view: B − A of the colour field, drawn on location A's shape ----
+
+/** The difference's colour settings key (manual range): per field and mode. */
+const diffKey = () => 'Δ' + FV.base + (FV.diff.pct ? '%' : '');
+const fieldIds = new WeakMap();
+let fieldIdN = 0;
+const fieldId = f => { if (!fieldIds.has(f)) fieldIds.set(f, ++fieldIdN); return fieldIds.get(f); };
+const nearCorner = (f, x, y) => f.xe != null && Math.hypot(x - f.xe, y - f.Hedge) < 0.3 * f.Hedge;
+/**
+ * The difference B − A of a field at a point of A: at(x, y, idx) in display units, or in % of |A|;
+ * null = no data (outside B's fluid, or |A| under 2 % of its largest value when in percent).
+ * idx: the point's grid index in A when known (the raster's), else found here.
+ */
+function diffSampler(key) {
+  const d = SCALARS[key], fa = cfdRuns[FV.diff.a].field, fb = cfdRuns[FV.diff.b].field;
+  const arrA = d.arr(fa), arrB = d.arr(fb), pct = FV.diff.pct;
+  const capA = d.cap && fa.hasPlug ? fa.muCap : Infinity, capB = d.cap && fb.hasPlug ? fb.muCap : Infinity;
+  let floor = 0;
+  if (pct) { let m = 0; for (let k = 0; k < arrA.length; k++) if (!(fa.cornerZone && fa.cornerZone[k])) m = Math.max(m, Math.abs(Math.min(arrA[k] * d.scale, capA))); floor = 0.02 * m; }
+  const at = (x, y, idx) => {
+    let vb;
+    if (fb.curv) { const q = fb.locate(x, y); if (!q) return null; vb = sampleIdx(fb, arrB, q[0], q[1]); }
+    else { if (!fieldInside(fb, x, y)) return null; vb = sampleField(fb, arrB, x, y); }
+    const va = Math.min((idx ? sampleIdx(fa, arrA, idx[0], idx[1]) : sampleField(fa, arrA, x, y)) * d.scale, capA);
+    vb = Math.min(vb * d.scale, capB);
+    if (!pct) return vb - va;
+    return Math.abs(va) < floor ? null : (vb - va) / Math.abs(va) * 100;
+  };
+  return { d, fa, fb, at };
+}
+/**
+ * The difference's colour range, over what is in view (win) or the whole of A: A's nodes plus a
+ * lattice. Blue-white-red: symmetric about 0; Jet: smallest to largest. The metering edge corners'
+ * singular zones (A's and B's) are left out for the fields that skip it; a manual range replaces it.
+ */
+function diffRange(ds, win) {
+  const { d, fa, fb, at } = ds;
+  let min = Infinity, max = -Infinity;
+  const skip = (x, y) => d.skipCorner && (nearCorner(fa, x, y) || nearCorner(fb, x, y));
+  const take = (x, y) => { if (skip(x, y)) return; const v = at(x, y, null); if (v == null || !Number.isFinite(v)) return; if (v < min) min = v; if (v > max) max = v; };
+  let x0 = Infinity, x1 = -Infinity, y1 = 0;
+  if (fa.gx) for (let k = 0; k < fa.gx.length; k++) {
+    const x = fa.gx[k], y = fa.gy[k];
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    if (!win || (x >= win.x0 && x <= win.x1 && y >= win.y0 && y <= win.y1)) take(x, y);
+  }
+  const w = win || { x0: Number.isFinite(x0) ? x0 : 0, x1: Number.isFinite(x1) ? x1 : fa.Lx, y0: 0, y1: y1 || fa.Ly };
+  for (let i = 0; i < 48; i++) for (let j = 0; j < 24; j++) {
+    const x = w.x0 + (i + 0.5) / 48 * (w.x1 - w.x0), y = w.y0 + (j + 0.5) / 24 * (w.y1 - w.y0);
+    if (fieldInside(fa, x, y)) take(x, y);
+  }
+  if (!(max >= min)) { min = -1; max = 1; }          // (no overlap in view)
+  const dataMin = min, dataMax = max, jet = FV.diff.cmap === 'jet';
+  if (!jet) { const m = Math.max(Math.abs(min), Math.abs(max)) || 1; min = -m; max = m; }
+  if (!(max > min)) { const m = Math.abs(min) || 1; min -= m * 1e-3; max += m * 1e-3; }
+  const autoMin = min, autoMax = max, key = diffKey(), man = FV.crange[key];
+  let capped = false;
+  if (man) {
+    if (Number.isFinite(man.min)) min = man.min;
+    if (Number.isFinite(man.max)) max = man.max;
+    if (!(max > min)) { min = autoMin; max = autoMax; }
+    if (dataMax > max || dataMin < min) capped = true;
+  }
+  if (d.skipCorner && fa.gx) for (let k = 0; k < fa.gx.length && !capped; k++) {
+    if (!skip(fa.gx[k], fa.gy[k])) continue;
+    const v = at(fa.gx[k], fa.gy[k], null);
+    if (v != null && (v > max || v < min)) capped = true;
+  }
+  const unit = FV.diff.pct ? '% of A' : d.unit;
+  return { key, label: `Change in ${d.label.toLowerCase()}, B − A`, short: 'Δ' + d.short, unit, scale: 1, kind: jet ? 'jet' : 'div', min, max, capped, log: false, levels: FV.levels, autoMin, autoMax, manual: !!man, at };
+}
+/** Contour lines of the difference (at its band boundaries, plus zero = no change): by value in Jet, ink on blue-red (lines by value would vanish into its pale middle). */
+function diffContours(ds, cr) {
+  const fa = ds.fa;
+  if (!FV.contours || !fa.curv) return null;
+  const arr = new Float64Array(fa.gx.length);
+  for (let k = 0; k < arr.length; k++) { const v = ds.at(fa.gx[k], fa.gy[k], null); arr[k] = v == null ? NaN : v; }
+  const N = cr.levels > 1 ? cr.levels : 11, levels = [];
+  for (let k = 1; k < N; k++) levels.push(cr.min + k / N * (cr.max - cr.min));
+  if (cr.min < 0 && cr.max > 0) { const n = levels.findIndex(v => Math.abs(v) < 1e-9 * (cr.max - cr.min)); if (n >= 0) levels[n] = 0; else levels.push(0); }
+  levels.sort((a, b) => a - b);
+  const lut = cr.kind === 'jet' ? getLut('jet') : null, smooth = { ...cr, levels: 0 };
+  return { sets: contourLines(fa, arr, 1, levels), colorOf: lut ? v => lutColor(lut, scaleT(smooth, v)) : null, fmt: v => fmtNum(v) };
+}
+/** The difference view: its bar (B and A, absolute or percent) and one plot on A's shape. */
+function renderDiffPlot(host, zoomCtl) {
+  const { a, b, pct } = FV.diff, d = SCALARS[FV.base];
+  const locOpt = cur => CFD_LOCS.map((l, i) => `<option value="${i}"${i === cur ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('');
+  const why = a === b ? 'Pick two different locations.'
+    : !d ? 'Pick a field in the toolbar to see how it changes.'
+      : [a, b].filter(i => !cfdRuns[i].field).map(i => `Location ${i + 1} has no result yet: run it.`).join(' ');
+  const stale = [a, b].filter(i => cfdRuns[i].field && cfdIsStale(i));
+  const bar = `<div class="fv-diffbar">
+      <label class="fv-ctl">B <select id="dfB" aria-label="Location B">${locOpt(b)}</select></label>
+      <span class="df-minus" aria-hidden="true">−</span>
+      <label class="fv-ctl">A <select id="dfA" aria-label="Location A, the reference">${locOpt(a)}</select></label>
+      <div class="seg" role="tablist" aria-label="Difference as" id="dfMode">
+        <button type="button" role="tab" data-pct="0" aria-selected="${!pct}">Absolute</button>
+        <button type="button" role="tab" data-pct="1" aria-selected="${pct}" title="(B − A) / |A| × 100">Percent</button>
+      </div>
+      <span class="fv-diffcap">${d ? `Δ${d.short}, ${pct ? '% of A' : d.unit}` : ''} on location A's shape${stale.length ? ` · <span class="warn-text">L${stale.map(i => i + 1).join(', L')} out of date</span>` : ''} · <span class="fv-ex"></span></span>
+    </div>`;
+  if (why) { host.innerHTML = bar + `<p class="cap fv-empty">${why}</p>`; wireDiffBar(host); return; }
+  host.innerHTML = bar + `
+    <div class="fv-plot" data-i="${a}" data-zk="d" data-diff="1">
+      <canvas class="fv-main" role="img" aria-label="Difference of ${d.label.toLowerCase()}, location ${b + 1} minus location ${a + 1}"></canvas>
+      <canvas class="fv-over" aria-hidden="true"></canvas>
+      ${zoomCtl(a)}
+      <div class="fv-tip" hidden></div>
+    </div>`;
+  wireDiffBar(host);
+  const el = host.querySelector('.fv-plot'), barH = host.querySelector('.fv-diffbar').offsetHeight;
+  const maxH = host.clientHeight - barH - 10, fa = cfdRuns[a].field;
+  const ds = diffSampler(FV.base);
+  const ctx = { compare: false, list: [a], maxH: maxH > 150 ? maxH : null, fields: [fa], ds };
+  ctx.shared = { base: diffRange(ds, null), line: null, speed: scalarRange('speed', [fa]) };
+  ctx.yMax = fa.Ly; ctx.vmax = fa.vmax;
+  el._ctx = ctx;
+  paintPlot(el, false);
+  wirePlotProbe(el);
+  wirePlotZoom(el);
+}
+function wireDiffBar(host) {
+  host.querySelector('#dfB').onchange = e => { FV.diff.b = +e.target.value; renderCFD(); };
+  host.querySelector('#dfA').onchange = e => { FV.diff.a = +e.target.value; renderCFD(); };
+  host.querySelectorAll('#dfMode button').forEach(bt => { bt.onclick = () => { FV.diff.pct = bt.dataset.pct === '1'; renderCFD(); }; });
 }
 
 /** The contour key: the colour field, or the field chosen for the lines. */
@@ -1392,7 +1552,7 @@ function zoomPreset(i, which) {
 
 /** Wheel zoom at the cursor, drag to pan, Shift+drag (or the box toggle) for a zoom box, and the plot's zoom buttons. */
 function wirePlotZoom(el) {
-  const i = +el.dataset.i, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over');
+  const i = +el.dataset.i, zk = el.dataset.zk || i, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over');
   let idle = 0, raf = 0, pendingFast = false;
   const repaint = fast => {
     if (fast) {
@@ -1403,8 +1563,8 @@ function wirePlotZoom(el) {
   };
   const setView = (v, fast) => {
     const m = el._map, full = m.full;
-    if (!v || (v.x1 - v.x0 >= (full.x1 - full.x0) * 0.999 && v.y1 - v.y0 >= (full.y1 - full.y0) * 0.999)) delete FV.zoom[i];
-    else FV.zoom[i] = clampView(v, full);
+    if (!v || (v.x1 - v.x0 >= (full.x1 - full.x0) * 0.999 && v.y1 - v.y0 >= (full.y1 - full.y0) * 0.999)) delete FV.zoom[zk];
+    else FV.zoom[zk] = clampView(v, full);
     repaint(fast);
   };
   const scaleAbout = (cx, cy, k) => {         // zoom by k (< 1 = in) about the physical point (cx, cy), keeping the vertical scale
@@ -1456,7 +1616,7 @@ function wirePlotZoom(el) {
       // pan: the point grabbed stays under the pointer
       const m = el._map, v = drag.view, p = m.plot;
       const dx = (pt[0] - drag.start[0]) / (p.r - p.l) * (v.x1 - v.x0), dy = (pt[1] - drag.start[1]) / (p.b - p.t) * (v.y1 - v.y0);
-      FV.zoom[i] = clampView({ x0: v.x0 - dx, x1: v.x1 - dx, y0: v.y0 + dy, y1: v.y1 + dy }, m.full);
+      FV.zoom[zk] = clampView({ x0: v.x0 - dx, x1: v.x1 - dx, y0: v.y0 + dy, y1: v.y1 + dy }, m.full);
       repaint(true);
     }
   });
@@ -1530,6 +1690,21 @@ function wirePlotProbe(el) {
       tip.style.top = Math.max(0, Math.min(py + 14, cssH - th)) + 'px';
       return;
     }
+    const ds = el._ctx.ds;
+    if (ds) {
+      // the difference view: the field in A and B at this point, and B − A
+      const d = ds.d, cap = (g, v) => d.cap && g.hasPlug ? Math.min(v, g.muCap) : v;
+      const va = cap(f, s(d.arr(f)) * d.scale), vb = fieldInside(ds.fb, x, y) ? cap(ds.fb, sampleField(ds.fb, d.arr(ds.fb), x, y) * d.scale) : null, dv = ds.at(x, y, null);
+      tip.innerHTML = `<b>x ${(x * 1000).toFixed(2)} mm · y ${(y * 1000).toFixed(3)} mm</b>
+        <span>A · L${FV.diff.a + 1}: ${d.short} ${fmtNum(va)} ${d.unit}</span>
+        <span>B · L${FV.diff.b + 1}: ${vb == null ? 'outside its fluid' : `${d.short} ${fmtNum(vb)} ${d.unit}`}</span>
+        ${dv == null ? `<span class="fv-why">no difference here (${vb == null ? 'outside location B\'s fluid' : '|A| too small for a percentage'})</span>` : `<span><b>Δ${d.short} ${fmtNum(dv)} ${FV.diff.pct ? '% of A' : d.unit}</b></span>`}`;
+      tip.hidden = false;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = (px + 14 + tw > cssW ? px - tw - 14 : px + 14) + 'px';
+      tip.style.top = Math.max(0, Math.min(py + 14, cssH - th)) + 'px';
+      return;
+    }
     const vfloor = f.vmax * 1e-4 * 1000; // below this a velocity component is numerical noise, not flow
     const u = s(f.u) * 1000, v = s(f.v) * 1000, mu = f.mu ? s(f.mu) : null;
     const comp = c => Math.abs(c) < vfloor ? '≈ 0' : fmtNum(c);
@@ -1574,21 +1749,25 @@ function renderLegend() {
     if (FV.arrows) items.push('<span class="lg"><i class="lg-arrow"></i>flow direction</span>');
     items.push(`<span class="lg"><i class="lg-seed${FV.seedMode === 'manual' ? ' man' : ''}"></i>${FV.seedMode === 'manual' ? 'your seed' : 'seed'}</span>`);
   }
-  if (FV.vectors) items.push(`<span class="lg"><i class="lg-vec"></i>velocity vector${FV.vectorNormalize ? ' (direction only)' : ' (length ∝ |V|)'}</span>`);
-  if (FV.contours && SCALARS[contourKey()]) {
+  const diff = FV.view === 'diff';
+  if (diff) items.push(`<span class="lg"><i class="lg-nodata"></i>no data: outside location B's fluid${FV.diff.pct ? ', or |A| under 2 % of its largest value' : ''}</span>`);
+  if (FV.vectors && !diff) items.push(`<span class="lg"><i class="lg-vec"></i>velocity vector${FV.vectorNormalize ? ' (direction only)' : ' (length ∝ |V|)'}</span>`);
+  if (FV.contours && diff && SCALARS[FV.base]) items.push(`<span class="lg"><i class="lg-line lg-contour${FV.diff.cmap === 'jet' ? ' by-value' : ''}"></i>contour line of Δ${SCALARS[FV.base].short}, including the zero line (no change)</span>`);
+  else if (FV.contours && SCALARS[contourKey()]) {
     const d = SCALARS[contourKey()];
     items.push(`<span class="lg"><i class="lg-line lg-contour${contourKey() === FV.base && fieldColoursShown() ? ' by-value' : ''}"></i>contour line of ${d.short} (${d.unit}; values printed along them)</span>`);
   }
   if (FV.mesh) {
     items.push('<span class="lg"><i class="lg-line lg-mesh"></i>element edge</span><span class="lg"><i class="lg-node"></i>corner node</span><span class="lg"><i class="lg-node mid"></i>mid node</span>');
-    if (FV.meshQuality) items.push('<span class="lg"><i class="lg-worst"></i>worst element, and any below quality 0.2</span>');
+    if (FV.meshQuality && !diff) items.push('<span class="lg"><i class="lg-worst"></i>worst element, and any below quality 0.2</span>');
   }
   items.push('<span class="lg"><i class="lg-edge"></i>active metering edge</span>');
   items.push('<span class="lg"><i class="lg-line lg-surf"></i>free surface (air above)</span>');
   if (cfdRuns.some(r => r.result && r.result.mode === 'climbed')) items.push('<span class="lg"><i class="lg-seed lg-cl"></i>contact line on the exit face</span>');
   let note = '';
-  if (FV.mesh && FV.meshQuality) note += 'Mesh quality: each element\'s smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 or below = degenerate); it replaces the field colours while shown. ';
-  note += 'Click the colour bar to change the colour map, range, log scale or levels. ';
+  if (diff) note += 'B is read at each point of A\'s shape; the streamlines are A\'s. ';
+  if (FV.mesh && FV.meshQuality && !diff) note += 'Mesh quality: each element\'s smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 or below = degenerate); it replaces the field colours while shown. ';
+  note += diff ? 'Click the colour bar to change the colour map, range or levels. ' : 'Click the colour bar to change the colour map, range, log scale or levels. ';
   if (FV.streamlines && FV.seedMode === 'auto') note += 'Automatic seeds are spaced by equal flow rate, so lines crowd where the flow is fast. ';
   if (FV.streamlines && FV.direction !== 'forward' && FV.seedMode === 'auto') note += `Seeds sit ${FV.direction === 'backward' ? 'on the outflow' : 'mid-channel'} for ${FV.direction} tracing. `;
   host.innerHTML = items.join('') + (note ? `<p class="fv-note">${note}</p>` : '');
@@ -1630,8 +1809,8 @@ function cfdFieldNumbers(run) {
 
 function renderMetrics() {
   const host = document.getElementById('cfdMetrics');
-  const compare = FV.view === 'compare';
-  const idx = compare ? CFD_LOCS.map((_, i) => i) : [FV.view];
+  const compare = multiView();
+  const idx = viewLocs();
   if (!idx.some(i => cfdRuns[i].field)) { host.innerHTML = '<p class="cap">No result to measure yet.</p>'; return; }
   const unyieldedPct = r => {
     const f = r.field;
@@ -1686,7 +1865,7 @@ function renderMetrics() {
 function renderFibre() {
   const host = document.getElementById('cfdFibre');
   if (!host) return;
-  const compare = FV.view === 'compare', idx = compare ? CFD_LOCS.map((_, i) => i) : [FV.view];
+  const compare = multiView(), idx = viewLocs();
   const st = fibreStructure(), k = fibrePermeability(), sl = fibreSlip(), oa = ovenAir(), air = oa.air;
   // the report's air permeability as a check on k: Darcy across the thickness, air at 20 C, for the two standard test pressures (ISO 9237)
   const note = document.getElementById('cfdFibreNote');
@@ -1879,9 +2058,9 @@ const TOL_EXP = -8;       // solveFEM's tolerance, 1e-8: the solves a result com
 function renderConvergence() {
   const host = document.getElementById('cfdConv');
   if (!host) return;
-  const compare = FV.view === 'compare';
-  const locs = (compare ? CFD_LOCS.map((_, i) => i) : [FV.view]).filter(i => cfdRuns[i].field && cfdRuns[i].result.trace);
-  if (!locs.length) { host.innerHTML = `<p class="cap">${compare ? 'No location has a result yet.' : `Location ${FV.view + 1} has no result yet.`}</p>`; return; }
+  const compare = multiView();
+  const locs = viewLocs().filter(i => cfdRuns[i].field && cfdRuns[i].result.trace);
+  if (!locs.length) { host.innerHTML = `<p class="cap">${compare ? 'No location in view has a result yet.' : `Location ${FV.view + 1} has no result yet.`}</p>`; return; }
   const stale = i => cfdIsStale(i), tr = i => cfdRuns[i].result.trace;
   const name = i => `Location ${i + 1} · z ${CFD_LOCS[i].z} mm${stale(i) ? ' (out of date)' : ''}`;
   const lg10 = v => Math.log10(Math.max(v, 1e-16));
@@ -2080,8 +2259,8 @@ function drawDownstreamFilm(cv, run) {
 
 function renderProfiles() {
   const host = document.getElementById('cfdProfiles');
-  const i = FV.view === 'compare' ? FV.profileLoc : FV.view;
-  document.getElementById('cfdProfTitle').textContent = `Profiles · Location ${i + 1}` + (FV.view === 'compare' ? ' (pick a single location above to change)' : '');
+  const i = multiView() ? FV.profileLoc : FV.view;
+  document.getElementById('cfdProfTitle').textContent = `Profiles · Location ${i + 1}` + (multiView() ? ' (pick a single location above to change)' : '');
   const run = cfdRuns[i];
   if (!run.field) { host.innerHTML = '<p class="cap">No result for this location yet.</p>'; return; }
   const r = run.result, geo = run.geo, round = geo.shape === 'round';
