@@ -7,8 +7,8 @@
  *
  * Message in:  { geometry: 'round'|'flat', H, L, R, Xup, exitAngle, contactDeg,
  *                U, Pup, rho, muRef, ty, n, muRep, gamma, g, ovenDistance,
- *                webSlip (alpha / sqrt(k), 1/m: Beavers-Joseph slip over the porous
- *                fibre; 0 = no slip) }
+ *                webSlip (1 / slip length, 1/m: slip over the fibre surface;
+ *                0 = no slip) }
  *              lengths in m, angles in degrees, U in m/s, Pup in Pa,
  *              muRef = the slider's viscosity at 2.7 1/s (the rheology
  *              law's own reference), muRep = mu at the representative

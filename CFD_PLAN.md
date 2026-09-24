@@ -5,7 +5,35 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Feature list 1-12 complete.
+## Status (latest first). Feature list 1-12 complete; 13 done.
+
+### Item 13 (done): fibre from its test report, dry pores, slip over air
+
+User's fibre re-answered with data (thin fibre test report: PET filament,
+150D x 2 plain weave, 0.2 mm, 138 g/m2, 25.9 / 22 threads/cm, air
+permeability 20-30 x 1e-3 m3/m2/s, test pressure not stated) and: slurry
+over 40 vol% solids, 2-8 um particles, water-based; "The liquid never
+drains through the fiber in reality. It is a slurry on top of the fiber";
+pores under the blade = air (dry fibre). Supersedes item 4's
+Beavers-Joseph slip (that assumes liquid-filled pores).
+- Inputs: basis weight, fibre density (PET 1380), yarn denier, filaments
+  per yarn (48, the user's choice: not in the report), Kozeny constant,
+  air fraction of the top surface (0.5, assumed), air permeability (check);
+  thickness = the sidebar's fibre thickness.
+- porosity = 1 - gsm / (rho t) = 0.50; filament d = sqrt(4 dpf / (9e6 pi
+  rho)) = 17.9 um; k (Kozeny-Carman, K 5) = 2.0e-12 m2. The report's air
+  permeability gives k = 0.45e-12 (200 Pa) / 0.91e-12 (100 Pa): shown.
+- Slip: filaments = no-slip stripes, air between them = shear-free
+  stripes, period d / (1 - air fraction); Philip (1972): along
+  b = (period/pi) ln sec(pi a / 2), across half; plain weave = the mean
+  (2.96 um by default; was 5.8 um with the old Beavers-Joseph defaults).
+  webSlip = 1/b (the solver's slip condition is unchanged).
+- Why nothing drains (shown): at > 40 vol% the slurry's own pores (about
+  1-4 um) are finer than the fibre's (about 11 um), so capillarity keeps
+  the liquid in the slurry.
+- Open: the oven air "up from below" through the open bottom, air-speed
+  driven. With the wet film sealing the top, air can leave only along the
+  0.2 mm fibre -- not solved yet.
 
 ### Item 12 (done): convergence residual history
 
