@@ -14,7 +14,7 @@
  */
 
 const UNDO_MAX = 50;
-const UNDO = { hist: [], known: null, view: null, timer: 0, down: false, hint: null, shown: undefined, applying: false };
+const UNDO = { hist: [], known: null, view: null, timer: 0, down: false, hint: null, shown: undefined, applying: false, target: null };
 const undoHist = v => UNDO.hist[v] || (UNDO.hist[v] = { undo: [], redo: [], trimmed: false });
 
 // ---- the units: what can be changed, how to read and write it, and how to name a change ----
@@ -195,8 +195,13 @@ function undoCommit() {
   if (v === tab) undoUI();
   return true;
 }
-function undoSchedule() {
+function undoSchedule(e) {
   if (UNDO.applying || !UNDO.known) return;
+  // (a click or change on another control: what the last one changed is a step of its own;
+  // this runs before the control's own handler, so the state is still the one before it)
+  const t = e && e.target, act = e && (e.type === 'click' || e.type === 'change' || e.type === 'input');
+  if (UNDO.timer && act && e.type !== 'input' && t !== UNDO.target) undoCommit();
+  if (act) UNDO.target = t;
   if (UNDO.view == null) UNDO.view = tab;   // (the view the change is being made in)
   clearTimeout(UNDO.timer);
   UNDO.timer = setTimeout(function tick() { if (UNDO.down) UNDO.timer = setTimeout(tick, 250); else undoCommit(); }, 600);

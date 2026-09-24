@@ -24,7 +24,8 @@ results; Ctrl+Z / Ctrl+Y, title-bar buttons, an Edit menu and a History list
   and plot choices). A step keeps only the units it changed (before, after),
   so undoing in one view leaves other views' changes alone.
 - Changes are picked up 0.6 s after input settles (a slider drag or wheel
-  zoom = one step; not while a pointer is down); a view switch closes the
+  zoom = one step; not while a pointer is down; a click or change on another
+  control starts a new step); a view switch closes the
   pending step for the view left; what a view sets up on opening is not a
   step. Steps are named from what changed ("Web speed: 0.28 → 0.40 m/min",
   "Add probe P1", "Load case X", "Reset inputs to defaults").
