@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Blade Coat Defect Lab</title>
-<meta name="description" content="Interactive thin-film model of slurry metering under a coating blade: film thickness, contact-line position, web-edge scalloping and film levelling, with live model-validity checks.">
+<meta name="description" content="Coating-flow workbench for slurry metering under a coating blade: 2D CFD of the gap, meniscus and film, plus thin-film models of the contact line, web edge and film levelling, with live model-validity checks.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f4fd8'/%3E%3Ccircle cx='8' cy='8.7' r='4.6' fill='none' stroke='white' stroke-width='1.4'/%3E%3Cpath d='M8 8.7 6.3 6.2M8 5.4v1M10.8 8.7h-1M5.2 8.7h1' stroke='white' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   /* Minimal pre-paint styling so the page doesn't flash unstyled before styles.css loads. */
   :root { color-scheme: light; box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
   html { scroll-padding-top: env(safe-area-inset-top, 0px); }
-  body { margin: 0; padding: 0; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; background: #faf9f5; color: #141413; }
+  body { margin: 0; padding: 0; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; background: #e9edf2; color: #141821; }
   img { max-width: 100%; }
   [hidden]:not([hidden=until-found i]) { display: none !important; }
 </style>
@@ -18,40 +18,52 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<nav class="topbar">
-  <div class="topbar-inner">
-    <h1 class="brand">Blade Coat Defect Lab</h1>
-    <div class="tabs" role="tablist" id="tabs"></div>
-    <button id="reset" class="btn btn-secondary" type="button">Reset process inputs</button>
-  </div>
-</nav>
-<div class="wrap">
+<div class="app">
+  <header class="titlebar">
+    <div class="tb-brand">
+      <svg class="tb-logo" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="currentColor" opacity=".16"/><path d="M2 12.5h12" stroke="currentColor" stroke-width="1.3"/><path d="M3 12.5c2.5-.2 4-1.6 5.2-4.4L10 3.5h3.5l-2.6 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      <h1 class="brand">Blade Coat Defect Lab</h1>
+    </div>
+    <nav class="modules" role="tablist" aria-label="Modules" id="tabs"></nav>
+    <div class="tb-actions">
+      <button id="themeBtn" class="icon-btn tb-icon" type="button" aria-label="Switch light / dark theme" title="Switch light / dark theme">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.8a5.2 5.2 0 0 1 0 10.4z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
 
-  <p class="sub">Thin-film model of slurry metering under a coating blade.</p>
-
-  <div class="grid">
-    <main class="panel">
-      <p class="scope" id="scope" role="status" aria-live="polite"></p>
+  <div class="wb-body" id="wbBody">
+    <aside class="tree" aria-label="Model setup">
+      <div class="tree-head">
+        <span class="tree-title">Model</span>
+        <button id="reset" class="icon-btn" type="button" title="Reset process inputs to their defaults" aria-label="Reset process inputs">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 6.2A5 5 0 1 1 3 9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2.6 2.8v3.6h3.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="tree-scroll">
+        <div id="params"></div>
+        <div id="setupExtra"></div>
+        <details class="grp tree-note">
+          <summary>What is measured and what is assumed</summary>
+          <ul class="note">
+            <li><b>Yours:</b> speed, machine height, fibre thickness, viscosity 10.5 Pa·s, design wet film 1.45 mm (the pressure default is back-calculated so the model returns 1.45 mm; it is not a measurement).</li>
+            <li><b>Assumed until you measure them:</b> surface tension (0.07 N/m, water-like), contact angle on the blade, yield stress, shear-thinning index, bead pressure, land length, notch face length, density 1020 kg/m³.</li>
+            <li><b>Model limits:</b> the film thickness uses lubrication theory with an effective viscosity. The contact-line height is the static gravity-plus-capillary meniscus (Young–Laplace), so dynamic wetting is not included. The web-edge and levelling results are order-of-magnitude indicators. Use them to see which lever matters, not to predict exact millimetres.</li>
+            <li><b>Conservation:</b> the animation advances the pool with a volume balance. If the pool cannot supply the requested outlet flow, the outlet is supply-limited rather than allowing a negative liquid volume. Numerical failures stop the evolving surface and are reported; they are never displayed as a valid physical prediction.</li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+    <div class="split split-v" id="treeSplit" role="separator" aria-orientation="vertical" aria-label="Resize the model panel" tabindex="0"></div>
+    <main class="work" id="work">
       <div id="view"></div>
     </main>
-    <aside class="panel" aria-label="Process inputs">
-      <h2>Inputs</h2>
-      <div id="params"></div>
-    </aside>
   </div>
 
-  <section class="panel">
-    <details>
-      <summary>What is measured and what is assumed</summary>
-      <ul class="note">
-        <li><b>Yours:</b> speed, machine height, fibre thickness, viscosity 10.5 Pa·s, design wet film 1.45 mm (the pressure default is back-calculated so the model returns 1.45 mm; it is not a measurement).</li>
-        <li><b>Assumed until you measure them:</b> surface tension (0.07 N/m, water-like), contact angle on the blade, yield stress, shear-thinning index, bead pressure, land length, notch face length, density 1020 kg/m³.</li>
-        <li><b>Model limits:</b> the film thickness uses lubrication theory with an effective viscosity. The contact-line height is the static gravity-plus-capillary meniscus (Young–Laplace), so dynamic wetting is not included. The web-edge and levelling results are order-of-magnitude indicators. Use them to see which lever matters, not to predict exact millimetres.</li>
-        <li><b>Conservation:</b> the animation advances the pool with a volume balance. If the pool cannot supply the requested outlet flow, the outlet is supply-limited rather than allowing a negative liquid volume. Numerical failures stop the evolving surface and are reported; they are never displayed as a valid physical prediction.</li>
-      </ul>
-    </details>
-  </section>
-
+  <footer class="statusbar" aria-label="Status">
+    <p class="scope sb-item" id="scope" role="status" aria-live="polite"></p>
+    <div class="sb-item sb-cfd" id="cfdStatus"></div>
+  </footer>
 </div>
 
 <script src="physics.js"></script>
