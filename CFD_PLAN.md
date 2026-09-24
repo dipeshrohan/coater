@@ -5,7 +5,21 @@ the shipped product; this file is agent/maintainer-facing planning memory,
 not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
-## Status (latest first). Feature list 1-12 complete; 13 done.
+## Status (latest first). Feature list 1-12 complete; 13-14 done.
+
+### Item 14 (done): oven air, speed-driven
+
+User: air "up from below" through the open bottom, driven by "air velocity"
+(kept after being shown the wet film seals the fibre's top: "Speed-driven").
+The air can only leave along the fibre (thickness t) to the plenum's
+edges, taken as its exit (the shortest path: a least pressure). Thin-layer
+Darcy, isothermal (density rising with pressure): p dp/dx = -mu p0 ua x /
+(k t) -> centre p^2 = p0^2 + 2 p0 mu ua Lp^2 / (8 k t) (checked against a
+direct integration). New input: plenum length (100 mm, assumed). Shown:
+that pressure (and without compression), the speed along the fibre where
+it leaves ua Lp / (2 t), and its pore Re (well above 1: Forchheimer losses
+add, not included -> "at least"). Defaults: 1 m/s, 100 mm -> at least
+3.6 MPa (67.8 without compression), 250 m/s, pore Re 390.
 
 ### Item 13 (done): fibre from its test report, dry pores, slip over air
 
@@ -31,9 +45,7 @@ Beavers-Joseph slip (that assumes liquid-filled pores).
 - Why nothing drains (shown): at > 40 vol% the slurry's own pores (about
   1-4 um) are finer than the fibre's (about 11 um), so capillarity keeps
   the liquid in the slurry.
-- Open: the oven air "up from below" through the open bottom, air-speed
-  driven. With the wet film sealing the top, air can leave only along the
-  0.2 mm fibre -- not solved yet.
+- The oven air: item 14.
 
 ### Item 12 (done): convergence residual history
 
