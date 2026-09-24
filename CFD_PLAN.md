@@ -6,8 +6,20 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Remaining feature list, in order:
-## 8. save/load cases, 9. export (CSV),
+## 9. export (CSV),
 ## 10. named probes, 11. cross-location plots, 12. convergence history plot.
+
+### Item 8 (done): save / load cases (local storage)
+
+A case = every input that defines a run: the sidebar's values, the CFD
+tab's blade / fibre / rheology-model inputs, the four locations (position
+and own inputs), plus a summary of the wet films at the time of saving
+(only for runs that were up to date). Stored in the browser's local
+storage (key bladeCoatDefectLab.cfdCases.v1; saving under an existing name
+replaces it). Loading restores the inputs (sidebar sliders set as the reset
+button does) and runs the four locations again -- results themselves are
+not stored (they would be ~1 MB per case; a run takes seconds). Storage
+blocked or full is reported, not silently ignored.
 
 ### Item 7 (done): rheology model dropdown
 
