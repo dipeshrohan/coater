@@ -13,7 +13,7 @@
 
 const REPORT_KEY = 'bladeCoatDefectLab.report.v1';
 const REP = (() => {
-  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'cfd', 'mesh', 'doe', 'meas'] };
+  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'm1d', 'cfd', 'mesh', 'doe', 'meas'] };
   try { return { ...d, ...JSON.parse(localStorage.getItem(REPORT_KEY) || '{}') }; } catch (e) { return d; }
 })();
 const saveRepPrefs = () => { try { localStorage.setItem(REPORT_KEY, JSON.stringify(REP)); } catch (e) { /* not remembered */ } };
