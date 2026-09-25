@@ -1241,9 +1241,16 @@ body:has(#pgScope) #scope { display: none; }
 /* Flow › 3D: the three.js view */
 .mod-extra:has(.v3d) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .v3d { min-width: 0; }
-.pg-tools:has([data-v3view]) { flex-wrap: wrap; }
+.pg-tools:has([data-v3view]) { flex: 1 1 auto; flex-wrap: wrap; }
 .pg-tools:has([data-v3view]) > .seg { flex: none; }
 .v3d-host { position: relative; height: clamp(320px, calc(100vh - 400px), 820px); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .v3d-host canvas { display: block; max-width: 100%; touch-action: none; cursor: grab; }
 .v3d-host canvas:active { cursor: grabbing; }
+/* the colour bar under the 3D view, the charts below it, the progress while solving */
+.v3d-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.v3d-bar i { flex: 1 1 auto; max-width: 360px; height: 10px; border-radius: 3px; border: 1px solid var(--line); }
+.v3d-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1023px) { .v3d-charts { grid-template-columns: minmax(0, 1fr); } }
+.pg-tools select[data-c3d] { width: auto; max-width: 11em; }
+.c3d-busy { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .v3d-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }

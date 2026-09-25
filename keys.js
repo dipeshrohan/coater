@@ -13,7 +13,7 @@ const KEYS_CAPTURE = { on: false };   // (a key is being recorded in the key edi
 const IS_MAC = /Mac|iP(hone|ad|od)/.test(navigator.platform || '');
 /** The tab showing's solving, if any. */
 const tabRunning = () => tab === 4 ? cfdRuns.some(r => r.status === 'running') || !!(meshStudy && meshStudy.status === 'running')
-  : tab === 5 ? DOE.status === 'running' : tab === 6 ? MQ.active.size + MQ.jobs.length > 0 : false;
+  : tab === 5 ? DOE.status === 'running' : tab === 6 ? MQ.active.size + MQ.jobs.length > 0 : tab === 9 ? C3D_RUN.status === 'running' : false;
 const onCfd = () => tab === 4 && !!document.getElementById('cfdWb');
 /** Click a zoom button of the flow plot(s) shown. */
 const zoomClick = z => { const bs = document.querySelectorAll(`#cfdPlots .zoom-ctl [data-z="${z}"]`); if (!bs.length) return false; bs.forEach(b => b.click()); return true; };
@@ -40,11 +40,11 @@ const KEY_ACTIONS = [
   { id: 'edit.undo', g: 'Edit', l: 'Undo (in this view)', def: 'Ctrl+Z', text: false, run: () => undo() },
   { id: 'edit.redo', g: 'Edit', l: 'Redo', def: 'Ctrl+Y', text: false, run: () => redo() },
   { id: 'edit.redo2', g: 'Edit', l: 'Redo (second key)', def: 'Ctrl+Shift+Z', text: false, run: () => redo() },
-  { id: 'run.run', g: 'Run', l: 'Run the tab shown: all four CFD locations, the DOE, or the measured dataset in the CFD', def: 'Ctrl+Enter',
-    when: () => [4, 5, 6].includes(tab),
-    run: () => { if (tab === 4) runAllLocations(); else if (tab === 5) runDOE(); else if (tab === 6) measRunCfd(measSelected()); } },
+  { id: 'run.run', g: 'Run', l: 'Run the tab shown: all four CFD locations, the DOE, the measured dataset in the CFD, or the 3D', def: 'Ctrl+Enter',
+    when: () => [4, 5, 6, 9].includes(tab),
+    run: () => { if (tab === 4) runAllLocations(); else if (tab === 5) runDOE(); else if (tab === 6) measRunCfd(measSelected()); else if (tab === 9) c3dRun(); } },
   { id: 'run.stop', g: 'Run', l: 'Stop what the tab shown is solving', def: 'Escape', when: () => tabRunning(),
-    run: () => { if (tab === 4) cancelAllLocations(); else if (tab === 5) stopDOE(); else if (tab === 6) measStopCfd(); } },
+    run: () => { if (tab === 4) cancelAllLocations(); else if (tab === 5) stopDOE(); else if (tab === 6) measStopCfd(); else if (tab === 9) c3dStop(); } },
   { id: 'view.fit', g: 'View (CFD flow plot)', l: 'Whole domain (fit)', def: 'Alt+F', when: onCfd, run: () => zoomClick('fit') },
   { id: 'view.in', g: 'View (CFD flow plot)', l: 'Zoom in', def: 'Alt+=', when: onCfd, run: () => zoomClick('in') },
   { id: 'view.out', g: 'View (CFD flow plot)', l: 'Zoom out', def: 'Alt+-', when: onCfd, run: () => zoomClick('out') },

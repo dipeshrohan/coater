@@ -70,6 +70,8 @@ const F3_BOTTOM = f3FaceRule('eta', -1), F3_TOP = f3FaceRule('eta', 1), F3_INLET
  *   U (web speed, along x), rho, g, gamma, mu(gd), gdMin, Hr, Ur (length and speed scales)
  *   inlet: { type: 'traction', p(y) } | { type: 'wall' }; outlet: { type: 'plug' } | { type: 'traction', p(y) } | { type: 'wall' }
  *   sides: 'symmetry' (default) | 'wall'; topSpeed (moving top wall, along x); webSlip (Beavers–Joseph alpha / sqrt k, 1/m)
+ *   sideData: { lo, hi } a side held at a neighbouring strip's solution instead: { u, v, w (at the station's nodes c*NR + k,
+ *     m/s), p (Pa, there), h (the free spines' heights, m, per c), s (the contact line, m) } (a region solved strip by strip)
  *   contactLine: { spine, faceFrom, alphaDeg (a number, or one per station) } or null; freeze (surface fixed)
  *   init: { sol, h, s } a previous state on the same layout; initNodal: { u, v, w, p } at the nodes (dimensional)
  *   homotopy, tol, maxIter, onIteration, label, onSolveStart, onSolveEnd
@@ -87,6 +89,8 @@ function solveFEM3D(o) {
   const free = new Uint8Array(NC); for (let c = 0; c < NC; c++) free[c] = kind(c) === 'free' ? 1 : 0;
   const CL = o.contactLine || null;
   const sideWall = o.sides === 'wall';
+  // a side taken from a neighbouring strip's solution (a region solved strip by strip): velocity, surface heights, contact line there
+  const sideOf = l => o.sideData ? (l === 0 ? o.sideData.lo : l === NL - 1 ? o.sideData.hi : null) : null;
 
   // ---- scales ----
   const Hr = o.Hr, Ur = o.Ur, gdRef = Ur / Hr, muR = o.mu(gdRef), Pr = muR * Ur / Hr;
@@ -162,7 +166,13 @@ function solveFEM3D(o) {
       else { setDir(dV[e], 0); setDir(dW[e], 0); }
     }
     for (const l of [0, NL - 1]) for (let c = 0; c < NC; c++) for (let k = 0; k < NR; k++) {
-      const n = nid(c, l, k);
+      const n = nid(c, l, k), sd = sideOf(l);
+      if (sd) {
+        // a neighbour's solution there -- the pressure too: its mass balance there would see only this strip's half of its elements
+        setDir(dU[n], sd.u[c * NR + k] / Ur); setDir(dV[n], sd.v[c * NR + k] / Ur); setDir(dW[n], sd.w[c * NR + k] / Ur);
+        if (dP[n] >= 0) setDir(dP[n], sd.p[c * NR + k] / Pr);
+        continue;
+      }
       setDir(dW[n], 0);                                                          // sides: symmetry (w = 0) ...
       if (sideWall) { setDir(dU[n], 0); setDir(dV[n], 0); }                      // ... or walls
     }
@@ -180,6 +190,13 @@ function solveFEM3D(o) {
   if (o.initNodal) {
     const q = o.initNodal;
     for (let n = 0; n < NN; n++) { sol[dU[n]] = q.u[n] / Ur; sol[dV[n]] = q.v[n] / Ur; sol[dW[n]] = (q.w ? q.w[n] : 0) / Ur; if (dP[n] >= 0) sol[dP[n]] = q.p[n] / Pr; }
+  }
+  const sFixed = new Array(NL).fill(null);
+  for (const l of [0, NL - 1]) {
+    const sd = sideOf(l);
+    if (!sd) continue;
+    for (let c = 0; c < NC; c++) if (free[c]) setDir(dH[sid(c, l)], sd.h[c] / Hr);
+    if (sd.s != null) { sFixed[l] = sd.s / Hr; sStar[l] = sFixed[l]; }
   }
   for (let d = 0; d < ND; d++) if (isDir[d]) sol[d] = dirVal[d];
   if (o.freeze) for (let c = 0; c < NC; c++) if (free[c]) for (let l = 0; l < NL; l++) { const d = dH[sid(c, l)]; setDir(d, sol[d]); }
@@ -374,6 +391,7 @@ function solveFEM3D(o) {
   /** Contact-angle condition at station l: the surface leaves the contact line along the prescribed direction (in the x–y plane). */
   const dQ0 = f3dq2(-1);
   function contactResidual(l) {
+    if (sFixed[l] != null) return sStar[l] - sFixed[l];     // (a side station held at its neighbour's contact line)
     const c = CL.spine;
     let xt = 0, yt = 0;
     for (let a = 0; a < 3; a++) { const n = nid(c + a, l, NR - 1); xt += X[n] * dQ0[a]; yt += Y[n] * dQ0[a]; }
@@ -630,10 +648,35 @@ function solveFEM3D(o) {
     }
     q[sid(c, l)] = s;
   }
+  // shear rate and viscosity at every node: each element's velocity gradient at its own nodes, averaged over the elements sharing the node
+  const gdo = new Float64Array(NN), muo = new Float64Array(NN), cnt = new Float64Array(NN);
+  {
+    const at3 = [-1, 0, 1];
+    const shapes = [];
+    for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) shapes.push(f3Shape(at3[a], at3[b], at3[g]));
+    const epsDim = epsTarget * gdRef;
+    for (let ex = 0; ex < nEx; ex++) for (let ez = 0; ez < nEz; ez++) for (let ey = 0; ey < nEy; ey++) {
+      gatherElement(ex, ey, ez);
+      for (let i = 0; i < 27; i++) {
+        const q = shapes[i];
+        gradAt(q.Na, q.Nb, q.Ng);
+        let ux = 0, uy = 0, uz = 0, vx = 0, vy = 0, vz = 0, wx = 0, wy = 0, wz = 0;
+        for (let a = 0; a < 27; a++) {
+          ux += ue[a] * Nx[a]; uy += ue[a] * Ny[a]; uz += ue[a] * Nz[a];
+          vx += ve[a] * Nx[a]; vy += ve[a] * Ny[a]; vz += ve[a] * Nz[a];
+          wx += we[a] * Nx[a]; wy += we[a] * Ny[a]; wz += we[a] * Nz[a];
+        }
+        const Dxy = 0.5 * (uy + vx), Dxz = 0.5 * (uz + wx), Dyz = 0.5 * (vz + wy);
+        const n = nodesT[i];
+        gdo[n] += Math.sqrt(2 * (ux * ux + vy * vy + wz * wz) + 4 * (Dxy * Dxy + Dxz * Dxz + Dyz * Dyz)) * gdRef; cnt[n]++;
+      }
+    }
+    for (let n = 0; n < NN; n++) { gdo[n] /= cnt[n] || 1; muo[n] = o.mu(Math.sqrt(gdo[n] * gdo[n] + epsDim * epsDim)); }
+  }
   const st = stNow(), resid = res ? norms(res) : Infinity;
   if (o.onSolveEnd) o.onSolveEnd({ converged, residual: resid, iterations: it });
   return {
-    NC, NR, NL, nEx, nEy, nEz, x: xo, y: yo, z: zo, u: uo, v: vo, w: wo, p: po, q, converged, iterations: it, factorizations, stages, history, solveId,
+    NC, NR, NL, nEx, nEy, nEz, x: xo, y: yo, z: zo, u: uo, v: vo, w: wo, p: po, gd: gdo, mu: muo, q, converged, iterations: it, factorizations, stages, history, solveId,
     residual: resid, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca: invCa ? 1 / invCa : Infinity },
     size: { unknowns: ND, band: kl, bytes: LU.byteLength, msFactor },
     state: { sol: Float64Array.from(sol), h: st.h, s: st.s },
@@ -641,78 +684,151 @@ function solveFEM3D(o) {
 }
 
 /**
- * The coating flow on a strip across the web. Every station across the strip is first solved in 2D at
- * its own gap (solveCoaterFEM, its mesh layout kept, the same number of elements up the exit face at
- * every station); those layouts, side by side, are the 3D mesh and those solutions its starting state;
- * then the 3D solve couples the stations (flow across the web, the surface's curvature across it).
- * The meniscus mode (pinned at the edge, or climbed up the face) must be the same at every station.
+ * Each station across a region solved in 2D at its own gap and contact angle (solveCoaterFEM, its mesh
+ * layout kept), with the same number of elements up the exit face at every station: those layouts side
+ * by side are the 3D mesh, and those solutions its starting state. The meniscus mode (pinned at the edge,
+ * or climbed up the face) must be the same at every station.
+ * opts: solveCoaterFEM's, and dH(z), contactAt(z), hAt(z) (see solveCoater3D); zs: the stations (m, from
+ * the region's reference); ref: the station whose 2D sets the face elements (default the middle).
+ * Returns { r2: per station, M: their meshes, mode, climbed, cCL, cCorner, NC, NR, H, ms } or { error }.
+ */
+function coaterStations(opts, zs, ref = (zs.length - 1) >> 1) {
+  const log = t => opts.onStage && opts.onStage(t), NL = zs.length, t0 = Date.now();
+  const dHl = zs.map(z => (opts.dH ? opts.dH(z) : 0)), thl = zs.map(z => (opts.contactAt ? opts.contactAt(z) : opts.contactDeg));
+  const hl = l => opts.hAt ? opts.hAt(zs[l]) : x => opts.hFn(x) + dHl[l];
+  const solve2 = (l, extra) => solveCoaterFEM({ ...opts, hFn: hl(l), contactDeg: thl[l], keepMesh: true, ...extra });
+  const r2 = new Array(NL);
+  log(`2D at ${(zs[ref] * 1e3).toFixed(1)} mm`);
+  r2[ref] = solve2(ref, {});
+  const r0 = r2[ref];
+  if (r0.error || !r0.meshDef || !r0.converged) return { error: `2D at ${(zs[ref] * 1e3).toFixed(1)} mm: ` + (r0.error || 'did not converge'), r2 };
+  const mode = r0.meniscus.mode, climbed = mode === 'climbed', m0 = r0.meshDef, nF = (m0.cCL - m0.cCorner) / 2;
+  for (let l = 0; l < NL; l++) {
+    if (l === ref) continue;
+    if (!opts.hAt && dHl[l] === dHl[ref] && thl[l] === thl[ref]) { r2[l] = r0; continue; }
+    log(`2D at ${(zs[l] * 1e3).toFixed(1)} mm${opts.hAt ? '' : ` (gap ${dHl[l] >= 0 ? '+' : ''}${(dHl[l] * 1e6).toFixed(1)} µm)`}`);
+    const r = solve2(l, climbed ? { nFaceFixed: nF } : {});
+    if (r.error || !r.converged || !r.meshDef) return { error: `2D at ${(zs[l] * 1e3).toFixed(1)} mm: ${r.error || 'did not converge'}`, r2 };
+    if (r.meniscus.mode !== mode || r.meshDef.NC !== m0.NC || r.meshDef.cCL !== m0.cCL)
+      return { error: `the meniscus is ${mode} at ${(zs[ref] * 1e3).toFixed(1)} mm but ${r.meniscus.mode} at ${(zs[l] * 1e3).toFixed(1)} mm: a region where it changes is not modelled`, r2 };
+    r2[l] = r;
+  }
+  return { r2, M: r2.map(r => r.meshDef.mesh), zs, thl, mode, climbed, cCL: m0.cCL, cCorner: m0.cCorner, NC: m0.NC, NR: 2 * m0.mesh.nEy + 1, H: hl(ref)(opts.xe), ms: Date.now() - t0 };
+}
+/** A station's state from its 2D solution: u, v, w, p at its nodes (c*NR + k), the free spines' heights, the contact line. */
+const stationFrom2D = r => ({ u: Float64Array.from(r.u), v: Float64Array.from(r.v), w: new Float64Array(r.u.length), p: Float64Array.from(r.p), h: Float64Array.from(r.state.h), s: r.surface.s });
+/** Station j's state from a 3D result (and its node positions, shear rate, viscosity, flow rate, for the output). */
+function stationFrom3D(r3, j) {
+  const NC = r3.NC, NR = r3.NR, NL = r3.NL, n = NC * NR, o = { u: new Float64Array(n), v: new Float64Array(n), w: new Float64Array(n), p: new Float64Array(n), x: new Float64Array(n), y: new Float64Array(n), z: new Float64Array(n), gd: new Float64Array(n), mu: new Float64Array(n), h: new Float64Array(NC) };
+  for (let c = 0; c < NC; c++) {
+    for (let k = 0; k < NR; k++) { const a = c * NR + k, b = (c * NL + j) * NR + k; for (const f of ['u', 'v', 'w', 'p', 'x', 'y', 'z', 'gd', 'mu']) o[f][a] = r3[f][b]; }
+    o.h[c] = r3.surface.h[c * NL + j];
+  }
+  o.s = r3.surface.s[j]; o.q = r3.q[(NC - 1) * NL + j];
+  return o;
+}
+/**
+ * The 3D over stations l0..l1 (an even count of intervals) of a station set: their 2D meshes side by side;
+ * each side symmetric, or held at the station's current state (sideLo / sideHi: a neighbouring strip's);
+ * starting from the stations' states.
+ */
+function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, extra = {}) {
+  const NL = l1 - l0 + 1, nEz = (NL - 1) / 2, NC = S.NC, NR = S.NR, M = S.M;
+  let cacheSt = null, rows = [];
+  const st2 = (st, j) => {
+    if (st !== cacheSt) { cacheSt = st; rows = []; }
+    if (!rows[j]) { const h = new Float64Array(NC); for (let c = 0; c < NC; c++) h[c] = st.h[c * NL + j]; rows[j] = { h, s: st.s[j] }; }
+    return rows[j];
+  };
+  const M0 = M[l0];
+  const mesh = {
+    nEx: M0.nEx, nEy: M0.nEy, nEz, eta: M0.eta, z: j => S.zs[l0 + j], kind: M0.kind,
+    spineFoot: (c, j) => M[l0 + j].spineFoot(c),
+    spineTop: (c, j, st) => M[l0 + j].spineTop(c, st2(st, j)),
+    spineSlope: M0.spineSlope ? (c, j, st) => M[l0 + j].spineSlope(c, st2(st, j)) : undefined,
+  };
+  const NN = NC * NL * NR, u = new Float64Array(NN), v = new Float64Array(NN), w = new Float64Array(NN), p = new Float64Array(NN);
+  for (let c = 0; c < NC; c++) for (let j = 0; j < NL; j++) for (let k = 0; k < NR; k++) {
+    const n3 = (c * NL + j) * NR + k, n2 = c * NR + k, T = state[l0 + j];
+    u[n3] = T.u[n2]; v[n3] = T.v[n2]; w[n3] = T.w[n2]; p[n3] = T.p[n2];
+  }
+  const side = T => ({ u: T.u, v: T.v, w: T.w, p: T.p, h: T.h, s: S.climbed ? T.s : null });
+  return solveFEM3D({
+    mesh, U: opts.U, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: S.H, Ur: Math.abs(opts.U) || 1e-3,
+    inlet: { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
+    sideData: sideLo || sideHi ? { lo: sideLo ? side(state[l0]) : null, hi: sideHi ? side(state[l1]) : null } : null,
+    h0: (c, j) => state[l0 + j].h[c], s0: S.climbed ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
+    contactLine: S.climbed ? { spine: S.cCL, faceFrom: S.cCorner, alphaDeg: Array.from({ length: NL }, (_, j) => S.thl[l0 + j] + opts.faceDeg - 180) } : null,
+    homotopy: true, tol: opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D', ...extra,
+  });
+}
+
+/**
+ * The coating flow on a strip across the web: each station first in 2D at its own gap and contact angle
+ * (coaterStations), then the stations coupled in 3D (flow across the web, the surface's curvature across it).
  * opts: solveCoaterFEM's (hFn, xe, faceDeg, contactDeg, U, Pup, rho, g, gamma, mu, gdMin, Ld, webSlip, nEb,
  *   nEf, nEs, nEy, ...) for the middle, and width (m), nEz (elements across), dH(z) (the gap's change at z,
  *   m, from the middle's; z from -width/2 to width/2), contactAt(z) (the contact angle there, deg; default
- *   contactDeg everywhere), maxIter3, onStage, onIteration3.
+ *   contactDeg everywhere), hAt(z) (instead of hFn and dH: the blade's underside at z, a function of x --
+ *   a blade read from a file), maxIter3, onStage, onIteration3.
  * Returns { r2 (the 2D results per station), r3 (solveFEM3D's), stations: [{ z, dH, film, q, s, film2, s2 }], error? }.
  */
 function solveCoater3D(opts) {
-  const log = t => opts.onStage && opts.onStage(t);
-  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zOf = l => -W / 2 + W * l / (NL - 1);
-  const dHl = Float64Array.from({ length: NL }, (_, l) => (opts.dH ? opts.dH(zOf(l)) : 0));
-  const t0 = Date.now();
-  const mid = (NL - 1) / 2, r2 = new Array(NL);
-  const thl = Float64Array.from({ length: NL }, (_, l) => (opts.contactAt ? opts.contactAt(zOf(l)) : opts.contactDeg));
-  const solve2 = (l, extra) => solveCoaterFEM({ ...opts, hFn: x => opts.hFn(x) + dHl[l], contactDeg: thl[l], keepMesh: true, ...extra });
-  log('2D at the middle of the strip');
-  r2[mid] = solve2(mid, {});
-  const ref = r2[mid];
-  if (ref.error || !ref.meshDef || !ref.converged) return { error: '2D at the middle: ' + (ref.error || 'did not converge'), r2 };
-  const mode = ref.meniscus.mode, climbed = mode === 'climbed', m0 = ref.meshDef, nF = (m0.cCL - m0.cCorner) / 2;
-  for (let l = 0; l < NL; l++) {
-    if (l === mid) continue;
-    if (dHl[l] === dHl[mid] && thl[l] === thl[mid]) { r2[l] = ref; continue; }
-    log(`2D at ${(zOf(l) * 1e3).toFixed(1)} mm (gap ${dHl[l] >= 0 ? '+' : ''}${(dHl[l] * 1e6).toFixed(1)} µm)`);
-    const r = solve2(l, climbed ? { nFaceFixed: nF } : {});
-    if (r.error || !r.converged || !r.meshDef) return { error: `2D at ${(zOf(l) * 1e3).toFixed(1)} mm: ${r.error || 'did not converge'}`, r2 };
-    if (r.meniscus.mode !== mode || r.meshDef.NC !== m0.NC || r.meshDef.cCL !== m0.cCL)
-      return { error: `the meniscus is ${mode} at the middle of the strip but ${r.meniscus.mode} at ${(zOf(l) * 1e3).toFixed(1)} mm: a strip where it changes is not modelled`, r2 };
-    r2[l] = r;
-  }
-  const ms2 = Date.now() - t0;
-  const M = r2.map(r => r.meshDef.mesh), M2 = M[mid], NC = m0.NC, NR = 2 * M2.nEy + 1;
-  // each station's own layout; the stations' spine heights and contact line from the 3D state
-  let cacheSt = null, rows = [];
-  const st2 = (st, l) => {
-    if (st !== cacheSt) { cacheSt = st; rows = []; }
-    if (!rows[l]) { const h = new Float64Array(NC); for (let c = 0; c < NC; c++) h[c] = st.h[c * NL + l]; rows[l] = { h, s: st.s[l] }; }
-    return rows[l];
-  };
-  const mesh = {
-    nEx: M2.nEx, nEy: M2.nEy, nEz, eta: M2.eta, z: zOf, kind: M2.kind,
-    spineFoot: (c, l) => M[l].spineFoot(c),
-    spineTop: (c, l, st) => M[l].spineTop(c, st2(st, l)),
-    spineSlope: M2.spineSlope ? (c, l, st) => M[l].spineSlope(c, st2(st, l)) : undefined,
-  };
-  // start: each station's 2D solution
-  const NN = NC * NL * NR, u = new Float64Array(NN), v = new Float64Array(NN), p = new Float64Array(NN);
-  for (let c = 0; c < NC; c++) for (let l = 0; l < NL; l++) for (let k = 0; k < NR; k++) {
-    const n3 = (c * NL + l) * NR + k, n2 = c * NR + k;
-    u[n3] = r2[l].u[n2]; v[n3] = r2[l].v[n2]; p[n3] = r2[l].p[n2];
-  }
-  const H = opts.hFn(opts.xe);
-  log(`3D: ${NN} nodes`);
+  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1));
+  const S = coaterStations(opts, zs);
+  if (S.error) return { error: S.error, r2: S.r2 };
+  opts.onStage && opts.onStage(`3D: ${S.NC * NL * S.NR} nodes`);
   const t1 = Date.now();
-  const r3 = solveFEM3D({
-    mesh, U: opts.U, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: H, Ur: Math.abs(opts.U) || 1e-3,
-    inlet: { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
-    h0: (c, l) => r2[l].state.h[c], s0: climbed ? l => r2[l].surface.s : 0, initNodal: { u, v, w: null, p },
-    contactLine: climbed ? { spine: m0.cCL, faceFrom: m0.cCorner, alphaDeg: Array.from(thl, t => t + opts.faceDeg - 180) } : null,
-    homotopy: true, tol: opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D strip',
-  });
-  const ms3 = Date.now() - t1;
-  const stations = [];
-  for (let l = 0; l < NL; l++) {
+  const r3 = coaterStrip3D(opts, S, 0, NL - 1, S.r2.map(stationFrom2D), false, false, { label: '3D strip' });
+  const ms3 = Date.now() - t1, NC = S.NC, NR = S.NR;
+  const stations = zs.map((z, l) => {
     const top = ((NC - 1) * NL + l) * NR + NR - 1;
-    stations.push({ z: zOf(l), dH: dHl[l], film: r3.y[top], q: r3.q[(NC - 1) * NL + l], s: climbed ? r3.surface.s[l] : 0, film2: r2[l].Q / opts.U, s2: climbed ? r2[l].surface.s : 0 });
+    return { z, dH: opts.dH ? opts.dH(z) : 0, film: r3.y[top], q: r3.q[(NC - 1) * NL + l], s: S.climbed ? r3.surface.s[l] : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed ? S.r2[l].surface.s : 0 };
+  });
+  return { r2: S.r2, r3, stations, mode: S.mode, ms2: S.ms, ms3, error: r3.converged ? undefined : '3D did not converge' };
+}
+
+/**
+ * A region too wide for one 3D solve (the full web width): overlapping strips of sub elements across,
+ * overlapping by overlap elements, each solved in 3D with its neighbours' latest solution held on its inner
+ * sides, in two colours (alternate strips, then the others), sweep after sweep until the stations stop
+ * changing (alternating Schwarz). Converges to the 3D solve of the whole region; memory: one strip at a time.
+ * opts: solveCoater3D's, and sub (default 4), overlap (default 2), maxSweeps (default 15), tolSweep (the
+ *   largest change of film or contact line between sweeps, relative to the gap; default 1e-6), onSweep.
+ * Returns { r2, state (per station: u, v, w, p, x, y, z, gd, mu, h, s, q), stations, sweeps, history, converged, ms2, ms3 }.
+ */
+function solveCoaterWide(opts) {
+  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1));
+  const sub = Math.min(opts.sub ?? 4, nEz), ov = Math.min(opts.overlap ?? 2, sub - 1), step = sub - ov;
+  const S = coaterStations(opts, zs);
+  if (S.error) return { error: S.error, r2: S.r2 };
+  const state = S.r2.map(stationFrom2D);
+  const subs = [];
+  for (let e0 = 0; ; e0 += step) { const e1 = Math.min(nEz, e0 + sub); subs.push([2 * Math.max(0, e1 - sub), 2 * e1]); if (e1 === nEz) break; }
+  const t1 = Date.now(), history = [];
+  let converged = false, sweeps = 0, err = null;
+  const film = T => T.y ? T.y[(S.NC - 1) * S.NR + S.NR - 1] : null;
+  for (; sweeps < (opts.maxSweeps ?? 15) && !converged && !err; sweeps++) {
+    let change = 0;
+    for (const colour of [0, 1]) for (let i = colour; i < subs.length; i += 2) {
+      const [l0, l1] = subs[i];
+      opts.onStage && opts.onStage(`sweep ${sweeps + 1}: strip ${i + 1} of ${subs.length} (${(zs[l0] * 1e3).toFixed(0)} to ${(zs[l1] * 1e3).toFixed(0)} mm)`);
+      const r3 = coaterStrip3D(opts, S, l0, l1, state, l0 > 0, l1 < NL - 1, { label: `strip ${i + 1}` });
+      if (!r3.converged) { err = `strip ${i + 1} (${(zs[l0] * 1e3).toFixed(0)} to ${(zs[l1] * 1e3).toFixed(0)} mm) did not converge in sweep ${sweeps + 1}`; break; }
+      for (let j = l0 > 0 ? 1 : 0; j <= (l1 < NL - 1 ? l1 - l0 - 1 : l1 - l0); j++) {
+        const T = stationFrom3D(r3, j), old = state[l0 + j];
+        const f0 = film(old), f1 = film(T);
+        change = Math.max(change, f0 == null ? Infinity : Math.abs(f1 - f0) / S.H, S.climbed ? Math.abs(T.s - old.s) / S.H : 0);
+        state[l0 + j] = T;
+      }
+      if (err) break;
+    }
+    history.push(change);
+    opts.onSweep && opts.onSweep({ sweep: sweeps + 1, change });
+    if (change < (opts.tolSweep ?? 1e-6)) converged = true;
   }
-  return { r2, r3, stations, mode, ms2, ms3, error: r3.converged ? undefined : '3D did not converge' };
+  const stations = zs.map((z, l) => ({ z, dH: opts.dH ? opts.dH(z) : 0, film: film(state[l]), q: state[l].q, s: S.climbed ? state[l].s : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed ? S.r2[l].surface.s : 0 }));
+  return { r2: S.r2, S, state, stations, subs, sweeps, history, converged: converged && !err, error: err || (converged ? undefined : `not converged after ${sweeps} sweeps (last change ${history[history.length - 1].toExponential(1)} of the gap)`), mode: S.mode, ms2: S.ms, ms3: Date.now() - t1 };
 }
 
 /** Small dense solve (Gaussian elimination, partial pivoting). */
@@ -730,5 +846,5 @@ function f3Dense(A, b) {
 
 if (typeof module !== 'undefined' && module.exports) {
   if (typeof solveCoaterFEM === 'undefined') global.solveCoaterFEM = require('./cfd-fem.js').solveCoaterFEM;
-  module.exports = { solveFEM3D, solveCoater3D, F3_QP, f3Shape };
+  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, F3_QP, f3Shape };
 }

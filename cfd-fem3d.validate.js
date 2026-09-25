@@ -16,11 +16,13 @@
  *     (no meniscus): the flow rate at every station against the Reynolds equation over the web's
  *     plane, which carries the flow across the web -- and clearly unlike station-by-station
  *     solutions, which do not.
+ *  6. A region solved strip by strip (overlapping strips, each with its neighbours' latest solution
+ *     held on its inner sides, sweep after sweep): converges to the 3D solve of the whole region.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
 global.bandSolve = gap.bandSolve;
-const { solveFEM3D, solveCoater3D } = require('./cfd-fem3d.js');
+const { solveFEM3D, solveCoater3D, solveCoaterWide } = require('./cfd-fem3d.js');
 
 let fails = 0;
 const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); };
@@ -181,6 +183,18 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   for (let l = 0; l < r.NL; l++) { const k = Math.round((nz - 1) * l / (r.NL - 1)), q = r.q[(r.NC - 1) * r.NL + l]; wC = Math.max(wC, Math.abs(q / RC(k) - 1)); wL = Math.max(wL, Math.abs(q / RL(k) - 1)); }
   check('round entry, gap +-0.4 mm across the web (40 mm wave): flow rate at every station = Reynolds with the flow across the web', r.converged && wC < 0.01, `within ${(wC * 100).toFixed(2)} % (the lubrication approximation's own error; unchanged on a finer mesh)`);
   check('  and unlike station-by-station solutions (no flow across the web)', wL > 0.04, `up to ${(wL * 100).toFixed(1)} % apart`);
+}
+
+// 6. strip by strip against the whole region at once (60 mm, the gap and the contact angle varying across it)
+{
+  const rho = 1020, g = 9.81, gamma = 0.07, H = 1.7e-3;
+  const base = { hFn: () => H, xe: 5e-3, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 12e-3, nEb: 5, nEf: 3, nEs: 12, nEy: 3, fInfGuess: 0.5 * H,
+    width: 0.06, nEz: 6, dH: z => 60e-6 * Math.sin(2 * Math.PI * z / 0.04), contactAt: z => 35 + 3 * Math.cos(2 * Math.PI * z / 0.03) };
+  const one = solveCoater3D(base);
+  const wide = solveCoaterWide({ ...base, sub: 4, overlap: 2, tolSweep: 1e-8 });
+  const dF = Math.max(...wide.stations.map((st, l) => Math.abs(st.film - one.stations[l].film))), dS = Math.max(...wide.stations.map((st, l) => Math.abs(st.s - one.stations[l].s)));
+  check('region strip by strip (3 overlapping strips): converges to the whole region solved at once', one.r3.converged && wide.converged && dF < 1e-9 && dS < 1e-9,
+    `${wide.sweeps} sweeps (changes ${wide.history.map(v => v.toExponential(0)).join(', ')} of the gap); film within ${(dF * 1e9).toFixed(2)} nm, contact line within ${(dS * 1e9).toFixed(2)} nm`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
