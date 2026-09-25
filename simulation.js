@@ -48,9 +48,10 @@ const ANIM = (function () {
     CL.backing = cssVar('--soft'); CL.sfill = '0.16'; CL.sans = cssVar('--sans');
   }
 
-  // (a canvas's data-maxh, px, caps its height: it then narrows, keeping its proportions)
+  // (a canvas's data-maxh, px, caps its height: it then narrows, keeping its proportions; it fills its parent's content box, as draw.js's canvases do)
+  const contentWidth = el => { const cs = getComputedStyle(el); return el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0); };
   function resizeCanvas() {
-    const pw = cv.parentElement.clientWidth || 900, maxH = +cv.dataset.maxh || Infinity;
+    const pw = contentWidth(cv.parentElement) || 900, maxH = +cv.dataset.maxh || Infinity;
     const w = Math.min(pw, maxH * (XMAX - XMIN) / (YMAX - YMIN));
     cv.style.width = w + 'px';
     DPR = window.devicePixelRatio || 1;
@@ -702,7 +703,7 @@ const ANIM = (function () {
   /** Render the magnified downstream-meniscus inset, sharing the same simulation state and clock as draw(). */
   function drawMag(t, sc) {
     if (!cv2 || !MAG) return;
-    const w = Math.min(cv2.parentElement.clientWidth || 900, (+cv2.dataset.maxh || Infinity) / 0.46), h = Math.round(w * 0.46);
+    const w = Math.min(contentWidth(cv2.parentElement) || 900, (+cv2.dataset.maxh || Infinity) / 0.46), h = Math.round(w * 0.46);
     if (cv2.__w !== w || cv2.__d !== DPR) {
       cv2.__w = w; cv2.__d = DPR; cv2.style.height = h + 'px'; cv2.style.width = w + 'px';
       cv2.width = Math.round(w * DPR); cv2.height = Math.round(h * DPR);

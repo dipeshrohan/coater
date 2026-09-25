@@ -12,6 +12,39 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Layout v2 (after the redesign): answer first, two bars, sub tabs
+
+User: the layout did not make sense as a whole; start with a landing page,
+fix the tabs and sub tabs, make the bars modern, and do not lose a single
+feature (verify, do not guess). Approved from screenshots of the real app.
+- Top bar: logo and name, File / Edit / Help on the left; the project name,
+  undo / redo, image and theme on the right. A separate tab bar below it:
+  Results, Flow (CFD), DOE, Measured data, and an Inputs button (Ctrl+B)
+  that shows or hides the inputs bar (its header arrow is hidden).
+- Results holds the fast models as sub tabs (a pill switch at the top of
+  the page): Summary, Contact line, Web edge, Film surface, Start-up (the
+  old Overview animation). The view numbers stay 0-6 (project files, undo,
+  help, report); Summary is view 7 and where the app opens. A section
+  reopens on the page last shown there.
+- Summary (viewSummary): the settings, the wet film and its range, a card
+  per defect (badge, key number, a small chart from the same data as its
+  page, the page's verdict) and links to CFD, DOE and Measured data. The
+  inputs bar starts hidden there (PANELS.modelHome) and, when hidden, is
+  gone rather than an icon rail. The verdicts come from contactAcross(),
+  edgeOutlook() and surfaceOutlook(), shared with the pages.
+- Results pages read top down: sub tabs (and the animation's controls), the
+  verdict as a headline with an OK / Watch / Risk badge, the question, the
+  other checks, the thin-film validity line (moved from the status bar,
+  which on Results shows only while the CFD is solving), the key numbers,
+  then the plots. Their empty History strip is hidden; Edit > History and
+  Ctrl+J open it.
+- Inter for text and numbers (tabular figures); white bars, thin lines.
+- Checked: a census of every control before and after (all present; the
+  7 flat tabs became 4 sections + 5 sub tabs), identical verdicts and
+  numbers on the Results pages for 41 input sets, 43 navigation checks,
+  the 16 browser tests and the Node suites; 1920 / 1440 / 1280 / 1024 /
+  390 px and dark mode.
+
 ### Redesign (after GUI-18): easier for a new user
 
 User: the left bar collapsible, only relevant parameters, an icon per

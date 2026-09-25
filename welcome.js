@@ -24,7 +24,7 @@ function openWelcome() {
       <button type="button" class="icon-btn" data-close aria-label="Close">✕</button></div>
     <h3 class="wel-q">What do you want to do?</h3>
     <div class="wel-grid">${WELCOME_CARDS.map((c, i) => `<button type="button" class="wel-card" data-card="${i}"><span class="wel-ic">${picon(c.icon)}</span><b>${c.t}</b><span>${c.d}</span></button>`).join('')}</div>
-    <div class="wel-foot"><p><b>How it works:</b> set your process in the <b>Model bar</b> on the left (the defaults are a typical case); each tab answers one question from those inputs. The <b>Help</b> menu has a guide to every tab.</p>
+    <div class="wel-foot"><p><b>How it works:</b> set your process in the <b>Inputs</b> on the left (the defaults are a typical case). <b>Results</b> opens on a summary of every answer; each of its pages, and the other tabs, answers one question from those inputs. The <b>Help</b> menu has a guide to every tab.</p>
       <label class="fv-chk"><input type="checkbox" id="welAgain"${welcomeAlways() ? ' checked' : ''}> Show this when the app opens</label>
       <button type="button" class="btn btn-secondary btn-sm" data-close>Just look around</button></div>`;
   dlg.querySelectorAll('[data-close]').forEach(b => { b.onclick = () => dlg.close(); });
