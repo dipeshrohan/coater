@@ -77,6 +77,8 @@ function updateScope(extra = '') {
     ? `<strong>${hard ? 'Result withheld' : 'Use with caution'}.</strong> ${q.issues.join('; ')}. Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`
     : `<strong>Within the thin-film checks.</strong> Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`;
   el.title = el.textContent;   // (the status bar may cut it short)
+  const pg = document.getElementById('pgScope');   // (the Results pages show it under their answer)
+  if (pg) { pg.className = 'pg-scope ' + el.className.replace('scope', '').trim(); pg.innerHTML = el.innerHTML; }
 }
 
 /** Draw the static cross-section (blade, bead, meniscus, film) for the "Contact line at the blade" tab. */
@@ -149,15 +151,16 @@ function drawSection(cv, aspect = 0.66) {
 const workbenchFits = () => innerWidth >= 1024;
 /** A hint where there is nothing to show yet: what it is, what to do next, and the button to do it. */
 const emptyHint = (title, text, actions = '') => `<div class="empty-hint"><svg class="eh-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 7.5v5.5M12 16.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><b>${title}</b><p>${text}</p>${actions ? `<div class="eh-act">${actions}</div>` : ''}</div>`;
-/** One line at the top of the Model bar: what its inputs do in the tab shown. */
+/** One line at the top of the inputs bar: what its inputs do in the page shown. */
 const TREE_NOTE = [
   'Inputs this tab uses are bright; dimmed ones do not change it. The animation\'s own settings are at the bottom.',
   'Inputs this tab uses are bright; dimmed ones do not change it.',
   'Inputs this tab uses are bright; dimmed ones do not change it.',
   'Inputs this tab uses are bright; dimmed ones do not change it.',
   'The shared inputs, then the CFD setup and the four locations below. Change them, then Run.',
-  'The DOE starts from these inputs and the CFD setup (its base case) and varies the factors of its Design tab. Changing an input here changes CFD Analysis too.',
+  'The DOE starts from these inputs and the CFD setup (its base case) and varies the factors of its Design tab. Changing an input here changes Flow (CFD) too.',
   'The predictions use these inputs; the Fit tab can adjust them to your data.',
+  'Every result on this page follows these inputs.',
 ];
 /** The (i) of a view's toolbar: this tab's guide in the help. */
 const aboutButton = () => `<button type="button" class="icon-btn vp-about" data-about title="About this tab: what it answers and how to read it" aria-label="About this tab"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg></button>`;
@@ -171,10 +174,13 @@ document.addEventListener('click', e => {
   if (n) { const id = n.dataset.note; if (PANE_NOTES.has(id)) PANE_NOTES.delete(id); else PANE_NOTES.add(id); render(); }
 });
 function moduleFrame({ tools = '', panes, cols = 1, notes = '' }) {
+  // the page reads top down: its sub tabs (and controls), the answer (verdict, the question, the other
+  // checks, the thin-film validity), the key numbers, then the plots; its history opens from Edit > History
   return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
-    <div class="vp-bar" role="toolbar" aria-label="Module controls">${tools || `<span class="vp-q">${TAB_Q[tab]}</span>`}<span class="vp-spacer"></span><div class="status" id="st"></div>${aboutButton()}</div>
-    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}</div>
+    <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
+    <div class="verdict"><div class="status" id="st"></div><p class="vq">${TAB_Q[tab]}</p><p class="pg-scope" id="pgScope"></p></div>
     <div class="mod-results"><div class="stats" id="ss"></div></div>
+    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}</div>
     <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
     <section class="dock mod-dock" aria-label="History">
       <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">History<span class="tab-n" data-n="history"></span></button></div>
@@ -210,7 +216,7 @@ function paneRoom(cv) {
 const fitAspect = (cv, want) => Math.max(0.12, Math.min(want, paneRoom(cv) / (cv.parentElement.clientWidth || 600)));
 
 // ---------------------------------------------------------------------
-// Tab 1: Slurry animation
+// Start-up (the animation)
 // ---------------------------------------------------------------------
 function viewA() {
   document.getElementById('setupExtra').innerHTML = `<div class="tree-sep">Animation</div>
@@ -314,6 +320,52 @@ function fillA() {
 }
 
 // ---------------------------------------------------------------------
+// The answers of the Results pages, shared by each page and the Summary
+// ---------------------------------------------------------------------
+/** The contact line and the wet film across the web (300 points over 300 mm), their ranges and the verdict. */
+function contactAcross() {
+  const N = 300, WIDTH = 300, pts = [], film = [];
+  let mx = 0, mn = 1e9, over = 0, hmn = 1e9, hmx = 0;
+  for (let i = 0; i < N; i++) {
+    const z = i / (N - 1) * WIDTH;
+    const H = localGap(z), th = localContactAngle(z);
+    const r = contactLine(H, th);
+    pts.push([z, r.s]); film.push([z, r.h]);
+    mx = Math.max(mx, r.s); mn = Math.min(mn, r.s);
+    if (r.s > P.face) over++;
+    hmn = Math.min(hmn, r.h); hmx = Math.max(hmx, r.h);
+  }
+  const peakToPeak = mx - mn, wetFraction = over / N * 100, filmDeviation = (hmx - hmn) / ((hmx + hmn) / 2) * 100;
+  const verdict = over ? ['Slurry reaches the notch corner over ' + wetFraction.toFixed(0) + '% of the width', 'bad']
+    : peakToPeak > 0.5 ? ['Uneven contact line: ' + peakToPeak.toFixed(1) + ' mm peak to peak', 'warn']
+      : mx === 0 ? ['Pinned at the sharp edge everywhere', 'ok'] : ['Contact line steady', 'ok'];
+  return { N, WIDTH, pts, film, mx, mn, over, hmn, hmx, peakToPeak, wetFraction, filmDeviation, verdict };
+}
+/** The web edge from the blade to the oven: the bead, the amplitude along the way and at the oven, and the verdict. */
+function edgeOutlook() {
+  const e = edgeBead(), ovenDistanceMm = P.oven * 1000;
+  const pts = [];
+  for (let i = 0; i <= 100; i++) {
+    const x = ovenDistanceMm * i / 100;
+    pts.push([x, e.arrest ? P.a0e / 1000 : edgeAmplitudeAt(x)]);
+  }
+  const endAmplitude = e.arrest ? P.a0e / 1000 : edgeAmplitudeAt(ovenDistanceMm);
+  const visible = endAmplitude > 0.2;
+  const verdict = e.arrest ? ['Yield stress freezes the edge', 'ok']
+    : visible ? ['Scalloped edge at the oven: ' + (endAmplitude * 2).toFixed(1) + ' mm peak to peak', 'bad']
+      : ['Edge stays straight to the oven', 'ok'];
+  return { e, ovenDistanceMm, pts, endAmplitude, visible, verdict };
+}
+/** The film-surface ripple: its levelling (physics.js), what is left at the oven, and the verdict. */
+function surfaceOutlook() {
+  const lv = rippleLevelling(), aEnd = lv.at(lv.tRes), remainMicrons = aEnd * 1e6;
+  const verdict = remainMicrons > 5 ? ['Ripple survives to the oven: ' + remainMicrons.toFixed(0) + ' µm', 'bad']
+    : remainMicrons > 1 ? ['Small ripple remains: ' + remainMicrons.toFixed(1) + ' µm', 'warn']
+      : ['Film levels out before the oven', 'ok'];
+  return { lv, aEnd, remainMicrons, verdict };
+}
+
+// ---------------------------------------------------------------------
 // Tab 2: Contact line at the blade
 // ---------------------------------------------------------------------
 function view1() {
@@ -329,17 +381,7 @@ function view1() {
   const c1 = document.getElementById('c1');
   drawSection(c1, workbenchFits() ? fitAspect(c1, 0.95) : 0.66);
 
-  const N = 300, WIDTH = 300, pts = [];
-  let mx = 0, mn = 1e9, over = 0, hmn = 1e9, hmx = 0;
-  for (let i = 0; i < N; i++) {
-    const z = i / (N - 1) * WIDTH;
-    const H = localGap(z), th = localContactAngle(z);
-    const r = contactLine(H, th);
-    pts.push([z, r.s]);
-    mx = Math.max(mx, r.s); mn = Math.min(mn, r.s);
-    if (r.s > P.face) over++;
-    hmn = Math.min(hmn, r.h); hmx = Math.max(hmx, r.h);
-  }
+  const { WIDTH, pts, mx, mn, hmn, hmx, peakToPeak, filmDeviation, verdict } = contactAcross();
   const c2 = document.getElementById('c2');
   plotChart(c2, fitAspect(c2, 0.95), {
     x0: 0, x1: WIDTH, y0: 0, y1: Math.max(P.face * 1.3, mx * 1.1),
@@ -348,12 +390,7 @@ function view1() {
     hl: [{ y: P.face, c: cssVar('--bad'), t: 'notch corner: slurry reaches the dry edge' }],
   });
 
-  const peakToPeak = mx - mn, wetFraction = over / N * 100, filmDeviation = (hmx - hmn) / ((hmx + hmn) / 2) * 100;
-  let statusHtml;
-  if (over) statusHtml = pill('Slurry reaches the notch corner over ' + wetFraction.toFixed(0) + '% of the width', 'bad');
-  else if (peakToPeak > 0.5) statusHtml = pill('Uneven contact line: ' + peakToPeak.toFixed(1) + ' mm peak to peak', 'warn');
-  else if (mx === 0) statusHtml = pill('Pinned at the sharp edge everywhere', 'ok');
-  else statusHtml = pill('Contact line steady', 'ok');
+  let statusHtml = pill(...verdict);
   // Ca is already shown in the persistent validity banner above — no need to restate it here.
   statusHtml += pill('Capillary length ' + capillaryLength().toFixed(2) + ' mm', '');
   document.getElementById('st').innerHTML = statusHtml;
@@ -370,8 +407,7 @@ function view1() {
 // Tab 3: Web edge
 // ---------------------------------------------------------------------
 function view2() {
-  const e = edgeBead(), U = P.U / 60, ovenDistanceMm = P.oven * 1000;
-  const scallopAt = edgeAmplitudeAt;
+  const U = P.U / 60, { e, ovenDistanceMm, pts, endAmplitude, verdict } = edgeOutlook();
 
   view.innerHTML = moduleFrame({
     panes: [
@@ -382,11 +418,6 @@ function view2() {
     ],
   });
 
-  const pts = [];
-  for (let i = 0; i <= 100; i++) {
-    const x = ovenDistanceMm * i / 100;
-    pts.push([x, e.arrest ? P.a0e / 1000 : scallopAt(x)]);
-  }
   const c1 = document.getElementById('c1');
   plotChart(c1, fitAspect(c1, 0.36), {
     x0: 0, x1: ovenDistanceMm, y0: 0, y1: Math.max(e.lam / 4 * 1.1, 0.5),
@@ -395,12 +426,7 @@ function view2() {
     hl: [{ y: 0.2, c: cssVar('--warn'), t: 'visible' }],
   });
 
-  const endAmplitude = e.arrest ? P.a0e / 1000 : scallopAt(ovenDistanceMm);
-  const visible = endAmplitude > 0.2;
-  document.getElementById('st').innerHTML =
-    (e.arrest ? pill('Yield stress freezes the edge', 'ok')
-      : visible ? pill('Scalloped edge at the oven: ' + (endAmplitude * 2).toFixed(1) + ' mm peak to peak', 'bad')
-        : pill('Edge stays straight to the oven', 'ok'))
+  document.getElementById('st').innerHTML = pill(...verdict)
     + pill('Capillary pressure ' + e.pc.toFixed(0) + ' Pa vs yield ' + P.ty.toFixed(1) + ' Pa', '');
 
   const c2 = document.getElementById('c2');
@@ -444,8 +470,7 @@ function view2() {
 // Tab 4: Film surface
 // ---------------------------------------------------------------------
 function view3() {
-  const lv = rippleLevelling(), { h, dhdH, a0, tau, residual: residualFromYield, asymptote, tRes } = lv;   // (physics.js)
-  const aEnd = lv.at(tRes);
+  const { lv, aEnd, remainMicrons, verdict } = surfaceOutlook(), { h, dhdH, a0, tau, residual: residualFromYield, asymptote, tRes } = lv;   // (physics.js)
 
   view.innerHTML = moduleFrame({
     panes: [
@@ -484,12 +509,9 @@ function view3() {
     vl: [{ x: tRes, c: cssVar('--warn'), t: 'oven' }],
   });
 
-  const remainMicrons = aEnd * 1e6, sharePct = remainMicrons / (h * 1e6) * 100;
+  const sharePct = remainMicrons / (h * 1e6) * 100;
   const Ca = muEff(P.U / 60 / (gapHeight() / 1000)) * P.U / 60 / P.g;
-  document.getElementById('st').innerHTML =
-    (remainMicrons > 5 ? pill('Ripple survives to the oven: ' + remainMicrons.toFixed(0) + ' µm', 'bad')
-      : remainMicrons > 1 ? pill('Small ripple remains: ' + remainMicrons.toFixed(1) + ' µm', 'warn')
-        : pill('Film levels out before the oven', 'ok'))
+  document.getElementById('st').innerHTML = pill(...verdict)
     + pill(P.ty > 0 && residualFromYield >= a0 ? 'Yield stress blocks levelling completely'
       : P.ty > 0 ? 'Levels down to a yield-limited residual' : 'Levelling limited by viscosity only', '')
     // Ca's value is already in the validity banner above; here we just flag whether it crosses the ribbing threshold.
@@ -504,11 +526,73 @@ function view3() {
 }
 
 // ---------------------------------------------------------------------
+// Summary (Results' first page, where the app opens): every answer at a glance
+// ---------------------------------------------------------------------
+/** A small line chart (the Summary's cards): points [x, y], the y range, an optional dashed level and its label.
+ * It stretches to the card's width at a fixed height; lines keep their width, the label stays text. */
+function sparkline(pts, y0, y1, level) {
+  const W = 400, H = 84, x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+  const X = x => 4 + (x - x0) / ((x1 - x0) || 1) * (W - 8), Y = y => H - 8 - (Math.min(Math.max(y, y0), y1) - y0) / ((y1 - y0) || 1) * (H - 16);
+  const d = pts.map((q, i) => (i ? 'L' : 'M') + X(q[0]).toFixed(1) + ' ' + Y(q[1]).toFixed(1)).join('');
+  const ly = level ? Y(level.y) : 0;
+  return `<div class="spark" aria-hidden="true"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" x2="${W}" y1="${H - 8}" y2="${H - 8}" class="sp-base"/>${level ? `<line x1="0" x2="${W}" y1="${ly.toFixed(1)}" y2="${ly.toFixed(1)}" class="sp-level" style="stroke: var(${level.c})"/>` : ''}<path d="${d}" class="sp-line"/></svg>${level ? `<span class="sp-lab" style="top: ${(ly - 17).toFixed(0)}px">${level.t}</span>` : ''}</div>`;
+}
+function viewSummary() {
+  const ca = contactAcross(), ed = edgeOutlook(), sf = surfaceOutlook();
+  const cfg = k => CFG.find(c => c.k === k), val = (k, l) => `${l} <b>${P[k].toFixed(cfg(k).d)} ${cfg(k).u}</b>`;
+  const hc = contactLine(gapHeight(), P.th).h;
+  const answer = (v, yes, warn) => v[1] === 'bad' ? yes : v[1] === 'warn' ? warn : 'No';
+  const tone = v => v[1] === 'bad' ? '--bad' : v[1] === 'warn' ? '--warn' : '--ok';
+  const card = (view, label, q, v, badge, value, unit, chart) => `<article class="sum-card" data-view="${view}" style="--c: var(${tone(v)})" title="${v[0]}">
+      <div class="sc-top"><span class="sc-lab">${label}</span><span class="sc-badge">${badge}</span></div>
+      <h3>${q}</h3>
+      <div class="sc-v"><strong>${value}</strong><span>${unit}</span></div>
+      ${chart}
+      <button type="button" class="sc-open" data-view="${view}">Open ${label.toLowerCase()} ›</button>
+    </article>`;
+  const surfPts = [], tSpan = Math.max(sf.lv.tRes * 1.4, 1);
+  for (let i = 0; i <= 100; i++) { const t = tSpan * i / 100; surfPts.push([t, sf.lv.at(t) * 1e6]); }
+  view.innerHTML = `<div class="sum-page">
+    <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}<span class="vp-spacer"></span>${aboutButton()}</div>
+    <div class="sum-body">
+      <div class="sum-top">
+        <div><h1>Your coating at these settings</h1>
+          <p class="sum-set">${[val('U', 'Web speed'), val('Hm', 'Scraper height'), val('mu', 'Viscosity'), val('ty', 'Yield stress')].join(' · ')}<button type="button" class="linkish" id="sumInputs">Edit inputs</button></p></div>
+        <div class="sum-film"><span>Wet film</span><strong>${hc.toFixed(2)} mm</strong><em>${ca.hmn.toFixed(2)} to ${ca.hmx.toFixed(2)} mm across the web</em></div>
+      </div>
+      <div class="sum-cards">
+        ${card(1, 'Contact line', 'Slurry on the dry edge?', ca.verdict, answer(ca.verdict, 'Yes', 'Uneven'),
+          ca.mx === 0 ? '0 mm' : `${ca.mn.toFixed(1)}–${ca.mx.toFixed(1)} mm`, `up the face (dry edge at ${P.face.toFixed(1)} mm)`,
+          sparkline(ca.pts, 0, Math.max(P.face * 1.3, ca.mx * 1.1), { y: P.face, c: '--bad', t: 'dry edge' }))}
+        ${card(2, 'Web edge', 'Edge scallops at the oven?', ed.verdict, answer(ed.verdict, 'Yes', 'Some'),
+          `${(ed.endAmplitude * 2).toFixed(1)} mm`, 'peak to peak at the oven',
+          sparkline(ed.pts, 0, Math.max(ed.e.lam / 4 * 1.1, 0.5), { y: 0.2, c: '--warn', t: 'visible' }))}
+        ${card(3, 'Film surface', 'Streaks at the oven?', sf.verdict, answer(sf.verdict, 'Yes', 'Slight'),
+          `${sf.remainMicrons < 10 ? sf.remainMicrons.toFixed(1) : sf.remainMicrons.toFixed(0)} µm`, 'ripple left at the oven',
+          sparkline(surfPts, 0, Math.max(sf.lv.a0 * 1e6 * 1.1, 5)))}
+      </div>
+      <p class="pg-scope" id="pgScope"></p>
+      <h2 class="sum-h">Go further</h2>
+      <div class="sum-more">
+        <button type="button" data-sec="1"><b>Flow under the blade</b><span>2D CFD at four places across the web.</span></button>
+        <button type="button" data-sec="2"><b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
+        <button type="button" data-sec="3"><b>Check against your data</b><span>Import measurements and fit the model.</span></button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('sumInputs').onclick = () => setPanelHidden('model', false);
+  view.querySelectorAll('.sum-card').forEach(c => { c.onclick = () => { tab = +c.dataset.view; render(); }; });
+  view.querySelectorAll('.sum-more [data-sec]').forEach(b => { b.onclick = () => goSection(+b.dataset.sec); });
+}
+
+// ---------------------------------------------------------------------
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
-let tab = 0;
-const TABS = ['Overview', 'Contact line', 'Web edge', 'Film surface', 'CFD Analysis', 'DOE', 'Measured data'];
-/** What each tab answers, in plain words (its tooltip, the welcome screen, its About). */
+// The views, by number (the number is what the project file, the undo history and the help keep):
+// 0 Start-up animation, 1 Contact line, 2 Web edge, 3 Film surface, 4 CFD, 5 DOE, 6 Measured data, 7 Summary.
+let tab = 7;
+const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', 'Flow (CFD)', 'DOE', 'Measured data', 'Summary'];
+/** What each view answers, in plain words (its tooltip, the welcome screen, its About). */
 const TAB_Q = [
   'How the slurry moves under the blade, from start-up (animation)',
   'Does the slurry climb the blade face and reach the dry edge?',
@@ -517,9 +601,8 @@ const TAB_Q = [
   'What does the flow under the blade look like in detail? (2D CFD)',
   'Which setting changes the result most? (design of experiments)',
   'How well do the models match my measurements, and which inputs fit them?',
+  'Is the coating OK at these settings? Every result at a glance.',
 ];
-/** The tabs in groups along the workflow: overview | quick checks | detailed | validate. */
-const TAB_GROUP_START = [1, 4, 6];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
   '<path d="M3 2.5v11M3 5.5c4 0 5.5 3.5 10.5 3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="5.5" r="1.4" fill="currentColor"/>',
@@ -528,25 +611,59 @@ const TAB_ICONS = [
   '<path d="M2 2.5h12v11H2zM2 6.2h12M2 9.8h12M6 2.5v11M10 2.5v11" fill="none" stroke="currentColor" stroke-width="1.1"/>',
   '<circle cx="4" cy="4" r="1.6" fill="currentColor"/><circle cx="12" cy="4" r="1.6" fill="currentColor"/><circle cx="4" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M4 4h8v8H4z" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>',
   '<path d="M2.5 2.5v11h11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".6"/><path d="M3.5 12.5l9.5-9.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="1.6 1.6"/><circle cx="6" cy="9.4" r="1.4" fill="currentColor"/><circle cx="9" cy="7.4" r="1.4" fill="currentColor"/><circle cx="11.6" cy="4.8" r="1.4" fill="currentColor"/>',
+  '<path d="M2.5 13.5V3M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M4.5 10.5l3-3 2 2 4-4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>',
 ];
+/**
+ * The tab bar's sections, each with its pages (views) in order: the first is where the section
+ * opens the first time; after that it reopens on the page last shown. Results' pages are its sub tabs.
+ */
+const SECTIONS = [
+  { k: 'results', t: 'Results', icon: 7, views: [7, 1, 2, 3, 0] },
+  { k: 'cfd', t: 'Flow (CFD)', icon: 4, views: [4] },
+  { k: 'doe', t: 'DOE', icon: 5, views: [5] },
+  { k: 'meas', t: 'Measured data', icon: 6, views: [6] },
+];
+const secOf = v => SECTIONS.find(s => s.views.includes(v)) || SECTIONS[0];
+const SEC_LAST = {};
 const tabsEl = document.getElementById('tabs');
 const tabButtons = () => [...tabsEl.querySelectorAll('button[role="tab"]')];
-TABS.forEach((t, i) => {
-  if (TAB_GROUP_START.includes(i)) tabsEl.insertAdjacentHTML('beforeend', '<span class="tab-sep" aria-hidden="true"></span>');
+const goSection = i => { const s = SECTIONS[i]; tab = SEC_LAST[s.k] ?? s.views[0]; render(); };
+SECTIONS.forEach((s, i) => {
   const b = document.createElement('button');
-  b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[i]}</svg><span>${t}</span>`;
+  b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[s.icon]}</svg><span>${s.t}</span>`;
   b.type = 'button';
-  b.title = TAB_Q[i];
+  b.dataset.sec = s.k;
+  b.title = s.views.length > 1 ? s.views.map(v => TABS[v]).join(' · ') : TAB_Q[s.views[0]];
   b.setAttribute('role', 'tab');
-  b.onclick = () => { tab = i; render(); };
+  b.onclick = () => goSection(i);
   b.onkeydown = e => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    tab = e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : (tab + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length;
-    render();
-    tabButtons()[tab].focus();
+    const cur = SECTIONS.indexOf(secOf(tab)), n = SECTIONS.length;
+    goSection(e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (cur + (e.key === 'ArrowRight' ? 1 : -1) + n) % n);
+    tabButtons()[SECTIONS.indexOf(secOf(tab))].focus();
   };
   tabsEl.appendChild(b);
+});
+/** The sub tabs of the section shown (a pill switch at the top of the page), or '' when it has one page. */
+function subTabs() {
+  const s = secOf(tab);
+  if (s.views.length < 2) return '';
+  return `<div class="subtabs" role="tablist" aria-label="${s.t} pages">${s.views.map(v =>
+    `<button type="button" role="tab" data-view="${v}" aria-selected="${v === tab}" tabindex="${v === tab ? 0 : -1}" title="${TAB_Q[v]}">${TABS[v]}</button>`).join('')}</div>`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('.subtabs [data-view]');
+  if (b) { tab = +b.dataset.view; render(); }
+});
+document.addEventListener('keydown', e => {
+  const b = e.target.closest && e.target.closest('.subtabs [data-view]');
+  if (!b || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const vs = secOf(tab).views, i = vs.indexOf(tab), n = vs.length;
+  tab = vs[e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + n) % n];
+  render();
+  const f = document.querySelector(`.subtabs [data-view="${tab}"]`); if (f) f.focus();
 });
 const view = document.getElementById('view');
 const work = document.getElementById('work');
@@ -556,8 +673,12 @@ function titleStatus() { const st = document.getElementById('st'); if (st) st.ti
 
 function render() {
   undoBeforeRender();
-  tabButtons().forEach((b, i) => { b.setAttribute('aria-selected', i === tab); b.tabIndex = i === tab ? 0 : -1; });
+  const sec = secOf(tab);
+  SEC_LAST[sec.k] = tab;
+  tabButtons().forEach(b => { const on = b.dataset.sec === sec.k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
   document.body.dataset.tab = tab;
+  document.body.dataset.sec = sec.k;
+  applyPanels();
   document.getElementById('treeNote').textContent = TREE_NOTE[tab] || '';
   ANIM.stop();
   // module-specific setup (CFD) lives in the model tree; a module that fills the work area sets .fill itself
@@ -565,7 +686,7 @@ function render() {
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary][tab]();
   wireModDock();
   decorateImageButtons();
   applyHelp();

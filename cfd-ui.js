@@ -1,5 +1,5 @@
 /*
- * cfd-ui.js — the "CFD Analysis" tab.
+ * cfd-ui.js — the "Flow (CFD)" tab.
  *
  * Runs the 2D solve -- the flow under the blade (round entry onto the
  * metering edge, or the flat land), over the blade's exit face and into
@@ -1573,7 +1573,7 @@ function renderFlowPlots() {
     const none = !cfdRuns.some(r => r.field);
     host.innerHTML = running && viewLocs().some(i => cfdRuns[i].status === 'running') ? '' : running ? '<p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.</p>'
       : emptyHint(none ? 'Nothing solved yet' : compare ? 'No location has a result yet' : `Location ${FV.view + 1} has no result yet`,
-        `Set the inputs in the Model bar (the shared ones and the CFD setup), then run: each of the four locations across the web takes about 10 s, solved at the same time.`,
+        `Set the inputs on the left (the shared ones and the CFD setup), then run: each of the four locations across the web takes about 10 s, solved at the same time.`,
         `<button type="button" class="btn btn-primary btn-sm" data-hint-run>Run all 4 locations</button>${keyLabel('run.run') ? `<span class="fv-why">or ${keyLabel('run.run')}</span>` : ''}`);
     const hb = host.querySelector('[data-hint-run]'); if (hb) hb.onclick = runAllLocations;
     return;
@@ -2620,7 +2620,7 @@ function renderProfiles() {
       <figure class="dock-fig"><canvas id="cfdVisc" role="img" aria-label="Apparent viscosity across the gap"></canvas>
       <p class="cap"><b>Apparent viscosity across the gap</b> ${round ? 'just upstream of the metering edge' : 'at mid-land'}. Flat when Newtonian; higher toward the low-shear core with shear-thinning or yield stress. Fluid whose stress is below the yield stress (unyielded) is pinned at the capped edge.</p></figure>
       <figure class="dock-fig"><canvas id="cfdFilm" role="img" aria-label="Film height from the metering edge to the oven"></canvas>
-      <p class="cap"><b>Film from the metering edge to the oven</b> (${(geo.ovenDistance * 1000).toFixed(0)} mm): the 2D free surface (dark, from the contact line), then ${filmOk ? `the Slurry animation tab's 1D free-surface method from ${(r.filmStart * 1000).toFixed(1)} mm on, driven by this run's flow rate` : `no 1D film (${r.film.error || 'unknown error'})`}. Dashed: where mass conservation says it must end up.</p></figure>
+      <p class="cap"><b>Film from the metering edge to the oven</b> (${(geo.ovenDistance * 1000).toFixed(0)} mm): the 2D free surface (dark, from the contact line), then ${filmOk ? `the Start-up animation's 1D free-surface method from ${(r.filmStart * 1000).toFixed(1)} mm on, driven by this run's flow rate` : `no 1D film (${r.film.error || 'unknown error'})`}. Dashed: where mass conservation says it must end up.</p></figure>
     </div>`;
   drawVelocityProfile(document.getElementById('cfdProfile'), run);
   drawPressureProfile(document.getElementById('cfdPress'), run);

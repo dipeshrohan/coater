@@ -1,5 +1,5 @@
 /*
- * tree.js — the Model bar made easier to scan: a line icon for every input, tinted by its group;
+ * tree.js — the inputs bar made easier to scan: a line icon for every input, tinted by its group;
  * the inputs a tab does not use dimmed (with the reason on hover); and, when the bar is collapsed,
  * an icon rail whose group icons open that group as a flyout.
  */

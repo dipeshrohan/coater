@@ -1,7 +1,7 @@
 /*
  * report.js — the run report (File > Report…).
  *
- * The chosen sections of the project (the four modules, CFD Analysis, its mesh study, DOE) as one
+ * The chosen sections of the project (the four Results pages, Flow (CFD), its mesh study, DOE) as one
  * A4 document: a header (title, project, author, date, app version, notes), then per section its
  * inputs, results tables, plots (drawn as the views show them now, on white) and checks and
  * messages. Results whose inputs changed since they were solved are included and marked out of
@@ -103,7 +103,7 @@ function repInputs() {
     const v = P[c.k], changed = Math.abs(v - c.v) > 1e-12;
     rows += `<tr><th scope="row">${repEsc(c.l)}${c.h ? `<small>${repEsc(c.h)}</small>` : ''}</th><td${changed ? ' class="chg"' : ''}>${repEsc(repUnit((+v).toFixed(c.d), c.u))}</td><td>${repEsc(repUnit((+c.v).toFixed(c.d), c.u))}</td></tr>`;
   }
-  return `<p class="lede">Used by every module (CFD locations may set their own gap, contact angle, speed, pressure and slurry: see CFD Analysis). Values changed from the default are in bold.</p>
+  return `<p class="lede">Used by every module (CFD locations may set their own gap, contact angle, speed, pressure and slurry: see Flow (CFD)). Values changed from the default are in bold.</p>
     <table><thead><tr><th>Input</th><th>Value</th><th>Default</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 async function repModule(m) {
@@ -203,7 +203,7 @@ async function repDoe() {
   tab = 5; DOE.dock = 'runs'; render(); await repFrame();
   const stale = DOE.key && DOE.key !== cfdInputsKey(cfdGeometry(DOE.loc));
   const des = DOE.design || (DOE.factors || []).map(fs => ({ ...fs, f: doeFactor(fs.k), levels: doeLevels(fs) }));
-  let html = `<h3>Setup</h3><p class="lede">Full factorial at location ${DOE.loc + 1} · z ${CFD_LOCS[DOE.loc].z} mm; every other input as in CFD Analysis (the base case).${DOE.design ? '' : ' Not run yet: the design being edited.'}</p>`;
+  let html = `<h3>Setup</h3><p class="lede">Full factorial at location ${DOE.loc + 1} · z ${CFD_LOCS[DOE.loc].z} mm; every other input as in Flow (CFD) (the base case).${DOE.design ? '' : ' Not run yet: the design being edited.'}</p>`;
   html += repRows(des.map(d => [repEsc(doeLabel(d.f || doeFactor(d.k))), repEsc(d.levels.map(v => doeFmt(d.f || doeFactor(d.k), v)).join(' · ')), String(d.levels.length)]), ['Factor', 'Levels', 'Count']);
   if (DOE.runs.length) {
     const done = DOE.runs.filter(r => r.status === 'done').length, bad = DOE.runs.filter(r => r.status === 'error');

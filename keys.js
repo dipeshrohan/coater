@@ -2,9 +2,9 @@
  * keys.js — keyboard shortcuts: one list of actions, each with a default key that can be changed
  * (in Help > Keyboard shortcuts; kept in this browser), and one handler for them all.
  *
- * Run (Ctrl+Enter) and Stop (Esc) act on the tab shown: CFD Analysis, DOE, Measured data. The
+ * Run (Ctrl+Enter) and Stop (Esc) act on the tab shown: Flow (CFD), DOE, Measured data. The
  * view keys (Alt + a letter or digit) drive the CFD flow plot; Ctrl+B and Ctrl+J hide and show
- * the Model bar and the bottom panel. Keys without Ctrl or Alt are not taken while typing in a box,
+ * the inputs bar and the bottom panel. Keys without Ctrl or Alt are not taken while typing in a box,
  * and Ctrl+Z / Ctrl+Y in a text box stay the browser's own text undo.
  */
 
@@ -53,7 +53,7 @@ const KEY_ACTIONS = [
   ...[0, 1, 2, 3].map(i => ({ id: `view.l${i + 1}`, g: 'View (CFD flow plot)', l: `Location ${i + 1}`, def: `Alt+${i + 1}`, when: onCfd, run: () => setFvView(i) })),
   { id: 'view.compare', g: 'View (CFD flow plot)', l: 'Compare the four locations', def: 'Alt+C', when: onCfd, run: () => setFvView('compare') },
   { id: 'view.diff', g: 'View (CFD flow plot)', l: 'Difference plot', def: 'Alt+D', when: onCfd, run: () => setFvView('diff') },
-  { id: 'panel.model', g: 'Panels', l: 'Hide / show the Model bar', def: 'Ctrl+B', run: () => setPanelHidden('model', !panelHidden('model')) },
+  { id: 'panel.model', g: 'Panels', l: 'Hide / show the inputs', def: 'Ctrl+B', run: () => setPanelHidden('model', !panelHidden('model')) },
   { id: 'panel.dock', g: 'Panels', l: 'Hide / show the bottom panel', def: 'Ctrl+J', when: () => !!document.querySelector('#view .dock'), run: () => setPanelHidden('dock', !panelHidden('dock')) },
   { id: 'panel.next', g: 'Panels', l: 'Next tab of the bottom panel', def: 'Alt+]', when: () => !!document.querySelector('#view .dock-tabs'), run: () => dockCycle(1) },
   { id: 'panel.prev', g: 'Panels', l: 'Previous tab of the bottom panel', def: 'Alt+[', when: () => !!document.querySelector('#view .dock-tabs'), run: () => dockCycle(-1) },
@@ -103,11 +103,13 @@ document.addEventListener('keydown', e => {
   a.run();
 }, true);
 
-// ---- the Model bar and the bottom panel, hidden or shown (remembered in this browser) ----
+// ---- the inputs bar and the bottom panel, hidden or shown (remembered in this browser) ----
 const PANELS_STORE = 'bladeCoatDefectLab.panels.v1';
-// (the four simple tabs' bottom panel holds only their history: hidden to its tab row until opened)
-const PANELS = (() => { const d = { model: false, dock: false, modDock: true }; try { return { ...d, ...JSON.parse(localStorage.getItem(PANELS_STORE) || '{}') }; } catch (e) { return d; } })();
-const panelKey = k => k === 'dock' && (typeof tab === 'number' ? tab : 0) <= 3 ? 'modDock' : k;   // (tab: ui.js, loaded after)
+// (the four simple tabs' bottom panel holds only their history: hidden until opened (Edit > History);
+// the inputs bar has its own state on the Summary page, which opens without it)
+const PANELS = (() => { const d = { model: false, dock: false, modDock: true, modelHome: true }; try { return { ...d, ...JSON.parse(localStorage.getItem(PANELS_STORE) || '{}') }; } catch (e) { return d; } })();
+const panelKey = k => { const t = typeof tab === 'number' ? tab : 0;   // (tab: ui.js, loaded after)
+  return k === 'dock' && t <= 3 ? 'modDock' : k === 'model' && t === 7 ? 'modelHome' : k; };
 const panelHidden = k => !!PANELS[panelKey(k)];
 function setPanelHidden(k, hide) {
   PANELS[panelKey(k)] = !!hide;
@@ -116,17 +118,22 @@ function setPanelHidden(k, hide) {
   render();
 }
 function applyPanels() {
-  const body = document.getElementById('wbBody');
-  if (body) body.classList.toggle('tree-off', PANELS.model);
+  const body = document.getElementById('wbBody'), off = panelHidden('model'), home = panelKey('model') === 'modelHome';
+  // (hidden: a strip of group icons; on the Summary page, gone altogether)
+  if (body) { body.classList.toggle('tree-off', off && !home); body.classList.toggle('tree-none', off && home); }
   document.getElementById('work').classList.toggle('dock-off', panelHidden('dock'));
+  const l = `${off ? 'Show' : 'Hide'} the inputs${keyLabel('panel.model') ? ` (${keyLabel('panel.model')})` : ''}`;
   const tb = document.getElementById('treeToggle');
-  if (tb) { const l = `${PANELS.model ? 'Show' : 'Hide'} the Model bar${keyLabel('panel.model') ? ` (${keyLabel('panel.model')})` : ''}`; tb.title = l; tb.setAttribute('aria-label', l); tb.setAttribute('aria-expanded', String(!PANELS.model)); }
+  if (tb) { tb.title = l; tb.setAttribute('aria-label', l); tb.setAttribute('aria-expanded', String(!off)); }
+  const ib = document.getElementById('inputsBtn');
+  if (ib) { ib.title = l; ib.setAttribute('aria-pressed', String(!off)); }
 }
 // (a click on a bottom-panel tab while the panel is hidden shows it again)
 document.addEventListener('click', e => { if (panelHidden('dock') && e.target.closest && e.target.closest('#view .dock-tabs button')) setPanelHidden('dock', false); }, true);
 (function panelButtons() {
-  const t = document.getElementById('treeToggle');
-  if (t) t.onclick = () => setPanelHidden('model', !PANELS.model);
+  const t = document.getElementById('treeToggle'), ib = document.getElementById('inputsBtn');
+  if (t) t.onclick = () => setPanelHidden('model', !panelHidden('model'));
+  if (ib) ib.onclick = () => setPanelHidden('model', !panelHidden('model'));
   applyPanels();
 })();
 
