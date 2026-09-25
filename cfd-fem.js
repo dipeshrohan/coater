@@ -493,7 +493,9 @@ function solveFEM(o) {
       seen.push(nrm);
       if (stallAfter && seen.length > stallAfter && nrm > 0.5 * seen[seen.length - 1 - stallAfter]) return false;
       if (hasS) rowS = new Float64Array(ND);
-      jacobian(true);
+      // (an element turned inside out by the Jacobian's small geometry steps: the solve is at the edge of its mesh -- it
+      // fails, and its caller's strategy goes on, instead of the whole run stopping)
+      { const keep = Float64Array.from(sol), keepS = sStar; try { jacobian(true); } catch (e) { sol.set(keep); sStar = keepS; placeNodes(); return false; } }
       const fac = bandFactor(LU, ND, kl, ku); factorizations++;
       const y1 = Float64Array.from(res.R, v => -v);
       bandSolve(LU, fac, ND, kl, ku, y1);
@@ -889,7 +891,7 @@ function solveCoaterFEM(opts) {
    * 'climbed' with free = false: held at distance s up the face (surface angle there free);
    * free = true: on the face at the contact angle, starting from s.
    */
-  function solveAt(mode, s, free, fInfNow, from, aUse = alphaDeg, iterCap = mode === 'climbed' && !free ? 80 : 200) {
+  function solveAt(mode, s, free, fInfNow, from, aUse = alphaDeg, iterCap = mode === 'climbed' && !free ? 80 : 200, minQ = null) {
     const stat = from ? shiftedCurve(from, mode, s) : staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf: fInfNow, xEnd, mode, sFix: mode === 'climbed' && !free ? s : null });
     stat.alphaEdgeDeg = stat.alphaEdge != null ? stat.alphaEdge * 180 / Math.PI : alphaDeg;
     stat.alphaCL = aUse;
@@ -905,6 +907,7 @@ function solveCoaterFEM(opts) {
     }
     if (opts.onMesh) opts.onMesh(m, m.h0, s0, stat);
     if (!(m.quality > 0)) return { error: `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
+    if (minQ != null && !(m.quality > minQ)) return { error: 'no better-shaped mesh there', notBetter: true };
     const where = mode === 'pinned' ? 'contact line at the edge' : free ? `contact line free on the face (from ${(s0 * 1e3).toFixed(3)} mm)` : `contact line held ${(s0 * 1e3).toFixed(3)} mm up the face`;
     log(`${where}: flow, surface frozen`);
     let frozen = null;
@@ -943,13 +946,21 @@ function solveCoaterFEM(opts) {
   /**
    * The face fan was laid out for the starting height; once the contact line has settled somewhere
    * else (by more than 15%), lay the mesh out again for where it is and solve again from that shape.
+   * A contact line twice or more (or half or less) the height its mesh was laid out for: an answer on a mesh
+   * stretched that far is not trusted (measured: up to 30 % off a mesh study's), so when the new layout is no
+   * better-shaped than the stretched one, or its solve does not converge, the result is marked relayoutFailed
+   * and the caller places the contact line another way.
    */
   function remeshed(o, held = false) {
     for (let k = 0; k < 2; k++) {
       const sNow = held ? o.s : o.r.surface.s, sMesh = o.s;
       if (!(Math.abs(sNow - sMesh) > 0.15 * sMesh)) return o;
-      const o2 = solveAt('climbed', sNow, !held, fInf, { ...o, s: sNow });
-      if (o2.error || !(o2.r.surface.s > 0)) return o;
+      const far = sNow > 2 * sMesh || sNow < 0.5 * sMesh;
+      const o2 = solveAt('climbed', sNow, !held, fInf, { ...o, s: sNow }, undefined, undefined, far ? femQuality(o.m.mesh, { h: o.r.state.h, s: o.r.state.s }) : null);
+      if (o2.error || !(o2.r.surface.s > 0)) {
+        log(`laid out again for ${(sNow * 1e3).toFixed(3)} mm: ${o2.notBetter ? 'no better-shaped mesh there' : 'did not converge'}${far ? ` (the mesh it has was laid out for ${(sMesh * 1e3).toFixed(3)} mm)` : ''}`);
+        return far ? { ...o, relayoutFailed: true } : o;
+      }
       log(`laid out again for ${(sNow * 1e3).toFixed(3)} mm: settled ${(o2.r.surface.s * 1e3).toFixed(3)} mm up`);
       o = o2;
     }
@@ -959,7 +970,8 @@ function solveCoaterFEM(opts) {
     const r = o.r || {};
     if (o.error) r.error = o.error;
     if (opts.keepMesh && o.m) r.meshDef = o.m;     // (the mesh layout with its functions: the 3D solver extends it across the web; not for postMessage)
-    r.meniscus = { mode, alphaMaxDeg: alphaDeg, s: r.surface ? r.surface.s : null, leaveDeg: o.leave, static: o.stat, ...extra };
+    // (sMesh: the contact line's height the mesh was laid out for)
+    r.meniscus = { mode, alphaMaxDeg: alphaDeg, s: r.surface ? r.surface.s : null, sMesh: o.s ?? null, leaveDeg: o.leave, static: o.stat, ...extra };
     return r;
   };
   if (alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
@@ -986,7 +998,8 @@ function solveCoaterFEM(opts) {
     let o = solveAt('climbed', 0.1 * H, true, fInf, { ...pin, s: 0 }, alphaDeg, 60);
     if (!o.error && o.r.surface.s > 0) {
       log(`contact line free on the face: settled ${(o.r.surface.s * 1e3).toFixed(3)} mm up`);
-      return finish(remeshed(o), 'climbed');
+      const rm = remeshed(o);
+      if (!rm.relayoutFailed) return finish(rm, 'climbed');
     }
   }
   // Continuation in the contact angle: held a little up the face, the surface leaves the contact line
@@ -1008,7 +1021,7 @@ function solveCoaterFEM(opts) {
           cur = { ...cur, r: r1, sNow: r1.surface.s, leave: leaveDeg(r1, cur.m.cCL), alpha: a1 };
           a = a1;
           log(`contact angle ${(a + 180 - faceDeg).toFixed(1)}°: contact line ${(r1.surface.s * 1e3).toFixed(3)} mm up the face`);
-          if (a === alphaDeg) return finish(remeshed({ ...cur, s: cur.s }), 'climbed');
+          if (a === alphaDeg) { const rm = remeshed({ ...cur, s: cur.s }); if (!rm.relayoutFailed) return finish(rm, 'climbed'); break; }
           da *= 1.5;
           if (Math.abs(cur.sNow - cur.s) > 0.3 * cur.s) {
             // lay the mesh out again where the contact line now is
@@ -1067,7 +1080,7 @@ function solveCoaterFEM(opts) {
   const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cCorner, alphaDeg }, s0: best.s,
     homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
   r.meshInfo = { mode: 'climbed', cCL: best.m.cCL, cCorner: best.m.cCorner, nEy, quality: best.m.quality };
-  const fin = r.converged ? { r, m: best.m, stat: best.stat, leave: leaveDeg(r, best.m.cCL) } : { ...best, error: undefined, heldOnly: true };
+  const fin = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL) } : { ...best, error: undefined, heldOnly: true };
   return finish(fin, 'climbed', r.converged ? {} : { note: 'contact-angle solve did not converge; result held at the bracketed height' });
 }
 

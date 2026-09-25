@@ -28,6 +28,10 @@
  *     Couette-Poiseuille flow where they are known exactly: principal strain
  *     rates +-|du/dy|/2, total viscous dissipation int mu (du/dy)^2, and the
  *     travel time along each (straight) streamline, L / u(y).
+ * 10. A contact line climbing far above where its first mesh was laid out
+ *     (the app's default slurry and blade, a slow web, contact angle 17°):
+ *     the answer comes from a mesh laid out near it (not one stretched ten
+ *     times), and a finer mesh gives the same contact line.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -226,6 +230,26 @@ section('9. Derived outputs: strain rates, dissipation, travel times (Couette-Po
   check(errs[0].es < 1e-10, `principal strain rates = +-|du/dy|/2 to ${errs[0].es.toExponential(1)} of U/H`);
   check(errs[1].diss < errs[0].diss / 3 && errs[1].diss < 0.01, `total dissipation vs exact: ${(errs[0].diss * 100).toFixed(3)}% -> ${(errs[1].diss * 100).toFixed(3)}% with the rows doubled`);
   check(errs[1].et < 2e-3 && errs[1].n === 16, `travel time along each streamline = L / u(y) within ${(errs[1].et * 100).toFixed(3)}% (16 lines timed)`);
+}
+
+// ---------------------------------------------------------------------
+section('10. A contact line climbing far above its first mesh (default slurry, slow web, contact angle 17°)');
+{
+  // as the app's worker solves location 1 with the contact angle set to 15° (17° there with the wetting variation)
+  const { bladeShape } = require('./cfd-1d.js');
+  const o = { geometry: 'round', H: 1.7253533603162688e-3, L: 0.01, R: 0.1, Xup: 0.04, exitAngle: 90, U: 0.28 / 60, Pup: 720, muRef: 10.5, ty: 5, n: 1 };
+  const shape = bladeShape(o), xe = shape.Lx, Hs = shape.h(xe), law = gd => S.muEffLocal(gd, o.muRef, o.ty, o.n);
+  let I2 = 0, I3 = 0; const M = 20000, mu0 = law(o.U / Hs);
+  for (let k = 0; k < M; k++) { const hh = shape.h((k + 0.5) * xe / M); I2 += xe / M / (hh * hh); I3 += xe / M / (hh * hh * hh); }
+  const qLub = (o.Pup + 6 * mu0 * o.U * I2) / (12 * mu0 * I3);
+  const run = f => { const t0 = Date.now(), log = []; const r = solveCoaterFEM({ hFn: shape.h, xe, faceDeg: 90, contactDeg: 16.858523153873016, U: o.U, Pup: o.Pup, rho, g, gamma, mu: law, gdMin: 1e-3 * o.U / Hs,
+    webSlip: 337632.2135311958, Ld: 8 * Hs, nEb: Math.round(39 * f), nEf: Math.round(6 * f), nEs: Math.round(24 * f), nEy: Math.round(6 * f), fInfGuess: qLub / o.U, onStage: t => log.push(t) }); return { r, log, secs: (Date.now() - t0) / 1000 }; };
+  const a = run(1), b = run(1.5), ra = a.r, rb = b.r;
+  const far = a.log.find(t => /settled/.test(t)) || '';
+  check(ra.converged && ra.meniscus.mode === 'climbed' && ra.meniscus.s < 2 * ra.meniscus.sMesh && ra.meniscus.s > 0.5 * ra.meniscus.sMesh,
+    `the first try from 0.1 H ${far.replace(/^contact line free on the face: /, '')}; the answer ${(ra.meniscus.s * 1e3).toFixed(3)} mm up the face is on a mesh laid out for ${(ra.meniscus.sMesh * 1e3).toFixed(3)} mm (${a.secs.toFixed(0)} s)`);
+  const d = Math.abs(ra.meniscus.s / rb.meniscus.s - 1);
+  check(rb.converged && d < 0.03 && Math.abs(ra.Q / rb.Q - 1) < 2e-3, `a mesh 1.5 times finer: contact line ${(ra.meniscus.s * 1e3).toFixed(3)} -> ${(rb.meniscus.s * 1e3).toFixed(3)} mm (${(d * 100).toFixed(1)}%), film ${(ra.Q / o.U * 1e3).toFixed(4)} -> ${(rb.Q / o.U * 1e3).toFixed(4)} mm (${b.secs.toFixed(0)} s)`);
 }
 
 console.log(allPass ? '\nALL PASS' : '\nSOME CHECKS FAILED');
