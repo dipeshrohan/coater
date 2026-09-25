@@ -12,6 +12,161 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Plan: graphene oxide film, from dispersion to graphene film (awaiting approval)
+
+User: expand the scope; think of STAR-CCM+ and Fluent, material modelling,
+graphene oxide and graphene film modelling, and FEM ("gem"). Answers: FEM
+for the solid film (drying stress, cracking, curl, the film's hold on its
+carrier); the product is a free-standing GO film (cast on a carrier, dried,
+peeled, possibly reduced to rGO or a graphene film); first physics: drying
+in the oven, flake alignment, richer rheology, film properties; order: after
+the meshing and design phases 2-4.
+
+Verified: the app models a water-based slurry (over 40 vol% solids, 2-8 um
+particles) blade-coated onto a porous fibre web (PET weave), with Newtonian,
+power-law and Herschel-Bulkley rheology, oven air through the fibre (item
+14), measured data with fitting (GUI-17) and a DOE. It has no GO material,
+no carrier film, no drying, no particle orientation and no solid mechanics.
+
+Nothing is deleted: the fibre web, its slurry and every page stay. The GO
+film is a second process, picked at the top (Fibre web coating | Free-
+standing GO film); the fibre process stays the default.
+
+Before it: meshing and design phases 2-4 (approved order)
+- Phase 2: refinement zones on the drawing; mesh to a set accuracy.
+- Phase 3: more blade shapes (bevel, edge radius, wedge, two-step) and a
+  custom profile (DXF, CSV, points, spline); solver work: the model shown
+  and asked first.
+- Phase 4: 3D across-web design (bow, waviness, tilt, skew, chamfered ends).
+
+The chain, each stage feeding the next (one way):
+dispersion (material card) → casting under the blade (the flow solvers,
+with the GO rheology) → flake alignment (along the flow's streamlines) →
+drying in the oven (through the film, along the line) → the solid film on
+its carrier (FEM: stress, cracks, curl, peel) → film properties (GO, then
+rGO / graphene film after reduction). Each stage gets its own page with the
+step bar where it applies, checks against exact or published results, and
+inputs marked "assumed" until measured.
+
+Phase GO-0: materials and the process chain
+- Materials library (like Fluent's materials panel): cards whose values
+  carry a unit, a source and an assumed / measured flag.
+  - GO dispersion: concentration, flake lateral size (mean and spread),
+    flake thickness, C/O ratio, GO density.
+  - Carrier: material (PET, glass, ...), thickness, modulus, Poisson's
+    ratio, surface energy, roughness, thermal properties.
+  - Today's slurry and fibres become cards too, their values unchanged.
+- Process chain page: the stages as a flow chart, each with its status
+  (not solved, solved, out of date).
+- First answers from a mass balance: dry thickness = wet film x GO volume
+  fraction / packing fraction of the dry film; g/m2; water to remove per
+  m2 and per second at the line speed.
+- Summary for the GO process: dry thickness, dry at the oven exit, crack
+  risk, clean peel, alignment, properties (filled in as phases land).
+- Checks: the mass balance exact; units; project files, undo, report,
+  census (nothing lost).
+
+Phase GO-1: rheology and material modelling
+- Models: Carreau-Yasuda and Cross join Newtonian, power law and
+  Herschel-Bulkley; concentration laws (viscosity and yield stress against
+  concentration, fitted); a thixotropic structure model (structure breaks
+  down with shear, rebuilds at rest, and sets the viscosity).
+- Fitting from rheometer files (extends Measured data): flow curve,
+  three-interval thixotropy test, amplitude sweep (yield), frequency sweep
+  (G', G''); the fit is saved to the material card.
+- Solver: 1D and 3D use the equilibrium curve; the 2D carries the structure
+  along the flow (an extra transport equation in the FEM, upwind-
+  stabilised) and feeds it back into the viscosity.
+- Viscoelasticity (GO liquid crystals are viscoelastic): an Oldroyd-B /
+  Giesekus 2D solver (log-conformation) as a later sub-phase, the hardest
+  numerics in the plan; its model and checks shown and asked first.
+- Checks: in steady shear the thixotropic model returns its equilibrium
+  curve; the transport equation against a manufactured solution; the 3ITT
+  fit on a synthetic curve; Oldroyd-B channel flow exact.
+
+Phase GO-2: flake alignment in the gap
+- Flakes as thin discs (aspect ratio = lateral size / thickness). The
+  orientation tensor along the 2D's streamlines from the pool to the film:
+  Jeffery rotation plus rotary diffusion (Folgar-Tucker) with a closure, or
+  a Doi-type nematic form for liquid-crystalline dispersions: asked first.
+- After the blade: relaxation until the film sets (time from GO-3).
+- Results: order parameter S and director angle over the film's depth at
+  the exit; orientation ellipses over the 2D flow plot; S against speed,
+  gap and concentration (DOE).
+- Checks: Jeffery orbit period of a disc in simple shear (exact); the
+  steady Folgar-Tucker state in simple shear against published values; the
+  closure against the exact 2D solution; alignment approaching full in
+  planar extension.
+
+Phase GO-3: drying in the oven
+- Oven zones (like boundary conditions in STAR-CCM+): length, air
+  temperature, air speed and humidity per zone; heat from the air and
+  through the carrier.
+- A strip of film moving through the oven (time = distance / speed), 1D
+  through its thickness: energy balance of film and carrier; evaporation
+  from the gas-side mass-transfer coefficient (heat-mass analogy); GO
+  concentration by diffusion with a moving top surface; a skin forms on
+  top when the drying Peclet number is large and the gel point is
+  reached; the rate then falls (vapour through the skin).
+- Results: water and temperature along the oven, time to skin, dry at the
+  exit (and where), final thickness, drying Peclet, water left.
+- Consolidation raises alignment (the film collapses): GO-2's result
+  updated with the thickness change.
+- Later, if asked: the edges (a thickness x width model; edges dry faster).
+- Checks: the constant-rate period against the wet-bulb rate; water
+  conserved; constant diffusivity against the exact series solution; the
+  published colloidal-drying (Routh-Russel) limits.
+
+Phase GO-4: the solid film (FEM)
+- 2D FEM through the film (thickness x length, plane strain), quadratic
+  elements like the flow: film on its carrier; drying shrinkage as the load
+  (the film cannot shrink along the carrier once it sticks); the film
+  transversely isotropic (in-plane stiffness from alignment and density,
+  low through the thickness); the carrier elastic.
+- Results: stress in the film; curvature of carrier + film; crack risk
+  (energy release of a channel crack against the film's toughness, and the
+  critical cracking thickness); peel with a cohesive interface (peel force;
+  clean peel or tear); curl of the free film after peeling (skin-to-bottom
+  strain difference); wrinkle and blister checks (buckling).
+- Later, if asked: a 3D shell model of a sheet (corners lifting).
+- Checks: patch test; Stoney's formula; Timoshenko's bilayer curvature;
+  channel crack energy (Hutchinson-Suo, Z = 1.976 with no elastic
+  mismatch); Kendall's peel equation; mesh convergence.
+
+Phase GO-5: film properties, reduction, graphene film
+- GO film: thickness, density and porosity (from the layer spacing, which
+  rises with humidity), orientation factor (to compare with XRD), in-plane
+  modulus and strength from a platelet (shear-lag) model with alignment.
+- Reduction, chemical or thermal (asked): C/O ratio against temperature
+  and time; thickness and layer spacing after; blister risk from gas
+  release in thermal reduction; sheet resistance from flake size,
+  alignment and flake-to-flake contact.
+- Graphene film (annealing, pressing): density, in-plane electrical and
+  thermal conductivity from correlations calibrated to the user's
+  measurements; shown as correlations, not first principles.
+- Measured data gains kinds: dry thickness, XRD spacing and orientation,
+  tensile, sheet resistance, curl; compared and fitted.
+- Checks: limits and trends against published ranges; fits to the user's
+  data with the RMS error shown.
+
+Every phase: the chain view, DOE over the new outputs, report sections,
+help and guide, project files, undo, file:// in Edge (workers from text),
+census, suites, screenshots light / dark / phone.
+
+Asked at the start of each phase (with options, not assumed now):
+- GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
+  (material, thickness), typical wet and dry thickness, the oven (zones,
+  temperatures, air speed).
+- GO-1: the rheometer tests available; liquid-crystalline or not at the
+  working concentration; the thixotropy model.
+- GO-2: orientation model; measured alignment (XRD, SEM).
+- GO-3: oven type (air from above, below, IR); measured drying data.
+- GO-4: cross-section only or a 3D sheet; measured curl, cracks, peel.
+- GO-5: reduction route; target properties; measured values.
+
+Not claimed: molecular-level prediction (no molecular dynamics); graphene
+film properties beyond calibrated correlations.
+
 ### Plan: Flow as 1D → 2D → 3D (approved; phases A and B built, phase C in progress)
 
 User: CFD is done 1D first, then 2D, then 3D; the 3D needs a CAD upload or
