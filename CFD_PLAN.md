@@ -12,7 +12,7 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
-### Plan: Flow as 1D → 2D → 3D (approved; phases A and B built, phase C to come)
+### Plan: Flow as 1D → 2D → 3D (approved; phases A and B built, phase C in progress)
 
 User: CFD is done 1D first, then 2D, then 3D; the 3D needs a CAD upload or
 a geometry made in the app; the app has not used 1D as a stage. Verified:
@@ -144,6 +144,49 @@ Phase C: 3D solver (one or more merges)
   minutes to hours per run with the free surface; the full width longer and
   possibly beyond a browser's memory. Convergence of a 3D free surface is not
   certain; if it cannot be made reliable this is reported, not hidden.
+
+Phase C status: the 3D solver is built and checked (not yet in the page).
+- cfd-fem3d.js: steady 3D Navier–Stokes, Taylor–Hood Q2–Q1 hexahedra on
+  spines (the 2D's method one dimension up), generalized Newtonian, inertia,
+  gravity, Beavers–Joseph slip over the web; the free surface as a height
+  per spine column (kinematic rows; surface tension through the surface
+  metric, no second derivatives); the contact line's height up the exit face
+  at every station across the web (contact-angle rows, bordered); symmetry
+  planes at the strip's sides; full Newton (analytic flow Jacobian, finite
+  differences for the geometry), banded LU.
+- The strip (solveCoater3D): every station across the strip is first solved
+  in 2D at its own gap and contact angle (the same number of face elements at
+  each); those meshes side by side are the 3D mesh and those solutions its
+  start; the 3D solve then couples the stations. (One shifted mesh for all
+  stations was tried first: the contact line then moved with the mesh layout
+  rather than the physics, 10–20 µm on a coarse mesh.) The meniscus must be
+  climbed at every station or pinned at every station.
+- cfd-fem3d.validate.js, all pass: duct flow against the exact series
+  (0.009 %); a manufactured 3D solution (shear-thinning, inertia, curved mesh)
+  converging at order 3 in velocity and 2 in pressure, Newton quadratic; a
+  uniform strip whose 3D residual at the 2D solution is 7e-11 (no Newton step
+  needed); a gap varying slowly across the strip giving each station's 2D
+  film within 0.07 % and contact line within 1.3 µm; and flow under a round
+  entry with the gap varying across the web on the blade's scale matching the
+  Reynolds equation over the web's plane within 0.74 % (the lubrication
+  approximation's own error), where station-by-station solutions are 5.6 %
+  off: the flow across the web is real and the 3D carries it.
+- The 2D contact line itself depends on the mesh far more than the film:
+  on the coarsest test mesh 0.18 mm, twice as fine 0.10 mm, four times
+  0.08 mm (film 0.914, 0.915, 0.915 mm). The 3D inherits this.
+- Measured cost, the app's default case at L1, 20 mm strip, one thread
+  (Node; a browser worker is the same engine):
+    coarse 2D mesh (26/4/16/4), 2 elements across: 13 k unknowns, 0.3 GB,
+      8 s for the five 2D stations + 11 s for the 3D (4 Newton steps);
+    coarse, 4 across: 24 k unknowns, 0.6 GB, 15 s + 51 s;
+    medium (39/6/24/6), 2 across: 28 k unknowns, 0.6 GB, 30 s + 43 s.
+  Film in 3D within 0.4 % of the local 2D; the gap and contact angle vary
+  across the web over a few mm, which the 3D smooths.
+- Full width: with the banded solver the memory grows with the square of
+  the stations across; 300 mm at even 10 mm spacing is about 6 GB, beyond a
+  browser. It needs a different linear solver (domain decomposition across
+  the web with an iterative method), expected minutes to tens of minutes per
+  run, convergence not yet known.
 
 ### Layout v2 (after the redesign): answer first, two bars, sub tabs
 

@@ -759,6 +759,9 @@ function staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd,
  *       slip over the porous web; omitted = no slip), onStage(text), onIteration, onSolveStart / onSolveEnd
  *       (each solveFEM call: see there),
  *       onMesh / onLayout (test hooks: the mesh chosen, each layout's quality)
+ *       keepMesh: the result keeps the final mesh layout as meshDef { mesh, NC, cCL, cCorner, h0 } (functions)
+ *       nFaceFixed: elements up the exit face when the contact line climbs it (default: from its height; the 3D
+ *         solver holds it equal at every station across the web)
  * Returns solveFEM's result plus meshInfo { mode, cCL, cCorner, nEy, quality } and
  * meniscus { mode, alphaMaxDeg, s, leaveDeg, static }, or { error } for an unsupported case.
  */
@@ -773,7 +776,7 @@ function solveCoaterFEM(opts) {
 
   function buildMesh(mode, s0, stat, fan) {
     // face elements: nEf for a climb of H or more, fewer (at least one) for a short one
-    const nF = mode === 'climbed' ? Math.max(1, Math.min(nEf, Math.ceil(nEf * s0 / H - 1e-9))) : 0, nEx = nEb + nF + nEs, NC = 2 * nEx + 1;
+    const nF = mode === 'climbed' ? opts.nFaceFixed ?? Math.max(1, Math.min(nEf, Math.ceil(nEf * s0 / H - 1e-9))) : 0, nEx = nEb + nF + nEs, NC = 2 * nEx + 1;
     const cCorner = 2 * nEb, cCL = 2 * (nEb + nF), M = 2 * nEs;
     // Each spine: a foot on the web, a top, and the slope dx/dy it arrives
     // at the top with (femNodes' Hermite shape). Directions below point from
@@ -954,6 +957,7 @@ function solveCoaterFEM(opts) {
   const finish = (o, mode, extra) => {
     const r = o.r || {};
     if (o.error) r.error = o.error;
+    if (opts.keepMesh && o.m) r.meshDef = o.m;     // (the mesh layout with its functions: the 3D solver extends it across the web; not for postMessage)
     r.meniscus = { mode, alphaMaxDeg: alphaDeg, s: r.surface ? r.surface.s : null, leaveDeg: o.leave, static: o.stat, ...extra };
     return r;
   };
