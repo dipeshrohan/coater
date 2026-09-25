@@ -9,6 +9,7 @@
  *   along the flow and zs across, m, z from the location) with msg.Xup its inlet distance }
  * Messages out: { id, progress: { stage, it, residual } } while solving, then { id, ok: true, result } or
  *   { id, ok: false, error }.
+ * A wide region (the full web width): messages with type 'wideInit' / 'wideSolve' (below).
  */
 importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-1d.js', 'cfd-fem3d.js');
 
@@ -21,22 +22,67 @@ function interp(tab, x) {
   return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
 }
 
+// A wide region (the full web width) is solved strip by strip across several of these workers: 'wideInit' solves the
+// 2D at the stations this worker's strips need (and keeps their meshes), 'wideSolve' one strip in 3D with its
+// neighbours' latest solution held on its inner sides. The page runs the sweeps (cfd-fem3d.js's solveCoaterWide, in parallel).
+let WIDE = null;
+/** A blade read from a file: its underside at station z (along x from the rays, across z linear between the ray rows). */
+function fileHAt(file) {
+  const { xs, zs, low } = file, nz = zs.length;
+  return z => {
+    let k = 0; while (k < nz - 2 && zs[k + 1] < z) k++;
+    const t = Math.min(1, Math.max(0, (z - zs[k]) / (zs[k + 1] - zs[k])));
+    const row = xs.map((x, i) => [x, (1 - t) * low[i * nz + k] + t * low[i * nz + k + 1]]);
+    return x => interp(row, x);
+  };
+}
+function wideOpts(o, strip, file) {
+  const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
+  const hAt = file ? fileHAt(file) : null, shape = file ? null : bladeShape(o);
+  const hFn = file ? hAt(0) : shape.h, xe = file ? file.xs[file.xs.length - 1] : shape.Lx, H = hFn(xe);
+  let I2 = 0, I3 = 0; const M = 4000;
+  for (let k = 0; k < M; k++) { const h = hFn((k + 0.5) * xe / M); I2 += xe / M / (h * h); I3 += xe / M / (h * h * h); }
+  const qLub = (o.Pup + 6 * o.muRep * o.U * I2) / (12 * o.muRep * I3), sv = o.solver;
+  return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
+    webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
+    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z) };
+}
+const packStation = T => { const o = {}; for (const f of ['u', 'v', 'w', 'p', 'x', 'y', 'z', 'gd', 'mu', 'h']) if (T[f]) o[f] = Float64Array.from(T[f]); o.s = T.s; o.q = T.q; return o; };
+function wide(e) {
+  const d = e.data, id = d.id;
+  if (d.type === 'wideInit') {
+    const opts = wideOpts(d.msg, d.strip, d.file);
+    opts.onStage = t => postMessage({ id, progress: { stage: t } });
+    const S = coaterStations(opts, d.zs, d.ref, new Set(d.stations));
+    if (S.error) { postMessage({ id, ok: false, error: S.error }); return; }
+    WIDE = { opts, S };
+    const states = {};
+    for (const l of d.stations) states[l] = packStation(stationFrom2D(S.r2[l]));
+    postMessage({ id, ok: true, result: { states, mode: S.mode, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe,
+      film2: Object.fromEntries(d.stations.map(l => [l, S.r2[l].Q / opts.U])), s2: Object.fromEntries(d.stations.map(l => [l, S.climbed ? S.r2[l].surface.s : 0])),
+      top2: Object.fromEntries(d.stations.map(l => [l, Array.from({ length: S.NC }, (_, c) => S.r2[l].p[c * S.NR + S.NR - 1])])) } });
+    return;
+  }
+  // wideSolve: one strip l0..l1; the states of its stations (the held sides among them)
+  const { l0, l1, states, sideLo, sideHi } = d, state = [];
+  for (let l = l0; l <= l1; l++) state[l] = states[l];
+  let last = 0;
+  const opts = { ...WIDE.opts, onIteration3: h => { const t = Date.now(); if (t - last > 300) { last = t; postMessage({ id, progress: { it: h.it, residual: h.residual } }); } } };
+  const r3 = coaterStrip3D(opts, WIDE.S, l0, l1, state, sideLo, sideHi, { label: `strip ${l0}-${l1}` });
+  if (!r3.converged) { postMessage({ id, ok: false, error: `the strip from station ${l0} to ${l1} did not converge (residual ${r3.residual.toExponential(1)})` }); return; }
+  const out = {};
+  for (let j = sideLo ? 1 : 0; j <= (sideHi ? l1 - l0 - 1 : l1 - l0); j++) out[l0 + j] = packStation(stationFrom3D(r3, j));
+  postMessage({ id, ok: true, result: { states: out, iterations: r3.iterations, unknowns: r3.size.unknowns } });
+}
+
 onmessage = e => {
+  if (e.data.type) { try { wide(e); } catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); } return; }
   const { id, msg: o, strip, file } = e.data;
   try {
     const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
     let hFn, hAt = null, xe;
     if (file) {
-      // the file's underside at station z: along x from the rays, across z linear between the ray rows
-      const { xs, zs, low } = file, nz = zs.length;
-      xe = xs[xs.length - 1];
-      hAt = z => {
-        let k = 0; while (k < nz - 2 && zs[k + 1] < z) k++;
-        const t = Math.min(1, Math.max(0, (z - zs[k]) / (zs[k + 1] - zs[k])));
-        const row = xs.map((x, i) => [x, (1 - t) * low[i * nz + k] + t * low[i * nz + k + 1]]);
-        return x => interp(row, x);
-      };
-      hFn = hAt(0);
+      hAt = fileHAt(file); xe = file.xs[file.xs.length - 1]; hFn = hAt(0);
     } else {
       const shape = bladeShape(o);
       hFn = shape.h; xe = shape.Lx;

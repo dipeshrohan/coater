@@ -137,7 +137,7 @@ function c3dSetupTree() {
     </details>
     <details class="grp cfd-grp" data-c3dgrp="region"${C3D_OPEN.region ? ' open' : ''}><summary>3D region</summary>
       ${seg('Across the web', 'region', [['strip', 'Strip'], ['full', 'Full width']])}
-      ${C3D.region === 'strip' ? sel('Around', 'loc', CFD_LOCS.map((l, i) => opt(i, `L${i + 1} · z ${l.z} mm`, C3D.loc)).join('')) + num('Strip width', 'stripW', 'mm') : `<p class="prop-note">The full ${ACROSS_W} mm of the web.</p>`}
+      ${C3D.region === 'strip' ? sel('Around', 'loc', CFD_LOCS.map((l, i) => opt(i, `L${i + 1} · z ${l.z} mm`, C3D.loc)).join('')) + num('Strip width', 'stripW', 'mm') : `<p class="prop-note">The full ${ACROSS_W} mm of the web, with the shared inputs (the locations' own inputs are theirs only).</p>`}
     </details>
     <details class="grp cfd-grp" data-c3dgrp="mesh"${C3D_OPEN.mesh ? ' open' : ''}><summary>3D mesh</summary>
       ${num('Along the blade', 'nxGap', 'elements')}${num('Up the exit face', 'nxFace', 'elements')}${num('Along the free surface', 'nxFilm', 'elements')}${num('Across the gap', 'ny', 'elements')}
@@ -202,17 +202,32 @@ const loadScript = src => new Promise((res, rej) => { const s = document.createE
 
 // ---- the solve ----
 /** The size of the 3D solve for the settings: unknowns, the matrix's memory, and about how long (from measured runs). */
-function c3dEstimate() {
-  const nEz = C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull, NR = 2 * C3D.ny + 1, NL = 2 * nEz + 1, NC = 2 * (C3D.nxGap + C3D.nxFace + C3D.nxFilm) + 1;
+function c3dEstimate(nEz = C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull) {
+  const NR = 2 * C3D.ny + 1, NL = 2 * nEz + 1, NC = 2 * (C3D.nxGap + C3D.nxFace + C3D.nxFilm) + 1;
   const col = NL * NR * 3 + (NL + 1) / 2 * (NR + 1) / 2 / 2 + NL, ND = NC * col, kl = 3 * col;
-  const bytes = ND * 3 * kl * 8, flops = ND * kl * 2 * kl;
-  return { ND, bytes, secs: 1.3 * 4 * flops / 2.8e9 + NL * 1.7, NL };
+  const bytes = ND * 3 * kl * 8, flops = ND * kl * 2 * kl, secs3 = 1.3 * 4 * flops / 2.8e9;
+  return { ND, bytes, secs3, secs: secs3 + NL * 1.7, NL };
 }
 const C3D_MAX_BYTES = 2e9;
+/** The full width: overlapping strips (elements across each, overlap), their count, the workers solving them at once. */
+const C3D_WIDE_CFG = { sub: 2, overlap: 1, maxSweeps: 12, tol: 1e-5 };
+function c3dWideLayout(nEz = C3D.nzFull) {
+  const sub = Math.min(C3D_WIDE_CFG.sub, nEz), ov = Math.min(C3D_WIDE_CFG.overlap, sub - 1), step = sub - ov, subs = [];
+  for (let e0 = 0; ; e0 += step) { const e1 = Math.min(nEz, e0 + sub); subs.push([2 * Math.max(0, e1 - sub), 2 * e1]); if (e1 === nEz) break; }
+  const workers = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4) - 1, subs.length));
+  return { sub, ov, subs, workers };
+}
+const c3dTime = secs => secs < 90 ? `${Math.max(5, Math.round(secs / 5) * 5)} s` : `${Math.round(secs / 60)} min`;
+const c3dMem = bytes => bytes < 1e9 ? Math.round(bytes / 1e6) + ' MB' : (bytes / 1e9).toFixed(1) + ' GB';
 function c3dEstimateText() {
-  if (C3D.region === 'full') return 'Full width: solved with the coupled iterative solver (next).';
-  const e = c3dEstimate(), t = e.secs < 90 ? `${Math.max(5, Math.round(e.secs / 5) * 5)} s` : `${Math.round(e.secs / 60)} min`;
-  return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${e.bytes < 1e9 ? Math.round(e.bytes / 1e6) + ' MB' : (e.bytes / 1e9).toFixed(1) + ' GB'} for the solve, about ${t}.${e.bytes > C3D_MAX_BYTES ? ' <b>More memory than a browser can give one page: fewer elements across the strip or the gap.</b>' : ''}`;
+  if (C3D.region === 'full') {
+    // (measured: the 2D at each station about 3 s; a strip's first 3D solve as estimated, the later sweeps' about 60 % of it; about 6 sweeps)
+    const L = c3dWideLayout(), e = c3dEstimate(L.sub), NL = 2 * C3D.nzFull + 1;
+    const perColour = Math.ceil(Math.ceil(L.subs.length / 2) / L.workers), secs = (NL / L.workers + 4) * 3 + 2 * perColour * e.secs3 * (1 + 0.6 * 5);
+    return `Solved as ${L.subs.length} overlapping strips (${L.sub} elements across each), ${L.workers} at a time, sweep after sweep until they agree; stations every ${(ACROSS_W / (NL - 1)).toFixed(1)} mm (variation across the web on a shorter scale is sampled there, not resolved); the web's edges are symmetry planes. About ${c3dMem(L.workers * e.bytes)} and ${c3dTime(secs)}.`;
+  }
+  const e = c3dEstimate();
+  return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${c3dMem(e.bytes)} for the solve, about ${c3dTime(e.secs)}.${e.bytes > C3D_MAX_BYTES ? ' <b>More memory than a browser can give one page: fewer elements across the strip or the gap.</b>' : ''}`;
 }
 const C3D_RUN = { worker: null, id: 0, status: 'idle', progress: null, error: null, t0: 0 };
 let C3D_RES = null;   // the last 3D solve: { key, loc, width, source, fileName, ms, when, result }
@@ -226,37 +241,64 @@ function c3dStripSamples(i, W) {
   }
   return { gap, th, gOff };
 }
-/** What the worker is sent (file: false leaves out the file's rays, for the key). */
+/** The shared inputs at the web's middle (no location's own): the full width's reference. */
+function c3dSharedGeometry() {
+  const zc = ACROSS_W / 2, geo = cfdGeometry(0), uses = RHEO_MODELS[CFDG.model].uses;
+  const U = P.U / 60, H = cfdLocalGapMm(zc) / 1000, ty = uses.includes('ty') ? P.ty : 0, n = uses.includes('n') ? P.n : 1;
+  return { ...geo, z: zc, U, H, contactDeg: cfdLocalContactDeg(zc), Pup: P.Pup * 1000, muRef: P.mu, ty, n, muRep: muLaw(U / H, P.mu, ty, n), gamma: P.g };
+}
+/** What the worker(s) are sent (file: false leaves out the file's rays, for the key). Strip: around the location; full: the web, stations from its middle. */
 function c3dSolveMessage(withFile = true) {
-  const i = C3D.loc, geo = cfdGeometry(i), msg = cfdWorkerMessage(geo), W = C3D.stripW / 1000;
+  const full = C3D.region === 'full', i = C3D.loc;
+  const msg = cfdWorkerMessage(full ? c3dSharedGeometry() : cfdGeometry(i));
   msg.solver = { ...msg.solver, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: C3D.ny };
-  const smp = c3dStripSamples(i, W);
-  const strip = { width: W, nEz: C3D.nzStrip, gap: smp.gap, th: smp.th };
+  let strip, W, zc;
+  if (full) {
+    W = ACROSS_W / 1000; zc = W / 2;
+    const NL = 2 * C3D.nzFull + 1, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1)), g0 = cfdLocalGapMm(zc * 1000);
+    // (sampled at the stations themselves: the variation between them is not resolved)
+    strip = { width: W, nEz: C3D.nzFull, zs, gap: zs.map(z => [z, (cfdLocalGapMm((zc + z) * 1000) - g0) / 1000]), th: zs.map(z => [z, cfdLocalContactDeg((zc + z) * 1000)]) };
+  } else {
+    W = C3D.stripW / 1000; zc = CFD_LOCS[i].z / 1000;
+    const smp = c3dStripSamples(i, W);
+    strip = { width: W, nEz: C3D.nzStrip, gap: smp.gap, th: smp.th };
+  }
   let file = null;
   if (C3D.source === 'file') {
     const fileKey = [C3D_FILE && C3D_FILE.id, C3D.units, C3D.machine, C3D.up, C3D.inlet];
     if (!withFile) return { msg, strip, file: fileKey };
-    // the file's underside at the solve's stations across the strip and closely along the flow
-    const G = c3dBuild(), xe = G.xe, NL = 2 * C3D.nzStrip + 1, zc = CFD_LOCS[i].z / 1000;
+    // the file's underside at the solve's stations across the region and closely along the flow
+    const G = c3dBuild(), xe = G.xe, NL = 2 * strip.nEz + 1;
     const xs = Array.from({ length: 121 }, (_, k) => xe * k / 120), zs = Array.from({ length: Math.max(NL, 9) }, (_, k) => -W / 2 + W * k / (Math.max(NL, 9) - 1));
     const f = undersideField(G.tris, xs.map((x, k) => k === 0 ? x + 1e-7 : k === xs.length - 1 ? x - 1e-7 : x), zs.map(z => z + zc));
     file = { xs, zs, low: Array.from(f.low) };
   }
   return { msg, strip, file };
 }
-const c3dSolveKey = () => JSON.stringify([C3D.loc, C3D.source, c3dSolveMessage(false)]);
-/** The result the page shows: the last solve if it was for this location's strip. */
-const c3dShown = () => C3D_RES && C3D.region === 'strip' && C3D_RES.loc === C3D.loc && C3D_RES.source === C3D.source ? C3D_RES : null;
+const c3dSolveKey = () => JSON.stringify([C3D.region, C3D.region === 'full' ? null : C3D.loc, C3D.source, c3dSolveMessage(false)]);
+/** The current key for a result's own region and location (a result shown in the table while the page is set to another region). */
+function c3dSolveKey3(S) {
+  const keep = { region: C3D.region, loc: C3D.loc };
+  C3D.region = S.region === 'full' ? 'full' : 'strip'; if (S.region !== 'full') C3D.loc = S.loc;
+  try { return c3dSolveKey(); } finally { Object.assign(C3D, keep); }
+}
+/** The result the page shows: the last solve if it was for this region (this location's strip, or the full width). */
+function c3dShown() {
+  if (!C3D_RES || C3D_RES.source !== C3D.source) return null;
+  if (C3D.region === 'full') return C3D_RES.region === 'full' ? C3D_RES : null;
+  return C3D_RES.region !== 'full' && C3D_RES.loc === C3D.loc ? C3D_RES : null;
+}
 function c3dRun() {
   if (C3D_RUN.status === 'running') return;
-  if (C3D.region === 'full') { imgToast('Full width: the coupled iterative solver is being built; solve a strip for now.', 'error'); return; }
   const G = c3dBuild();
   const stop = why => { C3D_RUN.status = 'error'; C3D_RUN.error = why; render(); };
   if (G.error || G.empty) return stop(G.error || 'no blade: import an STL or STEP file of the blade');
   if (G.open || G.multi) return stop(G.open ? 'the blade does not cover the region' : 'the blade overhangs: its underside is not a single height over the web');
   const est = c3dEstimate();
-  if (est.bytes > C3D_MAX_BYTES) return stop('this mesh needs more memory than a browser can give one page (3D mesh, in the inputs)');
-  const m = c3dSolveMessage(true), key = c3dSolveKey(), id = ++C3D_RUN.id;
+  if (C3D.region !== 'full' && est.bytes > C3D_MAX_BYTES) return stop('this mesh needs more memory than a browser can give one page (3D mesh, in the inputs)');
+  const m = c3dSolveMessage(true), key = c3dSolveKey();
+  if (C3D.region === 'full') { c3dRunWide(m, key); return; }
+  const id = ++C3D_RUN.id;
   const w = new Worker('cfd-3d-worker.js');
   Object.assign(C3D_RUN, { worker: w, status: 'running', progress: null, error: null, t0: performance.now() });
   const done = () => { w.terminate(); if (C3D_RUN.worker === w) C3D_RUN.worker = null; };
@@ -269,7 +311,8 @@ function c3dRun() {
     else if (!r.converged) { C3D_RUN.status = 'error'; C3D_RUN.error = `the 3D did not converge (residual ${r.residual.toExponential(1)} after ${r.iterations} Newton steps)`; }
     else {
       C3D_RUN.status = 'done';
-      C3D_RES = { key, loc: C3D.loc, width: C3D.stripW, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: r };
+      r.zOff = CFD_LOCS[C3D.loc].z / 1000;
+      C3D_RES = { key, region: 'strip', loc: C3D.loc, width: C3D.stripW, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: r };
       V3.key = null;
     }
     render();
@@ -281,15 +324,117 @@ function c3dRun() {
 function c3dStop() {
   if (C3D_RUN.status !== 'running') return;
   if (C3D_RUN.worker) C3D_RUN.worker.terminate();
-  Object.assign(C3D_RUN, { worker: null, status: 'cancelled', progress: null });
+  for (const w of C3D_RUN.workers || []) w.terminate();
+  Object.assign(C3D_RUN, { worker: null, workers: [], status: 'cancelled', progress: null });
   render();
+}
+
+/**
+ * The full width: overlapping strips (c3dWideLayout) in parallel workers. Each worker solves the 2D at the
+ * stations of its strips (the middle station first, the same everywhere: it sets the face elements), then,
+ * sweep after sweep, its strips of one colour and then of the other (alternate strips: they share only held
+ * sides), each with its neighbours' latest solution held on its inner sides -- until nothing changes
+ * (cfd-fem3d.js's solveCoaterWide, run in parallel).
+ */
+async function c3dRunWide(m, key) {
+  const { msg, strip, file } = m, NL = 2 * strip.nEz + 1, zs = strip.zs, mid = (NL - 1) >> 1, L = c3dWideLayout(strip.nEz), subs = L.subs, P = L.workers;
+  const run = ++C3D_RUN.id, workers = Array.from({ length: P }, () => new Worker('cfd-3d-worker.js'));
+  Object.assign(C3D_RUN, { worker: null, workers, status: 'running', progress: { stage: 'starting' }, error: null, t0: performance.now() });
+  const alive = () => C3D_RUN.id === run && C3D_RUN.status === 'running';
+  const stage = t => { C3D_RUN.progress = { ...(C3D_RUN.progress || {}), stage: t }; c3dBusy(); };
+  let seq = 0;
+  const call = (w, data) => new Promise((res, rej) => {
+    const id = ++seq;
+    const on = e => {
+      if (e.data.id !== id) return;
+      if (e.data.progress) {
+        const q = e.data.progress;
+        if (Number.isFinite(q.residual)) C3D_RUN.progress = { ...C3D_RUN.progress, it: q.it, residual: q.residual };
+        if (q.stage && /^2D at /.test(q.stage)) C3D_RUN.progress = { ...C3D_RUN.progress, detail: q.stage.replace(/ \(gap.*$/, '') };   // (a worker's station, while the 2D runs)
+        return;
+      }
+      w.removeEventListener('message', on);
+      if (e.data.ok) res(e.data.result); else rej(new Error(e.data.error));
+    };
+    w.addEventListener('message', on);
+    w.onerror = ev => rej(new Error(ev.message || 'the 3D worker failed'));
+    w.postMessage({ ...data, id });
+  });
+  render();
+  try {
+    // (each worker a run of neighbouring strips: its stations one block, each solved in 2D once or twice, not by every worker)
+    const owner = i => Math.min(P - 1, Math.floor(i * P / subs.length)), mine = workers.map(() => new Set());
+    subs.forEach(([l0, l1], i) => { for (let l = l0; l <= l1; l++) mine[owner(i)].add(l); });
+    stage(`2D at the ${NL} stations across the web`);
+    const inits = await Promise.all(workers.map((w, k) => call(w, { type: 'wideInit', msg, strip, file, zs, ref: mid, stations: [...mine[k]] })));
+    const meta = inits[0], state = new Array(NL), film2 = [], s2 = [];
+    let top2 = null;
+    inits.forEach(r => {
+      for (const l in r.states) state[l] = r.states[l];
+      for (const l in r.film2) { film2[l] = r.film2[l]; s2[l] = r.s2[l]; }
+      if (r.top2[mid]) top2 = r.top2[mid];
+    });
+    const filmOf = T => T.y ? T.y[(meta.NC - 1) * meta.NR + meta.NR - 1] : null;
+    const history = [];
+    let converged = false, sweeps = 0, unknowns = 0;
+    for (; sweeps < C3D_WIDE_CFG.maxSweeps && !converged; sweeps++) {
+      let change = 0, doneN = 0;
+      for (const colour of [0, 1]) {
+        const todo = workers.map(() => []);
+        subs.forEach((_, i) => { if (i % 2 === colour) todo[owner(i)].push(i); });
+        await Promise.all(workers.map(async (w, k) => {
+          for (const i of todo[k]) {
+            if (!alive()) throw new Error('stopped');
+            const [l0, l1] = subs[i];
+            const lastCh = history.length ? history[history.length - 1] : Infinity;
+            stage(`sweep ${sweeps + 1}${Number.isFinite(lastCh) ? ` (last change ${(lastCh * meta.H * 1e6).toFixed(3)} µm)` : ''}: strip ${++doneN} of ${subs.length}`);
+            const states = {};
+            for (let l = l0; l <= l1; l++) states[l] = state[l];
+            const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: l0 > 0, sideHi: l1 < NL - 1 });
+            unknowns = Math.max(unknowns, r.unknowns);
+            for (const l in r.states) {
+              const T = r.states[l], old = state[l], f0 = filmOf(old), f1 = filmOf(T);
+              change = Math.max(change, f0 == null ? Infinity : Math.abs(f1 - f0) / meta.H, meta.climbed ? Math.abs(T.s - old.s) / meta.H : 0);
+              state[l] = T;
+            }
+          }
+        }));
+      }
+      history.push(change);
+      if (change < C3D_WIDE_CFG.tol) converged = true;
+    }
+    if (!alive()) return;
+    if (!converged) throw new Error(`the strips did not agree after ${sweeps} sweeps (last change ${(history[history.length - 1] * meta.H * 1e6).toFixed(3)} µm)`);
+    // the result, as a strip's: node arrays over every station, the stations, the middle's pressure along the top
+    const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', mode: meta.mode, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H,
+      zOff: ACROSS_W / 2000, size: { unknowns, strips: subs.length, workers: P } };
+    for (const f of ['x', 'y', 'z', 'u', 'v', 'w', 'p', 'gd', 'mu']) R[f] = new Float32Array(N);
+    for (let l = 0; l < NL; l++) for (let c = 0; c < NC; c++) for (let k = 0; k < NR; k++) {
+      const n3 = (c * NL + l) * NR + k, n2 = c * NR + k;
+      for (const f of ['x', 'y', 'z', 'u', 'v', 'w', 'p', 'gd', 'mu']) R[f][n3] = state[l][f][n2];
+    }
+    R.stations = zs.map((z, l) => ({ z, dH: 0, film: filmOf(state[l]), q: state[l].q, s: meta.climbed ? state[l].s : 0, film2: film2[l], s2: s2[l] }));
+    const T = state[mid];
+    R.top = { x: [], y: [], p3: [], p2: [] };
+    for (let c = 0; c < NC; c++) { const n2 = c * NR + NR - 1; R.top.x.push(T.x[n2]); R.top.y.push(T.y[n2]); R.top.p3.push(T.p[n2]); R.top.p2.push(top2 ? top2[c] : NaN); }
+    const ms = performance.now() - C3D_RUN.t0;
+    C3D_RES = { key, region: 'full', loc: null, width: ACROSS_W, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: R };
+    V3.key = null;
+    C3D_RUN.status = 'done';
+  } catch (e) {
+    if (C3D_RUN.id === run && C3D_RUN.status === 'running') { C3D_RUN.status = 'error'; C3D_RUN.error = e.message; }
+  } finally {
+    for (const w of workers) w.terminate();
+    if (C3D_RUN.id === run) C3D_RUN.workers = [];
+    if (C3D_RUN.id === run) render();
+  }
 }
 /** While solving: the stage and the latest Newton residual in the verdict (no full redraw). */
 function c3dBusy() {
   const el = document.getElementById('c3dBusy');
   if (!el || C3D_RUN.status !== 'running') return;
   const pr = C3D_RUN.progress, t = ((performance.now() - C3D_RUN.t0) / 1000).toFixed(0);
-  el.textContent = `Solving the 3D (${t} s): ${pr ? pr.stage + (pr.stage.startsWith('3D') && Number.isFinite(pr.residual) ? `, Newton step ${pr.it + 1}, residual ${pr.residual.toExponential(1)}` : '') : 'starting'}`;
+  el.textContent = `Solving the 3D (${t} s): ${pr ? pr.stage + (pr.stage.startsWith('3D') && Number.isFinite(pr.residual) ? `, Newton step ${pr.it + 1}, residual ${pr.residual.toExponential(1)}` : '') + (pr.detail && /^2D at the/.test(pr.stage) ? ` (${pr.detail.replace(/^2D /, '')})` : '') : 'starting'}`;
 }
 setInterval(c3dBusy, 1000);
 
@@ -299,23 +444,24 @@ function view3D() {
   oneDRequest(false);
   const tog = (k, t) => `<label class="fv-chk"><input type="checkbox" data-v3tog="${k}"${C3D[k] ? ' checked' : ''}> ${t}</label>`;
   const views = [['iso', '3D'], ['side', 'Side'], ['top', 'Top'], ['front', 'Front']];
-  const S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey(), running = C3D_RUN.status === 'running';
+  const S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey3(S), running = C3D_RUN.status === 'running';
   const fld = C3D_FIELDS[C3D.field] || C3D_FIELDS.speed, showField = R && C3D.field !== 'none';
   const range = showField ? c3dFieldRange(R) : null;
   const pane = (id, title, aria, legend = '') => `<figure class="pane"><figcaption>${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas>${legend ? `<div class="pane-legend">${legend}</div>` : ''}</figure>`;
   const acc = cssVar('--accent'), mut = cssVar('--muted');
+  const where = R && R.region === 'full' ? 'web' : 'strip';
   const charts = R ? `<div class="v3d-charts">
-      ${pane('c3dFilm', `Wet film across the strip${stale ? ' (out of date)' : ''}`, 'Wet film thickness across the strip, 3D and 2D', oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
-      ${pane('c3dCL', 'Contact line up the exit face across the strip', 'Contact line height up the exit face across the strip, 3D and 2D', oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
-      ${pane('c3dPB', 'Pressure on the blade', 'Pressure on the blade underside, along the flow and across the strip', '')}
-      ${pane('c3dPX', 'Pressure along the blade, middle of the strip', 'Pressure along the blade and exit face at the middle of the strip, 3D and 2D', oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
+      ${pane('c3dFilm', `Wet film across the ${where}${stale ? ' (out of date)' : ''}`, `Wet film thickness across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${pane('c3dCL', `Contact line up the exit face across the ${where}`, `Contact line height up the exit face across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${pane('c3dPB', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
+      ${pane('c3dPX', `Pressure along the blade, middle of the ${where}`, `Pressure along the blade and exit face at the middle of the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
     </div>` : '';
   view.innerHTML = moduleFrame({
     tools: `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${C3D.view === v}">${t}</button>`).join('')}</div>
       <label class="fv-chk">Field <select data-c3d="field"${R ? '' : ' disabled title="Solve first"'}>${Object.entries(C3D_FIELDS).map(([k, f]) => `<option value="${k}"${k === C3D.field ? ' selected' : ''}>${f.l}</option>`).join('')}</select></label>
       ${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${tog('mesh', 'Mesh')}
       <select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>
-      ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">Stop</button>' : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun"${C3D.region === 'full' ? ' disabled title="Full width: the coupled iterative solver is being built"' : ''}>Solve 3D</button>`}`,
+      ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">Stop</button>' : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">Solve 3D</button>`}`,
     panes: [],
     extra: `<figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
@@ -329,10 +475,11 @@ function view3D() {
   if (running) st = pill('Solving the 3D…', '') + `<span class="c3d-busy" id="c3dBusy"></span>`;
   else if (R) {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid], films = R.stations.map(s => s.film * 1000), cls = R.stations.map(s => s.s * 1000);
-    st = pill(`3D solved: wet film ${Math.min(...films).toFixed(3)} to ${Math.max(...films).toFixed(3)} mm across the strip`, stale ? 'warn' : 'ok')
+    st = pill(`3D solved: wet film ${Math.min(...films).toFixed(3)} to ${Math.max(...films).toFixed(3)} mm across the ${R.region === 'full' ? 'web' : 'strip'}`, stale ? 'warn' : 'ok')
       + (stale ? pill('Out of date: the inputs changed since (Solve 3D again)', 'warn') : '')
       + pill(R.mode === 'climbed' ? `Contact line ${Math.min(...cls).toFixed(2)} to ${Math.max(...cls).toFixed(2)} mm up the exit face` : 'Contact line pinned at the edge', '')
-      + pill(`${(S.ms / 1000).toFixed(0)} s, ${R.iterations} Newton steps`, '');
+      + pill(R.region === 'full' ? `${c3dTime(S.ms / 1000)}: ${R.size.strips} strips, ${R.sweeps} sweeps until they agreed` : `${(S.ms / 1000).toFixed(0)} s, ${R.iterations} Newton steps`, '')
+      + (R.region === 'full' ? pill('The web\'s edges: symmetry planes (the edge bead is not modelled)', '') : '');
     void sm;
   }
   if (!running && C3D_RUN.status === 'error') st = pill('The 3D could not be solved: ' + C3D_RUN.error, 'bad') + st;
@@ -349,13 +496,14 @@ function view3D() {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid];
     let wMax = 0; for (let n = 0; n < R.w.length; n++) wMax = Math.max(wMax, Math.abs(R.w[n]));
     const dev = Math.max(...R.stations.map(s => Math.abs(s.film / s.film2 - 1))) * 100;
+    const full = R.region === 'full', films = R.stations.map(s => s.film * 1000);
     document.getElementById('ss').innerHTML = [
-      ['Wet film at L' + (C3D.loc + 1) + ', mm', (sm.film * 1000).toFixed(3)],
+      full ? ['Wet film, mean, mm', (films.reduce((a, b) => a + b, 0) / films.length).toFixed(3)] : ['Wet film at L' + (C3D.loc + 1) + ', mm', (sm.film * 1000).toFixed(3)],
       ['3D vs 2D film, largest', dev.toFixed(2) + ' %'],
-      ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : 'pinned'],
+      full ? ['Film range across the web', ((Math.max(...films) - Math.min(...films)) * 1000).toFixed(1) + ' µm'] : ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : 'pinned'],
       ['Flow across the web, max', (wMax * 1000).toFixed(3) + ' mm/s'],
-      ['Unknowns', R.size.unknowns.toLocaleString()],
-      ['Solve time', `${(S.ms / 1000).toFixed(0)} s`],
+      full ? ['Unknowns per strip', `${R.size.unknowns.toLocaleString()} × ${R.size.strips}`] : ['Unknowns', R.size.unknowns.toLocaleString()],
+      ['Solve time', full ? c3dTime(S.ms / 1000) : `${(S.ms / 1000).toFixed(0)} s`],
     ].map(stat).join('');
   } else if (G.mesh) document.getElementById('ss').innerHTML = [
     [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(ACROSS_W)],
@@ -392,12 +540,12 @@ function c3dGradientCss(f) {
 // ---- the charts ----
 function c3dCharts(R) {
   const acc = cssVar('--accent'), mut = cssVar('--muted');
-  const zs = R.stations.map(s => s.z * 1000), x0 = zs[0], x1 = zs[zs.length - 1];
+  const full = R.region === 'full', zs = R.stations.map(s => (s.z + (full ? R.zOff : 0)) * 1000), x0 = zs[0], x1 = zs[zs.length - 1];
   const line = (id, a, b, yl, d) => {
     const cv = document.getElementById(id); if (!cv) return;
     const all = [...a, ...b], lo = Math.min(...all), hi = Math.max(...all), pad = Math.max((hi - lo) * 0.15, Math.abs(hi) * 2e-4, 1e-6);
-    plotChart(cv, fitAspect(cv, 0.5), { x0, x1, y0: lo - pad, y1: hi + pad, yl, xl: `z across the strip (mm), 0 = L${C3D.loc + 1}`, yd: d, xd: 1,
-      s: [{ p: zs.map((z, k) => [z, b[k]]), c: mut, w: 1.6, dash: [5, 4], dots: true }, { p: zs.map((z, k) => [z, a[k]]), c: acc, w: 2.2, dots: true }] });
+    plotChart(cv, fitAspect(cv, 0.5), { x0, x1, y0: lo - pad, y1: hi + pad, yl, xl: full ? 'z across the web (mm)' : `z across the strip (mm), 0 = L${C3D.loc + 1}`, yd: d, xd: full ? 0 : 1,
+      s: [{ p: zs.map((z, k) => [z, b[k]]), c: mut, w: 1.6, dash: [5, 4], dots: !full }, { p: zs.map((z, k) => [z, a[k]]), c: acc, w: 2.2, dots: !full }] });
   };
   line('c3dFilm', R.stations.map(s => s.film * 1000), R.stations.map(s => s.film2 * 1000), 'wet film (mm)', 4);
   if (R.mode === 'climbed') line('c3dCL', R.stations.map(s => s.s * 1000), R.stations.map(s => s.s2 * 1000), 'contact line up the face (mm)', 3);
@@ -422,12 +570,12 @@ function c3dPressureMap(R) {
   for (let cc = 0; cc < nc; cc++) for (let l = 0; l < NL; l++) { const v = R.p[node(cc, l)]; lo = Math.min(lo, v); hi = Math.max(hi, v); }
   const lut = c3dLut({ div: lo < 0 }), rng = lo < 0 ? { min: -Math.max(-lo, hi), max: Math.max(-lo, hi) } : { min: lo, max: hi > lo ? hi : lo + 1 };
   const m = { l: 52, r: 78, t: 24, b: 36 }, pw = w - m.l - m.r, ph = h - m.t - m.b;
-  const xMax = R.xe * 1000, z0 = R.stations[0].z * 1000, z1 = R.stations[NL - 1].z * 1000;
+  const zo = R.region === 'full' ? R.zOff : 0, xMax = R.xe * 1000, z0 = (R.stations[0].z + zo) * 1000, z1 = (R.stations[NL - 1].z + zo) * 1000;
   const X = x => m.l + x / xMax * pw, Y = z => m.t + ph - (z - z0) / (z1 - z0) * ph;
   // cells between neighbouring nodes, each filled by the mean of its four corners
   for (let cc = 0; cc < nc - 1; cc++) for (let l = 0; l < NL - 1; l++) {
     const v = (R.p[node(cc, l)] + R.p[node(cc + 1, l)] + R.p[node(cc, l + 1)] + R.p[node(cc + 1, l + 1)]) / 4;
-    const xa = X(R.x[node(cc, l)] * 1000), xb = X(R.x[node(cc + 1, l)] * 1000), ya = Y(R.z[node(cc, l)] * 1000), yb = Y(R.z[node(cc, l + 1)] * 1000);
+    const xa = X(R.x[node(cc, l)] * 1000), xb = X(R.x[node(cc + 1, l)] * 1000), ya = Y((R.z[node(cc, l)] + zo) * 1000), yb = Y((R.z[node(cc, l + 1)] + zo) * 1000);
     c.fillStyle = lutColor(lut, (v - rng.min) / (rng.max - rng.min));
     c.fillRect(Math.min(xa, xb), Math.min(ya, yb), Math.abs(xb - xa) + 0.6, Math.abs(yb - ya) + 0.6);
   }
@@ -435,7 +583,7 @@ function c3dPressureMap(R) {
   c.strokeStyle = cssVar('--line'); c.strokeRect(m.l, m.t, pw, ph);
   c.fillStyle = ink; c.font = '12px ' + cssVar('--mono');
   for (let k = 0; k <= 4; k++) { const x = xMax * k / 4; c.textAlign = 'center'; c.fillText(x.toFixed(0), X(x), h - m.b + 16); }
-  for (let k = 0; k <= 2; k++) { const z = z0 + (z1 - z0) * k / 2; c.textAlign = 'right'; c.fillText(z.toFixed(1), m.l - 6, Y(z) + 4); }
+  for (let k = 0; k <= 2; k++) { const z = z0 + (z1 - z0) * k / 2; c.textAlign = 'right'; c.fillText(z.toFixed(zo ? 0 : 1), m.l - 6, Y(z) + 4); }
   c.textAlign = 'left'; c.fillText('z (mm)', 4, 12);
   c.textAlign = 'right'; c.fillText('x along the blade (mm), metering edge at the right', w - m.r, h - 4);
   // colour bar
@@ -521,8 +669,9 @@ function v3Scene(G, R) {
  * web below; the strip's two sides; inlet and outlet) coloured by the field at the nodes, the element edges on them. */
 function v3SceneSolved(G, R, grp) {
   const NC = R.NC, NR = R.NR, NL = R.NL, N = R.x.length, id = (c, l, k) => (c * NL + l) * NR + k;
-  const pos = new Float32Array(3 * N);
-  for (let n = 0; n < N; n++) { pos[3 * n] = R.x[n] * 1000; pos[3 * n + 1] = R.y[n] * 1000; pos[3 * n + 2] = R.z[n] * 1000; }
+  // (the solve's z is from the region's middle: placed where the region is across the web, as the blade is)
+  const pos = new Float32Array(3 * N), zo = R.zOff || 0;
+  for (let n = 0; n < N; n++) { pos[3 * n] = R.x[n] * 1000; pos[3 * n + 1] = R.y[n] * 1000; pos[3 * n + 2] = (R.z[n] + zo) * 1000; }
   const col = v => new THREE.Color(cssVar(v));
   if (C3D.blade && G.tris) {
     const g = new THREE.BufferGeometry(); const mm = Float32Array.from(G.tris, v => v * 1000);

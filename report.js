@@ -128,7 +128,8 @@ async function rep3D() {
   try { await load3DLibs(); } catch (e) { /* (the report goes without the 3D view) */ }
   const G = c3dBuild(), rg = C3D.region === 'strip' ? `strip ${C3D.stripW} mm wide at L${C3D.loc + 1} (z ${CFD_LOCS[C3D.loc].z} mm)` : `full web width, ${ACROSS_W} mm`;
   const rows = [['Blade', repEsc(G.label || 'no file imported')], ['Region', repEsc(rg)],
-    ['Mesh', repEsc(`${C3D.nxGap} + ${C3D.nxFilm} elements along the flow, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull} across the web`)]];
+    ['Mesh', repEsc(`elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : C3D.nzFull + ' across the web'}`)]];
+  if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(`${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges symmetry planes`)]); }
   if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`]);
   return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + await repModule(9);
 }
