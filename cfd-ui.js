@@ -814,6 +814,8 @@ document.addEventListener('toggle', e => {
   body.style.left = ''; body.style.right = '';
   const r = body.getBoundingClientRect();
   if (r.right > innerWidth - 8) { body.style.left = 'auto'; body.style.right = '0'; }
+  // (nor off the left edge: from there, 8 px in from the window's)
+  if (body.getBoundingClientRect().left < 8) { body.style.right = 'auto'; body.style.left = `${8 - d.getBoundingClientRect().left}px`; }
 }, true);
 document.addEventListener('click', e => { document.querySelectorAll('.vp-pop[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.vp-pop[open]').forEach(d => { d.open = false; }); });

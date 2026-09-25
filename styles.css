@@ -462,7 +462,11 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .vp-pop[hidden] { display: none; }
 .pop-body { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: max-content; max-width: min(640px, 80vw); padding: 10px 12px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-lg); }
 .vp-pop-r .pop-body { left: auto; right: 0; }
-.pop-body .fv-grid { margin-top: 0; grid-template-columns: repeat(3, minmax(190px, auto)); }
+.pop-body .fv-grid { margin-top: 0; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+/* the Display menu: as wide as its three columns need, never wider than the window; its sections shrink with it (a fieldset won't by itself), so none overlaps the next */
+#fvMore .pop-body { width: min(760px, calc(100vw - 16px)); max-width: none; }
+.pop-body .fv-grid fieldset { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.pop-body .fv-grid .fv-ctl { flex-wrap: wrap; }   /* (a selector too wide for its section goes under its label) */
 .pop-menu { display: grid; gap: 1px; min-width: 280px; padding: 6px; }
 .pop-menu .fv-why { padding: 2px 8px 6px; }
 .menu-item { font: inherit; font-size: 12.5px; text-align: left; padding: 6px 8px; border: 0; border-radius: 5px; background: none; color: var(--ink); cursor: pointer; }
@@ -534,7 +538,6 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
   .viewport #cfdPlots { overflow: visible; }
   .dock-body { overflow: visible; }
   .statusbar { position: sticky; bottom: 0; z-index: 40; height: 26px; }
-  .pop-body .fv-grid { grid-template-columns: minmax(0, 1fr); }
 }
 .tool-btn svg, .tool-run svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .tool-run { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; }
