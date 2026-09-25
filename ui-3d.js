@@ -317,11 +317,13 @@ function c3dRun() {
   if (C3D.region === 'full') { c3dRunWide(m, key); return; }
   const id = ++C3D_RUN.id;
   const w = makeWorker('cfd-3d-worker.js');
-  Object.assign(C3D_RUN, { worker: w, status: 'running', progress: null, error: null, t0: performance.now() });
+  // (the progress bars: the stations' 2D and the 3D solve weighted by their estimated times, as the mesh settings give them)
+  Object.assign(C3D_RUN, { worker: w, status: 'running', progress: null, error: null, t0: performance.now(),
+    prog: prog3DStrip(est.NL, est.NL * 1.7, est.secs3, m.msg.solver.tol || TOL_DEFAULT), progZ: CFD_LOCS[C3D.loc].z, progName: `strip at L${C3D.loc + 1}` });
   const done = () => { w.terminate(); if (C3D_RUN.worker === w) C3D_RUN.worker = null; };
   w.onmessage = e => {
     if (e.data.id !== id) return;
-    if (e.data.progress) { C3D_RUN.progress = e.data.progress; c3dBusy(); return; }
+    if (e.data.progress) { C3D_RUN.progress = e.data.progress; prog3DStripFeed(C3D_RUN.prog, e.data.progress); c3dBusy(); return; }
     done();
     const ms = performance.now() - C3D_RUN.t0, r = e.data.ok ? e.data.result : null;
     if (!r) { C3D_RUN.status = 'error'; C3D_RUN.error = e.data.error; }
@@ -356,21 +358,39 @@ function c3dStop() {
 async function c3dRunWide(m, key) {
   const { msg, strip, file } = m, NL = 2 * strip.nEz + 1, zs = strip.zs, mid = (NL - 1) >> 1, L = c3dWideLayout(strip.nEz), subs = L.subs, P = L.workers, open = !!msg.webW;
   const run = ++C3D_RUN.id, workers = Array.from({ length: P }, () => makeWorker('cfd-3d-worker.js'));
-  Object.assign(C3D_RUN, { worker: null, workers, status: 'running', progress: { stage: 'starting' }, error: null, t0: performance.now() });
+  // (the progress bars: the stations' 2D, then the sweeps, weighted by their estimated times as the mesh settings give them)
+  const e3 = c3dEstimate(L.sub), perColour = Math.ceil(Math.ceil(subs.length / 2) / P), tol = msg.solver.tol || TOL_DEFAULT;
+  const prog = prog3DWide({ n2: 0, nStrips: subs.length, t2: (NL / P + 4) * 3, ts1: 2 * perColour * e3.secs3, ts: 0.6 * 2 * perColour * e3.secs3, tolSweep: C3D_WIDE_CFG.tol, maxSweeps: C3D_WIDE_CFG.maxSweeps, tol });
+  Object.assign(C3D_RUN, { worker: null, workers, status: 'running', progress: { stage: 'starting' }, error: null, t0: performance.now(), prog, progZ: ACROSS_W / 2, progName: 'full width' });
   const alive = () => C3D_RUN.id === run && C3D_RUN.status === 'running';
   const stage = t => { C3D_RUN.progress = { ...(C3D_RUN.progress || {}), stage: t }; c3dBusy(); };
+  // a worker's station (its 2D) or strip (its 3D Newton solve): started, progressing, finished
+  const track = (ctx, q) => {
+    if (ctx.station != null) {
+      const st = q && q.stage || '';
+      // (named with its solver: a station can be solved by two at once, and the middle one by each)
+      if (/^2D at /.test(st)) { if (prog.stations.has(ctx.station)) prog.done2++; prog.stations.set(ctx.station, progStation(tol, `${c3dStationName(st)} (solver ${ctx.station + 1} of ${P})`)); }
+      const S = prog.stations.get(ctx.station);
+      if (q && S) progStationFeed(S, q);
+      if (!q && S) { prog.done2++; prog.stations.delete(ctx.station); }
+    } else if (q) progSolveFeed(prog.strips.get(ctx.strip), q);
+    else { prog.strips.delete(ctx.strip); prog.doneS++; }
+    prog3DWideShare(prog);
+  };
   let seq = 0;
-  const call = (w, data) => new Promise((res, rej) => {
+  const call = (w, data, ctx) => new Promise((res, rej) => {
     const id = ++seq;
     const on = e => {
       if (e.data.id !== id) return;
       if (e.data.progress) {
         const q = e.data.progress;
+        if (ctx) track(ctx, q);
         if (Number.isFinite(q.residual)) C3D_RUN.progress = { ...C3D_RUN.progress, it: q.it, residual: q.residual };
         if (q.stage && /^2D at /.test(q.stage)) C3D_RUN.progress = { ...C3D_RUN.progress, detail: q.stage.replace(/ \(gap.*$/, '') };   // (a worker's station, while the 2D runs)
         return;
       }
       w.removeEventListener('message', on);
+      if (e.data.ok && ctx) track(ctx, null);
       if (e.data.ok) res(e.data.result); else rej(new Error(e.data.error));
     };
     w.addEventListener('message', on);
@@ -382,8 +402,9 @@ async function c3dRunWide(m, key) {
     // (each worker a run of neighbouring strips: its stations one block, each solved in 2D once or twice, not by every worker)
     const owner = i => Math.min(P - 1, Math.floor(i * P / subs.length)), mine = workers.map(() => new Set());
     subs.forEach(([l0, l1], i) => { for (let l = l0; l <= l1; l++) mine[owner(i)].add(l); });
+    prog.n2 = mine.reduce((n, s) => n + s.size + (s.has(mid) ? 0 : 1), 0);   // (each worker solves the middle station too)
     stage(`2D at the ${NL} stations across the web`);
-    const inits = await Promise.all(workers.map((w, k) => call(w, { type: 'wideInit', msg, strip, file, zs, ref: mid, stations: [...mine[k]] })));
+    const inits = await Promise.all(workers.map((w, k) => call(w, { type: 'wideInit', msg, strip, file, zs, ref: mid, stations: [...mine[k]] }, { station: k })));
     const meta = inits[0], state = new Array(NL), film2 = [], s2 = [], full2 = [];
     let top2 = null;
     inits.forEach(r => {
@@ -392,6 +413,7 @@ async function c3dRunWide(m, key) {
       if (r.top2[mid]) top2 = r.top2[mid];
     });
     const filmOf = T => T.y ? T.y[(meta.NC - 1) * meta.NR + meta.NR - 1] : null;
+    prog.H = meta.H;
     const history = [];
     let converged = false, sweeps = 0, unknowns = 0;
     for (; sweeps < C3D_WIDE_CFG.maxSweeps && !converged; sweeps++) {
@@ -408,7 +430,8 @@ async function c3dRunWide(m, key) {
             const states = {};
             for (let l = l0; l <= l1; l++) states[l] = state[l];
             // (a skewed blade: the web's edges held at their own stations' flow too, the slurry leaving and entering freely)
-            const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: l0 > 0 || open, sideHi: l1 < NL - 1 || open });
+            prog.strips.set(i, progSolve(tol, `Strip ${i + 1} of ${subs.length}`));
+            const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: l0 > 0 || open, sideHi: l1 < NL - 1 || open }, { strip: i });
             unknowns = Math.max(unknowns, r.unknowns);
             for (const l in r.states) {
               const T = r.states[l], old = state[l], f0 = filmOf(old), f1 = filmOf(T);
@@ -419,6 +442,7 @@ async function c3dRunWide(m, key) {
         }));
       }
       history.push(change);
+      prog.hist.push(change); prog.sweep++; prog.doneS = 0; prog3DWideShare(prog);
       if (change < C3D_WIDE_CFG.tol) converged = true;
     }
     if (!alive()) return;
@@ -448,8 +472,38 @@ async function c3dRunWide(m, key) {
     if (C3D_RUN.id === run) render();
   }
 }
-/** While solving: the stage and the latest Newton residual in the verdict (no full redraw). */
+/** The station a progress message's stage names ("2D at X mm", X from the region's middle), by its place across the web. */
+function c3dStationName(stage) {
+  const m = /^2D at (-?[\d.]+) mm/.exec(stage || '');
+  return m ? `Station at z ${(C3D_RUN.progZ + +m[1]).toFixed(1)} mm` : 'Station';
+}
+/** While the 3D solves: a bar for the whole solve and one for each station or strip being solved (≈, cfd-progress.js). */
+function c3dProgCard() {
+  const P = C3D_RUN.prog;
+  if (C3D_RUN.status !== 'running' || !P) return '';
+  const nt = (it, res) => it ? `Newton step ${it}${Number.isFinite(res) ? `, residual ${res.toExponential(0)}` : ''}` : 'starting';
+  const station = (S, name) => progBar(name, S.P.share, S.pr ? `the 2D: ${cfdStageText(S.pr.stage)}${S.P.it ? ' · ' + nt(S.P.it, S.pr.residual) : ''}` : 'the 2D: starting');
+  const title = `Solving the 3D (${C3D_RUN.progName})`;
+  let rows;
+  if (P.stations) {   // (the full width: its stations, then its sweeps, several strips at once)
+    const sweeping = P.sweep > 0 || P.doneS > 0 || P.strips.size > 0, last = P.hist.filter(Number.isFinite).pop();
+    rows = [progBar(title, P.share, sweeping ? `sweep ${P.sweep + 1} of about ${P.E}${last != null && P.H ? ` (the strips agree to ${(last * P.H * 1e6).toFixed(3)} µm so far)` : ''}` : `the 2D at the stations: ${P.done2} of ${P.n2} done`)];
+    if (sweeping) rows.push(...[...P.strips.entries()].sort((a, b) => a[0] - b[0]).map(([, S]) => progBar(S.name, S.f, nt(S.it, S.res))));
+    else rows.push(...[...P.stations.values()].map(S => station(S, S.name)));
+  } else {            // (a strip: its stations' 2D, then its 3D solve)
+    rows = [progBar(title, P.share, P.solve3 ? 'the 3D Newton solve (the stations\' 2D done)' : `the 2D at the stations: ${Math.max(0, P.n2 - 1)} of ${P.NL} done`)];
+    if (P.solve3) rows.push(progBar('The 3D Newton solve', P.solve3.f, nt(P.solve3.it, P.solve3.res)));
+    else if (P.station) rows.push(station(P.station, c3dStationName(P.at)));
+  }
+  return `<div class="prog-card" role="group" aria-label="3D solve progress">${rows.join('')}</div>`;
+}
+/** The 3D solve's share done (≈), or null when none is running (the status bar). */
+const c3dProgShare = () => C3D_RUN.status === 'running' && C3D_RUN.prog ? C3D_RUN.prog.share : null;
+/** While solving: the progress bars, the stage and the latest Newton residual in the verdict (no full redraw); the status bar's bar. */
 function c3dBusy() {
+  renderSbProg();
+  const pg = document.getElementById('c3dProg');
+  if (pg) pg.innerHTML = c3dProgCard();
   const el = document.getElementById('c3dBusy');
   if (!el || C3D_RUN.status !== 'running') return;
   const pr = C3D_RUN.progress, t = ((performance.now() - C3D_RUN.t0) / 1000).toFixed(0);
@@ -484,7 +538,7 @@ function view3D() {
       <select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>
       ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">Stop</button>' : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">Solve 3D</button>`}`,
     panes: [],
-    extra: `<figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
+    extra: `<div id="c3dProg"></div><figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
       <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${(R ? R.skew : P.skew) ? `<span>Blade skewed ${(R ? R.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>

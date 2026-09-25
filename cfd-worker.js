@@ -14,7 +14,8 @@
  *              law's own reference), muRep = mu at the representative
  *              shear rate U/H (only for the one-viscosity lubrication
  *              estimate shown alongside).
- * Messages out: { progress: { it, residual, s, stage } } while solving, then
+ * Messages out: { progress: { it, residual, s, path, stage } } while solving (path: how far along its continuation the
+ *               solve is, 0..1, or none), then
  *               { ok: true, result } or { ok: false, error }.
  * result.trace: the convergence record over every solve the strategy ran, in order --
  *   r: the residual at each Newton iterate (all solves in sequence),
@@ -46,7 +47,7 @@ onmessage = e => {
       if (t - lastPost <= 150) return;
       lastPost = t;
       const add = trace.r.slice(sent); sent = trace.r.length;
-      postMessage({ progress: { it: h.it, residual: h.residual, s: h.s, stage, add, solves: trace.solves.map(sv => [sv.label, sv.k0]) } });
+      postMessage({ progress: { it: h.it, residual: h.residual, s: h.s, path: h.path ?? h.lambda ?? null, stage, add, solves: trace.solves.map(sv => [sv.label, sv.k0]) } });
     };
     let open = null;
     const onIteration = h => { if (Number.isFinite(h.residual)) trace.r.push(h.residual); post(h); };

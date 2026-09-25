@@ -367,14 +367,18 @@ function runLocation(i) {
   const worker = makeWorker('cfd-worker.js');
   cfdWorkers[i] = worker;
   const t0 = performance.now();
+  // (the progress bars: the locations of the runs going on, from the first that started while none was)
+  if (!cfdRuns.some((r, k) => k !== i && r.status === 'running')) cfdBatch = [];
+  if (!cfdBatch.includes(i)) cfdBatch.push(i);
   run.status = 'running'; run.error = null; run.progress = null;
   run.live = { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol };
+  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT);
   let lastStage = null;
   logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : 'flat land'}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
     if (e.data.progress) {
-      run.progress = e.data.progress; liveAdd(run.live, run.progress);
+      run.progress = e.data.progress; liveAdd(run.live, run.progress); prog2DFeed(run.prog, run.progress, run.live);
       if (run.progress.stage && run.progress.stage !== lastStage) { lastStage = run.progress.stage; logCFD(i, lastStage); }
       updateLocStates(); renderRunChips(); updateBusy();
       return;
@@ -638,6 +642,7 @@ function viewCFD() {
       </div>
       <div class="viewport" id="cfdViewport">
         <div class="cbar-pop" id="cbarPop" role="dialog" aria-label="Colour scale" hidden></div>
+        <div id="cfdProg"></div>
         <div id="cfdBusy"></div>
         <div class="live-res" id="cfdLive" hidden><div class="xl-chart"><canvas role="img" aria-label="Newton residuals of the solves running"></canvas></div></div>
         <div id="cfdSeeds"></div>
@@ -1061,6 +1066,7 @@ function renderSolverNote() {
     + CFD_LOCS.map((_, i) => { const g = cfdGeometry(i), s = g.solver; return `L${i + 1} <b>${s.nEb} + ${s.nEf} + ${s.nEs}</b> by <b>${s.nEy}</b>${g.solverOwn.length ? ' (own)' : ''}`; }).join(' · ') + '.';
 }
 
+let cfdBatch = [];      // the locations with progress bars: those of the runs going on (and of them, the finished), in the order they started
 let meshStudy = null;   // { loc, key, status, runs: [{ name, f, solver, status, progress, r, metrics, ms, error, worker }] }
 const STUDY_STEPS = [['Coarse', 1 / 1.5], ['Medium', 1], ['Fine', 1.5]];
 function runMeshStudy(i) {
@@ -1287,6 +1293,15 @@ function renderRunChips() {
     else if (r.status === 'cancelled') { cls = 'warn'; txt = 'stopped'; tip = 'stopped'; }
     return `<span class="sb-run ${cls}" title="Location ${loc.id} (z ${loc.z} mm): ${tip}"><i class="loc-dot" style="background:${locColor(i)}"></i>L${loc.id} <b>${txt}</b></span>`;
   }).join('');
+  renderSbProg();
+}
+/** The status bar's progress (≈): the 2D runs together, and the 3D, while they solve (seen on every page). */
+function renderSbProg() {
+  const el = document.getElementById('sbProg');
+  if (!el) return;
+  const items = [['2D', cfdProgShare()], ['3D', typeof c3dProgShare === 'function' ? c3dProgShare() : null]].filter(([, s]) => s != null);
+  el.hidden = !items.length;
+  el.innerHTML = items.map(([k, s]) => { const pct = Math.min(99, Math.floor(100 * s)); return `<span class="sb-prog-item" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Solving the ${k}: about ${pct} % done"><b>Solving ${k}</b> ≈ ${pct} %<i class="sb-bar"><i style="width:${pct}%"></i></i></span>`; }).join('');
 }
 
 function renderCfdStatus() {
@@ -1320,7 +1335,50 @@ function busyLine() {
 function updateBusy() {
   const el = document.getElementById('cfdBusy');
   if (el) el.innerHTML = busyLine();
+  const pg = document.getElementById('cfdProg');
+  if (pg) { pg.innerHTML = progCard(); progLayout(pg); }
   drawCfdLive();
+}
+/** With the progress bars at the top of the viewport: everything under them keeps the height it has without them, and the viewport scrolls. */
+function progLayout(pg) {
+  const vp = pg.parentNode, on = !!pg.firstChild;
+  if (!on && !vp.classList.contains('has-prog')) return;
+  const kids = [...vp.children].filter(el => el !== pg && !el.hidden && getComputedStyle(el).position !== 'absolute');
+  vp.classList.remove('has-prog');
+  for (const el of vp.children) if (el !== pg) el.style.height = '';
+  if (!on) return;
+  pg.hidden = true;
+  const hs = kids.map(el => el.getBoundingClientRect().height);
+  pg.hidden = false;
+  kids.forEach((el, k) => { el.style.height = `${hs[k]}px`; });
+  vp.classList.add('has-prog');
+}
+/** One progress bar (≈): its name, share (0..1) and what it is doing; state '' (running), 'ok', 'bad'. */
+function progBar(name, share, note, state = '', aria = name) {
+  const pct = state === 'ok' ? 100 : Math.min(99, Math.floor(100 * share)), esc = t => String(t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));   // (100 % once finished only)
+  note = esc(note);
+  return `<div class="prog-row${state ? ' ' + state : ''}"><div class="prog-head"><b>${name}</b><span class="prog-pct">${state === 'ok' ? '' : '≈ '}${pct} %</span></div>
+    <div class="prog-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${aria}: about ${pct} % done"><i style="width:${pct}%"></i></div>
+    <div class="prog-note" title="${note}">${note}</div></div>`;
+}
+/** While locations are solving: a bar each (≈, cfd-progress.js) with what it is doing; those of the same runs already finished at their end. */
+function progCard() {
+  if (!cfdRuns.some(r => r.status === 'running')) return '';
+  return `<div class="prog-card lines" role="group" aria-label="Solve progress">${cfdBatch.map(i => {
+    const r = cfdRuns[i], P = r.prog, pr = r.progress, name = `L${CFD_LOCS[i].id}`, aria = `Location ${CFD_LOCS[i].id}`;
+    if (r.status === 'running') {
+      const res = pr && Number.isFinite(pr.residual) ? `, residual ${pr.residual.toExponential(0)}` : '';
+      return progBar(name, P ? P.share : 0, pr ? `${cfdStageText(pr.stage)}${P && P.it ? ` · Newton step ${P.it}${res}` : ''}` : 'starting', '', aria);
+    }
+    if (r.status === 'done') return progBar(name, 1, `solved in ${(r.elapsedMs / 1000).toFixed(1)} s`, 'ok', aria);
+    return progBar(name, P ? P.share : 0, r.status === 'cancelled' ? 'stopped' : `failed${r.error ? ': ' + r.error : ''}`, 'bad', aria);
+  }).join('')}</div>`;
+}
+/** The 2D runs going on: their share done together (≈; the finished ones of the same runs whole), or null. */
+function cfdProgShare() {
+  if (!cfdRuns.some(r => r.status === 'running')) return null;
+  const s = cfdBatch.map(i => cfdRuns[i].status === 'running' ? (cfdRuns[i].prog ? cfdRuns[i].prog.share : 0) : 1);
+  return s.reduce((a, b) => a + b, 0) / s.length;
 }
 /** The locations in view that are solving: their residuals so far, over the plots (or in their place, before the first result). */
 function drawCfdLive() {

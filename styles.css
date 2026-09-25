@@ -553,6 +553,32 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
 .sb-run.run .loc-dot { animation: sb-pulse 1s ease-in-out infinite alternate; }
 @keyframes sb-pulse { from { opacity: 1; } to { opacity: .35; } }
 
+/* progress bars (an estimate, "≈": cfd-progress.js): Flow › 2D one per location, Flow › 3D, and the status bar */
+.prog-card { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0 0 8px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.prog-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink); }
+.prog-head b, .prog-pct { font-weight: 600; }
+.prog-pct { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prog-bar { height: 8px; margin: 3px 0 2px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.prog-bar > i { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width .3s ease; }
+.prog-note { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prog-row.ok .prog-bar > i { background: var(--ok); }
+.prog-row.bad .prog-bar > i { background: var(--bad); }
+.prog-row.bad .prog-note { color: var(--bad); }
+/* Flow › 2D: one line per location (name, bar, share, what it is doing); the viewport scrolls, what is under the bars keeping its height */
+.prog-card.lines { gap: 5px; padding: 8px 12px; }
+.prog-card.lines .prog-row { display: grid; grid-template-columns: 34px minmax(90px, 1fr) 58px minmax(0, 1.4fr); align-items: center; column-gap: 10px; }
+.prog-card.lines .prog-head { display: contents; }
+.prog-card.lines .prog-head b { order: 1; }
+.prog-card.lines .prog-bar { order: 2; margin: 0; }
+.prog-card.lines .prog-pct { order: 3; text-align: right; }
+.prog-card.lines .prog-note { order: 4; }
+.sb-prog { display: flex; flex: 0 0 auto; gap: 14px; white-space: nowrap; }
+.sb-prog[hidden] { display: none; }
+.sb-prog-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sb-prog-item b { font-weight: 600; }
+.sb-bar { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.sb-bar > i { display: block; height: 100%; background: var(--accent); }
+
 /* Messages tab: the solver log */
 .msg-log { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; max-height: none; }
 .msg { display: grid; grid-template-columns: 64px 34px minmax(0, 1fr); gap: 8px; padding: 1px 4px; border-radius: 3px; color: var(--ink); }
@@ -1110,7 +1136,7 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; -webkit-font-smoothing: antial
 .wb-body.tree-none { grid-template-columns: minmax(0, 1fr); }
 .wb-body.tree-none > .tree, .wb-body.tree-none > #treeSplit { display: none; }
 /* the status bar: on pages that show the validity line themselves (Results, the 1D), only while the CFD is solving */
-body:has(#pgScope) .statusbar:not(:has(#cfdStatus.busy)) { display: none; }
+body:has(#pgScope) .statusbar:not(:has(#cfdStatus.busy)):not(:has(#sbProg:not([hidden]))) { display: none; }
 body:has(#pgScope) #scope { display: none; }
 
 /* page bar: the sub tabs (a pill switch), the page's controls, About */
@@ -1255,3 +1281,8 @@ body:has(#pgScope) #scope { display: none; }
 .pg-tools select[data-c3d] { width: auto; max-width: 11em; }
 .c3d-busy { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .v3d-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* Flow › 2D while the progress bars show: the parts under them keep the heights they have without them (set by
+   progLayout), and the viewport scrolls (after the parts' own flex rules, which it overrides) */
+#cfdViewport.has-prog { overflow-y: auto; }
+#cfdViewport.has-prog > * { flex: 0 0 auto; }
