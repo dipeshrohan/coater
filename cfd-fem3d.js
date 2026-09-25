@@ -548,7 +548,8 @@ function solveFEM3D(o) {
       seen.push(nrm);
       if (stallAfter && seen.length > stallAfter && nrm > 0.5 * seen[seen.length - 1 - stallAfter]) return false;
       if (hasS) rowS = Array.from({ length: NL }, () => new Float64Array(ND));
-      jacobian(true);
+      // (an element turned inside out by the Jacobian's small geometry steps: this solve fails, instead of the whole run stopping)
+      { const keep = Float64Array.from(sol), keepS = Float64Array.from(sStar); try { jacobian(true); } catch (e) { sol.set(keep); sStar.set(keepS); placeNodes(); return false; } }
       const t0 = Date.now();
       const fac = bandFactor(LU, ND, kl, ku); factorizations++; msFactor += Date.now() - t0;
       const y1 = Float64Array.from(res.R, v => -v);
