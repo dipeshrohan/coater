@@ -2,7 +2,7 @@
  * keys.js — keyboard shortcuts: one list of actions, each with a default key that can be changed
  * (in Help > Keyboard shortcuts; kept in this browser), and one handler for them all.
  *
- * Run (Ctrl+Enter) and Stop (Esc) act on the tab shown: Flow (CFD), DOE, Measured data. The
+ * Run (Ctrl+Enter) and Stop (Esc) act on the tab shown: 2D CFD, DOE, Measured data. The
  * view keys (Alt + a letter or digit) drive the CFD flow plot; Ctrl+B and Ctrl+J hide and show
  * the inputs bar and the bottom panel. Keys without Ctrl or Alt are not taken while typing in a box,
  * and Ctrl+Z / Ctrl+Y in a text box stay the browser's own text undo.
@@ -109,7 +109,7 @@ const PANELS_STORE = 'bladeCoatDefectLab.panels.v1';
 // the inputs bar has its own state on the Summary page, which opens without it)
 const PANELS = (() => { const d = { model: false, dock: false, modDock: true, modelHome: true }; try { return { ...d, ...JSON.parse(localStorage.getItem(PANELS_STORE) || '{}') }; } catch (e) { return d; } })();
 const panelKey = k => { const t = typeof tab === 'number' ? tab : 0;   // (tab: ui.js, loaded after)
-  return k === 'dock' && t <= 3 ? 'modDock' : k === 'model' && t === 7 ? 'modelHome' : k; };
+  return k === 'dock' && (t <= 3 || t >= 8) ? 'modDock' : k === 'model' && t === 7 ? 'modelHome' : k; };   // (views 0-3, 8-11: the history-only panel)
 const panelHidden = k => !!PANELS[panelKey(k)];
 function setPanelHidden(k, hide) {
   PANELS[panelKey(k)] = !!hide;

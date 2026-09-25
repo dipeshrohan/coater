@@ -12,7 +12,7 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
-### Plan: Flow as 1D → 2D → 3D (awaiting the user's approval; nothing built yet)
+### Plan: Flow as 1D → 2D → 3D (approved; phase A built, phases B and C to come)
 
 User: CFD is done 1D first, then 2D, then 3D; the 3D needs a CAD upload or
 a geometry made in the app; the app has not used 1D as a stage. Verified:
@@ -54,6 +54,28 @@ Phase A: Flow sub tabs and the 1D stage (one merge)
 - Checks: Newtonian flat land against the Reynolds-equation formula; the 1D
   against the existing exact profile; 1D vs 2D at the defaults (difference
   reported, not hidden); the usual census, parity and browser suites.
+
+Phase A status: built.
+- cfd-1d.js (the solver, Node-testable), cfd-1d-worker.js (off the main
+  thread: the four locations with film, ripple and profiles, and 61
+  positions across the web on request), ui-1d.js (the pages, the table,
+  the 3D placeholder). cfd-worker.js now takes bladeShape from cfd-1d.js,
+  so the 1D and 2D share the blade geometry. Views 8 (gap flow), 10 (to
+  the oven), 11 (across the web), 9 (3D); Start-up stays view 0; 2D CFD is 4.
+- cfd-1d.validate.js: Newtonian flat land equals Couette–Poiseuille to
+  machine precision; round entry equals the Reynolds equation to 0.0003 %
+  (converging with stations); Beavers–Joseph slip recovers the closed form;
+  Bingham, Herschel–Bulkley and power law stations recover the pressure
+  gradient of the exact profile to 0.0001 % and its velocities; p = Pup at
+  the inlet and 0 at the edge; the film to the oven reaches q / U.
+- 1D vs 2D at the defaults (all four locations solved): film and flow rate
+  1D +3.3 to +3.4 %, peak pressure −0.7 to −0.8 %; the pressure along the
+  blade overlays the 2D's along the web. The difference is mostly the edge:
+  the 2D's meniscus holds 15–30 Pa there, the 1D takes ambient. Contact
+  line: 1D static meniscus 2.4–2.5 mm up a 90° face, 2D 0.8–0.9 mm: at
+  Ca 0.7 the flow drags the meniscus down, which a static model cannot do
+  (the page's validity line says so).
+- Speed: one location about 25 ms, 61 positions about 1.5 s, in the worker.
 
 Phase B: 3D geometry and view (one merge)
 - Made in the app: the blade from the 2D's dimensions plus the width,

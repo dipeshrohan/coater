@@ -1108,9 +1108,9 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; -webkit-font-smoothing: antial
 .tree-off .tree-head { display: none; }
 .wb-body.tree-none { grid-template-columns: minmax(0, 1fr); }
 .wb-body.tree-none > .tree, .wb-body.tree-none > #treeSplit { display: none; }
-/* the status bar: on the Results pages only while the CFD is solving (their validity line is in the page) */
-body[data-sec="results"] .statusbar:not(:has(#cfdStatus.busy)) { display: none; }
-body[data-sec="results"] #scope { display: none; }
+/* the status bar: on pages that show the validity line themselves (Results, the 1D), only while the CFD is solving */
+body:has(#pgScope) .statusbar:not(:has(#cfdStatus.busy)) { display: none; }
+body:has(#pgScope) #scope { display: none; }
 
 /* page bar: the sub tabs (a pill switch), the page's controls, About */
 .vp-bar.pg-bar { flex-wrap: wrap; gap: 10px 12px; min-height: 0; padding: 16px 24px 4px; background: var(--bg); border: 0; }
@@ -1207,3 +1207,34 @@ body[data-sec="results"] #scope { display: none; }
   .sum-top { align-items: stretch; }
   .sum-film { text-align: left; }
 }
+
+/* Flow: the stages (1D, 2D, 3D) as the pill switch, a stage's pages as lighter chips beside it */
+.subtabs-2 { gap: 4px; padding: 0; background: none; }
+.subtabs-2 button { padding: 5px 12px; border-radius: 999px; font-size: 13px; }
+.subtabs-2 button[aria-selected=true] { background: color-mix(in srgb, var(--accent) 11%, var(--surface)); color: var(--accent); box-shadow: none; }
+/* the 2D page: its stage switch above the CFD workbench */
+#view:has(> .flow-head) { display: flex; flex-direction: column; }
+#view > .flow-head { flex: 0 0 auto; padding-bottom: 12px; }
+#view > .flow-head + .cfd-wb { flex: 1 1 auto; min-height: 0; height: auto; }
+/* chart legends (a line per series), content after the plots */
+.pane-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); }
+.pane-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg-ln { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--c); }
+.lg-ln.dash { border-top-style: dashed; }
+.lg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.mod-extra { grid-column: 1 / -1; min-width: 0; }
+/* the 1D / 2D / 3D table */
+.oned-table { padding: 14px 16px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--card-shadow); }
+.oned-table:empty { display: none; }
+.oned-h { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.oned-scroll { overflow-x: auto; }
+.oned-cmp { min-width: 560px; width: 100%; table-layout: fixed; }
+.oned-cmp col.c-q { width: 24%; } .oned-cmp col.c-s { width: 8%; }
+.oned-cmp td, .oned-cmp th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oned-cmp th small, .oned-cmp td small { display: inline; margin-left: 4px; font-size: 11px; color: var(--muted); }
+.oned-cmp thead th small, .oned-cmp tr:first-child th small { display: block; margin: 0; }
+.oned-cmp tr.grp-start > * { border-top: 1px solid var(--line); }
+.oned-cmp th[rowspan] { text-align: left; vertical-align: top; }
+.oned-cmp .stage { font-weight: 600; color: var(--muted); }
+.oned-cmp .na { color: var(--muted); }
+.mod-extra .empty-hint { margin: 20px auto; }
