@@ -17,6 +17,8 @@
  * Messages out: { progress: { it, residual, s, path, stage } } while solving (path: how far along its continuation the
  *               solve is, 0..1, or none), then
  *               { ok: true, result } or { ok: false, error }.
+ * With preview set (any id): not solved -- { ok: true, preview, result }, the mesh the solve starts on as the
+ *   grid, no flow on it (the Mesh step's preview).
  * result.trace: the convergence record over every solve the strategy ran, in order --
  *   r: the residual at each Newton iterate (all solves in sequence),
  *   solves: [{ label, k0 (index of its first iterate in r), n (its iterates), converged, residual }],
@@ -56,11 +58,24 @@ onmessage = e => {
     // mesh: the settings sent (o.solver), else blade elements about 0.6 H long (12..40); rows graded toward the blade/face/surface
     const sv = o.solver || {};
     const nEb = sv.nEb ?? Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
-    const r = solveCoaterFEM({
+    const fo = {
       hFn: shape.h, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg,
       U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H, webSlip: o.webSlip || 0,
       Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb, nEf: sv.nEf ?? 6, nEs: sv.nEs ?? 24, nEy: sv.nEy ?? 6, fInfGuess: qLub / o.U,
       gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY, tol: sv.tol, maxIter: sv.maxIter,
+    };
+    if (o.preview) {
+      // the mesh the solve starts on (not solved): as the post-processing grid, with no flow on it
+      const pv = solveCoaterFEM({ ...fo, preview: true });
+      if (pv.error) throw new Error(pv.error);
+      const N = pv.NC * pv.NR, z = () => new Float64Array(N);
+      const g = coaterGrid({ ...pv, u: z(), v: z(), p: z(), psi: z(), gd: z(), mu: z(), tauXY: z(), tauXX: z(), tauYY: z(), omega: z(), Q: 0, converged: false, residual: NaN, iterations: 0 },
+        { xe, H, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U });
+      postMessage({ ok: true, preview: o.preview, result: { ...g, Hedge: H, nEb, preview: true } });
+      return;
+    }
+    const r = solveCoaterFEM({
+      ...fo,
       onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration, onSolveStart, onSolveEnd,
     });
     // (a solve that ended without returning: its iterates so far)

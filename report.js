@@ -108,14 +108,14 @@ function repInputs() {
   return `<p class="lede">Used by every module (CFD locations may set their own gap, contact angle, speed, pressure and slurry: see 2D CFD). Values changed from the default are in bold.</p>
     <table><thead><tr><th>Input</th><th>Value</th><th>Default</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
-async function repModule(m) {
+async function repModule(m, statsTitle = 'Results') {
   tab = m; render(); await repFrame();
   let html = '';
   if (m === 0) {
     html += '<h3>Scenario</h3>' + repRows(ANIM_UNDO.map(([k, l, f]) => [repEsc(l), repEsc(f(ANIM[k]))]), ['Setting', 'Value']);
   }
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
-  if (stats.length) html += '<h3>Results</h3>' + repRows(stats, ['Result', 'Value']);
+  if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
   const figs = imageTargets().filter(t => t.id.startsWith('pane:'));
   if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, t.title())).join('');
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
@@ -131,7 +131,17 @@ async function rep3D() {
     ['Mesh', repEsc(`elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : C3D.nzFull + ' across the web'}`)]];
   if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(`${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
   if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`]);
-  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + await repModule(9);
+  // (solved: its Results step; else the Geometry step's numbers and view, then the Mesh step with its view)
+  let pre = '';
+  if (c3dShown()) C3D.step = 'results';
+  else {
+    tab = 9; C3D.step = 'geometry'; render(); await repFrame();
+    const geo = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
+    const figs = imageTargets().filter(t => t.id.startsWith('pane:')).map(t => repFigure(t, t.title())).join('');
+    if (geo.length || figs) pre = '<h3>Geometry</h3>' + (geo.length ? repRows(geo, ['Geometry', 'Value']) : '') + figs;
+    C3D.step = 'mesh';
+  }
+  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + await repModule(9, c3dShown() ? 'Results' : 'Mesh');
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };
@@ -167,7 +177,7 @@ function repCfdStatus() {
   return repRows(rows, ['Location', 'Status', 'Wet film', 'Contact line', 'Convergence', 'Solve time']);
 }
 async function repCfd(keep) {
-  tab = 4; FV.view = 'compare'; FV.dock = 'metrics'; render(); await repFrame();
+  tab = 4; FV.step = 'results'; FV.view = 'compare'; FV.dock = 'metrics'; render(); await repFrame();
   const any = cfdRuns.some(r => r.field);
   let html = repCfdSetup();
   html += '<h3>Results</h3>' + repCfdStatus();
@@ -309,7 +319,7 @@ ${sections.map(s => `<section id="${s.id}"><h2>${repEsc(s.title)}</h2>${s.html}<
 }
 /** Build the report: each chosen section drawn in its view, then everything put back as it was. */
 async function buildReport(o) {
-  const keep = { tab, view: FV.view, dock: FV.dock, doeDock: DOE.dock, measSel: MEAS.sel, measDock: MEAS.dock };
+  const keep = { tab, view: FV.view, dock: FV.dock, doeDock: DOE.dock, measSel: MEAS.sel, measDock: MEAS.dock, step2: FV.step, step3: C3D.step };
   const veil = document.createElement('div');
   veil.className = 'rep-veil'; veil.innerHTML = '<div><i class="spin" aria-hidden="true"></i>Building the report…</div>';
   document.body.appendChild(veil);
@@ -336,7 +346,7 @@ async function buildReport(o) {
         if (want.has('doe')) out.push({ id: 'doe', title: TABS[5], html: await repDoe() });
         if (want.has('meas') && MEAS.sets.length) out.push({ id: 'meas', title: TABS[6], html: await repMeasured() });
       } finally {
-        tab = keep.tab; FV.view = keep.view; FV.dock = keep.dock; DOE.dock = keep.doeDock; MEAS.sel = keep.measSel; MEAS.dock = keep.measDock;
+        tab = keep.tab; FV.view = keep.view; FV.dock = keep.dock; DOE.dock = keep.doeDock; MEAS.sel = keep.measSel; MEAS.dock = keep.measDock; FV.step = keep.step2; C3D.step = keep.step3;
         render();
       }
     });

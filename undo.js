@@ -330,8 +330,10 @@ function renderHistory() {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 /** Open this view's History panel. */
 function showHistory() {
-  const b = document.querySelector('#view .dock-tabs button[data-dock="history"]') || document.querySelector('#view [data-dock-more="history"]');
-  if (b) { b.click(); const t = document.querySelector('#view .dock-tabs button[data-dock="history"]'); if (t) t.focus(); }
+  const shown = () => [...document.querySelectorAll('#view .dock-tabs button[data-dock="history"]')].find(x => x.offsetParent !== null);
+  // (the shown tab, else More › History, else the tab of a hidden panel: clicking it shows the panel)
+  const b = shown() || document.querySelector('#view [data-dock-more="history"]') || document.querySelector('#view .dock-tabs button[data-dock="history"]');
+  if (b) { b.click(); const t = shown(); if (t) t.focus(); }
   renderHistory();
 }
 (function editMenu() {

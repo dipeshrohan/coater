@@ -12,7 +12,7 @@
  */
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40,
   nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 2, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true,
-  stream: false, streamDensity: 'medium' };
+  stream: false, streamDensity: 'medium', step: null };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -30,7 +30,7 @@ const C3D_UNDO = {
   stream: ['3D view: streamlines', v => v ? 'on' : 'off'], streamDensity: ['3D streamline density', v => (C3D_STREAM[v] || { l: v }).l.toLowerCase()],
 };
 /** The view settings (not part of "unsaved changes"). */
-const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh', 'stream', 'streamDensity'];
+const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh', 'stream', 'streamDensity', 'step'];
 /** Streamline densities: lines [across, up the gap] on a strip and on the full width (the full width is wide and thin). */
 const C3D_STREAM = { low: { l: 'Low', strip: [5, 6], full: [10, 3] }, medium: { l: 'Medium', strip: [6, 10], full: [15, 4] }, high: { l: 'High', strip: [10, 12], full: [24, 5] } };
 const c3dSetupKey = () => JSON.stringify([Object.keys(C3D_DEFAULTS).filter(k => !C3D_DISPLAY.includes(k)).map(k => C3D[k]), C3D_FILE && C3D_FILE.id]);
@@ -307,6 +307,7 @@ function c3dShown() {
 }
 function c3dRun() {
   if (C3D_RUN.status === 'running') return;
+  runFromSolve3D();
   const G = c3dBuild();
   const stop = why => { C3D_RUN.status = 'error'; C3D_RUN.error = why; render(); };
   if (G.error || G.empty) return stop(G.error || 'no blade: import an STL or STEP file of the blade');
@@ -334,9 +335,10 @@ function c3dRun() {
       C3D_RES = { key, region: 'strip', loc: C3D.loc, width: C3D.stripW, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: r };
       V3.key = null;
     }
+    stepAfterRun3D();
     render();
   };
-  w.onerror = e => { done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; render(); };
+  w.onerror = e => { done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; stepAfterRun3D(); render(); };
   w.postMessage({ ...m, id });
   render();
 }
@@ -344,7 +346,7 @@ function c3dStop() {
   if (C3D_RUN.status !== 'running') return;
   if (C3D_RUN.worker) C3D_RUN.worker.terminate();
   for (const w of C3D_RUN.workers || []) w.terminate();
-  Object.assign(C3D_RUN, { worker: null, workers: [], status: 'cancelled', progress: null });
+  Object.assign(C3D_RUN, { worker: null, workers: [], status: 'cancelled', progress: null, stepAuto: false });
   render();
 }
 
@@ -469,7 +471,7 @@ async function c3dRunWide(m, key) {
   } finally {
     for (const w of workers) w.terminate();
     if (C3D_RUN.id === run) C3D_RUN.workers = [];
-    if (C3D_RUN.id === run) render();
+    if (C3D_RUN.id === run) { stepAfterRun3D(); render(); }
   }
 }
 /** The station a progress message's stage names ("2D at X mm", X from the region's middle), by its place across the web. */
@@ -517,7 +519,9 @@ function view3D() {
   oneDRequest(false);
   const tog = (k, t) => `<label class="fv-chk"><input type="checkbox" data-v3tog="${k}"${C3D[k] ? ' checked' : ''}> ${t}</label>`;
   const views = [['iso', '3D'], ['side', 'Side'], ['top', 'Top'], ['front', 'Front']];
-  const S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey3(S), running = C3D_RUN.status === 'running';
+  const stp = step3D();
+  const S = c3dShown(), R0 = S && S.result, stale = S && S.key !== c3dSolveKey3(S), running = C3D_RUN.status === 'running';
+  const R = stp === 'results' ? R0 : null;   // (the flow is drawn on Results; Geometry and Mesh show the blade and the mesh)
   const fld = C3D_FIELDS[C3D.field] || C3D_FIELDS.speed, showField = R && C3D.field !== 'none';
   const range = showField ? c3dFieldRange(R) : null;
   const pane = (id, icon, title, aria, legend = '') => `<figure class="pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas>${legend ? `<div class="pane-legend">${legend}</div>` : ''}</figure>`;
@@ -529,22 +533,33 @@ function view3D() {
       ${pane('c3dPB', 'pressure', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
       ${pane('c3dPX', 'pressure', `Pressure along the blade, middle of the ${where}`, `Pressure along the blade and exit face at the middle of the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
     </div>` : '';
-  view.innerHTML = moduleFrame({
-    tools: `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${C3D.view === v}">${t}</button>`).join('')}</div>
+  const viewSeg = `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${C3D.view === v}">${t}</button>`).join('')}</div>`;
+  const vscale = `<select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>`;
+  const tools = {
+    geometry: `${viewSeg}${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${vscale}`,
+    mesh: `${viewSeg}${tog('blade', 'Blade')}${vscale}`,
+    solve: running ? `<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">${uiIco('stop')}Stop</button>` : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">${uiIco('play')}Solve 3D</button>`,
+    results: `${viewSeg}
       <label class="fv-chk">Field <select data-c3d="field"${R ? '' : ' disabled title="Solve first"'}>${Object.entries(C3D_FIELDS).map(([k, f]) => `<option value="${k}"${k === C3D.field ? ' selected' : ''}>${f.l}</option>`).join('')}</select></label>
       ${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${tog('mesh', 'Mesh')}
       <label class="fv-chk"${R ? '' : ' title="Solve first"'}><input type="checkbox" data-v3tog="stream"${C3D.stream ? ' checked' : ''}${R ? '' : ' disabled'}> Streamlines</label>
       ${R && C3D.stream ? `<select data-c3d="streamDensity" aria-label="Streamline density" title="How many streamlines">${Object.entries(C3D_STREAM).map(([k, d]) => `<option value="${k}"${k === C3D.streamDensity ? ' selected' : ''}>${d.l}</option>`).join('')}</select>` : ''}
-      <select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>
-      ${running ? `<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">${uiIco('stop')}Stop</button>` : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">${uiIco('play')}Solve 3D</button>`}`,
-    panes: [],
-    extra: `<div id="c3dProg"></div><figure class="pane v3d"><figcaption>${uiBadge(9)}${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
+      ${vscale}`,
+  }[stp];
+  const fig = `<figure class="pane v3d"><figcaption>${uiBadge(9)}${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : stp === 'mesh' ? `The 3D mesh${R0 ? ' as solved' : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
-      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${(R ? R.skew : P.skew) ? `<span>Blade skewed ${(R ? R.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
-      ${charts}
-      <div class="oned-table" id="oneDTable"></div>`,
-  });
+      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${(R0 ? R0.skew : P.skew) ? `<span>Blade skewed ${(R0 ? R0.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>`;
+  const extra = {
+    geometry: fig,
+    mesh: `<div class="step-view c3d-mesh">${fig}<aside class="step-side" id="c3dMeshSide">${c3dMeshSideHTML()}</aside></div>`,
+    solve: `<div id="c3dProg"></div>${c3dSolveHTML()}`,
+    results: R0 ? `<div id="c3dProg"></div>${fig}${charts}<div class="oned-table" id="oneDTable"></div>`
+      : `<div id="c3dProg"></div>${emptyHint('Nothing solved yet', 'Set the 3D geometry, region and mesh, then solve it on the Solve step.', `<button type="button" class="btn btn-primary btn-sm" data-c3dstep="solve">${uiIco('play')}Open Solve</button>`)}<div class="oned-table" id="oneDTable"></div>`,
+  }[stp];
+  view.innerHTML = moduleFrame({ steps: stepBar('3d', stp, stepStatus3D()), tools, panes: [], extra });
+  stepBarScroll();
+  const hs = view.querySelector('[data-c3dstep]'); if (hs) hs.onclick = () => goStep3D(hs.dataset.c3dstep);
   const G = c3dBuild();
   let st = '';
   if (running) st = pill('Solving the 3D…', '') + `<span class="c3d-busy" id="c3dBusy"></span>`;
@@ -567,7 +582,19 @@ function view3D() {
   document.getElementById('st').innerHTML = st;
   c3dBusy();
   const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`;
-  if (R) {
+  const geoTiles = G.mesh ? [
+    [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(ACROSS_W)],
+    ['Gap at the edge, mm', Number.isFinite(G.gMin) ? `${(G.gMin * 1000).toFixed(3)}–${(G.gMax * 1000).toFixed(3)}` : 'no blade'],
+    ['Blade + film, mm', `${(G.xe * 1000).toFixed(1)} + ${(G.Ld * 1000).toFixed(1)}`],
+    ['Underside', G.open ? `${G.open} open` : G.multi ? `${G.multi} overhang` : 'single layer'],
+  ] : [];
+  const ms = c3dMeshSize(), e3 = c3dEstimate(), hq = R0 ? c3dHexQuality(R0) : null, pvq = !R0 && C3D_PV.stats && C3D_PV.key === c3dPreviewKey() ? C3D_PV.stats : null;
+  const span = f => ms.a0 === ms.a1 ? f(ms.a0).toLocaleString() : `${f(ms.a0).toLocaleString()}–${f(ms.a1).toLocaleString()}`;
+  const meshTiles = [['Hexahedra', span(a => c3dHexes(a, ms))], ['Nodes', span(a => c3dNodes(a, ms))], ['Unknowns', R0 && R0.size ? R0.size.unknowns.toLocaleString() : `≈ ${Math.round(e3.ND / 1000)} thousand`],
+    ['Quality, worst', hq ? hq.worst.toFixed(2) : pvq ? pvq.worst.toFixed(2) : '—']];
+  if (stp !== 'results') document.getElementById('ss').innerHTML = (stp === 'geometry' ? geoTiles : stp === 'mesh' ? meshTiles
+    : [['Unknowns', meshTiles[2][1]], ...(C3D.region === 'strip' ? [['Memory for the solve', c3dMem(e3.bytes)], ['Time, about', c3dTime(e3.secs)]] : [])]).map(stat).join('');
+  else if (R) {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid];
     let wMax = 0; for (let n = 0; n < R.w.length; n++) wMax = Math.max(wMax, Math.abs(C3D_FIELDS.w.f(R, n) / 1000));
     const dev = Math.max(...R.stations.map(s => Math.abs(s.film / s.film2 - 1))) * 100;
@@ -580,22 +607,20 @@ function view3D() {
       full ? ['Unknowns per strip', `${R.size.unknowns.toLocaleString()} × ${R.size.strips}`] : ['Unknowns', R.size.unknowns.toLocaleString()],
       ['Solve time', full ? c3dTime(S.ms / 1000) : `${(S.ms / 1000).toFixed(0)} s`],
     ].map(stat).join('');
-  } else if (G.mesh) document.getElementById('ss').innerHTML = [
-    [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(ACROSS_W)],
-    ['Gap at the edge, mm', Number.isFinite(G.gMin) ? `${(G.gMin * 1000).toFixed(3)}–${(G.gMax * 1000).toFixed(3)}` : 'no blade'],
-    ['Blade + film, mm', `${(G.xe * 1000).toFixed(1)} + ${(G.Ld * 1000).toFixed(1)}`],
-    ['Hexahedra', G.mesh.cells.toLocaleString()],
-    ['Nodes', G.mesh.nodes.toLocaleString()],
-    ['Underside', G.open ? `${G.open} open` : G.multi ? `${G.multi} overhang` : 'single layer'],
-  ].map(stat).join('');
-  document.getElementById('oneDTable').innerHTML = oneDCompareTable();
+  }
+  const odt = document.getElementById('oneDTable'); if (odt) odt.innerHTML = oneDCompareTable();
   const rb = document.getElementById('c3dRun'); if (rb) rb.onclick = c3dRun;
   const sb = document.getElementById('c3dStop'); if (sb) sb.onclick = c3dStop;
   if (R) c3dCharts(R);
+  if (stp === 'solve') { drawSolve3D(); return; }
+  if (stp === 'mesh') requestMeshPreview3D();
+  if (!document.getElementById('v3dHost')) return;
+  // (the mesh: always on Mesh, never on Geometry, as chosen on Results)
+  const meshOn = stp === 'mesh' ? true : stp === 'geometry' ? false : C3D.mesh;
   // (drawn at once when three.js is in: an image export redraws the page and takes the view straight away)
   if (!G.mesh && !R) document.getElementById('v3dHost').innerHTML = `<p class="v3d-msg">${G.error ? 'Nothing to show: the geometry could not be built.' : 'No blade yet: import an STL or STEP file of the blade (inputs, 3D geometry).'}</p>`;
-  else if (typeof THREE !== 'undefined' && THREE.OrbitControls) v3Draw(G, R);
-  else load3DLibs().then(() => v3Draw(G, R)).catch(e => { const h = document.getElementById('v3dHost'); if (h) h.innerHTML = `<p class="v3d-msg">The 3D view could not start: ${mEsc(e.message)}</p>`; });
+  else if (typeof THREE !== 'undefined' && THREE.OrbitControls) v3Draw(G, R, meshOn);
+  else load3DLibs().then(() => v3Draw(G, R, meshOn)).catch(e => { const h = document.getElementById('v3dHost'); if (h) h.innerHTML = `<p class="v3d-msg">The 3D view could not start: ${mEsc(e.message)}</p>`; });
 }
 const c3dFmt = v => { const a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : a >= 0.01 ? v.toFixed(3) : v.toExponential(1); };
 /** The colour map for a field: the 2D's choice (jet or blue) for magnitudes, diverging blue-red around zero for signed fields. */
@@ -672,7 +697,8 @@ function c3dPressureMap(R) {
 // ---- the 3D view (three.js) ----
 const V3 = { ready: null, renderer: null, scene: null, camera: null, controls: null, group: null, key: null, bounds: null };
 function load3DLibs() { if (!V3.ready) V3.ready = loadScript('lib/three.min.js').then(() => loadScript('lib/OrbitControls.js')); return V3.ready; }
-function v3Draw(G, R) {
+function v3Draw(G, R, mesh = C3D.mesh) {
+  V3.mesh = mesh;   // (the step decides: v3Scene draws the mesh by it)
   const host = document.getElementById('v3dHost');
   if (!host || typeof THREE === 'undefined') return;
   if (!V3.renderer) {
@@ -697,7 +723,7 @@ function v3Draw(G, R) {
   V3.renderer.setSize(w, h); V3.camera.aspect = w / h; V3.camera.updateProjectionMatrix();
   V3.renderer.setClearColor(new THREE.Color(cssVar('--surface')), 1);
   const S = R ? c3dShown() : null;
-  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? C3D.streamDensity : '', R ? '' : P.skew]);
+  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? C3D.streamDensity : '', R ? '' : P.skew]);
   if (key !== V3.key) { v3Scene(G, R); const firstView = V3.key === null || !V3.sameRegion(G); V3.key = key; V3.region = G.key; if (firstView) v3Camera(); }
   v3Render();
 }
@@ -735,7 +761,7 @@ function v3Scene(G, R) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
     grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x4f8fe8, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false })));
   }
-  if (C3D.mesh) {
+  if (V3.mesh ?? C3D.mesh) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(Array.from(m.lines));
     grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col('--ink'), transparent: true, opacity: 0.35 })));
   }
@@ -787,7 +813,7 @@ function v3SceneSolved(G, R, grp) {
       grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !!lines, opacity: lines ? 0.16 : 1, depthWrite: !lines })));
     } else grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x4f8fe8, transparent: true, opacity: lines ? 0.14 : 0.42, side: THREE.DoubleSide, depthWrite: false })));
   }
-  if (C3D.mesh) {
+  if (V3.mesh ?? C3D.mesh) {
     // element edges on the outer faces: every other node line (the elements are 3 nodes a side)
     const li = [], seg = (a, b) => li.push(a, b);
     for (const k of [0, NR - 1]) { for (let c = 0; c < NC; c += 2) for (let l = 0; l < NL - 1; l++) seg(id(c, l, k), id(c, l + 1, k)); for (let l = 0; l < NL; l += 2) for (let c = 0; c < NC - 1; c++) seg(id(c, l, k), id(c + 1, l, k)); }
