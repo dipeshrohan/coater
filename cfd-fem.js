@@ -473,6 +473,7 @@ function solveFEM(o) {
   // ---- Newton with line search; continuation from a Newtonian fluid ----
   const history = [];
   let it = 0, converged = false, res = null, factorizations = 0;
+  let pathDone = null;   // (how far along its continuation or homotopy the solve is, 0..1, for the progress bars; none: Newton alone)
   const solveId = o.onSolveStart ? o.onSolveStart(o.label || '') : undefined;
   const norms = r => {
     let fm = 0;
@@ -485,7 +486,7 @@ function solveFEM(o) {
     for (let k = 0; k < maxS && it < maxIter; k++, it++) {
       res = residual();
       const nrm = norms(res);
-      history.push({ it, residual: nrm, s: sHom });
+      history.push({ it, residual: nrm, s: sHom, path: pathDone });
       if (o.onIteration) o.onIteration(history[history.length - 1]);
       if (!Number.isFinite(nrm)) return false;
       if (nrm < tolS) return true;
@@ -536,7 +537,7 @@ function solveFEM(o) {
     let lam = 0, dl = 0.125, keep = Float64Array.from(sol), keepS = sStar;
     while (it < maxIter) {
       const l1 = Math.min(1, lam + dl), final = l1 === 1;
-      hLam = l1; stages++;
+      hLam = l1; stages++; pathDone = lam;
       const itStart = it;
       const ok = newton(final ? tol : 1e-5, final ? maxIter : 10);
       if (ok) {
@@ -550,11 +551,11 @@ function solveFEM(o) {
   } else if (!converged && lawVaries && !o.init && !o.initNodal) {
     // continuation: Newtonian -> real rheology -> final regularization
     let t0 = 0, dt = 0.25, keep = Float64Array.from(sol), keepS = sStar;
-    setPath(0); newton(1e-3, 30);
+    pathDone = 0; setPath(0); newton(1e-3, 30);
     keep = Float64Array.from(sol); keepS = sStar;
     while (it < maxIter) {
       const t1 = Math.min(tEnd, t0 + dt), final = t1 === tEnd;
-      setPath(t1); stages++;
+      setPath(t1); stages++; pathDone = t0 / tEnd;
       const itStart = it;
       const ok = newton(final ? tol : 1e-3, final ? maxIter : 10);
       if (ok) { if (final) { converged = true; break; } t0 = t1; keep = Float64Array.from(sol); keepS = sStar; dt = Math.min(tEnd - t0, it - itStart <= 4 ? dt * 2 : dt); }
