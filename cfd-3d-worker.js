@@ -45,7 +45,7 @@ function wideOpts(o, strip, file) {
   const qLub = (o.Pup + 6 * o.muRep * o.U * I2) / (12 * o.muRep * I3), sv = o.solver;
   return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
     webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
-    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z) };
+    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0 };
 }
 const packStation = T => { const o = {}; for (const f of ['u', 'v', 'w', 'p', 'x', 'y', 'z', 'gd', 'mu', 'h']) if (T[f]) o[f] = Float64Array.from(T[f]); o.s = T.s; o.q = T.q; return o; };
 function wide(e) {
@@ -57,8 +57,12 @@ function wide(e) {
     if (S.error) { postMessage({ id, ok: false, error: S.error }); return; }
     WIDE = { opts, S };
     const states = {};
-    for (const l of d.stations) states[l] = packStation(stationFrom2D(S.r2[l]));
-    postMessage({ id, ok: true, result: { states, mode: S.mode, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe,
+    for (const l of d.stations) states[l] = packStation(stationState(S, l));
+    // (each station's 2D positions, shear rate, viscosity, flow rate: a web edge held at its own station's flow -- a skewed
+    // blade -- is never solved in 3D, and the result takes it from these)
+    const full2 = {};
+    for (const l of d.stations) { const r = S.r2[l]; full2[l] = { x: Float64Array.from(r.x), y: Float64Array.from(r.y), z: new Float64Array(r.x.length).fill(d.zs[l]), gd: Float64Array.from(r.gd), mu: Float64Array.from(r.mu), q: r.Q }; }
+    postMessage({ id, ok: true, result: { states, full2, mode: S.mode, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe,
       film2: Object.fromEntries(d.stations.map(l => [l, S.r2[l].Q / opts.U])), s2: Object.fromEntries(d.stations.map(l => [l, S.climbed ? S.r2[l].surface.s : 0])),
       top2: Object.fromEntries(d.stations.map(l => [l, Array.from({ length: S.NC }, (_, c) => S.r2[l].p[c * S.NR + S.NR - 1])])) } });
     return;
@@ -98,7 +102,7 @@ onmessage = e => {
     const res = solveCoater3D({
       hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
       webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
-      fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter,
+      fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, webW: o.webW || 0,
       width: strip.width, nEz: strip.nEz, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z),
       onStage: t => { stage = t; last = 0; post(0, NaN); }, onIteration3: h => post(h.it, h.residual),
     });

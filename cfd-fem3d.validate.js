@@ -18,6 +18,11 @@
  *     solutions, which do not.
  *  6. A region solved strip by strip (overlapping strips, each with its neighbours' latest solution
  *     held on its inner sides, sweep after sweep): converges to the 3D solve of the whole region.
+ *  7. A blade skewed across the web (the web moving along the blade too, in the blade's frame): a station's
+ *     flow along the blade is shear flow under a long land, with and without slip on the web; no skew is
+ *     exactly the solver as before; on a strip with nothing varying across it the 3D is its stations'
+ *     solution; with the gap and contact angle varying, the region strip by strip (its edges open) converges
+ *     to the whole region solved at once.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -195,6 +200,34 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const dF = Math.max(...wide.stations.map((st, l) => Math.abs(st.film - one.stations[l].film))), dS = Math.max(...wide.stations.map((st, l) => Math.abs(st.s - one.stations[l].s)));
   check('region strip by strip (3 overlapping strips): converges to the whole region solved at once', one.r3.converged && wide.converged && dF < 1e-9 && dS < 1e-9,
     `${wide.sweeps} sweeps (changes ${wide.history.map(v => v.toExponential(0)).join(', ')} of the gap); film within ${(dF * 1e9).toFixed(2)} nm, contact line within ${(dS * 1e9).toFixed(2)} nm`);
+}
+
+// 7. a blade skewed 3 degrees across the web (web 0.1 m/s): U across the blade, webW along it
+{
+  const { coaterStations } = require('./cfd-fem3d.js');
+  const rho = 1020, g = 9.81, gamma = 0.07, H = 1.7e-3, phi = 3 * Math.PI / 180, Ux = 0.1 * Math.cos(phi), Wz = 0.1 * Math.sin(phi);
+  let worst = 0;
+  for (const slip of [0, 1 / 20e-6]) {
+    const S = coaterStations({ hFn: () => H, xe: 20e-3, faceDeg: 90, contactDeg: 35, U: Ux, webW: Wz, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 12e-3, nEb: 16, nEf: 3, nEs: 12, nEy: 3, fInfGuess: 0.5 * H, webSlip: slip || undefined }, [0]);
+    const r = S.r2[0], w = S.w2[0], A = slip ? Wz * slip * H / (1 + slip * H) : Wz;   // w = A (1 - y/H), A from the slip
+    for (let n = 0; n < r.x.length; n++) if (r.x[n] > 8e-3 && r.x[n] < 12e-3) worst = Math.max(worst, Math.abs(w[n] - A * (1 - r.y[n] / H)) / Wz);
+  }
+  check('skewed blade: a station\'s flow along the blade is shear flow under a long land (with and without slip)', worst < 1e-6, `off it by ${worst.toExponential(1)} of the web's speed along the blade`);
+  const base = { hFn: () => H, xe: 5e-3, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 12e-3, nEb: 5, nEf: 3, nEs: 12, nEy: 3, fInfGuess: 0.5 * H, width: 0.02, nEz: 2 };
+  const wav = z => 30e-6 * Math.sin(2 * Math.PI * z / 0.04), a = solveCoater3D({ ...base, dH: wav }), b = solveCoater3D({ ...base, webW: 0, dH: wav });
+  let d = 0; for (const f of ['u', 'v', 'w', 'p', 'y']) for (let n = 0; n < a.r3[f].length; n++) d = Math.max(d, Math.abs(a.r3[f][n] - b.r3[f][n]));
+  check('  no skew: exactly the solver without it', d === 0, `largest difference ${d}`);
+  const uni = solveCoater3D({ ...base, rho: 0, U: Ux, webW: Wz, webSlip: 1 / 20e-6 }), u3 = uni.r3;
+  let wWeb = 0; for (let n = 0; n < u3.w.length; n++) if (n % u3.NR === 0) wWeb = Math.max(wWeb, Math.abs(u3.w[n]));
+  const dFilm = Math.max(...uni.stations.map(st => Math.abs(st.film / st.film2 - 1)));
+  check('  uniform strip: the 3D is its stations\' solution (2D across the blade, shear flow along it)', u3.converged && u3.residual < 1e-10 && dFilm < 1e-9,
+    `film ${(uni.stations[0].film * 1e3).toFixed(6)} mm at every station, as the 2D's to ${dFilm.toExponential(0)}; flow along the blade at the web up to ${(wWeb * 1e3).toFixed(3)} mm/s (the web ${(Wz * 1e3).toFixed(3)}, less its slip)`);
+  const vary = { ...base, U: Ux, webW: Wz, width: 0.06, nEz: 6, dH: z => 60e-6 * Math.sin(2 * Math.PI * z / 0.04), contactAt: z => 35 + 3 * Math.cos(2 * Math.PI * z / 0.03) };
+  const one = solveCoater3D(vary), wide = solveCoaterWide({ ...vary, sub: 4, overlap: 2, tolSweep: 1e-8 });
+  const dF = Math.max(...wide.stations.map((st, l) => Math.abs(st.film - one.stations[l].film))), dS = Math.max(...wide.stations.map((st, l) => Math.abs(st.s - one.stations[l].s)));
+  const shift = Math.max(...one.stations.map(st => Math.abs(st.film / st.film2 - 1)));
+  check('  gap and contact angle varying: strip by strip (its edges open) converges to the whole region at once', one.r3.converged && wide.converged && dF < 1e-9 && dS < 1e-9,
+    `${wide.sweeps} sweeps; film within ${(dF * 1e9).toFixed(2)} nm, contact line within ${(dS * 1e9).toFixed(2)} nm (the flow along the blade moves the film up to ${(shift * 100).toFixed(2)} % from the stations' 2D)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
