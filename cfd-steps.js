@@ -43,8 +43,8 @@ const step2D = () => FV.step || (cfdRuns.some(r => r.field) ? 'results' : 'geome
 /** The bottom tabs of each step (Results: every tab it had before the steps). */
 const STEP_DOCK_2D = {
   geometry: ['dims', 'problems', 'msgs', 'history'],
-  mesh: ['meshlocs', 'mesh', 'problems', 'msgs'],
-  solve: ['conv', 'problems', 'msgs'],
+  mesh: ['meshlocs', 'mesh', 'problems', 'msgs', 'history'],
+  solve: ['conv', 'problems', 'msgs', 'history'],
   results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method'],
 };
 /** The location a step other than Results shows (its own choice, independent of the Results' view). */

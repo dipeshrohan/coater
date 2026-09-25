@@ -131,13 +131,14 @@ async function rep3D() {
     ['Mesh', repEsc(`elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : C3D.nzFull + ' across the web'}`)]];
   if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(`${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
   if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`]);
-  // (solved: its Results step; else the Geometry step's numbers, then the Mesh step with its view)
+  // (solved: its Results step; else the Geometry step's numbers and view, then the Mesh step with its view)
   let pre = '';
   if (c3dShown()) C3D.step = 'results';
   else {
     tab = 9; C3D.step = 'geometry'; render(); await repFrame();
     const geo = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
-    if (geo.length) pre = '<h3>Geometry</h3>' + repRows(geo, ['Geometry', 'Value']);
+    const figs = imageTargets().filter(t => t.id.startsWith('pane:')).map(t => repFigure(t, t.title())).join('');
+    if (geo.length || figs) pre = '<h3>Geometry</h3>' + (geo.length ? repRows(geo, ['Geometry', 'Value']) : '') + figs;
     C3D.step = 'mesh';
   }
   return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + await repModule(9, c3dShown() ? 'Results' : 'Mesh');

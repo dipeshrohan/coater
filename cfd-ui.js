@@ -665,7 +665,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry')}
+          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
           ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'])}
         </div>
         <div class="dock-body">
