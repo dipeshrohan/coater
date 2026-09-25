@@ -11,7 +11,8 @@
  * Loaded before undo.js (its settings are undo steps) and project.js (they and the result are saved in the project).
  */
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40,
-  nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 2, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true };
+  nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 2, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true,
+  stream: false, streamDensity: 'medium' };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -26,9 +27,12 @@ const C3D_UNDO = {
   ny: ['3D mesh across the gap', v => v], nzStrip: ['3D mesh across the strip', v => v], nzFull: ['3D mesh across the web', v => v], vscale: ['3D vertical scale', v => '×' + v],
   field: ['3D field shown', v => (C3D_FIELDS[v] || { l: v }).l],
   blade: ['3D view: blade', v => v ? 'on' : 'off'], slurry: ['3D view: slurry', v => v ? 'on' : 'off'], web: ['3D view: web', v => v ? 'on' : 'off'], mesh: ['3D view: mesh', v => v ? 'on' : 'off'],
+  stream: ['3D view: streamlines', v => v ? 'on' : 'off'], streamDensity: ['3D streamline density', v => (C3D_STREAM[v] || { l: v }).l.toLowerCase()],
 };
 /** The view settings (not part of "unsaved changes"). */
-const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh'];
+const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh', 'stream', 'streamDensity'];
+/** Streamline densities: lines [across, up the gap] on a strip and on the full width (the full width is wide and thin). */
+const C3D_STREAM = { low: { l: 'Low', strip: [5, 6], full: [10, 3] }, medium: { l: 'Medium', strip: [6, 10], full: [15, 4] }, high: { l: 'High', strip: [10, 12], full: [24, 5] } };
 const c3dSetupKey = () => JSON.stringify([Object.keys(C3D_DEFAULTS).filter(k => !C3D_DISPLAY.includes(k)).map(k => C3D[k]), C3D_FILE && C3D_FILE.id]);
 const C3D_MESH_LIMITS = { nxGap: [6, 80], nxFace: [1, 12], nxFilm: [6, 60], ny: [2, 10], nzStrip: [1, 8], nzFull: [6, 150], stripW: [2, 300], inlet: [1, 500] };
 /** Fields the 3D view can colour the flow by: label, unit, value at node n of a result, diverging (signed) or not. */
@@ -470,13 +474,15 @@ function view3D() {
     tools: `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${C3D.view === v}">${t}</button>`).join('')}</div>
       <label class="fv-chk">Field <select data-c3d="field"${R ? '' : ' disabled title="Solve first"'}>${Object.entries(C3D_FIELDS).map(([k, f]) => `<option value="${k}"${k === C3D.field ? ' selected' : ''}>${f.l}</option>`).join('')}</select></label>
       ${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${tog('mesh', 'Mesh')}
+      <label class="fv-chk"${R ? '' : ' title="Solve first"'}><input type="checkbox" data-v3tog="stream"${C3D.stream ? ' checked' : ''}${R ? '' : ' disabled'}> Streamlines</label>
+      ${R && C3D.stream ? `<select data-c3d="streamDensity" aria-label="Streamline density" title="How many streamlines">${Object.entries(C3D_STREAM).map(([k, d]) => `<option value="${k}"${k === C3D.streamDensity ? ' selected' : ''}>${d.l}</option>`).join('')}</select>` : ''}
       <select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>
       ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">Stop</button>' : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">Solve 3D</button>`}`,
     panes: [],
     extra: `<figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
-      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
+      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
       ${charts}
       <div class="oned-table" id="oneDTable"></div>`,
   });
@@ -632,7 +638,7 @@ function v3Draw(G, R) {
   V3.renderer.setSize(w, h); V3.camera.aspect = w / h; V3.camera.updateProjectionMatrix();
   V3.renderer.setClearColor(new THREE.Color(cssVar('--surface')), 1);
   const S = R ? c3dShown() : null;
-  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap]);
+  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? C3D.streamDensity : '']);
   if (key !== V3.key) { v3Scene(G, R); const firstView = V3.key === null || !V3.sameRegion(G); V3.key = key; V3.region = G.key; if (firstView) v3Camera(); }
   v3Render();
 }
@@ -682,12 +688,12 @@ function v3SceneSolved(G, R, grp) {
   // (the solve's z is from the region's middle: placed where the region is across the web, as the blade is)
   const pos = new Float32Array(3 * N), zo = R.zOff || 0;
   for (let n = 0; n < N; n++) { pos[3 * n] = R.x[n] * 1000; pos[3 * n + 1] = R.y[n] * 1000; pos[3 * n + 2] = (R.z[n] + zo) * 1000; }
-  const col = v => new THREE.Color(cssVar(v));
+  const col = v => new THREE.Color(cssVar(v)), lines = C3D.stream ? v3Streamlines(R) : null, see = C3D.field !== 'none' || !!lines;
   if (C3D.blade && G.tris) {
     const g = new THREE.BufferGeometry(); const mm = Float32Array.from(G.tris, v => v * 1000);
     g.setAttribute('position', new THREE.BufferAttribute(mm, 3)); g.computeVertexNormals();
     const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), G.cutY * 1000 * C3D.vscale);
-    grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--blade'), roughness: 0.65, metalness: 0.15, side: THREE.DoubleSide, flatShading: true, clippingPlanes: [cut], transparent: C3D.field !== 'none', opacity: C3D.field !== 'none' ? 0.22 : 1, depthWrite: C3D.field === 'none' })));
+    grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--blade'), roughness: 0.65, metalness: 0.15, side: THREE.DoubleSide, flatShading: true, clippingPlanes: [cut], transparent: see, opacity: see ? 0.22 : 1, depthWrite: !see })));
   }
   const faces = [];   // [a, b, c, d] node quads
   for (let c = 0; c < NC - 1; c++) for (let l = 0; l < NL - 1; l++) { faces.push([id(c, l, NR - 1), id(c + 1, l, NR - 1), id(c + 1, l + 1, NR - 1), id(c, l + 1, NR - 1)]); faces.push([id(c, l, 0), id(c + 1, l, 0), id(c + 1, l + 1, 0), id(c, l + 1, 0)]); }
@@ -705,8 +711,8 @@ function v3SceneSolved(G, R, grp) {
         cols[3 * n] = cc.r; cols[3 * n + 1] = cc.g; cols[3 * n + 2] = cc.b;
       }
       g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-      grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
-    } else grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x4f8fe8, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false })));
+      grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !!lines, opacity: lines ? 0.16 : 1, depthWrite: !lines })));
+    } else grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x4f8fe8, transparent: true, opacity: lines ? 0.14 : 0.42, side: THREE.DoubleSide, depthWrite: false })));
   }
   if (C3D.mesh) {
     // element edges on the outer faces: every other node line (the elements are 3 nodes a side)
@@ -716,6 +722,7 @@ function v3SceneSolved(G, R, grp) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(li);
     grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col('--ink'), transparent: true, opacity: C3D.field !== 'none' ? 0.25 : 0.35 })));
   }
+  if (lines) grp.add(v3Tubes(R, lines, pos));
   let xMax = 0, yMax = 0, zMin = Infinity, zMax = -Infinity;
   for (let n = 0; n < N; n++) { xMax = Math.max(xMax, pos[3 * n]); yMax = Math.max(yMax, pos[3 * n + 1]); zMin = Math.min(zMin, pos[3 * n + 2]); zMax = Math.max(zMax, pos[3 * n + 2]); }
   if (C3D.web) {
@@ -724,6 +731,71 @@ function v3SceneSolved(G, R, grp) {
     grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--fibre'), roughness: 0.9, side: THREE.DoubleSide })));
   }
   V3.bounds = new THREE.Box3(new THREE.Vector3(-1, 0, zMin), new THREE.Vector3(xMax + 1, Math.min(yMax, G.cutY ? G.cutY * 1000 : yMax) * C3D.vscale, zMax));
+}
+/** The streamlines of a result (cfd-3d-stream.js), kept for it and the density. */
+function v3Streamlines(R) {
+  const S = c3dShown(), key = `${S && S.when}|${C3D.streamDensity}`;
+  if (V3.sl && V3.sl.key === key) return V3.sl.lines;
+  const [across, up] = (C3D_STREAM[C3D.streamDensity] || C3D_STREAM.medium)[R.region === 'full' ? 'full' : 'strip'];
+  const lines = streamlines3D(R, { across, up }).lines.filter(l => l.pos.length >= 6);
+  V3.sl = { key, lines, up };
+  return lines;
+}
+/** The streamlines as round tubes (in the scene's mm, heights drawn C3D.vscale times larger; the tube's own scale undoes
+ *  the group's so its section stays round), coloured along their length by the field shown on the same scale as the faces. */
+function v3Tubes(R, lines, pos) {
+  const vs = C3D.vscale, zo = R.zOff || 0, NL = R.NL, NR = R.NR, id = (c, l, k) => (c * NL + l) * NR + k;
+  let xMax = 0, yMax = 0, zMin = Infinity, zMax = -Infinity, hEdge = Infinity;
+  for (let n = 0; n < pos.length / 3; n++) { xMax = Math.max(xMax, pos[3 * n]); yMax = Math.max(yMax, pos[3 * n + 1]); zMin = Math.min(zMin, pos[3 * n + 2]); zMax = Math.max(zMax, pos[3 * n + 2]); }
+  for (let l = 0; l < NL; l++) hEdge = Math.min(hEdge, R.y[id(R.cCorner, l, NR - 1)] * 1000 * vs);
+  // (thick enough to see, thin enough that neighbours up the gap at the metering edge don't touch)
+  const rad = Math.min(0.0035 * Math.hypot(xMax, yMax * vs, zMax - zMin), 0.3 * hEdge / (V3.sl.up || 10)), SEG = 8;
+  const f = C3D_FIELDS[C3D.field], showF = C3D.field !== 'none', vals = showF ? new Float64Array(R.x.length) : null;
+  if (showF) for (let n = 0; n < vals.length; n++) vals[n] = f.f(R, n);
+  const rng = showF ? c3dFieldRange(R) : null, lut = showF ? c3dLut(f) : null, plain = new THREE.Color(cssVar('--ink'));
+  const P = [], N = [], Cl = [], I = [];
+  for (const ln of lines) {
+    // the points drawn: at least a radius apart on screen (the tracing's are much closer)
+    const pts = [], cc = ln.cc, p = ln.pos, n = p.length / 3;
+    for (let i = 0; i < n; i++) {
+      const q = [p[3 * i] * 1000, p[3 * i + 1] * 1000 * vs, (p[3 * i + 2] + zo) * 1000];
+      const last = pts[pts.length - 1];
+      if (i && i < n - 1 && last && Math.hypot(q[0] - last.q[0], q[1] - last.q[1], q[2] - last.q[2]) < rad) continue;
+      pts.push({ q, i });
+    }
+    if (pts.length < 2) continue;
+    let nrm = null;
+    const base = P.length / 3;
+    pts.forEach(({ q, i }, j) => {
+      const a = pts[Math.max(0, j - 1)].q, b = pts[Math.min(pts.length - 1, j + 1)].q;
+      const t = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize();
+      // (the ring turned along the line without twisting: the last normal, made square to the new direction)
+      if (!nrm) { nrm = Math.abs(t.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0); }
+      nrm.sub(t.clone().multiplyScalar(nrm.dot(t))).normalize();
+      const bi = new THREE.Vector3().crossVectors(t, nrm);
+      let cr = plain;
+      if (showF) {
+        const v = sample3D(R, vals, cc[3 * i], cc[3 * i + 1], cc[3 * i + 2]);
+        const k = Math.round(Math.min(1, Math.max(0, (v - rng.min) / (rng.max - rng.min))) * 255) * 3;
+        cr = new THREE.Color(`rgb(${lut[k]},${lut[k + 1]},${lut[k + 2]})`);
+      }
+      for (let s = 0; s < SEG; s++) {
+        const an = 2 * Math.PI * s / SEG, cs = Math.cos(an), sn = Math.sin(an);
+        const dx = nrm.x * cs + bi.x * sn, dy = nrm.y * cs + bi.y * sn, dz = nrm.z * cs + bi.z * sn;
+        P.push(q[0] + rad * dx, q[1] + rad * dy, q[2] + rad * dz); N.push(dx, dy, dz); Cl.push(cr.r, cr.g, cr.b);
+      }
+      if (j) for (let s = 0; s < SEG; s++) {
+        const a0 = base + (j - 1) * SEG + s, a1 = base + (j - 1) * SEG + (s + 1) % SEG, b0 = a0 + SEG, b1 = a1 + SEG;
+        I.push(a0, b0, a1, a1, b0, b1);
+      }
+    });
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(Cl, 3));
+  g.setIndex(I);
+  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05 }));
+  mesh.scale.set(1, 1 / vs, 1);   // (the group draws heights vs times larger; the tubes are in those coordinates already)
+  return mesh;
 }
 /** Point the camera at the region from the chosen side. */
 function v3Camera() {
