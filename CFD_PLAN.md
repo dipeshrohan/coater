@@ -12,6 +12,80 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Plan: Flow as 1D → 2D → 3D (awaiting the user's approval; nothing built yet)
+
+User: CFD is done 1D first, then 2D, then 3D; the 3D needs a CAD upload or
+a geometry made in the app; the app has not used 1D as a stage. Verified:
+1D models exist but are hidden (lubrication film thickness in physics.js,
+the 1D thin-film equation in simulation.js and after the 2D domain in
+cfd-worker.js, the exact 1D profile solveFullyDeveloped1D in cfd-solver.js
+used only as a reference). No 3D exists.
+
+Answers: Flow gets sub tabs 1D | 2D | 3D (tab bar unchanged); 1D solves gap
+flow along the blade, the film to the oven, across the web, and start-up in
+time, picked by a switch inside 1D; Start-up moves from Results to Flow › 1D;
+the stages solve independently from the inputs, with a table comparing them;
+3D geometry by STL upload, STEP upload and made in the app; the file holds
+the blade only (the app adds the web at the machine height and the slurry);
+3D: full Navier–Stokes with the free surface (meniscus and film) in 3D, on a
+strip around one location and on the full web width; 3D results: a 3D view
+with a field on cut planes, maps across the web, pressure on the blade, and
+the 1D / 2D / 3D table.
+
+Phase A: Flow sub tabs and the 1D stage (one merge)
+- "Flow (CFD)" becomes "Flow" with sub tabs 1D | 2D | 3D; 2D is today's CFD
+  page, unchanged; 3D shows "not built yet" until phase B.
+- Results keeps Summary, Contact line, Web edge, Film surface; Start-up (the
+  animation and its scenario inputs) moves to Flow › 1D. Welcome card, guide,
+  help, report and project files follow (view numbers unchanged).
+- 1D switch: Gap flow | To the oven | Across the web | Start-up.
+  - Gap flow: a real 1D generalized-Newtonian lubrication solve along x for
+    the 2D's blade shape (round entry or flat land, same inputs): at each x
+    the exact fully developed profile gives flux(dp/dx); q is found so that
+    the pressure drop over the land equals the bead pressure. Shows p(x),
+    dp/dx, wall shear, u(y) at chosen x, q and h = q/U.
+  - To the oven: the 1D thin-film equation (solveDownstreamFilm) from the
+    metering edge to the oven with this q, and the ripple levelling.
+  - Across the web: the gap-flow solve at every position across the web
+    (local gap and contact angle): h(z), q(z) and the contact line s(z).
+  - Start-up: the animation, as it is.
+- 1D / 2D / 3D table: film thickness, flow rate, peak pressure, contact line
+  per location; the 2D column from solved runs, 3D "not solved".
+- Checks: Newtonian flat land against the Reynolds-equation formula; the 1D
+  against the existing exact profile; 1D vs 2D at the defaults (difference
+  reported, not hidden); the usual census, parity and browser suites.
+
+Phase B: 3D geometry and view (one merge)
+- Made in the app: the blade from the 2D's dimensions plus the width,
+  extended across the web; the web below with the gap waviness and fibre
+  thickness variation.
+- STL (binary and text) and STEP upload (STEP through opencascade.js,
+  loaded from the internet on first use, tens of MB, then cached); units and
+  axes chosen on import; the blade placed at the machine height over the web.
+- A rotatable 3D view (WebGL) of blade, web and slurry region, and the mesh.
+- Mesh: from the blade's underside height over the web, a structured
+  hexahedral mesh of the gap and the film region; a check reports where the
+  blade overhangs so its underside is not a single height.
+
+Phase C: 3D solver (one or more merges)
+- Steady 3D Navier–Stokes, generalized Newtonian (the 2D's rheology models),
+  hexahedral finite elements, the free surface as a height over the web
+  solved with the flow, the contact line as a curve on the exit face.
+- Iterative linear solver in Web Workers (a direct solver does not fit in a
+  browser's memory in 3D).
+- Region: a strip of about 20 mm around one location (repeating sides), and
+  the full web width (coarse across it).
+- Checks before any UI: 3D duct flow against its analytic series, the 3D
+  lid-driven cavity against published values, a uniform strip reproducing
+  the 2D solution, mass conservation.
+- Results: 3D view with velocity / pressure / shear on cut planes, film
+  thickness and flow-rate maps across the web, pressure on the blade, and the
+  3D column of the table.
+- Expected cost, to be measured on the strip first and reported: tens of
+  minutes to hours per run with the free surface; the full width longer and
+  possibly beyond a browser's memory. Convergence of a 3D free surface is not
+  certain; if it cannot be made reliable this is reported, not hidden.
+
 ### Layout v2 (after the redesign): answer first, two bars, sub tabs
 
 User: the layout did not make sense as a whole; start with a landing page,
