@@ -62,7 +62,7 @@ const DOCK_ICON = {
 const TILE_ICON = [
   [/contact line/i, 1], [/flow across/i, 11], [/film range|range across/i, 'range'], [/variation/i, 'wave'], [/3D vs 2D/i, 'diff'],
   [/ripple|amplitude/i, 'ripple'], [/radius/i, 'radius'], [/time|levelling/i, 'period'], [/yield/i, 'yield'], [/share of film/i, 'oven'],
-  [/flow rate/i, 'flow'], [/pressure/i, 'pressure'], [/shear/i, 'shear'], [/film \/ gap|gap at edge \/ film/i, 'ratio'], [/gap/i, 'height'],
+  [/flow rate/i, 'flow'], [/pressure/i, 'pressure'], [/shear/i, 'shear'], [/film \/ gap|gap at edge \/ film/i, 'ratio'], [/^film at/i, 'film'], [/gap/i, 'height'],
   [/strip at|full width/i, 'position'], [/blade \+ film|underside/i, 'shape'], [/hexahedra|nodes|unknowns/i, 'mesh'], [/numerical/i, 'tolerance'],
   [/within 1 %/i, 'length'], [/lubrication|filmThickness/i, 'model'], [/film|q \/ u/i, 'film'],
 ];
