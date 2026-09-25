@@ -174,6 +174,16 @@ document.addEventListener('change', e => {
   if (C3D[k] !== v) c3dSet(k, v);
 });
 
+/** The STEP reader (occt-import-js). Opened as a file (file://) the browser won't fetch its WebAssembly: it then comes
+ *  from lib/occt-import-js.wasm.js, the same binary as text (build-occt.js), loaded like a script. */
+async function c3dOcct() {
+  if (location.protocol !== 'file:') return occtimportjs({ locateFile: n => 'lib/' + n });
+  if (typeof self.OCCT_WASM === 'undefined') await loadScript('lib/occt-import-js.wasm.js');
+  const s = atob(self.OCCT_WASM), wasmBinary = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) wasmBinary[i] = s.charCodeAt(i);
+  delete self.OCCT_WASM;   // (the text is not needed once decoded)
+  return occtimportjs({ wasmBinary });
+}
 /** Read an STL or STEP file of the blade. */
 async function c3dImportFile(file) {
   try {
@@ -182,7 +192,7 @@ async function c3dImportFile(file) {
     if (step) {
       imgToast('Reading the STEP file…');
       if (typeof occtimportjs === 'undefined') await loadScript('lib/occt-import-js.js');
-      if (!C3D_OCCT) C3D_OCCT = occtimportjs({ locateFile: n => 'lib/' + n });
+      if (!C3D_OCCT) C3D_OCCT = c3dOcct();
       const occt = await C3D_OCCT;
       const r = occt.ReadStepFile(new Uint8Array(buf), { linearUnit: 'millimeter' });
       if (!r || !r.success || !r.meshes.length) throw new Error('the STEP file could not be read');
