@@ -223,7 +223,7 @@ function c3dEstimateText() {
   if (C3D.region === 'full') {
     // (measured: the 2D at each station about 3 s; a strip's first 3D solve as estimated, the later sweeps' about 60 % of it; about 6 sweeps)
     const L = c3dWideLayout(), e = c3dEstimate(L.sub), NL = 2 * C3D.nzFull + 1;
-    const perColour = Math.ceil(Math.ceil(L.subs.length / 2) / L.workers), secs = ((NL + 2 * L.subs.length) / L.workers + 1) * 3 + 2 * perColour * e.secs3 * (1 + 0.6 * 5);
+    const perColour = Math.ceil(Math.ceil(L.subs.length / 2) / L.workers), secs = (NL / L.workers + 4) * 3 + 2 * perColour * e.secs3 * (1 + 0.6 * 5);
     return `Solved as ${L.subs.length} overlapping strips (${L.sub} elements across each), ${L.workers} at a time, sweep after sweep until they agree; stations every ${(ACROSS_W / (NL - 1)).toFixed(1)} mm (variation across the web on a shorter scale is sampled there, not resolved); the web's edges are symmetry planes. About ${c3dMem(L.workers * e.bytes)} and ${c3dTime(secs)}.`;
   }
   const e = c3dEstimate();
@@ -347,7 +347,12 @@ async function c3dRunWide(m, key) {
     const id = ++seq;
     const on = e => {
       if (e.data.id !== id) return;
-      if (e.data.progress) { if (Number.isFinite(e.data.progress.residual)) C3D_RUN.progress = { ...C3D_RUN.progress, it: e.data.progress.it, residual: e.data.progress.residual }; return; }
+      if (e.data.progress) {
+        const q = e.data.progress;
+        if (Number.isFinite(q.residual)) C3D_RUN.progress = { ...C3D_RUN.progress, it: q.it, residual: q.residual };
+        if (q.stage && /^2D at /.test(q.stage)) C3D_RUN.progress = { ...C3D_RUN.progress, detail: q.stage.replace(/ \(gap.*$/, '') };   // (a worker's station, while the 2D runs)
+        return;
+      }
       w.removeEventListener('message', on);
       if (e.data.ok) res(e.data.result); else rej(new Error(e.data.error));
     };
@@ -429,7 +434,7 @@ function c3dBusy() {
   const el = document.getElementById('c3dBusy');
   if (!el || C3D_RUN.status !== 'running') return;
   const pr = C3D_RUN.progress, t = ((performance.now() - C3D_RUN.t0) / 1000).toFixed(0);
-  el.textContent = `Solving the 3D (${t} s): ${pr ? pr.stage + (pr.stage.startsWith('3D') && Number.isFinite(pr.residual) ? `, Newton step ${pr.it + 1}, residual ${pr.residual.toExponential(1)}` : '') : 'starting'}`;
+  el.textContent = `Solving the 3D (${t} s): ${pr ? pr.stage + (pr.stage.startsWith('3D') && Number.isFinite(pr.residual) ? `, Newton step ${pr.it + 1}, residual ${pr.residual.toExponential(1)}` : '') + (pr.detail && /^2D at the/.test(pr.stage) ? ` (${pr.detail.replace(/^2D /, '')})` : '') : 'starting'}`;
 }
 setInterval(c3dBusy, 1000);
 
