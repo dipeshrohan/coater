@@ -37,6 +37,7 @@ const CFG = [
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
   { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120 },
+  { k: 'tilt', l: 'Blade tilt across the web', min: -500, max: 500, step: 5, u: 'µm', d: 0, v: 0, h: 'gap difference edge to edge, centred; + wider at z = 300 mm' },
   { k: 'dt', l: 'Fibre thickness variation', min: 0, max: 60, step: 1, u: 'µm', d: 0, v: 10 },
   { k: 'dth', l: 'Wetting variation on blade', min: 0, max: 20, step: 0.5, u: '°', d: 1, v: 4, h: 'contamination, residue' },
 
@@ -212,8 +213,9 @@ function rippleLevelling() {
   return { h, dhdH, a0, tau, residual, asymptote, tRes, at: t => asymptote + (a0 - asymptote) * Math.exp(-t / tau) };
 }
 
-/** Local gap (mm) and contact angle (deg) at position z (mm) across the web: waviness, fibre thickness and wetting variation. */
-const localGap = z => gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) - P.dt * spatialNoise(z, 1.7)) / 1000;
+/** Local gap (mm) and contact angle (deg) at position z (mm) across the web (0 to 300 mm): waviness, the blade's tilt
+ *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation. */
+const localGap = z => gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000;
 const localContactAngle = z => P.th + P.dth * spatialNoise(z, 4.1);
 
 /**

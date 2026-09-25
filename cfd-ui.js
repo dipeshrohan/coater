@@ -304,9 +304,9 @@ const TIME_SCALAR = { key: 'time', label: 'Time along the line', short: 't', uni
 // Locations and solving
 // ---------------------------------------------------------------------
 
-/** Local gap (mm) at lateral position z (mm): the same across-web waviness and fibre-thickness variation the Contact line tab and the animation already use. */
+/** Local gap (mm) at lateral position z (mm): the same across-web waviness, blade tilt and fibre-thickness variation the Contact line tab and the animation use (physics.js). */
 function cfdLocalGapMm(z) {
-  return gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) - P.dt * spatialNoise(z, 1.7)) / 1000;
+  return localGap(z);
 }
 
 /** Local contact angle on the blade (deg) at lateral position z (mm): the sidebar's value with its wetting variation, as the Contact line tab uses it. */

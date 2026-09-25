@@ -292,7 +292,7 @@ const ANIM = (function () {
    */
   function setModel() {
     const z = AN.z;
-    const H = gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) - P.dt * spatialNoise(z, 1.7)) / 1000;
+    const H = localGap(z);
     const th = P.th + P.dth * spatialNoise(z, 4.1);
     const st = contactLine(H, th);
     ST = st; GAP = H; UN = P.U / 60 * 1000; U = UN; HF = st.h; Q = U * HF;

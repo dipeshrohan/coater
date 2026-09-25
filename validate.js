@@ -79,7 +79,7 @@ function checkGeometry(geo, i) {
   // the process
   if (geo.shape === 'round' && CFDG.pool > 0.8 * CFDG.R) warn('pool', `Pool edge ${CFDG.pool} mm is beyond 0.8 × the radius: ${(0.8 * CFDG.R).toFixed(0)} mm is used.`, 'cfdPool');
   if (Hmm > 0 && Hmm < 0.1) warn('thin', `The gap at the edge is only ${Hmm.toFixed(3)} mm: slurry particles (2 to 8 µm) and fibre roughness become a large part of it.`, field('gap', 'n_Hm'));
-  if (Hmm > 0 && (P.dH + P.dt) / 1000 > 0.3 * Hmm) warn('wavy', `Gap waviness ${P.dH} µm and fibre thickness variation ${P.dt} µm together exceed 30 % of the gap: the local gap varies strongly across the web.`, 'n_dH');
+  if (Hmm > 0 && (P.dH + P.dt + Math.abs(P.tilt) / 2) / 1000 > 0.3 * Hmm) warn('wavy', `Gap waviness ${P.dH} µm, ${P.tilt ? `blade tilt ${P.tilt} µm edge to edge and ` : ''}fibre thickness variation ${P.dt} µm together exceed 30 % of the gap: the local gap varies strongly across the web.`, P.tilt && Math.abs(P.tilt) / 2 > P.dH ? 'n_tilt' : 'n_dH');
   const film2D = Math.max(12, (geo.solver ? geo.solver.ldGaps : 8) * Hmm);
   if (geo.ovenDistance * 1000 <= film2D) warn('oven', `The oven (${(geo.ovenDistance * 1000).toFixed(0)} mm away) is within the free film solved in 2D (${film2D.toFixed(0)} mm): the film up to the oven is not computed beyond it.`, 'n_oven');
   return out;
