@@ -1,7 +1,7 @@
 /*
  * report.js — the run report (File > Report…).
  *
- * The chosen sections of the project (the four Results pages, Flow (CFD), its mesh study, DOE) as one
+ * The chosen sections of the project (the Results pages, the 1D, 2D CFD, its mesh study, DOE) as one
  * A4 document: a header (title, project, author, date, app version, notes), then per section its
  * inputs, results tables, plots (drawn as the views show them now, on white) and checks and
  * messages. Results whose inputs changed since they were solved are included and marked out of
@@ -34,6 +34,7 @@ function reportSections() {
     { k: 'm1', l: TABS[1], note: 'results, plots, checks' },
     { k: 'm2', l: TABS[2], note: 'results, plots, checks' },
     { k: 'm3', l: TABS[3], note: 'results, plots, checks' },
+    { k: 'm1d', l: '1D: gap flow, to the oven, across the web', note: 'results, plots, checks, the 1D / 2D table' },
     { k: 'cfd', l: TABS[4], note: solved ? `${solved} of 4 locations solved${stale ? `, ${stale} out of date` : ''}` : 'nothing solved yet: setup and checks only' },
     { k: 'mesh', l: 'Mesh study', note: meshStudy ? `location ${meshStudy.loc + 1}, ${meshStudy.runs.filter(r => r.status === 'done').length} of ${meshStudy.runs.length} meshes solved` : 'not run', off: !meshStudy },
     { k: 'doe', l: TABS[5], note: DOE.runs.length ? `${DOE.runs.filter(r => r.status === 'done').length} of ${DOE.runs.length} runs solved` : 'not run: setup only' },
@@ -103,7 +104,7 @@ function repInputs() {
     const v = P[c.k], changed = Math.abs(v - c.v) > 1e-12;
     rows += `<tr><th scope="row">${repEsc(c.l)}${c.h ? `<small>${repEsc(c.h)}</small>` : ''}</th><td${changed ? ' class="chg"' : ''}>${repEsc(repUnit((+v).toFixed(c.d), c.u))}</td><td>${repEsc(repUnit((+c.v).toFixed(c.d), c.u))}</td></tr>`;
   }
-  return `<p class="lede">Used by every module (CFD locations may set their own gap, contact angle, speed, pressure and slurry: see Flow (CFD)). Values changed from the default are in bold.</p>
+  return `<p class="lede">Used by every module (CFD locations may set their own gap, contact angle, speed, pressure and slurry: see 2D CFD). Values changed from the default are in bold.</p>
     <table><thead><tr><th>Input</th><th>Value</th><th>Default</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 async function repModule(m) {
@@ -203,7 +204,7 @@ async function repDoe() {
   tab = 5; DOE.dock = 'runs'; render(); await repFrame();
   const stale = DOE.key && DOE.key !== cfdInputsKey(cfdGeometry(DOE.loc));
   const des = DOE.design || (DOE.factors || []).map(fs => ({ ...fs, f: doeFactor(fs.k), levels: doeLevels(fs) }));
-  let html = `<h3>Setup</h3><p class="lede">Full factorial at location ${DOE.loc + 1} · z ${CFD_LOCS[DOE.loc].z} mm; every other input as in Flow (CFD) (the base case).${DOE.design ? '' : ' Not run yet: the design being edited.'}</p>`;
+  let html = `<h3>Setup</h3><p class="lede">Full factorial at location ${DOE.loc + 1} · z ${CFD_LOCS[DOE.loc].z} mm; every other input as in 2D CFD (the base case).${DOE.design ? '' : ' Not run yet: the design being edited.'}</p>`;
   html += repRows(des.map(d => [repEsc(doeLabel(d.f || doeFactor(d.k))), repEsc(d.levels.map(v => doeFmt(d.f || doeFactor(d.k), v)).join(' · ')), String(d.levels.length)]), ['Factor', 'Levels', 'Count']);
   if (DOE.runs.length) {
     const done = DOE.runs.filter(r => r.status === 'done').length, bad = DOE.runs.filter(r => r.status === 'error');
@@ -309,6 +310,15 @@ async function buildReport(o) {
         const want = new Set(o.sections);
         if (want.has('inputs')) out.push({ id: 'inputs', title: 'Inputs', html: repInputs() });
         for (let m = 0; m < 4; m++) if (want.has('m' + m)) out.push({ id: 'm' + m, title: TABS[m], html: await repModule(m) });
+        if (want.has('m1d')) {
+          await oneDWait(true);   // (the 1D solves in its worker: its results for the inputs as they are)
+          for (const v of [8, 10, 11]) {
+            let html = await repModule(v);
+            const t = v === 8 && document.querySelector('#oneDTable table');
+            if (t) html += '<h3>1D, 2D and 3D</h3>' + repTable(t);
+            out.push({ id: 'm1d-' + v, title: `1D: ${TABS[v]}`, html });
+          }
+        }
         if (want.has('cfd')) out.push({ id: 'cfd', title: TABS[4], html: await repCfd(keep) });
         if (want.has('mesh') && meshStudy) out.push({ id: 'mesh', title: 'Mesh study', html: await repMesh() });
         if (want.has('doe')) out.push({ id: 'doe', title: TABS[5], html: await repDoe() });

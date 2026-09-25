@@ -599,4 +599,4 @@ function solveDownstreamFilm(opts) {
   return { x: xs, h: Array.from(h), hInf, converged: maxRelChange < tol, steps: step };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveCavityNS, solveChannelNS, solveFullyDeveloped1D, solveDownstreamFilm, muEffLocal };
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveCavityNS, solveChannelNS, solveFullyDeveloped1D, solveDownstreamFilm, muEffLocal, shearRateFromStress };

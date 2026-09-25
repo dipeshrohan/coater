@@ -158,9 +158,13 @@ const TREE_NOTE = [
   'Inputs this tab uses are bright; dimmed ones do not change it.',
   'Inputs this tab uses are bright; dimmed ones do not change it.',
   'The shared inputs, then the CFD setup and the four locations below. Change them, then Run.',
-  'The DOE starts from these inputs and the CFD setup (its base case) and varies the factors of its Design tab. Changing an input here changes Flow (CFD) too.',
+  'The DOE starts from these inputs and the CFD setup (its base case) and varies the factors of its Design tab. Changing an input here changes 2D CFD too.',
   'The predictions use these inputs; the Fit tab can adjust them to your data.',
   'Every result on this page follows these inputs.',
+  'The 1D uses these inputs and the 2D setup (blade, rheology, fibre, locations), so it compares with the 2D like for like.',
+  'The 3D is not built yet.',
+  'The 1D uses these inputs and the 2D setup; the ripple comes from the gap waviness and vibration below.',
+  'The 1D at every position across the web: the gap and contact angle vary there with the inputs under Variation across the web.',
 ];
 /** The (i) of a view's toolbar: this tab's guide in the help. */
 const aboutButton = () => `<button type="button" class="icon-btn vp-about" data-about title="About this tab: what it answers and how to read it" aria-label="About this tab"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg></button>`;
@@ -173,14 +177,14 @@ document.addEventListener('click', e => {
   const n = e.target.closest && e.target.closest('[data-note]');
   if (n) { const id = n.dataset.note; if (PANE_NOTES.has(id)) PANE_NOTES.delete(id); else PANE_NOTES.add(id); render(); }
 });
-function moduleFrame({ tools = '', panes, cols = 1, notes = '' }) {
+function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '' }) {
   // the page reads top down: its sub tabs (and controls), the answer (verdict, the question, the other
   // checks, the thin-film validity), the key numbers, then the plots; its history opens from Edit > History
   return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
     <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
     <div class="verdict"><div class="status" id="st"></div><p class="vq">${TAB_Q[tab]}</p><p class="pg-scope" id="pgScope"></p></div>
     <div class="mod-results"><div class="stats" id="ss"></div></div>
-    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}</div>
+    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>
     <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
     <section class="dock mod-dock" aria-label="History">
       <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">History<span class="tab-n" data-n="history"></span></button></div>
@@ -574,7 +578,7 @@ function viewSummary() {
       <p class="pg-scope" id="pgScope"></p>
       <h2 class="sum-h">Go further</h2>
       <div class="sum-more">
-        <button type="button" data-sec="1"><b>Flow under the blade</b><span>2D CFD at four places across the web.</span></button>
+        <button type="button" data-sec="1"><b>Flow under the blade</b><span>1D along the blade, 2D CFD at four places across the web.</span></button>
         <button type="button" data-sec="2"><b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
         <button type="button" data-sec="3"><b>Check against your data</b><span>Import measurements and fit the model.</span></button>
       </div>
@@ -589,9 +593,10 @@ function viewSummary() {
 // Tabs + top-level render loop
 // ---------------------------------------------------------------------
 // The views, by number (the number is what the project file, the undo history and the help keep):
-// 0 Start-up animation, 1 Contact line, 2 Web edge, 3 Film surface, 4 CFD, 5 DOE, 6 Measured data, 7 Summary.
+// 0 Start-up animation, 1 Contact line, 2 Web edge, 3 Film surface, 4 2D CFD, 5 DOE, 6 Measured data, 7 Summary,
+// 8 1D gap flow, 9 3D, 10 1D to the oven, 11 1D across the web.
 let tab = 7;
-const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', 'Flow (CFD)', 'DOE', 'Measured data', 'Summary'];
+const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web'];
 /** What each view answers, in plain words (its tooltip, the welcome screen, its About). */
 const TAB_Q = [
   'How the slurry moves under the blade, from start-up (animation)',
@@ -602,6 +607,10 @@ const TAB_Q = [
   'Which setting changes the result most? (design of experiments)',
   'How well do the models match my measurements, and which inputs fit them?',
   'Is the coating OK at these settings? Every result at a glance.',
+  'How does the slurry flow along the blade, and what flow rate and film does the bead pressure give? (1D)',
+  'The flow in 3D (not built yet)',
+  'How does the film settle, and the ripple level, between the blade and the oven? (1D)',
+  'How do the film and the contact line vary across the web? (1D at every position)',
 ];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
@@ -612,19 +621,25 @@ const TAB_ICONS = [
   '<circle cx="4" cy="4" r="1.6" fill="currentColor"/><circle cx="12" cy="4" r="1.6" fill="currentColor"/><circle cx="4" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><path d="M4 4h8v8H4z" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>',
   '<path d="M2.5 2.5v11h11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".6"/><path d="M3.5 12.5l9.5-9.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="1.6 1.6"/><circle cx="6" cy="9.4" r="1.4" fill="currentColor"/><circle cx="9" cy="7.4" r="1.4" fill="currentColor"/><circle cx="11.6" cy="4.8" r="1.4" fill="currentColor"/>',
   '<path d="M2.5 13.5V3M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M4.5 10.5l3-3 2 2 4-4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>',
+  '<path d="M1.5 5.5c4 0 6 3 13 3M1.5 11.5h13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4 8.2h3M8 9.2h3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".6"/>',
+  '<path d="M8 1.8 14 5v6l-6 3.2L2 11V5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M2 5l6 3.2L14 5M8 8.2v6" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" opacity=".7"/>',
+  '<path d="M1.5 10.5c1.5-3 3-4 6.5-4h6.5M1.5 13.5h13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+  '<path d="M1.5 9c1.2-1.4 2.4-1.4 3.6 0s2.4 1.4 3.6 0 2.4-1.4 3.6 0 1.6 1 2.2.6M3 4.5h10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M3 3v3M13 3v3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>',
 ];
 /**
  * The tab bar's sections, each with its pages (views) in order: the first is where the section
- * opens the first time; after that it reopens on the page last shown. Results' pages are its sub tabs.
+ * opens the first time; after that it reopens on the page last shown. Results' pages are its sub
+ * tabs; Flow's sub tabs are its stages 1D, 2D, 3D, and 1D's pages a second switch under them.
  */
 const SECTIONS = [
-  { k: 'results', t: 'Results', icon: 7, views: [7, 1, 2, 3, 0] },
-  { k: 'cfd', t: 'Flow (CFD)', icon: 4, views: [4] },
+  { k: 'results', t: 'Results', icon: 7, views: [7, 1, 2, 3] },
+  { k: 'flow', t: 'Flow', icon: 4, views: [8, 10, 11, 0, 4, 9], groups: [{ k: '1d', t: '1D', views: [8, 10, 11, 0] }, { k: '2d', t: '2D', views: [4] }, { k: '3d', t: '3D', views: [9] }] },
   { k: 'doe', t: 'DOE', icon: 5, views: [5] },
   { k: 'meas', t: 'Measured data', icon: 6, views: [6] },
 ];
 const secOf = v => SECTIONS.find(s => s.views.includes(v)) || SECTIONS[0];
-const SEC_LAST = {};
+const groupOfView = v => { const s = secOf(v); return s.groups ? s.groups.find(g => g.views.includes(v)) : null; };
+const SEC_LAST = {}, GROUP_LAST = {};
 const tabsEl = document.getElementById('tabs');
 const tabButtons = () => [...tabsEl.querySelectorAll('button[role="tab"]')];
 const goSection = i => { const s = SECTIONS[i]; tab = SEC_LAST[s.k] ?? s.views[0]; render(); };
@@ -633,7 +648,7 @@ SECTIONS.forEach((s, i) => {
   b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[s.icon]}</svg><span>${s.t}</span>`;
   b.type = 'button';
   b.dataset.sec = s.k;
-  b.title = s.views.length > 1 ? s.views.map(v => TABS[v]).join(' · ') : TAB_Q[s.views[0]];
+  b.title = s.groups ? s.groups.map(g => g.t).join(' · ') : s.views.length > 1 ? s.views.map(v => TABS[v]).join(' · ') : TAB_Q[s.views[0]];
   b.setAttribute('role', 'tab');
   b.onclick = () => goSection(i);
   b.onkeydown = e => {
@@ -645,25 +660,34 @@ SECTIONS.forEach((s, i) => {
   };
   tabsEl.appendChild(b);
 });
-/** The sub tabs of the section shown (a pill switch at the top of the page), or '' when it has one page. */
+/**
+ * The sub tabs of the section shown (a pill switch at the top of the page), or '' when it has one
+ * page. Flow: its stages (a stage opens on its page last shown), and the stage's pages under them.
+ */
 function subTabs() {
-  const s = secOf(tab);
+  const s = secOf(tab), btn = (v, t, on, title, row) => `<button type="button" role="tab" data-view="${v}" data-row="${row}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${title}">${t}</button>`;
+  if (s.groups) {
+    const g = groupOfView(tab);
+    const top = `<div class="subtabs" role="tablist" aria-label="${s.t} stages">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.views[0], x.t, x === g, x.views.map(v => TABS[v]).join(' · '), 'g')).join('')}</div>`;
+    return top + (g && g.views.length > 1 ? `<div class="subtabs subtabs-2" role="tablist" aria-label="${g.t} pages">${g.views.map(v => btn(v, TABS[v], v === tab, TAB_Q[v], 'v')).join('')}</div>` : '');
+  }
   if (s.views.length < 2) return '';
-  return `<div class="subtabs" role="tablist" aria-label="${s.t} pages">${s.views.map(v =>
-    `<button type="button" role="tab" data-view="${v}" aria-selected="${v === tab}" tabindex="${v === tab ? 0 : -1}" title="${TAB_Q[v]}">${TABS[v]}</button>`).join('')}</div>`;
+  return `<div class="subtabs" role="tablist" aria-label="${s.t} pages">${s.views.map(v => btn(v, TABS[v], v === tab, TAB_Q[v], 'v')).join('')}</div>`;
 }
 document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('.subtabs [data-view]');
   if (b) { tab = +b.dataset.view; render(); }
 });
+// (arrow keys move along the row the focus is in, and open that page)
 document.addEventListener('keydown', e => {
   const b = e.target.closest && e.target.closest('.subtabs [data-view]');
   if (!b || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
   e.preventDefault();
-  const vs = secOf(tab).views, i = vs.indexOf(tab), n = vs.length;
-  tab = vs[e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + n) % n];
+  const bs = [...b.parentElement.querySelectorAll('[data-view]')], i = bs.indexOf(b), n = bs.length, row = b.dataset.row;
+  const k = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + n) % n;
+  tab = +bs[k].dataset.view;
   render();
-  const f = document.querySelector(`.subtabs [data-view="${tab}"]`); if (f) f.focus();
+  const f = document.querySelectorAll(`.subtabs [data-row="${row}"]`)[k]; if (f) f.focus();
 });
 const view = document.getElementById('view');
 const work = document.getElementById('work');
@@ -672,9 +696,13 @@ const work = document.getElementById('work');
 function titleStatus() { const st = document.getElementById('st'); if (st) st.title = [...st.children].map(p => p.textContent).join(' · '); }
 
 function render() {
+  // (a redraw keeps the keyboard focus on a sub tab or 1D location button: arrow keys go on working)
+  const af = document.activeElement, keepF = af && af.closest && (af.closest('.subtabs [data-view]') || af.closest('[data-l1d]'))
+    ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.view ?? af.dataset.l1d);
   undoBeforeRender();
-  const sec = secOf(tab);
+  const sec = secOf(tab), grp = groupOfView(tab);
   SEC_LAST[sec.k] = tab;
+  if (grp) GROUP_LAST[grp.k] = tab;
   tabButtons().forEach(b => { const on = b.dataset.sec === sec.k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
   document.body.dataset.tab = tab;
   document.body.dataset.sec = sec.k;
@@ -686,7 +714,7 @@ function render() {
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross][tab]();
   wireModDock();
   decorateImageButtons();
   applyHelp();
@@ -696,6 +724,7 @@ function render() {
   undoAfterRender();
   applyKeyLabels();
   decorateTree();
+  if (keepF) { const bs = [...document.querySelectorAll(keepF)], f = bs.find(x => (x.dataset.view ?? x.dataset.l1d) === keepV) || bs.find(x => x.getAttribute('aria-selected') === 'true'); if (f) f.focus(); }
 }
 
 // ---- theme: follows the system until switched here (remembered in this browser)

@@ -21,18 +21,8 @@
  *   solves: [{ label, k0 (index of its first iterate in r), n (its iterates), converged, residual }],
  *   used: index in solves of the solve whose solution is the result.
  */
-importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js');
-
-/** Blade height above the web over the blade's part of the domain, x = 0 at the inlet, x = Lx at the metering edge. */
-function bladeShape(o) {
-  if (o.geometry === 'round') {
-    // Round entry of radius R whose lowest point is the metering edge (gap H
-    // there), converging from the pool edge Xup upstream.
-    const R = o.R, X = o.Xup, H = o.H, root = x => Math.sqrt(R * R - (X - x) ** 2);
-    return { Lx: X, h: x => H + R - root(x) };
-  }
-  return { Lx: o.L, h: () => o.H };
-}
+// (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
+importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-1d.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {

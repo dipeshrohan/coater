@@ -98,14 +98,15 @@ const cfdUses = () => {
 };
 /** Why a tab does not use an input (its hover note). */
 function unusedWhy(k) {
-  if (tab === 4 || tab === 5) {
+  if (tab === 4 || tab === 5 || tab >= 8) {
     if (k === 'n' || k === 'ty') return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
     if (k === 'L') return 'not used with a round blade entry (only by the flat land)';
-    return 'not used by the CFD';
+    return tab >= 8 ? 'not used by this 1D page' : 'not used by the CFD';
   }
   return `not used in ${TABS[tab]}`;
 }
-const inputUsed = k => { const u = tab === 4 || tab === 5 ? cfdUses() : USES[tab]; return !u || u.includes(k); };
+// (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web the notch face)
+const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 || tab === 9 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : USES[tab]; return !u || u.includes(k); };
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {

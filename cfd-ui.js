@@ -1,5 +1,5 @@
 /*
- * cfd-ui.js — the "Flow (CFD)" tab.
+ * cfd-ui.js — Flow › 2D, the 2D CFD.
  *
  * Runs the 2D solve -- the flow under the blade (round entry onto the
  * metering edge, or the flat land), over the blade's exit face and into
@@ -555,7 +555,7 @@ function viewCFD() {
       <div class="pop-body pop-menu" role="menu" aria-label="More results panels">${items.filter(([k]) => k !== FV.dock).map(([k, t]) => `<button class="menu-item" type="button" role="menuitem" data-dock-more="${k}">${t}<span class="tab-n" data-n="${k}"></span></button>`).join('')}</div></details>`;
   };
   const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
-  view.innerHTML = `
+  view.innerHTML = `<div class="vp-bar pg-bar flow-head" role="toolbar" aria-label="Flow stages">${subTabs()}</div>
     <div class="cfd-wb" id="cfdWb" style="--dock-h: ${FV.dockH}px">
       <div class="vp-bar" role="toolbar" aria-label="Solve and display">
         <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run<span class="hide-mid"> all 4</span></button>

@@ -4,7 +4,7 @@
  * solved with the CFD worker, several runs at a time. Results: a table (CSV), response plots (an
  * output against a factor, a line per level of the second factor, a panel per level of the third),
  * a response map (two factors) and main effects (each factor's mean output at each level).
- * Everything not varied is the base case: the inputs bar, the Flow (CFD) setup, and the
+ * Everything not varied is the base case: the inputs bar, the 2D CFD setup, and the
  * location's own inputs.
  */
 
@@ -180,7 +180,7 @@ function viewDOE() {
   const row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
   document.getElementById('setupExtra').innerHTML = `
     <div class="tree-sep">DOE base case</div>
-    <details class="grp cfd-grp" open><summary>From Flow (CFD)</summary>
+    <details class="grp cfd-grp" open><summary>From 2D CFD</summary>
       ${row('Location', `L${i + 1} · z ${CFD_LOCS[i].z} mm`)}
       ${row('Gap at the edge', `${locInput(i, 'gap').toFixed(3)} mm`)}
       ${row('Contact angle', `${locInput(i, 'th').toFixed(1)}°`)}
@@ -190,7 +190,7 @@ function viewDOE() {
       ${row('Fibre', FIBRES[CFDG.fibre].l)}
       ${row('Mesh', `${MESH_PRESETS[s.mesh].l}, tolerance ${fmtTol(s.tol)}`)}
       <p class="prop-note">The inputs above the line and these settings are the base case: every run uses them except the factors it varies.${own.length ? ` Location ${i + 1} has its own ${own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ')}.` : ''}</p>
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">Edit in Flow (CFD)</button></div>
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">Edit in 2D CFD</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
   const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${['problems', 'history', 'msgs'].includes(k) ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;

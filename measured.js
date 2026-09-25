@@ -204,7 +204,7 @@ function measFastPoint(kind, p) {
   });
 }
 const measFast = (ds, over) => measWithP(over, () => ds.rows.map(p => { const v = measFastPoint(ds.kind, p); return v != null && Number.isFinite(v) ? v : null; }));
-/** The CFD geometry for a point (a location at its position across the web, its settings; others as in Flow (CFD)). */
+/** The CFD geometry for a point (a location at its position across the web, its settings; others as in 2D CFD). */
 function measGeometry(ds, p, over) {
   const loc = CFD_LOCS[0], keep = { z: loc.z, over: loc.over, solver: loc.solver };
   const set = p.set || {}, pOver = { ...(over || {}) };
