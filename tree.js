@@ -63,17 +63,21 @@ const INPUT_ICON = {
   cfdDen: 'yarn', cfdNf: 'count', cfdAirPerm: 'air', cfdAirDP: 'pressure', cfdKoz: 'count', cfdAirFrac: 'air', cfdAirU: 'air', cfdAirT: 'temp', cfdPlenum: 'plenum',
   cfdMesh: 'mesh', cfdTol: 'tolerance', cfdS_nEb: 'mesh', cfdS_nEf: 'mesh', cfdS_nEs: 'mesh', cfdS_nEy: 'mesh', cfdS_gradeB: 'grading', cfdS_gradeS: 'grading', cfdS_gradeY: 'grading',
   cfdS_maxIter: 'iterations', cfdS_ldGaps: 'film', fa: 'pulse', fp: 'period', fd: 'pulse', pl0: 'pool', plp: 'length', az: 'position', rt: 'playback',
+  c3d_units: 'length', c3d_machine: 'process', c3d_up: 'height', c3d_inlet: 'pool', c3d_loc: 'location', c3d_stripW: 'position',
+  c3d_nxGap: 'mesh', c3d_nxFilm: 'mesh', c3d_ny: 'mesh', c3d_nzStrip: 'mesh', c3d_nzFull: 'mesh',
 };
 /** A read-only row's icon from its label (the DOE base case). */
-const LABEL_ICON = [[/^Location/, 'location'], [/^Gap/, 'height'], [/^Contact angle/, 'angle'], [/^Blade/, 'shape'], [/^Exit face/, 'exit'], [/^Rheology/, 'model'], [/^Fibre/, 'fibre'], [/^Mesh/, 'mesh']];
+const LABEL_ICON = [[/^Location/, 'location'], [/^Gap/, 'height'], [/^Contact angle/, 'angle'], [/^Blade/, 'shape'], [/^Exit face/, 'exit'], [/^Rheology/, 'model'], [/^Fibre/, 'fibre'], [/^Mesh/, 'mesh'], [/^Across the web/, 'position']];
 /** Groups: their colour (a CSS variable) and icon; the shared inputs' groups by name, the setup's by their tree key. */
 const GROUPS = {
   'Process': ['process', 'process'], 'Slurry': ['slurry', 'drop'], 'Blade and bead': ['blade', 'shape'], 'Variation across the web': ['variation', 'wave'], 'Web edge and film': ['edge', 'ripple'],
   geo: ['blade', 'shape'], rheo: ['slurry', 'model'], fibre: ['process', 'fibre'], air: ['edge', 'air'], solver: ['neutral', 'mesh'], locs: ['variation', 'location'],
   anim: ['neutral', 'playback'], doe: ['neutral', 'doe'], meas: ['neutral', 'data'],
+  c3d_geo: ['blade', 'shape'], c3d_region: ['variation', 'location'], c3d_mesh: ['neutral', 'mesh'],
 };
 function groupOf(details) {
   if (details.dataset.tree) return GROUPS[details.dataset.tree] || ['neutral', 'process'];
+  if (details.dataset.c3dgrp) return GROUPS['c3d_' + details.dataset.c3dgrp] || ['neutral', 'process'];
   const name = (details.querySelector(':scope > summary') || {}).textContent || '';
   if (GROUPS[name.trim()]) return GROUPS[name.trim()];
   if (details.querySelector('.anim-params')) return GROUPS.anim;
@@ -101,12 +105,12 @@ function unusedWhy(k) {
   if (tab === 4 || tab === 5 || tab >= 8) {
     if (k === 'n' || k === 'ty') return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
     if (k === 'L') return 'not used with a round blade entry (only by the flat land)';
-    return tab >= 8 ? 'not used by this 1D page' : 'not used by the CFD';
+    return tab === 9 ? 'not used by the 3D geometry' : tab >= 8 ? 'not used by this 1D page' : 'not used by the CFD';
   }
   return `not used in ${TABS[tab]}`;
 }
-// (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web the notch face)
-const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 || tab === 9 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : USES[tab]; return !u || u.includes(k); };
+// (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web and the 3D blade the notch face)
+const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 || tab === 9 ? [...cfdUses(), 'face'] : USES[tab]; return !u || u.includes(k); };
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {

@@ -281,20 +281,3 @@ function view1DAcross() {
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
-// ---------------------------------------------------------------------
-// Flow › 3D: not built yet
-// ---------------------------------------------------------------------
-function view3D() {
-  oneDSetupTree();
-  oneDRequest(false);
-  view.innerHTML = moduleFrame({
-    panes: [],
-    extra: emptyHint('3D is not built yet',
-      'Next: the 3D geometry (the blade made here from its dimensions, or an STL or STEP file of the blade) with a 3D view; then the 3D Navier–Stokes solve with the meniscus and film surface, on a strip around one location and on the full web width. Until then, the table compares the 1D and the 2D.',
-      '<button type="button" class="btn btn-secondary btn-sm" data-view="8">Open 1D gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-view="4">Open 2D</button>')
-      + '<div class="oned-table" id="oneDTable"></div>',
-  });
-  document.getElementById('st').innerHTML = pill('Not built yet', '');
-  view.querySelectorAll('.empty-hint [data-view]').forEach(b => { b.onclick = () => { tab = +b.dataset.view; render(); }; });
-  document.getElementById('oneDTable').innerHTML = oneDCompareTable();
-}

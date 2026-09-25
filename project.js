@@ -2,9 +2,10 @@
 /*
  * Project files (.bcdl, JSON): every input (sidebar, CFD setup, solver and mesh, the locations'
  * own), probes, cut lines, saved cases, the view (module, display and colour settings, zoom,
- * dock), the DOE (design and runs) and the solved results (fields, mesh study), so a project opens
- * without solving again. File menu in the title bar: New, Open (Ctrl+O), Save (Ctrl+S), Save as
- * (Ctrl+Shift+S), recent projects where the browser can reopen files (File System Access API).
+ * dock), the DOE (design and runs), the 3D setup with its blade file, and the solved results
+ * (fields, mesh study), so a project opens without solving again. File menu in the title bar: New,
+ * Open (Ctrl+O), Save (Ctrl+S), Save as (Ctrl+Shift+S), recent projects where the browser can reopen
+ * files (File System Access API).
  * The project's name (• when it has unsaved changes) is in the title bar and the browser tab.
  */
 const PROJ_FORMAT = 1, PROJ_APP = 'Blade Coat Defect Lab', APP_VERSION = '2026.09';
@@ -36,7 +37,7 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 
 // ---- the project as data, and back ----
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d)]);
+const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey()]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs } : null;
@@ -61,6 +62,7 @@ function projectData() {
       sel: MEAS.sel, fit: MEAS.fit ? { ...MEAS.fit, cfd: MEAS.fit.cfd ? { ...MEAS.fit.cfd, status: MEAS.fit.cfd.status === 'running' ? 'stopped' : MEAS.fit.cfd.status } : null } : null,
       fitKeys: MEAS.fitKeys, fitRange: MEAS.fitRange, fitSets: MEAS.fitSets, dock: MEAS.dock, dockH: MEAS.dockH,
     },
+    c3d: { ...C3D, file: c3dFileOut() },
   };
 }
 /** Set a sidebar input as its slider does (everything listening updates). */
@@ -78,6 +80,13 @@ function applyMeasured(m) {
   MEAS.sel = MEAS.sets.some(d => d.id === m.sel) ? m.sel : MEAS.sets.length ? MEAS.sets[0].id : null;
   MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
   MEAS.dock = m.dock || 'compare'; MEAS.dockH = m.dockH || 300;
+}
+/** The 3D setup of a project and its blade file (none: the defaults, no file). */
+function applyC3D(c) {
+  c = c || {};
+  Object.assign(C3D, JSON.parse(JSON.stringify(C3D_DEFAULTS)));
+  for (const k of Object.keys(C3D_DEFAULTS)) if (k in c) C3D[k] = c[k];
+  c3dFileIn(c.file);
 }
 function applyProject(p) {
   if (!p || p.app !== PROJ_APP) throw new Error('this is not a Blade Coat Defect Lab project');
@@ -112,6 +121,7 @@ function applyProject(p) {
     design: d.design ? d.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null, runs: d.runs || [], status: d.runs && d.runs.length ? (d.status || 'done') : 'idle', key: d.key || null, t0: d.t0 || 0, t1: d.t1 || 0, active: new Set() });
   cfdLog.length = 0; for (const m of p.messages || []) cfdLog.push({ ...m, t: new Date(m.t) });
   applyMeasured(p.measured);
+  applyC3D(p.c3d);
   tab = Number.isInteger(p.view && p.view.module) && p.view.module < TABS.length ? p.view.module : tab;
   render();
   undoReset();
@@ -132,6 +142,7 @@ async function newProject() {
   Object.assign(DOE, DOE_DEFAULTS, { factors: null, design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, active: new Set() });
   cfdLog.length = 0;
   applyMeasured(null);
+  applyC3D(null);
   for (const id of [...inputProblems.keys()]) clearRejected(id);
   Object.assign(PROJ, { name: 'Untitled', handle: null });
   render();
@@ -330,7 +341,7 @@ function sessionRestore(s) {
   try { p = s && JSON.parse(s.text, projReviver); } catch (e) { p = null; }
   const defaults = JSON.stringify(Object.fromEntries(CFG.map(c => [c.k, c.v])));
   const worth = p && (p.results && p.results.some(Boolean) || (p.doe && p.doe.runs && p.doe.runs.length) || (s.name && s.name !== 'Untitled')
-    || JSON.stringify(p.inputs) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length));
+    || JSON.stringify(p.inputs) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length) || (p.c3d && p.c3d.file));
   if (!worth) { sessionStart(); return; }
   const bar = document.createElement('div');
   bar.className = 'session-bar'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Last session');

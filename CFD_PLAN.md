@@ -12,7 +12,7 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
-### Plan: Flow as 1D → 2D → 3D (approved; phase A built, phases B and C to come)
+### Plan: Flow as 1D → 2D → 3D (approved; phases A and B built, phase C to come)
 
 User: CFD is done 1D first, then 2D, then 3D; the 3D needs a CAD upload or
 a geometry made in the app; the app has not used 1D as a stage. Verified:
@@ -88,6 +88,43 @@ Phase B: 3D geometry and view (one merge)
 - Mesh: from the blade's underside height over the web, a structured
   hexahedral mesh of the gap and the film region; a check reports where the
   blade overhangs so its underside is not a single height.
+
+Phase B status: built.
+- cfd-3d-geom.js (Node-testable): the blade's side profile from the 2D
+  setup (round entry or flat land, the exit face, the notch face) extruded
+  across the region; binary and text STL read and written; a file's axes
+  and units mapped to the app's (x machine, y up, z across, metres); the
+  blade placed with its lowest point at the gap, at the metering edge; the
+  underside height over the web found by vertical rays (the number of hits
+  says whether it is a single layer); the structured hexahedral mesh of the
+  gap and the film beyond the edge.
+- STEP through occt-import-js (Open CASCADE compiled to WebAssembly,
+  7.6 MB), not opencascade.js as planned: it reads STEP to triangles in
+  one call and is a fifth of the size. Kept in lib/ with three.js r147
+  (the sandbox cannot reach a CDN; served with the app, so it also works
+  offline). three.js loads when the 3D page first opens; the STEP reader
+  only when a STEP file is imported.
+- ui-3d.js: Flow › 3D. The inputs bar keeps the read-only 2D setup (Edit in
+  2D) and adds the 3D setup: blade from the 2D setup or from a file (units
+  for STL, machine and up axes, inlet distance), Save the blade as STL,
+  region (strip at a location with its width, or the full web width), mesh
+  (elements along the gap and the film, across the gap, across the web).
+  The page: a WebGL view (3D / side / top / front, blade / slurry / web /
+  mesh, vertical scale), checks (the blade covers the region, its underside
+  is a single height), the region, gap at the edge, lengths, cell and node
+  counts, and the 1D / 2D / 3D table. The gap waviness and thickness
+  variation across the web are carried by the blade's underside (the gap
+  is measured from the web, which is drawn flat); the film beyond the edge
+  is the 1D's.
+- Undo steps, the project file (the blade file included), New project,
+  session memory, image export of the 3D view, the run report and the
+  module guide cover the 3D setup.
+- cfd-3d-geom.validate.js: the made blade's underside found by the rays
+  equals the 2D's blade shape plus the waviness to 1.03 µm over 861 rays;
+  STL round trip exact; axes right-handed; placement exact; an overhang
+  detected; mesh counts and layers exact. In the browser: a STEP test file
+  and an STL read through the file chooser, undo / redo of an import, a
+  project saved and opened keeps the file.
 
 Phase C: 3D solver (one or more merges)
 - Steady 3D Navier–Stokes, generalized Newtonian (the 2D's rheology models),

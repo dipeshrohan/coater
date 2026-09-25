@@ -13,7 +13,7 @@
 
 const REPORT_KEY = 'bladeCoatDefectLab.report.v1';
 const REP = (() => {
-  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'm1d', 'cfd', 'mesh', 'doe', 'meas'] };
+  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'm1d', 'cfd', 'mesh', 'm3d', 'doe', 'meas'] };
   try { return { ...d, ...JSON.parse(localStorage.getItem(REPORT_KEY) || '{}') }; } catch (e) { return d; }
 })();
 const saveRepPrefs = () => { try { localStorage.setItem(REPORT_KEY, JSON.stringify(REP)); } catch (e) { /* not remembered */ } };
@@ -37,6 +37,7 @@ function reportSections() {
     { k: 'm1d', l: '1D: gap flow, to the oven, across the web', note: 'results, plots, checks, the 1D / 2D table' },
     { k: 'cfd', l: TABS[4], note: solved ? `${solved} of 4 locations solved${stale ? `, ${stale} out of date` : ''}` : 'nothing solved yet: setup and checks only' },
     { k: 'mesh', l: 'Mesh study', note: meshStudy ? `location ${meshStudy.loc + 1}, ${meshStudy.runs.filter(r => r.status === 'done').length} of ${meshStudy.runs.length} meshes solved` : 'not run', off: !meshStudy },
+    { k: 'm3d', l: '3D: geometry and mesh', note: C3D.source === 'file' && !C3D_FILE ? 'no blade file imported' : 'setup, the 3D view, checks' },
     { k: 'doe', l: TABS[5], note: DOE.runs.length ? `${DOE.runs.filter(r => r.status === 'done').length} of ${DOE.runs.length} runs solved` : 'not run: setup only' },
     { k: 'meas', l: TABS[6], note: MEAS.sets.length ? `${MEAS.sets.length} dataset${MEAS.sets.length === 1 ? '' : 's'}${MEAS.fit ? ', a fit' : ''}` : 'none imported', off: !MEAS.sets.length },
   ];
@@ -121,6 +122,15 @@ async function repModule(m) {
   const scope = cleanText(document.getElementById('scope'));
   html += `<h3>Checks</h3>${pills.length ? `<ul class="checks">${pills.join('')}</ul>` : ''}${scope ? `<p class="scope">${repEsc(scope)}</p>` : ''}`;
   return html;
+}
+/** Flow › 3D: its setup, then the page (the 3D view drawn once three.js is in). */
+async function rep3D() {
+  try { await load3DLibs(); } catch (e) { /* (the report goes without the 3D view) */ }
+  const G = c3dBuild(), rg = C3D.region === 'strip' ? `strip ${C3D.stripW} mm wide at L${C3D.loc + 1} (z ${CFD_LOCS[C3D.loc].z} mm)` : `full web width, ${ACROSS_W} mm`;
+  const rows = [['Blade', repEsc(G.label || 'no file imported')], ['Region', repEsc(rg)],
+    ['Mesh', repEsc(`${C3D.nxGap} + ${C3D.nxFilm} elements along the flow, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull} across the web`)]];
+  if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`]);
+  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + await repModule(9);
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };
@@ -321,6 +331,7 @@ async function buildReport(o) {
         }
         if (want.has('cfd')) out.push({ id: 'cfd', title: TABS[4], html: await repCfd(keep) });
         if (want.has('mesh') && meshStudy) out.push({ id: 'mesh', title: 'Mesh study', html: await repMesh() });
+        if (want.has('m3d')) out.push({ id: 'm3d', title: '3D: geometry and mesh', html: await rep3D() });
         if (want.has('doe')) out.push({ id: 'doe', title: TABS[5], html: await repDoe() });
         if (want.has('meas') && MEAS.sets.length) out.push({ id: 'meas', title: TABS[6], html: await repMeasured() });
       } finally {
