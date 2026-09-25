@@ -137,7 +137,7 @@ function doeStart(run) {
   // (inputs outside what the solver can do: the run is not solved)
   const errs = checkGeometry(geo, null).filter(p => p.level === 'error');
   if (errs.length) { Object.assign(run, { status: 'error', error: `not solved: ${errs.map(p => p.text).join(' ')}`, ms: 0 }); return; }
-  const w = new Worker('cfd-worker.js'), t0 = performance.now();
+  const w = makeWorker('cfd-worker.js'), t0 = performance.now();
   // (a colour slot per run while it solves: the lowest one free)
   const used = new Set([...DOE.active].map(r => r.slot));
   Object.assign(run, { status: 'running', worker: w, progress: null, slot: [0, 1, 2, 3, 4, 5, 6, 7].find(k => !used.has(k)) ?? 0, live: { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol } });

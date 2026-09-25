@@ -255,7 +255,7 @@ function measDropOwner(owner) {
 }
 function measPump() {
   while (MQ.active.size < Math.max(1, DOE.workers) && MQ.jobs.length) {
-    const job = MQ.jobs.shift(), w = new Worker('cfd-worker.js');
+    const job = MQ.jobs.shift(), w = makeWorker('cfd-worker.js');
     job.worker = w; MQ.active.add(job);
     const end = (r, err) => { w.terminate(); MQ.active.delete(job); try { job.onDone(r, err); } finally { measPump(); } };
     w.onmessage = e => {

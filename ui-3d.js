@@ -299,7 +299,7 @@ function c3dRun() {
   const m = c3dSolveMessage(true), key = c3dSolveKey();
   if (C3D.region === 'full') { c3dRunWide(m, key); return; }
   const id = ++C3D_RUN.id;
-  const w = new Worker('cfd-3d-worker.js');
+  const w = makeWorker('cfd-3d-worker.js');
   Object.assign(C3D_RUN, { worker: w, status: 'running', progress: null, error: null, t0: performance.now() });
   const done = () => { w.terminate(); if (C3D_RUN.worker === w) C3D_RUN.worker = null; };
   w.onmessage = e => {
@@ -338,7 +338,7 @@ function c3dStop() {
  */
 async function c3dRunWide(m, key) {
   const { msg, strip, file } = m, NL = 2 * strip.nEz + 1, zs = strip.zs, mid = (NL - 1) >> 1, L = c3dWideLayout(strip.nEz), subs = L.subs, P = L.workers;
-  const run = ++C3D_RUN.id, workers = Array.from({ length: P }, () => new Worker('cfd-3d-worker.js'));
+  const run = ++C3D_RUN.id, workers = Array.from({ length: P }, () => makeWorker('cfd-3d-worker.js'));
   Object.assign(C3D_RUN, { worker: null, workers, status: 'running', progress: { stage: 'starting' }, error: null, t0: performance.now() });
   const alive = () => C3D_RUN.id === run && C3D_RUN.status === 'running';
   const stage = t => { C3D_RUN.progress = { ...(C3D_RUN.progress || {}), stage: t }; c3dBusy(); };

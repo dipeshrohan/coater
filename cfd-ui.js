@@ -232,6 +232,20 @@ function cutProfile(f, q, arr, scale, n = 200) {
 }
 const cfdWorkers = CFD_LOCS.map(() => null);
 let cfdAutoStarted = false;
+/** A solver's worker (the 1D, 2D and 3D, the DOE, the mesh study, the measured data). The app opened as a file
+ *  (file://): the browser refuses a worker from a file, so one made in memory loads the same scripts from the app's folder. */
+const WORKER_URLS = new Map();
+function makeWorker(src) {
+  try { return new Worker(src); } catch (e) {
+    if (!WORKER_URLS.has(src)) {
+      const base = new URL('.', location.href).href;
+      WORKER_URLS.set(src, URL.createObjectURL(new Blob([`const B = ${JSON.stringify(base)}, I = self.importScripts.bind(self);
+self.importScripts = (...u) => I(...u.map(x => new URL(x, B).href));
+importScripts(${JSON.stringify(src)});`], { type: 'text/javascript' })));
+    }
+    return new Worker(WORKER_URLS.get(src));
+  }
+}
 
 // Flow-visualization settings. Display-only: none of these re-run CFD.
 const FV = {
@@ -350,7 +364,7 @@ function runLocation(i) {
     return;
   }
   const geo = cfdGeometry(i);
-  const worker = new Worker('cfd-worker.js');
+  const worker = makeWorker('cfd-worker.js');
   cfdWorkers[i] = worker;
   const t0 = performance.now();
   run.status = 'running'; run.error = null; run.progress = null;
@@ -1056,7 +1070,7 @@ function runMeshStudy(i) {
   for (const run of study.runs) {
     // (the medium mesh is the location's own: its current result is reused when up to date)
     if (run.f === 1 && run0.field && run0.key === key) { Object.assign(run, { status: 'done', r: run0.result, metrics: run0.metrics, ms: run0.elapsedMs, reused: true }); continue; }
-    const w = new Worker('cfd-worker.js'), t0 = performance.now();
+    const w = makeWorker('cfd-worker.js'), t0 = performance.now();
     run.worker = w;
     const end = () => { w.terminate(); run.worker = null; run.ms = performance.now() - t0; };
     w.onmessage = e => {

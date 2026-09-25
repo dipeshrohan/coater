@@ -32,7 +32,7 @@ function oneDRequest(needAcross) {
   if (key === ONE_D.key && (!needAcross || aKey === ONE_D.acrossKey)) return;
   if (ONE_D.busy) { ONE_D.again = true; return; }
   ONE_D.busy = true; ONE_D.again = false;
-  if (!ONE_D.worker) ONE_D.worker = new Worker('cfd-1d-worker.js');
+  if (!ONE_D.worker) ONE_D.worker = makeWorker('cfd-1d-worker.js');
   const id = ++ONE_D.id;
   ONE_D.worker.onmessage = e => {
     if (e.data.id !== id) return;
