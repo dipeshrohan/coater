@@ -9,7 +9,7 @@
  * part of a step, but solved results are remembered by their inputs: when an undo or redo brings
  * back inputs that were solved before, their results come back too.
  *
- * Depends on everything before it (P, CFG, ANIM, CFDG, CFDS, CFD_LOCS, FV, DOE, cfdRuns ...);
+ * Depends on everything before it (P, CFG, ANIM, CFDG, CFDS, CFD_LOCS, FV, DOE, C3D, cfdRuns ...);
  * ui.js calls undoBeforeRender() / undoAfterRender() around each render.
  */
 
@@ -121,6 +121,12 @@ const UNDO_UNITS = (() => {
     const [l, f] = DOE_UNDO[k];
     u.push({ id: 'doe.' + k, get: () => DOE[k], set: v => { DOE[k] = v; }, label: (a, b) => k === 'factors' ? undoFactorsChange(a, b) : undoChange(l, a, b, f || undefined) });
   }
+  for (const k of Object.keys(C3D_UNDO)) {
+    const [l, f] = C3D_UNDO[k];
+    u.push({ id: 'c3d.' + k, get: () => C3D[k], set: v => { C3D[k] = v; }, label: (a, b) => undoChange(l, a, b, f) });
+  }
+  u.push({ id: 'c3d.file', get: () => C3D_FILE ? C3D_FILE.id : null, set: v => { C3D_FILE = v != null && C3D_FILES.get(v) || null; C3D_GEO = null; },
+    label: (a, b) => b ? `Import 3D blade ${(C3D_FILES.get(b) || {}).name || ''}`.trim() : 'Remove the 3D blade file' });
   return u;
 })();
 const UNDO_BY_ID = new Map(UNDO_UNITS.map(u => [u.id, u]));

@@ -162,7 +162,7 @@ const TREE_NOTE = [
   'The predictions use these inputs; the Fit tab can adjust them to your data.',
   'Every result on this page follows these inputs.',
   'The 1D uses these inputs and the 2D setup (blade, rheology, fibre, locations), so it compares with the 2D like for like.',
-  'The 3D is not built yet.',
+  'The 3D blade is made from the 2D setup (blade, exit face, the gap across the web) or read from an STL or STEP file; its setup is below.',
   'The 1D uses these inputs and the 2D setup; the ripple comes from the gap waviness and vibration below.',
   'The 1D at every position across the web: the gap and contact angle vary there with the inputs under Variation across the web.',
 ];
@@ -608,7 +608,7 @@ const TAB_Q = [
   'How well do the models match my measurements, and which inputs fit them?',
   'Is the coating OK at these settings? Every result at a glance.',
   'How does the slurry flow along the blade, and what flow rate and film does the bead pressure give? (1D)',
-  'The flow in 3D (not built yet)',
+  'What does the blade look like over the web in 3D, and is its geometry ready to solve? (3D)',
   'How does the film settle, and the ripple level, between the blade and the oven? (1D)',
   'How do the film and the contact line vary across the web? (1D at every position)',
 ];

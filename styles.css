@@ -1238,3 +1238,12 @@ body:has(#pgScope) #scope { display: none; }
 .oned-cmp .stage { font-weight: 600; color: var(--muted); }
 .oned-cmp .na { color: var(--muted); }
 .mod-extra .empty-hint { margin: 20px auto; }
+/* Flow › 3D: the three.js view */
+.mod-extra:has(.v3d) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.v3d { min-width: 0; }
+.pg-tools:has([data-v3view]) { flex-wrap: wrap; }
+.pg-tools:has([data-v3view]) > .seg { flex: none; }
+.v3d-host { position: relative; height: clamp(320px, calc(100vh - 400px), 820px); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.v3d-host canvas { display: block; max-width: 100%; touch-action: none; cursor: grab; }
+.v3d-host canvas:active { cursor: grabbing; }
+.v3d-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
