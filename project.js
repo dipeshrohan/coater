@@ -62,7 +62,7 @@ function projectData() {
       sel: MEAS.sel, fit: MEAS.fit ? { ...MEAS.fit, cfd: MEAS.fit.cfd ? { ...MEAS.fit.cfd, status: MEAS.fit.cfd.status === 'running' ? 'stopped' : MEAS.fit.cfd.status } : null } : null,
       fitKeys: MEAS.fitKeys, fitRange: MEAS.fitRange, fitSets: MEAS.fitSets, dock: MEAS.dock, dockH: MEAS.dockH,
     },
-    c3d: { ...C3D, file: c3dFileOut() },
+    c3d: { ...C3D, file: c3dFileOut(), result: C3D_RES },
   };
 }
 /** Set a sidebar input as its slider does (everything listening updates). */
@@ -71,7 +71,7 @@ function setInput(k, v) {
   if (sl) { sl.value = v; sl.dispatchEvent(new Event('input')); } else P[k] = v;
 }
 /** Stop whatever is solving. */
-function projStopAll() { cancelAllLocations(); stopDOE(); measStopCfd(); }
+function projStopAll() { cancelAllLocations(); stopDOE(); measStopCfd(); c3dStop(); }
 /** The measured data of a project (none: empty). */
 function applyMeasured(m) {
   m = m || {};
@@ -81,12 +81,13 @@ function applyMeasured(m) {
   MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
   MEAS.dock = m.dock || 'compare'; MEAS.dockH = m.dockH || 300;
 }
-/** The 3D setup of a project and its blade file (none: the defaults, no file). */
+/** The 3D setup of a project, its blade file and its last 3D solve (none: the defaults, no file, no result). */
 function applyC3D(c) {
   c = c || {};
   Object.assign(C3D, JSON.parse(JSON.stringify(C3D_DEFAULTS)));
   for (const k of Object.keys(C3D_DEFAULTS)) if (k in c) C3D[k] = c[k];
   c3dFileIn(c.file);
+  C3D_RES = c.result && c.result.result ? c.result : null;
 }
 function applyProject(p) {
   if (!p || p.app !== PROJ_APP) throw new Error('this is not a Blade Coat Defect Lab project');
@@ -291,9 +292,9 @@ function updateProjectTitle() {
 // every minute and when the tab is hidden; on the next visit a bar asks to continue from it.
 // ---------------------------------------------------------------------
 const SESSION = { suspended: true, lastKey: null, timer: 0 };
-/** What has to change for the session to be written again: inputs, view, results, DOE, mesh study, project. */
+/** What has to change for the session to be written again: inputs, view, results (2D and 3D), DOE, mesh study, project. */
 const sessionKey = () => [projKey(), JSON.stringify([tab, FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}`).join(','),
-  DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : ''].join('|');
+  DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : '', C3D_RES ? C3D_RES.when : ''].join('|');
 async function sessionSave(force = false) {
   if (SESSION.suspended || !window.indexedDB) return false;
   const key = sessionKey();
@@ -341,7 +342,7 @@ function sessionRestore(s) {
   try { p = s && JSON.parse(s.text, projReviver); } catch (e) { p = null; }
   const defaults = JSON.stringify(Object.fromEntries(CFG.map(c => [c.k, c.v])));
   const worth = p && (p.results && p.results.some(Boolean) || (p.doe && p.doe.runs && p.doe.runs.length) || (s.name && s.name !== 'Untitled')
-    || JSON.stringify(p.inputs) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length) || (p.c3d && p.c3d.file));
+    || JSON.stringify(p.inputs) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length) || (p.c3d && (p.c3d.file || p.c3d.result)));
   if (!worth) { sessionStart(); return; }
   const bar = document.createElement('div');
   bar.className = 'session-bar'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Last session');

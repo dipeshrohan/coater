@@ -1,15 +1,17 @@
 /*
- * ui-3d.js — Flow › 3D: the 3D stage's geometry and mesh (the solve is phase C). The blade is made
- * from the 2D setup (its side profile extended across the web, the gap varying there as the inputs
- * say), or read from an STL or STEP file of the blade (STEP through occt-import-js, loaded on first
- * use); either is placed over the web with its lowest point at the gap, the height of its underside
- * found by casting rays (cfd-3d-geom.js), and the slurry region meshed over a strip around one
- * location or the full web width. The view is three.js (lib/, loaded when the page first opens).
+ * ui-3d.js — Flow › 3D. The blade is made from the 2D setup (its side profile extended across the
+ * web, the gap varying there as the inputs say), or read from an STL or STEP file of the blade (STEP
+ * through occt-import-js, loaded on first use); either is placed over the web with its lowest point at
+ * the gap, the height of its underside found by casting rays (cfd-3d-geom.js). Solve runs the 3D flow
+ * on a strip around one location in a worker (cfd-3d-worker.js: each station across the strip in 2D,
+ * then coupled in 3D by cfd-fem3d.js); the page shows the flow in 3D coloured by a field, the film and
+ * the contact line across the strip, the pressure on the blade, and the 3D column of the 1D / 2D / 3D
+ * table. The view is three.js (lib/, loaded when the page first opens).
  *
- * Loaded before undo.js (its settings are undo steps) and project.js (they are saved in the project).
+ * Loaded before undo.js (its settings are undo steps) and project.js (they and the result are saved in the project).
  */
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40,
-  nxGap: 30, nxFilm: 10, ny: 6, nzStrip: 10, nzFull: 60, vscale: 5, view: 'iso', blade: true, slurry: true, web: true, mesh: true };
+  nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 2, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -20,14 +22,24 @@ let C3D_OCCT = null;  // the STEP reader (occt-import-js), started on first use
 const C3D_UNDO = {
   source: ['3D geometry', v => v === 'made' ? 'made from the 2D setup' : 'from a file'], region: ['3D region', v => v === 'strip' ? 'strip at a location' : 'full web width'],
   loc: ['3D strip location', v => `L${v + 1}`], stripW: ['3D strip width', v => v + ' mm'], units: ['File units', v => v], machine: ['File machine direction', v => v], up: ['File up axis', v => v],
-  inlet: ['Inlet upstream of the edge', v => v + ' mm'], nxGap: ['3D mesh along the gap', v => v], nxFilm: ['3D mesh along the film', v => v], ny: ['3D mesh across the gap', v => v],
-  nzStrip: ['3D mesh across the strip', v => v], nzFull: ['3D mesh across the web', v => v], vscale: ['3D vertical scale', v => '×' + v],
+  inlet: ['Inlet upstream of the edge', v => v + ' mm'], nxGap: ['3D mesh along the blade', v => v], nxFace: ['3D mesh up the exit face', v => v], nxFilm: ['3D mesh along the free surface', v => v],
+  ny: ['3D mesh across the gap', v => v], nzStrip: ['3D mesh across the strip', v => v], nzFull: ['3D mesh across the web', v => v], vscale: ['3D vertical scale', v => '×' + v],
+  field: ['3D field shown', v => (C3D_FIELDS[v] || { l: v }).l],
   blade: ['3D view: blade', v => v ? 'on' : 'off'], slurry: ['3D view: slurry', v => v ? 'on' : 'off'], web: ['3D view: web', v => v ? 'on' : 'off'], mesh: ['3D view: mesh', v => v ? 'on' : 'off'],
 };
 /** The view settings (not part of "unsaved changes"). */
-const C3D_DISPLAY = ['view', 'vscale', 'blade', 'slurry', 'web', 'mesh'];
+const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh'];
 const c3dSetupKey = () => JSON.stringify([Object.keys(C3D_DEFAULTS).filter(k => !C3D_DISPLAY.includes(k)).map(k => C3D[k]), C3D_FILE && C3D_FILE.id]);
-const C3D_MESH_LIMITS = { nxGap: [6, 120], nxFilm: [2, 60], ny: [2, 24], nzStrip: [2, 80], nzFull: [6, 300], stripW: [2, 300], inlet: [1, 500] };
+const C3D_MESH_LIMITS = { nxGap: [6, 80], nxFace: [1, 12], nxFilm: [6, 60], ny: [2, 10], nzStrip: [1, 8], nzFull: [6, 150], stripW: [2, 300], inlet: [1, 500] };
+/** Fields the 3D view can colour the flow by: label, unit, value at node n of a result, diverging (signed) or not. */
+const C3D_FIELDS = {
+  none: { l: 'None' },
+  speed: { l: 'Speed', u: 'mm/s', f: (R, n) => Math.hypot(R.u[n], R.v[n], R.w[n]) * 1000 },
+  p: { l: 'Pressure', u: 'Pa', f: (R, n) => R.p[n] },
+  gd: { l: 'Shear rate', u: '1/s', f: (R, n) => R.gd[n] },
+  mu: { l: 'Viscosity', u: 'Pa·s', f: (R, n) => R.mu[n] },
+  w: { l: 'Cross-web speed', u: 'mm/s', f: (R, n) => R.w[n] * 1000, div: true },
+};
 
 // ---- the files: every file imported this session, by id (undo brings one back); the project keeps the one in use ----
 const C3D_FILES = new Map();
@@ -128,9 +140,9 @@ function c3dSetupTree() {
       ${C3D.region === 'strip' ? sel('Around', 'loc', CFD_LOCS.map((l, i) => opt(i, `L${i + 1} · z ${l.z} mm`, C3D.loc)).join('')) + num('Strip width', 'stripW', 'mm') : `<p class="prop-note">The full ${ACROSS_W} mm of the web.</p>`}
     </details>
     <details class="grp cfd-grp" data-c3dgrp="mesh"${C3D_OPEN.mesh ? ' open' : ''}><summary>3D mesh</summary>
-      ${num('Along the gap', 'nxGap', 'elements')}${num('Along the film', 'nxFilm', 'elements')}${num('Across the gap', 'ny', 'elements')}
+      ${num('Along the blade', 'nxGap', 'elements')}${num('Up the exit face', 'nxFace', 'elements')}${num('Along the free surface', 'nxFilm', 'elements')}${num('Across the gap', 'ny', 'elements')}
       ${C3D.region === 'strip' ? num('Across the strip', 'nzStrip', 'elements') : num('Across the web', 'nzFull', 'elements')}
-      <p class="prop-note">Hexahedral: rows graded toward the metering edge; the film beyond it as long as the 2D's (at least 12 mm).</p>
+      <p class="prop-note">Hexahedral, 27 nodes each: each station across the strip is laid out as the 2D lays out its mesh (graded toward the metering edge and the contact line; the free film as long as the 2D's), and the stations joined. ${c3dEstimateText()}</p>
     </details>`);
   document.querySelectorAll('#setupExtra details[data-c3dgrp]').forEach(d => d.addEventListener('toggle', () => { C3D_OPEN[d.dataset.c3dgrp] = d.open; }));
   const ex = document.getElementById('c3dExport');
@@ -188,50 +200,256 @@ async function c3dImportFile(file) {
 }
 const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('could not load ' + src)); document.head.appendChild(s); });
 
+// ---- the solve ----
+/** The size of the 3D solve for the settings: unknowns, the matrix's memory, and about how long (from measured runs). */
+function c3dEstimate() {
+  const nEz = C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull, NR = 2 * C3D.ny + 1, NL = 2 * nEz + 1, NC = 2 * (C3D.nxGap + C3D.nxFace + C3D.nxFilm) + 1;
+  const col = NL * NR * 3 + (NL + 1) / 2 * (NR + 1) / 2 / 2 + NL, ND = NC * col, kl = 3 * col;
+  const bytes = ND * 3 * kl * 8, flops = ND * kl * 2 * kl;
+  return { ND, bytes, secs: 1.3 * 4 * flops / 2.8e9 + NL * 1.7, NL };
+}
+const C3D_MAX_BYTES = 2e9;
+function c3dEstimateText() {
+  if (C3D.region === 'full') return 'Full width: solved with the coupled iterative solver (next).';
+  const e = c3dEstimate(), t = e.secs < 90 ? `${Math.max(5, Math.round(e.secs / 5) * 5)} s` : `${Math.round(e.secs / 60)} min`;
+  return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${e.bytes < 1e9 ? Math.round(e.bytes / 1e6) + ' MB' : (e.bytes / 1e9).toFixed(1) + ' GB'} for the solve, about ${t}.${e.bytes > C3D_MAX_BYTES ? ' <b>More memory than a browser can give one page: fewer elements across the strip or the gap.</b>' : ''}`;
+}
+const C3D_RUN = { worker: null, id: 0, status: 'idle', progress: null, error: null, t0: 0 };
+let C3D_RES = null;   // the last 3D solve: { key, loc, width, source, fileName, ms, when, result }
+/** Sampled across the strip (m, from the location): the gap's change and the contact angle, as the 2D sees them at each z. */
+function c3dStripSamples(i, W) {
+  const zc = CFD_LOCS[i].z, gap = [], th = [], n = 81;
+  const gOff = locInput(i, 'gap') - cfdLocalGapMm(zc), tOff = locInput(i, 'th') - cfdLocalContactDeg(zc), g0 = cfdLocalGapMm(zc);
+  for (let k = 0; k < n; k++) {
+    const zr = -W / 2 + W * k / (n - 1), zmm = zc + zr * 1000;
+    gap.push([zr, (cfdLocalGapMm(zmm) - g0) / 1000]); th.push([zr, cfdLocalContactDeg(zmm) + tOff]);
+  }
+  return { gap, th, gOff };
+}
+/** What the worker is sent (file: false leaves out the file's rays, for the key). */
+function c3dSolveMessage(withFile = true) {
+  const i = C3D.loc, geo = cfdGeometry(i), msg = cfdWorkerMessage(geo), W = C3D.stripW / 1000;
+  msg.solver = { ...msg.solver, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: C3D.ny };
+  const smp = c3dStripSamples(i, W);
+  const strip = { width: W, nEz: C3D.nzStrip, gap: smp.gap, th: smp.th };
+  let file = null;
+  if (C3D.source === 'file') {
+    const fileKey = [C3D_FILE && C3D_FILE.id, C3D.units, C3D.machine, C3D.up, C3D.inlet];
+    if (!withFile) return { msg, strip, file: fileKey };
+    // the file's underside at the solve's stations across the strip and closely along the flow
+    const G = c3dBuild(), xe = G.xe, NL = 2 * C3D.nzStrip + 1, zc = CFD_LOCS[i].z / 1000;
+    const xs = Array.from({ length: 121 }, (_, k) => xe * k / 120), zs = Array.from({ length: Math.max(NL, 9) }, (_, k) => -W / 2 + W * k / (Math.max(NL, 9) - 1));
+    const f = undersideField(G.tris, xs.map((x, k) => k === 0 ? x + 1e-7 : k === xs.length - 1 ? x - 1e-7 : x), zs.map(z => z + zc));
+    file = { xs, zs, low: Array.from(f.low) };
+  }
+  return { msg, strip, file };
+}
+const c3dSolveKey = () => JSON.stringify([C3D.loc, C3D.source, c3dSolveMessage(false)]);
+/** The result the page shows: the last solve if it was for this location's strip. */
+const c3dShown = () => C3D_RES && C3D.region === 'strip' && C3D_RES.loc === C3D.loc && C3D_RES.source === C3D.source ? C3D_RES : null;
+function c3dRun() {
+  if (C3D_RUN.status === 'running') return;
+  if (C3D.region === 'full') { imgToast('Full width: the coupled iterative solver is being built; solve a strip for now.', 'error'); return; }
+  const G = c3dBuild();
+  const stop = why => { C3D_RUN.status = 'error'; C3D_RUN.error = why; render(); };
+  if (G.error || G.empty) return stop(G.error || 'no blade: import an STL or STEP file of the blade');
+  if (G.open || G.multi) return stop(G.open ? 'the blade does not cover the region' : 'the blade overhangs: its underside is not a single height over the web');
+  const est = c3dEstimate();
+  if (est.bytes > C3D_MAX_BYTES) return stop('this mesh needs more memory than a browser can give one page (3D mesh, in the inputs)');
+  const m = c3dSolveMessage(true), key = c3dSolveKey(), id = ++C3D_RUN.id;
+  const w = new Worker('cfd-3d-worker.js');
+  Object.assign(C3D_RUN, { worker: w, status: 'running', progress: null, error: null, t0: performance.now() });
+  const done = () => { w.terminate(); if (C3D_RUN.worker === w) C3D_RUN.worker = null; };
+  w.onmessage = e => {
+    if (e.data.id !== id) return;
+    if (e.data.progress) { C3D_RUN.progress = e.data.progress; c3dBusy(); return; }
+    done();
+    const ms = performance.now() - C3D_RUN.t0, r = e.data.ok ? e.data.result : null;
+    if (!r) { C3D_RUN.status = 'error'; C3D_RUN.error = e.data.error; }
+    else if (!r.converged) { C3D_RUN.status = 'error'; C3D_RUN.error = `the 3D did not converge (residual ${r.residual.toExponential(1)} after ${r.iterations} Newton steps)`; }
+    else {
+      C3D_RUN.status = 'done';
+      C3D_RES = { key, loc: C3D.loc, width: C3D.stripW, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: r };
+      V3.key = null;
+    }
+    render();
+  };
+  w.onerror = e => { done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; render(); };
+  w.postMessage({ ...m, id });
+  render();
+}
+function c3dStop() {
+  if (C3D_RUN.status !== 'running') return;
+  if (C3D_RUN.worker) C3D_RUN.worker.terminate();
+  Object.assign(C3D_RUN, { worker: null, status: 'cancelled', progress: null });
+  render();
+}
+/** While solving: the stage and the latest Newton residual in the verdict (no full redraw). */
+function c3dBusy() {
+  const el = document.getElementById('c3dBusy');
+  if (!el || C3D_RUN.status !== 'running') return;
+  const pr = C3D_RUN.progress, t = ((performance.now() - C3D_RUN.t0) / 1000).toFixed(0);
+  el.textContent = `Solving the 3D (${t} s): ${pr ? pr.stage + (pr.stage.startsWith('3D') && Number.isFinite(pr.residual) ? `, Newton step ${pr.it + 1}, residual ${pr.residual.toExponential(1)}` : '') : 'starting'}`;
+}
+setInterval(c3dBusy, 1000);
+
 // ---- the page ----
 function view3D() {
   c3dSetupTree();
   oneDRequest(false);
   const tog = (k, t) => `<label class="fv-chk"><input type="checkbox" data-v3tog="${k}"${C3D[k] ? ' checked' : ''}> ${t}</label>`;
   const views = [['iso', '3D'], ['side', 'Side'], ['top', 'Top'], ['front', 'Front']];
+  const S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey(), running = C3D_RUN.status === 'running';
+  const fld = C3D_FIELDS[C3D.field] || C3D_FIELDS.speed, showField = R && C3D.field !== 'none';
+  const range = showField ? c3dFieldRange(R) : null;
+  const pane = (id, title, aria, legend = '') => `<figure class="pane"><figcaption>${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas>${legend ? `<div class="pane-legend">${legend}</div>` : ''}</figure>`;
+  const acc = cssVar('--accent'), mut = cssVar('--muted');
+  const charts = R ? `<div class="v3d-charts">
+      ${pane('c3dFilm', `Wet film across the strip${stale ? ' (out of date)' : ''}`, 'Wet film thickness across the strip, 3D and 2D', oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${pane('c3dCL', 'Contact line up the exit face across the strip', 'Contact line height up the exit face across the strip, 3D and 2D', oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${pane('c3dPB', 'Pressure on the blade', 'Pressure on the blade underside, along the flow and across the strip', '')}
+      ${pane('c3dPX', 'Pressure along the blade, middle of the strip', 'Pressure along the blade and exit face at the middle of the strip, 3D and 2D', oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
+    </div>` : '';
   view.innerHTML = moduleFrame({
     tools: `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${C3D.view === v}">${t}</button>`).join('')}</div>
+      <label class="fv-chk">Field <select data-c3d="field"${R ? '' : ' disabled title="Solve first"'}>${Object.entries(C3D_FIELDS).map(([k, f]) => `<option value="${k}"${k === C3D.field ? ' selected' : ''}>${f.l}</option>`).join('')}</select></label>
       ${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${tog('mesh', 'Mesh')}
-      <label class="fv-chk">Vertical <select data-c3d="vscale">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>×${v}</option>`).join('')}</select></label>`,
+      <select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>
+      ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">Stop</button>' : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun"${C3D.region === 'full' ? ' disabled title="Full width: the coupled iterative solver is being built"' : ''}>Solve 3D</button>`}`,
     panes: [],
-    extra: `<figure class="pane v3d"><figcaption>The blade over the web and the slurry region${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}</figcaption>
+    extra: `<figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
-      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span><span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
+      ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
+      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
+      ${charts}
       <div class="oned-table" id="oneDTable"></div>`,
   });
   const G = c3dBuild();
-  let st;
-  if (G.error) st = pill('The geometry could not be built: ' + G.error, 'bad');
-  else if (G.empty) st = pill('Import an STL or STEP file of the blade (in the inputs, 3D geometry)', 'warn');
-  else {
-    st = pill(G.open ? `The blade does not cover the region at ${G.open} of ${G.rays} points` : G.multi ? `The blade overhangs at ${G.multi} of ${G.rays} points: its underside is not a single height there` : 'Geometry and mesh ready', G.open ? 'bad' : G.multi ? 'warn' : 'ok')
-      + pill(`Blade ${G.label}`, '') + pill('The 3D solve comes next (not built yet)', '');
+  let st = '';
+  if (running) st = pill('Solving the 3D…', '') + `<span class="c3d-busy" id="c3dBusy"></span>`;
+  else if (R) {
+    const mid = (R.NL - 1) / 2, sm = R.stations[mid], films = R.stations.map(s => s.film * 1000), cls = R.stations.map(s => s.s * 1000);
+    st = pill(`3D solved: wet film ${Math.min(...films).toFixed(3)} to ${Math.max(...films).toFixed(3)} mm across the strip`, stale ? 'warn' : 'ok')
+      + (stale ? pill('Out of date: the inputs changed since (Solve 3D again)', 'warn') : '')
+      + pill(R.mode === 'climbed' ? `Contact line ${Math.min(...cls).toFixed(2)} to ${Math.max(...cls).toFixed(2)} mm up the exit face` : 'Contact line pinned at the edge', '')
+      + pill(`${(S.ms / 1000).toFixed(0)} s, ${R.iterations} Newton steps`, '');
+    void sm;
+  }
+  if (!running && C3D_RUN.status === 'error') st = pill('The 3D could not be solved: ' + C3D_RUN.error, 'bad') + st;
+  if (!R && !running) {
+    if (G.error) st += pill('The geometry could not be built: ' + G.error, 'bad');
+    else if (G.empty) st += pill('Import an STL or STEP file of the blade (in the inputs, 3D geometry)', 'warn');
+    else st += pill(G.open ? `The blade does not cover the region at ${G.open} of ${G.rays} points` : G.multi ? `The blade overhangs at ${G.multi} of ${G.rays} points: its underside is not a single height there` : C3D.region === 'full' ? 'Geometry ready; the full-width solve is being built' : 'Geometry ready: Solve 3D', G.open ? 'bad' : G.multi ? 'warn' : 'ok')
+      + pill(`Blade ${G.label}`, '') + (C3D.source === 'file' && G.mesh ? pill(`Exit face angle from the 2D setup (${cfdGeometry(C3D.loc).exitAngle}°)`, '') : '');
   }
   document.getElementById('st').innerHTML = st;
-  if (G.mesh) document.getElementById('ss').innerHTML = [
+  c3dBusy();
+  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`;
+  if (R) {
+    const mid = (R.NL - 1) / 2, sm = R.stations[mid];
+    let wMax = 0; for (let n = 0; n < R.w.length; n++) wMax = Math.max(wMax, Math.abs(R.w[n]));
+    const dev = Math.max(...R.stations.map(s => Math.abs(s.film / s.film2 - 1))) * 100;
+    document.getElementById('ss').innerHTML = [
+      ['Wet film at L' + (C3D.loc + 1) + ', mm', (sm.film * 1000).toFixed(3)],
+      ['3D vs 2D film, largest', dev.toFixed(2) + ' %'],
+      ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : 'pinned'],
+      ['Flow across the web, max', (wMax * 1000).toFixed(3) + ' mm/s'],
+      ['Unknowns', R.size.unknowns.toLocaleString()],
+      ['Solve time', `${(S.ms / 1000).toFixed(0)} s`],
+    ].map(stat).join('');
+  } else if (G.mesh) document.getElementById('ss').innerHTML = [
     [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(ACROSS_W)],
     ['Gap at the edge, mm', Number.isFinite(G.gMin) ? `${(G.gMin * 1000).toFixed(3)}–${(G.gMax * 1000).toFixed(3)}` : 'no blade'],
     ['Blade + film, mm', `${(G.xe * 1000).toFixed(1)} + ${(G.Ld * 1000).toFixed(1)}`],
     ['Hexahedra', G.mesh.cells.toLocaleString()],
     ['Nodes', G.mesh.nodes.toLocaleString()],
     ['Underside', G.open ? `${G.open} open` : G.multi ? `${G.multi} overhang` : 'single layer'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(stat).join('');
   document.getElementById('oneDTable').innerHTML = oneDCompareTable();
+  const rb = document.getElementById('c3dRun'); if (rb) rb.onclick = c3dRun;
+  const sb = document.getElementById('c3dStop'); if (sb) sb.onclick = c3dStop;
+  if (R) c3dCharts(R);
   // (drawn at once when three.js is in: an image export redraws the page and takes the view straight away)
-  if (!G.mesh) document.getElementById('v3dHost').innerHTML = `<p class="v3d-msg">${G.error ? 'Nothing to show: the geometry could not be built.' : 'No blade yet: import an STL or STEP file of the blade (inputs, 3D geometry).'}</p>`;
-  else if (typeof THREE !== 'undefined' && THREE.OrbitControls) v3Draw(G);
-  else load3DLibs().then(() => v3Draw(G)).catch(e => { const h = document.getElementById('v3dHost'); if (h) h.innerHTML = `<p class="v3d-msg">The 3D view could not start: ${mEsc(e.message)}</p>`; });
+  if (!G.mesh && !R) document.getElementById('v3dHost').innerHTML = `<p class="v3d-msg">${G.error ? 'Nothing to show: the geometry could not be built.' : 'No blade yet: import an STL or STEP file of the blade (inputs, 3D geometry).'}</p>`;
+  else if (typeof THREE !== 'undefined' && THREE.OrbitControls) v3Draw(G, R);
+  else load3DLibs().then(() => v3Draw(G, R)).catch(e => { const h = document.getElementById('v3dHost'); if (h) h.innerHTML = `<p class="v3d-msg">The 3D view could not start: ${mEsc(e.message)}</p>`; });
+}
+const c3dFmt = v => { const a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : a >= 0.01 ? v.toFixed(3) : v.toExponential(1); };
+/** The colour map for a field: the 2D's choice (jet or blue) for magnitudes, diverging blue-red around zero for signed fields. */
+const c3dLut = f => getLut(f.div ? 'div' : FV.cmap === 'jet' ? 'jet' : 'seq');
+function c3dFieldRange(R) {
+  const f = C3D_FIELDS[C3D.field];
+  let min = Infinity, max = -Infinity;
+  for (let n = 0; n < R.x.length; n++) { const v = f.f(R, n); if (v < min) min = v; if (v > max) max = v; }
+  if (f.div) { const m = Math.max(Math.abs(min), Math.abs(max)) || 1; return { min: -m, max: m }; }
+  return { min, max: max > min ? max : min + 1 };
+}
+function c3dGradientCss(f) {
+  const lut = c3dLut(f);
+  return `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map(t => lutColor(lut, t)).join(', ')})`;
+}
+
+// ---- the charts ----
+function c3dCharts(R) {
+  const acc = cssVar('--accent'), mut = cssVar('--muted');
+  const zs = R.stations.map(s => s.z * 1000), x0 = zs[0], x1 = zs[zs.length - 1];
+  const line = (id, a, b, yl, d) => {
+    const cv = document.getElementById(id); if (!cv) return;
+    const all = [...a, ...b], lo = Math.min(...all), hi = Math.max(...all), pad = Math.max((hi - lo) * 0.15, Math.abs(hi) * 2e-4, 1e-6);
+    plotChart(cv, fitAspect(cv, 0.5), { x0, x1, y0: lo - pad, y1: hi + pad, yl, xl: `z across the strip (mm), 0 = L${C3D.loc + 1}`, yd: d, xd: 1,
+      s: [{ p: zs.map((z, k) => [z, b[k]]), c: mut, w: 1.6, dash: [5, 4], dots: true }, { p: zs.map((z, k) => [z, a[k]]), c: acc, w: 2.2, dots: true }] });
+  };
+  line('c3dFilm', R.stations.map(s => s.film * 1000), R.stations.map(s => s.film2 * 1000), 'wet film (mm)', 4);
+  if (R.mode === 'climbed') line('c3dCL', R.stations.map(s => s.s * 1000), R.stations.map(s => s.s2 * 1000), 'contact line up the face (mm)', 3);
+  else { const cv = document.getElementById('c3dCL'); if (cv) { const { c, w, h } = setupCanvas(cv, 0.3); c.fillStyle = mut; c.font = '13px ' + cssVar('--sans'); c.textAlign = 'center'; c.fillText('Pinned at the metering edge at every station', w / 2, h / 2); } }
+  c3dPressureMap(R);
+  // pressure along the blade and face at the middle station: 3D and its station's 2D (up to the contact line)
+  const cv = document.getElementById('c3dPX');
+  if (cv) {
+    const T = R.top, n = R.cCL + 1, xs = T.x.slice(0, n).map(x => x * 1000), a = T.p3.slice(0, n), b = T.p2.slice(0, n);
+    const all = [...a, ...b], lo = Math.min(0, ...all), hi = Math.max(...all);
+    plotChart(cv, fitAspect(cv, 0.5), { x0: 0, x1: xs[xs.length - 1], y0: lo - 0.05 * (hi - lo), y1: hi + 0.08 * (hi - lo), yl: 'pressure (Pa)', xl: 'x along the blade (mm); the last points up the exit face', yd: 0,
+      s: [{ p: xs.map((x, k) => [x, b[k]]), c: mut, w: 1.6, dash: [5, 4] }, { p: xs.map((x, k) => [x, a[k]]), c: acc, w: 2.2 }] });
+  }
+}
+/** Pressure on the blade's underside: along the flow (inlet to the metering edge) and across the strip, with its colour bar. */
+function c3dPressureMap(R) {
+  const cv = document.getElementById('c3dPB');
+  if (!cv) return;
+  const { c, w, h } = setupCanvas(cv, fitAspect(cv, 0.5));
+  const NL = R.NL, NR = R.NR, nc = R.cCorner + 1, node = (cc, l) => (cc * NL + l) * NR + NR - 1;
+  let lo = Infinity, hi = -Infinity;
+  for (let cc = 0; cc < nc; cc++) for (let l = 0; l < NL; l++) { const v = R.p[node(cc, l)]; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const lut = c3dLut({ div: lo < 0 }), rng = lo < 0 ? { min: -Math.max(-lo, hi), max: Math.max(-lo, hi) } : { min: lo, max: hi > lo ? hi : lo + 1 };
+  const m = { l: 52, r: 78, t: 24, b: 36 }, pw = w - m.l - m.r, ph = h - m.t - m.b;
+  const xMax = R.xe * 1000, z0 = R.stations[0].z * 1000, z1 = R.stations[NL - 1].z * 1000;
+  const X = x => m.l + x / xMax * pw, Y = z => m.t + ph - (z - z0) / (z1 - z0) * ph;
+  // cells between neighbouring nodes, each filled by the mean of its four corners
+  for (let cc = 0; cc < nc - 1; cc++) for (let l = 0; l < NL - 1; l++) {
+    const v = (R.p[node(cc, l)] + R.p[node(cc + 1, l)] + R.p[node(cc, l + 1)] + R.p[node(cc + 1, l + 1)]) / 4;
+    const xa = X(R.x[node(cc, l)] * 1000), xb = X(R.x[node(cc + 1, l)] * 1000), ya = Y(R.z[node(cc, l)] * 1000), yb = Y(R.z[node(cc, l + 1)] * 1000);
+    c.fillStyle = lutColor(lut, (v - rng.min) / (rng.max - rng.min));
+    c.fillRect(Math.min(xa, xb), Math.min(ya, yb), Math.abs(xb - xa) + 0.6, Math.abs(yb - ya) + 0.6);
+  }
+  const ink = cssVar('--muted');
+  c.strokeStyle = cssVar('--line'); c.strokeRect(m.l, m.t, pw, ph);
+  c.fillStyle = ink; c.font = '12px ' + cssVar('--mono');
+  for (let k = 0; k <= 4; k++) { const x = xMax * k / 4; c.textAlign = 'center'; c.fillText(x.toFixed(0), X(x), h - m.b + 16); }
+  for (let k = 0; k <= 2; k++) { const z = z0 + (z1 - z0) * k / 2; c.textAlign = 'right'; c.fillText(z.toFixed(1), m.l - 6, Y(z) + 4); }
+  c.textAlign = 'left'; c.fillText('z (mm)', 4, 12);
+  c.textAlign = 'right'; c.fillText('x along the blade (mm), metering edge at the right', w - m.r, h - 4);
+  // colour bar
+  const bx = w - m.r + 18, bw = 12;
+  for (let k = 0; k < ph; k++) { c.fillStyle = lutColor(lut, 1 - k / ph); c.fillRect(bx, m.t + k, bw, 1.2); }
+  c.strokeRect(bx, m.t, bw, ph);
+  c.fillStyle = ink; c.textAlign = 'left';
+  c.fillText(c3dFmt(rng.max), bx + bw + 4, m.t + 9); c.fillText(c3dFmt(rng.min), bx + bw + 4, m.t + ph); c.fillText('Pa', bx + bw + 4, m.t + ph / 2 + 4);
 }
 
 // ---- the 3D view (three.js) ----
 const V3 = { ready: null, renderer: null, scene: null, camera: null, controls: null, group: null, key: null, bounds: null };
 function load3DLibs() { if (!V3.ready) V3.ready = loadScript('lib/three.min.js').then(() => loadScript('lib/OrbitControls.js')); return V3.ready; }
-function v3Draw(G) {
+function v3Draw(G, R) {
   const host = document.getElementById('v3dHost');
   if (!host || typeof THREE === 'undefined') return;
   if (!V3.renderer) {
@@ -255,16 +473,18 @@ function v3Draw(G) {
   const w = host.clientWidth || 800, h = host.clientHeight || 420;
   V3.renderer.setSize(w, h); V3.camera.aspect = w / h; V3.camera.updateProjectionMatrix();
   V3.renderer.setClearColor(new THREE.Color(cssVar('--surface')), 1);
-  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme()]);
-  if (key !== V3.key) { v3Scene(G); const firstView = V3.key === null || !V3.sameRegion(G); V3.key = key; V3.region = G.key; if (firstView) v3Camera(); }
+  const S = R ? c3dShown() : null;
+  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap]);
+  if (key !== V3.key) { v3Scene(G, R); const firstView = V3.key === null || !V3.sameRegion(G); V3.key = key; V3.region = G.key; if (firstView) v3Camera(); }
   v3Render();
 }
-V3.sameRegion = G => V3.region && JSON.parse(V3.region).slice(0, 4).join() === JSON.parse(G.key).slice(0, 4).join();
+V3.sameRegion = G => V3.region && G.key && JSON.parse(V3.region).slice(0, 4).join() === JSON.parse(G.key).slice(0, 4).join();
 function v3Render() { if (V3.renderer) V3.renderer.render(V3.scene, V3.camera); }
-/** Build the scene from the geometry: in mm, the heights drawn C3D.vscale times larger. */
-function v3Scene(G) {
+/** Build the scene from the geometry (and a solved result: its own mesh, coloured by the field): in mm, the heights drawn C3D.vscale times larger. */
+function v3Scene(G, R) {
   if (V3.group) { V3.scene.remove(V3.group); V3.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
   const grp = new THREE.Group(); grp.scale.set(1, C3D.vscale, 1); V3.group = grp; V3.scene.add(grp);
+  if (R) { v3SceneSolved(G, R, grp); return; }
   if (!G.mesh) return;
   const mm = a => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] * 1000; return o; };
   const col = v => new THREE.Color(cssVar(v));
@@ -296,6 +516,55 @@ function v3Scene(G) {
   // the bounds the camera fits: the slurry region and the blade near it (in the scaled scene)
   const b = new THREE.Box3(new THREE.Vector3(-1, 0, G.rg.z0 * 1000), new THREE.Vector3((G.xe + G.Ld) * 1000 + 1, Math.min(G.box.max[1], G.cutY) * 1000 * C3D.vscale, G.rg.z1 * 1000));
   V3.bounds = b;
+}
+/** The solved flow: the region's outer faces (the blade's underside, the exit face and the free surface on top; the
+ * web below; the strip's two sides; inlet and outlet) coloured by the field at the nodes, the element edges on them. */
+function v3SceneSolved(G, R, grp) {
+  const NC = R.NC, NR = R.NR, NL = R.NL, N = R.x.length, id = (c, l, k) => (c * NL + l) * NR + k;
+  const pos = new Float32Array(3 * N);
+  for (let n = 0; n < N; n++) { pos[3 * n] = R.x[n] * 1000; pos[3 * n + 1] = R.y[n] * 1000; pos[3 * n + 2] = R.z[n] * 1000; }
+  const col = v => new THREE.Color(cssVar(v));
+  if (C3D.blade && G.tris) {
+    const g = new THREE.BufferGeometry(); const mm = Float32Array.from(G.tris, v => v * 1000);
+    g.setAttribute('position', new THREE.BufferAttribute(mm, 3)); g.computeVertexNormals();
+    const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), G.cutY * 1000 * C3D.vscale);
+    grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--blade'), roughness: 0.65, metalness: 0.15, side: THREE.DoubleSide, flatShading: true, clippingPlanes: [cut], transparent: C3D.field !== 'none', opacity: C3D.field !== 'none' ? 0.22 : 1, depthWrite: C3D.field === 'none' })));
+  }
+  const faces = [];   // [a, b, c, d] node quads
+  for (let c = 0; c < NC - 1; c++) for (let l = 0; l < NL - 1; l++) { faces.push([id(c, l, NR - 1), id(c + 1, l, NR - 1), id(c + 1, l + 1, NR - 1), id(c, l + 1, NR - 1)]); faces.push([id(c, l, 0), id(c + 1, l, 0), id(c + 1, l + 1, 0), id(c, l + 1, 0)]); }
+  for (const l of [0, NL - 1]) for (let c = 0; c < NC - 1; c++) for (let k = 0; k < NR - 1; k++) faces.push([id(c, l, k), id(c + 1, l, k), id(c + 1, l, k + 1), id(c, l, k + 1)]);
+  for (const c of [0, NC - 1]) for (let l = 0; l < NL - 1; l++) for (let k = 0; k < NR - 1; k++) faces.push([id(c, l, k), id(c, l + 1, k), id(c, l + 1, k + 1), id(c, l, k + 1)]);
+  if (C3D.slurry) {
+    const idx = []; for (const [a, b, c, d] of faces) idx.push(a, b, c, a, c, d);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    if (C3D.field !== 'none') {
+      const f = C3D_FIELDS[C3D.field], rng = c3dFieldRange(R), lut = c3dLut(f), cols = new Float32Array(3 * N);
+      for (let n = 0; n < N; n++) {
+        const t = Math.round(Math.min(1, Math.max(0, (f.f(R, n) - rng.min) / (rng.max - rng.min))) * 255) * 3;
+        // (the colour map's own colours, in linear light for three.js)
+        const cc = new THREE.Color(`rgb(${lut[t]},${lut[t + 1]},${lut[t + 2]})`);
+        cols[3 * n] = cc.r; cols[3 * n + 1] = cc.g; cols[3 * n + 2] = cc.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+    } else grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x4f8fe8, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false })));
+  }
+  if (C3D.mesh) {
+    // element edges on the outer faces: every other node line (the elements are 3 nodes a side)
+    const li = [], seg = (a, b) => li.push(a, b);
+    for (const k of [0, NR - 1]) { for (let c = 0; c < NC; c += 2) for (let l = 0; l < NL - 1; l++) seg(id(c, l, k), id(c, l + 1, k)); for (let l = 0; l < NL; l += 2) for (let c = 0; c < NC - 1; c++) seg(id(c, l, k), id(c + 1, l, k)); }
+    for (const l of [0, NL - 1]) { for (let c = 0; c < NC; c += 2) for (let k = 0; k < NR - 1; k++) seg(id(c, l, k), id(c, l, k + 1)); for (let k = 0; k < NR; k += 2) for (let c = 0; c < NC - 1; c++) seg(id(c, l, k), id(c + 1, l, k)); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(li);
+    grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col('--ink'), transparent: true, opacity: C3D.field !== 'none' ? 0.25 : 0.35 })));
+  }
+  let xMax = 0, yMax = 0, zMin = Infinity, zMax = -Infinity;
+  for (let n = 0; n < N; n++) { xMax = Math.max(xMax, pos[3 * n]); yMax = Math.max(yMax, pos[3 * n + 1]); zMin = Math.min(zMin, pos[3 * n + 2]); zMax = Math.max(zMax, pos[3 * n + 2]); }
+  if (C3D.web) {
+    const x0 = -2, x1 = xMax + 2, z0 = zMin - 2, z1 = zMax + 2;
+    const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, -0.001, (z0 + z1) / 2);
+    grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--fibre'), roughness: 0.9, side: THREE.DoubleSide })));
+  }
+  V3.bounds = new THREE.Box3(new THREE.Vector3(-1, 0, zMin), new THREE.Vector3(xMax + 1, Math.min(yMax, G.cutY ? G.cutY * 1000 : yMax) * C3D.vscale, zMax));
 }
 /** Point the camera at the region from the chosen side. */
 function v3Camera() {

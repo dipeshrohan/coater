@@ -145,7 +145,8 @@ Phase C: 3D solver (one or more merges)
   possibly beyond a browser's memory. Convergence of a 3D free surface is not
   certain; if it cannot be made reliable this is reported, not hidden.
 
-Phase C status: the 3D solver is built and checked (not yet in the page).
+Phase C status: the 3D solver is built and checked; the strip is solved on the page; the full width's
+method is built and checked, its page part next.
 - cfd-fem3d.js: steady 3D Navier–Stokes, Taylor–Hood Q2–Q1 hexahedra on
   spines (the 2D's method one dimension up), generalized Newtonian, inertia,
   gravity, Beavers–Joseph slip over the web; the free surface as a height
@@ -184,9 +185,31 @@ Phase C status: the 3D solver is built and checked (not yet in the page).
   across the web over a few mm, which the 3D smooths.
 - Full width: with the banded solver the memory grows with the square of
   the stations across; 300 mm at even 10 mm spacing is about 6 GB, beyond a
-  browser. It needs a different linear solver (domain decomposition across
-  the web with an iterative method), expected minutes to tens of minutes per
-  run, convergence not yet known.
+  browser. The user chose a coupled iterative solver. Built as alternating
+  Schwarz at the nonlinear level (solveCoaterWide): overlapping strips, each
+  solved in 3D as above with its neighbours' latest solution held on its
+  inner sides (velocity, pressure, surface heights, contact line), alternate
+  strips then the others, sweep after sweep until nothing changes. Memory:
+  one strip at a time. A domain decomposition at the linear level (Newton–
+  Krylov–Schwarz) would keep every strip's factorization at once: several GB.
+  Holding the pressure on the inner sides matters: without it the strips'
+  edge mass balances see only half their elements and the sweeps settle
+  0.26 µm off the whole-region answer. Checked: 60 mm solved as three
+  overlapping strips equals the one-piece 3D solve to 0.02 nm in 4 sweeps.
+- The page (ui-3d.js, cfd-3d-worker.js): Solve 3D (Ctrl+Enter, Esc stops)
+  runs the strip in a worker (21 s at the defaults, coarse mesh); the view
+  colours the flow by speed, pressure, shear rate, viscosity or cross-web
+  speed; charts of the film and contact line across the strip (3D against
+  each station's 2D), the pressure on the blade (a map along and across) and
+  along it at the middle; the 3D column of the 1D / 2D / 3D table; the mesh
+  settings are the solver's (along the blade, up the face, along the free
+  surface, across the gap, across the strip) with the size and time
+  estimated; the result is saved in the project and the session, marked out
+  of date when the inputs change, and in the report. A blade from a file is
+  solved with its own underside at each station (rays), the exit-face angle
+  from the 2D setup; the made blade read back from its own STL gives the
+  same film within 0.7 % (the file's lowest point is put at the location's
+  gap, which lifts it by the gap's variation across the strip).
 
 ### Layout v2 (after the redesign): answer first, two bars, sub tabs
 

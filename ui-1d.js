@@ -158,22 +158,27 @@ function oneDCompareTable() {
   const R = ONE_D.res;
   if (!R) return '';
   const cell = (v, ref, d = 3) => v == null ? '<td class="na" title="not solved">—</td>' : `<td>${v.toFixed(d)}${ref != null && ref !== v ? ` <small>${v >= ref ? '+' : ''}${((v / ref - 1) * 100).toFixed(1)} %</small>` : ''}</td>`;
+  // (3D: the strip's middle station, when a strip around that location is solved)
   const rows = [
-    ['Wet film', 'mm', L => L.film * 1000, t => t.r.Q / t.geo.U * 1000, 3],
-    ['Flow rate', 'mm²/s', L => L.q * 1e6, t => t.r.Q * 1e6, 3],
-    ['Peak pressure', 'Pa', L => Math.max(...L.p), t => t.r.pMax, 0],
-    ['Contact line up the face', 'mm', L => L.men.pinned ? 0 : L.men.s * 1000, t => t.r.mode === 'climbed' ? t.r.sCL * 1000 : 0, 2],
+    ['Wet film', 'mm', L => L.film * 1000, t => t.r.Q / t.geo.U * 1000, 3, (R, m) => R.stations[m].film * 1000],
+    ['Flow rate', 'mm²/s', L => L.q * 1e6, t => t.r.Q * 1e6, 3, (R, m) => R.stations[m].q * 1e6],
+    ['Peak pressure', 'Pa', L => Math.max(...L.p), t => t.r.pMax, 0, R => { let v = -Infinity; for (let n = 0; n < R.p.length; n++) v = Math.max(v, R.p[n]); return v; }],
+    ['Contact line up the face', 'mm', L => L.men.pinned ? 0 : L.men.s * 1000, t => t.r.mode === 'climbed' ? t.r.sCL * 1000 : 0, 2, (R, m) => R.mode === 'climbed' ? R.stations[m].s * 1000 : 0],
   ];
   const head = `<tr><th>Quantity</th><th>Stage</th>${CFD_LOCS.map((l, i) => `<th>L${i + 1}<small>z ${l.z} mm</small></th>`).join('')}</tr>`;
-  const body = rows.map(([t, u, f1, f2, d]) => ['1D', '2D', '3D'].map((s, k) => `<tr${k ? '' : ' class="grp-start"'}>${k ? '' : `<th rowspan="3">${t} <small>${u}</small></th>`}<td class="stage">${s}</td>${CFD_LOCS.map((_, i) => {
+  const three = i => { const S = typeof C3D_RES !== 'undefined' && C3D_RES && C3D_RES.loc === i ? C3D_RES : null; return S ? { R: S.result, m: (S.result.NL - 1) / 2, stale: S.key !== c3dSolveKey() } : null; };
+  const body = rows.map(([t, u, f1, f2, d, f3]) => ['1D', '2D', '3D'].map((s, k) => `<tr${k ? '' : ' class="grp-start"'}>${k ? '' : `<th rowspan="3">${t} <small>${u}</small></th>`}<td class="stage">${s}</td>${CFD_LOCS.map((_, i) => {
     const L = R.locs[i], two = twoDAt(i), v1 = f1(L);
     if (k === 0) return cell(v1, null, d);
     if (k === 1) return two ? cell(f2(two), null, d).replace('</td>', `${two.stale ? ' <small class="warn-text">out of date</small>' : ` <small>1D ${v1 >= f2(two) ? '+' : ''}${f2(two) ? ((v1 / f2(two) - 1) * 100).toFixed(1) : '—'} %</small>`}</td>`) : cell(null);
-    return '<td class="na" title="not built yet">—</td>';
+    const th = three(i);
+    if (!th) return '<td class="na" title="not solved in 3D (Flow › 3D, a strip at this location)">—</td>';
+    const v3 = f3(th.R, th.m), v2 = two && !two.stale ? f2(two) : null;
+    return cell(v3, null, d).replace('</td>', `${th.stale ? ' <small class="warn-text">out of date</small>' : v2 ? ` <small>vs 2D ${v3 >= v2 ? '+' : ''}${((v3 / v2 - 1) * 100).toFixed(1)} %</small>` : ''}</td>`);
   }).join('')}</tr>`).join('')).join('');
   const cols = `<colgroup><col class="c-q"><col class="c-s">${CFD_LOCS.map(() => '<col>').join('')}</colgroup>`;
   return `<h3 class="oned-h">1D, 2D and 3D compared</h3><div class="oned-scroll"><table class="cfd-table oned-cmp">${cols}${head}${body}</table></div>
-    <p class="fv-note">— : not solved yet (2D: Flow › 2D, Run) or not built yet (3D). The 2D values are from the last solve at each location; the % is how far the 1D is from them. Contact line: 1D, the static meniscus on the exit face; 2D, solved with the flow.</p>`;
+    <p class="fv-note">— : not solved yet (2D: Flow › 2D, Run; 3D: Flow › 3D, Solve 3D on a strip at that location). The 2D values are from the last solve at each location, the 3D from the middle of the last strip solved; the % is how far the 1D (in the 2D row) and the 3D are from the 2D. Contact line: 1D, the static meniscus on the exit face; 2D and 3D, solved with the flow.</p>`;
 }
 
 // ---------------------------------------------------------------------
