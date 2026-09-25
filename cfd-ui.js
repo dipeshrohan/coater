@@ -233,15 +233,15 @@ function cutProfile(f, q, arr, scale, n = 200) {
 const cfdWorkers = CFD_LOCS.map(() => null);
 let cfdAutoStarted = false;
 /** A solver's worker (the 1D, 2D and 3D, the DOE, the mesh study, the measured data). The app opened as a file
- *  (file://): the browser refuses a worker from a file, so one made in memory loads the same scripts from the app's folder. */
+ *  (file://): the browser refuses a worker from a file, and a worker can't load a file either, so the worker is
+ *  made in memory from the text of its scripts (workers-src.js, written by build-workers.js), joined in their import order. */
 const WORKER_URLS = new Map();
 function makeWorker(src) {
   try { return new Worker(src); } catch (e) {
+    if (typeof WORKER_SRC === 'undefined' || !WORKER_SRC.imports[src]) throw e;
     if (!WORKER_URLS.has(src)) {
-      const base = new URL('.', location.href).href;
-      WORKER_URLS.set(src, URL.createObjectURL(new Blob([`const B = ${JSON.stringify(base)}, I = self.importScripts.bind(self);
-self.importScripts = (...u) => I(...u.map(x => new URL(x, B).href));
-importScripts(${JSON.stringify(src)});`], { type: 'text/javascript' })));
+      const code = 'self.importScripts = function () {};\n' + [...WORKER_SRC.imports[src], src].map(f => WORKER_SRC.text[f]).join('\n;\n');
+      WORKER_URLS.set(src, URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
     }
     return new Worker(WORKER_URLS.get(src));
   }
