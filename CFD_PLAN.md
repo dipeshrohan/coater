@@ -204,7 +204,14 @@ the page.
   less than 1e-5 of the gap between sweeps. In the browser, 9 stations
   across the web (4 elements): 3 strips, 6 sweeps, 112 s, and the same answer
   as the one-piece 3D solve of those inputs (film within 0.0004 µm, contact
-  line within 0.0017 µm). FULL30
+  line within 0.0017 µm). At the defaults (61 stations every 5 mm, 29
+  strips, 3 workers): 7 sweeps, 7.5 min in the browser (the 2D at the
+  stations 1.8 min, the first sweep 1.7 min, the later ones 1 min falling to
+  20 s as the strips start near their answer), about 0.45 GB; the change
+  between sweeps falls about four times each sweep; wet film 1.622 to
+  1.698 mm across the web, the 3D within 0.33 % of each station's 2D. (The
+  strips were first dealt to the workers in turn: each worker then solved
+  nearly every station's 2D; each now takes a run of neighbouring strips.)
   The stations sample the variation across the web at their spacing
   (shorter-scale variation is not resolved), and the web's edges are
   symmetry planes (the edge bead is not modelled): both said on the page.
