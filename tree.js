@@ -58,7 +58,7 @@ const picon = name => `<svg class="pi" viewBox="0 0 16 16" aria-hidden="true">${
 // ---- which icon and group each input has ----
 const INPUT_ICON = {
   U: 'speed', Hm: 'height', tf: 'thickness', oven: 'oven', mu: 'drop', n: 'thinning', ty: 'yield', g: 'tension', Pup: 'pressure', L: 'length', th: 'angle', face: 'face',
-  dH: 'wave', lw: 'wavelength', dt: 'bumpy', dth: 'wetting', a0e: 'edge', lam: 'ripple', vib: 'vibration',
+  dH: 'wave', lw: 'wavelength', tilt: 'angle', dt: 'bumpy', dth: 'wetting', a0e: 'edge', lam: 'ripple', vib: 'vibration',
   cfdR: 'radius', cfdPool: 'pool', cfdExit: 'exit', cfdShape: 'shape', cfdModel: 'model', cfdFibreSel: 'fibre', cfdGsm: 'weight', cfdRhoF: 'density', cfdDFrom: 'yarn',
   cfdDen: 'yarn', cfdNf: 'count', cfdAirPerm: 'air', cfdAirDP: 'pressure', cfdKoz: 'count', cfdAirFrac: 'air', cfdAirU: 'air', cfdAirT: 'temp', cfdPlenum: 'plenum',
   cfdMesh: 'mesh', cfdTol: 'tolerance', cfdS_nEb: 'mesh', cfdS_nEf: 'mesh', cfdS_nEs: 'mesh', cfdS_nEy: 'mesh', cfdS_gradeB: 'grading', cfdS_gradeS: 'grading', cfdS_gradeY: 'grading',
@@ -98,7 +98,7 @@ const USES = [
 ];
 const cfdUses = () => {
   const uses = RHEO_MODELS[CFDG.model].uses;
-  return ['U', 'Hm', 'tf', 'oven', 'mu', 'g', 'Pup', 'th', 'dH', 'lw', 'dt', 'dth', ...(uses.includes('n') ? ['n'] : []), ...(uses.includes('ty') ? ['ty'] : []), ...(CFDG.shape === 'round' ? [] : ['L'])];
+  return ['U', 'Hm', 'tf', 'oven', 'mu', 'g', 'Pup', 'th', 'dH', 'lw', 'tilt', 'dt', 'dth', ...(uses.includes('n') ? ['n'] : []), ...(uses.includes('ty') ? ['ty'] : []), ...(CFDG.shape === 'round' ? [] : ['L'])];
 };
 /** Why a tab does not use an input (its hover note). */
 function unusedWhy(k) {

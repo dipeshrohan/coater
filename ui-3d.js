@@ -77,7 +77,7 @@ function c3dFilm(d) {
 function c3dBuild() {
   const rg = c3dRegion(), g = cfdGeometry(C3D.region === 'strip' ? C3D.loc : 0), H = c3dGapAt(rg.zc);
   const key = JSON.stringify([C3D.source, C3D.region, C3D.loc, C3D.stripW, C3D.units, C3D.machine, C3D.up, C3D.inlet, C3D.nxGap, C3D.nxFilm, C3D.ny, rg, H,
-    g.shape, g.R, g.Xup, g.L, g.exitAngle, P.face, P.dH, P.lw, P.dt, C3D_FILE && C3D_FILE.id, ONE_D.key]);
+    g.shape, g.R, g.Xup, g.L, g.exitAngle, P.face, P.dH, P.lw, P.tilt, P.dt, C3D_FILE && C3D_FILE.id, ONE_D.key]);
   if (C3D_GEO && C3D_GEO.key === key) return C3D_GEO;
   const out = { key, H, rg };
   try {

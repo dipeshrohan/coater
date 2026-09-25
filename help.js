@@ -27,6 +27,7 @@ const HELP = {
   // across the web
   'in.dH': { d: 'Amplitude of the sinusoidal variation of the gap along the blade (blade straightness, deflection).', e: 'Larger: the local gap, film and contact line vary more across the web.', u: 'Start-up, Contact line, CFD (the locations\' gaps)' },
   'in.lw': { d: 'Wavelength of that gap variation along the blade.', e: 'Sets where across the web the gap is widest and narrowest.', u: 'Start-up, Contact line, CFD (the locations\' gaps)' },
+  'in.tilt': { d: 'The blade not parallel to the web in height: the gap difference from one web edge (z = 0) to the other (z = 300 mm), centred, so the middle of the web keeps the machine\'s gap; + is a wider gap at z = 300 mm.', e: 'The local gap, film and contact line change steadily across the web, and the difference drives some slurry across it (Flow › 3D).', u: 'Start-up, Contact line, 1D, CFD (the locations\' gaps), 3D' },
   'in.dt': { d: 'Random variation of the fibre thickness across the web.', e: 'Larger: the local gap varies more, adding irregular streaks.', u: 'Start-up, Contact line, CFD (the locations\' gaps)' },
   'in.dth': { d: 'Variation of the contact angle along the blade, e.g. from contamination or dried residue.', e: 'Larger: the contact line climbs unevenly, and reaches the corner first where wetting is best.', u: 'Start-up, Contact line, CFD (the locations\' contact angles)' },
   // web edge and film
