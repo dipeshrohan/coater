@@ -273,7 +273,7 @@ const FV = {
   contourField: 'same',   // ... of this field ('same' = the colour field)
   mesh: false,            // draw the finite elements (edges and nodes) over the field
   meshQuality: false,     // ... filled by their quality instead of the field colours
-  dockH: 300,             // results panel height (px)
+  dockH: null,            // results panel height (px; null: 35 % of the page's height)
   diff: { a: 0, b: 1, pct: false, cmap: 'div' },   // Difference view: B − A on A's geometry, absolute or percent, diverging or Jet colours
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
@@ -559,22 +559,22 @@ function viewCFD() {
       ${SOLVER_INPUTS.filter(q => !q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k]}"`, q.u)).join('')}
       ${propSel('Newton tolerance', 'cfdTol', SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join(''))}
       <p class="prop-note">Grading: 1 = evenly spaced, higher crowds the elements toward the metering edge, the contact line, or the blade and free surface. The free film solved in 2D is at least 12 mm long; beyond it the 1D film model takes over. A location can set its own (its inputs button).</p>
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="cfdSolverReset">Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="cfdStudyOpen">Mesh study…</button></div>`)}
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="cfdSolverReset">${uiIco('restart')}Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="cfdStudyOpen">${uiIco('grading')}Mesh study…</button></div>`)}
     ${tree('locs', 'Locations across the web', `
       <div class="loc-list" id="cfdLocs"></div>
       <div class="loc-edit" id="cfdLocEdit" hidden></div>`)}`;
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
 
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${t}<span class="tab-n" data-n="${k}"></span></button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${uiIco(DOCK_ICON[k])}${t}<span class="tab-n" data-n="${k}"></span></button>`;
   // (the tabs used less, in a menu at the end of the row: the one open shows as a tab)
   const dockMore = (...items) => {
     const cur = items.find(([k]) => k === FV.dock);
-    return `${cur ? dockTab(cur[0], cur[1]) : ''}<details class="vp-pop dock-more"><summary class="dock-more-s" title="More results panels">More<span class="tab-n" data-n="more"></span></summary>
-      <div class="pop-body pop-menu" role="menu" aria-label="More results panels">${items.filter(([k]) => k !== FV.dock).map(([k, t]) => `<button class="menu-item" type="button" role="menuitem" data-dock-more="${k}">${t}<span class="tab-n" data-n="${k}"></span></button>`).join('')}</div></details>`;
+    return `${cur ? dockTab(cur[0], cur[1]) : ''}<details class="vp-pop dock-more"><summary class="dock-more-s" title="More results panels">${uiIco('more')}More<span class="tab-n" data-n="more"></span></summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="More results panels">${items.filter(([k]) => k !== FV.dock).map(([k, t]) => `<button class="menu-item" type="button" role="menuitem" data-dock-more="${k}">${uiIco(DOCK_ICON[k])}${t}<span class="tab-n" data-n="${k}"></span></button>`).join('')}</div></details>`;
   };
   const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
   view.innerHTML = `<div class="vp-bar pg-bar flow-head" role="toolbar" aria-label="Flow stages">${subTabs()}</div>
-    <div class="cfd-wb" id="cfdWb" style="--dock-h: ${FV.dockH}px">
+    <div class="cfd-wb" id="cfdWb" style="--dock-h: ${dockHCss(FV.dockH)}">
       <div class="vp-bar" role="toolbar" aria-label="Solve and display">
         <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run<span class="hide-mid"> all 4</span></button>
         <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
@@ -590,7 +590,7 @@ function viewCFD() {
         <label class="fv-chk"><input type="checkbox" id="fvStream"${FV.streamlines ? ' checked' : ''}> Streamlines</label>
         <label class="fv-chk"><input type="checkbox" id="fvVec"${FV.vectors ? ' checked' : ''}> Vectors</label>
         <label class="fv-chk"><input type="checkbox" id="fvContours"${FV.contours ? ' checked' : ''}> Contours</label>
-        <details class="vp-pop" id="fvMore"${FV.settingsOpen ? ' open' : ''}><summary class="tool-btn">Display</summary>
+        <details class="vp-pop" id="fvMore"${FV.settingsOpen ? ' open' : ''}><summary class="tool-btn">${uiIco('tune')}Display</summary>
           <div class="pop-body">
             <div class="fv-grid">
           <fieldset><legend>View</legend>
@@ -795,20 +795,27 @@ function viewCFD() {
   renderCFD();
 }
 
+/** A results panel's height (2D, DOE, Measured data): the height dragged (px), or 35 % of the page's until then (null). */
+const DOCK_SHARE = 0.35;
+const dockHCss = h => Number.isFinite(h) ? h + 'px' : DOCK_SHARE * 100 + '%';
+/** Its height now (px), where a drag or an arrow key starts from. */
+const dockHNow = (h, wb) => { if (Number.isFinite(h)) return h; const d = wb.querySelector(':scope > .dock'); return d ? d.offsetHeight : Math.round(DOCK_SHARE * wb.clientHeight); };
+/** A height from a project or the last session: the old default, 300 px, is the default now (35 %). */
+const dockHSaved = h => Number.isFinite(h) && h !== 300 ? h : null;
 /** The results panel's height: drag the splitter above it (or arrow keys on it). */
 function wireDockSplit() {
   const sp = document.getElementById('dockSplit'), wb = document.getElementById('cfdWb');
   const setH = h => { FV.dockH = Math.round(Math.max(120, Math.min(wb.clientHeight - 200, h))); wb.style.setProperty('--dock-h', FV.dockH + 'px'); };
   sp.addEventListener('pointerdown', e => {
     e.preventDefault(); sp.setPointerCapture(e.pointerId); sp.classList.add('drag');
-    const y0 = e.clientY, h0 = FV.dockH;
+    const y0 = e.clientY, h0 = dockHNow(FV.dockH, wb);
     const move = ev => setH(h0 - (ev.clientY - y0));
     const up = () => { sp.classList.remove('drag'); sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); renderCFD(); };
     sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
   });
   sp.addEventListener('keydown', e => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-    e.preventDefault(); setH(FV.dockH + (e.key === 'ArrowUp' ? 30 : -30)); renderCFD();
+    e.preventDefault(); setH(dockHNow(FV.dockH, wb) + (e.key === 'ArrowUp' ? 30 : -30)); renderCFD();
   });
 }
 // toolbar pop-overs (Display, Export): kept on screen, closed by a click elsewhere or Escape
@@ -1648,7 +1655,7 @@ function renderFlowPlots() {
     host.innerHTML = running && viewLocs().some(i => cfdRuns[i].status === 'running') ? '' : running ? '<p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.</p>'
       : emptyHint(none ? 'Nothing solved yet' : compare ? 'No location has a result yet' : `Location ${FV.view + 1} has no result yet`,
         `Set the inputs on the left (the shared ones and the CFD setup), then run: each of the four locations across the web takes about 10 s, solved at the same time.`,
-        `<button type="button" class="btn btn-primary btn-sm" data-hint-run>Run all 4 locations</button>${keyLabel('run.run') ? `<span class="fv-why">or ${keyLabel('run.run')}</span>` : ''}`);
+        `<button type="button" class="btn btn-primary btn-sm" data-hint-run>${uiIco('play')}Run all 4 locations</button>${keyLabel('run.run') ? `<span class="fv-why">or ${keyLabel('run.run')}</span>` : ''}`);
     const hb = host.querySelector('[data-hint-run]'); if (hb) hb.onclick = runAllLocations;
     return;
   }
@@ -1658,8 +1665,8 @@ function renderFlowPlots() {
       ${zoomBtn('out', 'Zoom out', '<path d="M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')}
       ${zoomBtn('fit', 'Fit the whole domain', '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>')}
       <span class="zb-sep" aria-hidden="true"></span>
-      <button type="button" class="zb zb-t" data-z="edge" title="Zoom to the metering edge">Edge</button>
-      <button type="button" class="zb zb-t" data-z="meniscus" title="Zoom to the exit face, contact line and free surface">Meniscus</button>
+      <button type="button" class="zb zb-t" data-z="edge" title="Zoom to the metering edge">${uiIco('zoom')}Edge</button>
+      <button type="button" class="zb zb-t" data-z="meniscus" title="Zoom to the exit face, contact line and free surface">${uiIco('zoom')}Meniscus</button>
       <span class="zb-sep" aria-hidden="true"></span>
       <button type="button" class="zb" data-z="box" aria-pressed="${FV.boxZoom}" title="Box zoom: drag a rectangle (also Shift+drag)" aria-label="Box zoom"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.5" width="9" height="7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 1.6"/><path d="M10.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
       <button type="button" class="zb" data-z="img" title="Save the plot${compare ? 's' : ''} as an image" aria-label="Save as image">${CAMERA_SVG}</button>
@@ -2685,7 +2692,7 @@ function renderProfiles() {
       ['Gap at edge / film', filmOk ? (geo.H / hOven).toFixed(3) : '—'],
       ['Lubrication estimate, one viscosity', (r.qLub / geo.U * 1000).toFixed(3) + ' mm'],
       ...(round ? [] : [['physics.js filmThickness()', (filmThickness(geo.H * 1000)).toFixed(3) + ' mm']]),
-    ].map(a => `<div class="stat"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('')}</div>
+    ].map(a => `<div class="stat"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('')}</div>
     <div class="dock-grid">
       <figure class="dock-fig"><canvas id="cfdProfile" role="img" aria-label="Velocity profiles across the gap at three stations"></canvas>
       <p class="cap"><b>u(y) at three stations</b>, light to dark from ${round ? 'the pool side' : 'the inlet'} to just upstream of the metering edge${r.prof1D ? `, against the exact fully developed profile (dashed) for the pressure gradient (${fmtNum(r.prof1D.G / 1000)} kPa/m) and fibre-surface velocity (slip ${((r.prof1D.uWall / geo.U - 1) * 100).toFixed(2)}% of U) the solution has at mid-land: they must coincide there` : '. Negative u near the blade is flow turning back toward the pool'}. Flow rate ${lubNote}.</p></figure>

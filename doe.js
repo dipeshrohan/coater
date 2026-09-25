@@ -44,7 +44,7 @@ const DOE = {
   workers: Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)),
   factors: null,                 // the design being edited: [{ k, min, max, n } | { k, vals }]
   design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, active: new Set(),
-  plot: 'response', out: 'film', x: 0, mx: 0, my: 1, dock: 'design', dockH: 300,
+  plot: 'response', out: 'film', x: 0, mx: 0, my: 1, dock: 'design', dockH: null,
 };
 const doeFactor = k => DOE_FACTORS.find(f => f.k === k);
 /** A factor can be varied with the current model and blade shape. */
@@ -190,12 +190,12 @@ function viewDOE() {
       ${row('Fibre', FIBRES[CFDG.fibre].l)}
       ${row('Mesh', `${MESH_PRESETS[s.mesh].l}, tolerance ${fmtTol(s.tol)}`)}
       <p class="prop-note">The inputs above the line and these settings are the base case: every run uses them except the factors it varies.${own.length ? ` Location ${i + 1} has its own ${own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ')}.` : ''}</p>
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">Edit in 2D CFD</button></div>
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">${uiIco(4)}Edit in 2D CFD</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${t}${['problems', 'history', 'msgs'].includes(k) ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${uiIco(DOCK_ICON[k])}${t}${['problems', 'history', 'msgs'].includes(k) ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   view.innerHTML = `
-    <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${DOE.dockH}px">
+    <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${dockHCss(DOE.dockH)}">
       <div class="vp-bar" role="toolbar" aria-label="DOE">
         <button id="doeRun" class="btn btn-primary btn-sm tool-run" type="button" title="Solve every combination of the factor levels"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run DOE</button>
         <button id="doeStop" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
@@ -241,12 +241,12 @@ function viewDOE() {
   const setH = h => { DOE.dockH = Math.round(Math.max(140, Math.min(wb.clientHeight - 220, h))); wb.style.setProperty('--dock-h', DOE.dockH + 'px'); };
   sp.addEventListener('pointerdown', e => {
     e.preventDefault(); sp.setPointerCapture(e.pointerId);
-    const y0 = e.clientY, h0 = DOE.dockH;
+    const y0 = e.clientY, h0 = dockHNow(DOE.dockH, wb);
     const move = ev => setH(h0 - (ev.clientY - y0));
     const up = () => { sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); renderDOEPlots(); };
     sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
   });
-  sp.addEventListener('keydown', e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); setH(DOE.dockH + (e.key === 'ArrowUp' ? 30 : -30)); renderDOEPlots(); } });
+  sp.addEventListener('keydown', e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); setH(dockHNow(DOE.dockH, wb) + (e.key === 'ArrowUp' ? 30 : -30)); renderDOEPlots(); } });
   renderDOE();
 }
 
@@ -301,11 +301,11 @@ function renderDOEDesign() {
          <td><select data-fn="${m}"${dis} aria-label="${f.l}: levels">${[2, 3, 4, 5].map(n => `<option value="${n}"${n === fs.n ? ' selected' : ''}>${n}</option>`).join('')}</select></td>`;
     return `<tr${off ? ' class="is-off"' : ''}><th scope="row"><select data-fk="${m}"${dis} aria-label="Factor ${m + 1}">${pickOpts(fs.k)}</select>${off ? '<small class="warn-text">not used by the current model or blade: left out</small>' : ''}</th>${mid}
       <td class="mono doe-levels">${levels}</td>
-      <td class="case-act"><button type="button" class="btn btn-secondary btn-sm" data-fdel="${m}"${DOE.factors.length < 2 || running ? ' disabled' : ''}>Remove</button></td></tr>`;
+      <td class="case-act"><button type="button" class="btn btn-secondary btn-sm" data-fdel="${m}"${DOE.factors.length < 2 || running ? ' disabled' : ''}>${uiIco('trash')}Remove</button></td></tr>`;
   }).join('');
   const N = doeRunCount(), t = doeRunSeconds(), est = N * t / Math.min(DOE.workers, N) * (DOE.workers > 1 ? 1.25 : 1);
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table doe-ftable"><thead><tr><th>Factor</th><th>From</th><th>To</th><th>Levels</th><th>Values</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="fv-bar doe-addbar"><button type="button" class="btn btn-secondary btn-sm" id="doeAdd"${DOE.factors.length >= 3 || running ? ' disabled' : ''}>Add factor</button>
+    <div class="fv-bar doe-addbar"><button type="button" class="btn btn-secondary btn-sm" id="doeAdd"${DOE.factors.length >= 3 || running ? ' disabled' : ''}>${uiIco('plus')}Add factor</button>
       <span class="fv-why"><b>${N} runs</b> (every combination) at location ${DOE.loc + 1}: about ${doeClock(est * 1000)} with ${DOE.workers} at a time, a run taking about ${t.toFixed(0)} s here. Up to three factors, 2 to 5 levels each, evenly spaced.</span></div>`;
   host.querySelectorAll('[data-fk]').forEach(el => el.addEventListener('change', () => { DOE.factors[+el.dataset.fk] = doeNewFactor(el.value, DOE.loc); renderDOE(); }));
   const num = (sel, key) => host.querySelectorAll(sel).forEach(el => el.addEventListener('change', () => {
@@ -371,7 +371,7 @@ function renderDOEPlots() {
   if (!d || !done.length) {
     host.innerHTML = DOE.status === 'running' ? '' : emptyHint('No DOE results yet',
       `Choose 1 to 3 factors and their levels in the Design tab below: every combination is solved in the CFD at location ${DOE.loc + 1} (${doeRunCount()} runs now, a few seconds each, ${DOE.workers} at a time).`,
-      `<button type="button" class="btn btn-primary btn-sm" data-hint-doe>Run DOE</button><button type="button" class="btn btn-secondary btn-sm" data-hint-design>Open the design</button>`);
+      `<button type="button" class="btn btn-primary btn-sm" data-hint-doe>${uiIco('play')}Run DOE</button><button type="button" class="btn btn-secondary btn-sm" data-hint-design>${uiIco('doe')}Open the design</button>`);
     const r = host.querySelector('[data-hint-doe]'); if (r) r.onclick = runDOE;
     const g = host.querySelector('[data-hint-design]'); if (g) g.onclick = () => { DOE.dock = 'design'; setPanelHidden('dock', false); };
     return;
@@ -385,7 +385,7 @@ function renderDOEPlots() {
   const xpos = (x, v) => x.f.cat ? x.levels.indexOf(v) : v;
   const xspan = x => { const p = x.levels.map(v => xpos(x, v)), a = Math.min(...p), b = Math.max(...p), m = (b - a) * 0.06 || 0.5; return [a - m, b + m]; };
   const yLabel = `${o.l}${o.u ? ` (${o.u})` : ''}`;
-  const figs = cap => `<figure class="pane"><figcaption>${cap}</figcaption><div class="xl-chart"><canvas role="img" aria-label="${cap}"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div></figure>`;
+  const figs = cap => `<figure class="pane"><figcaption>${uiBadge(DOE_PLOT_ICON[DOE.plot] || 7)}${cap}</figcaption><div class="xl-chart"><canvas role="img" aria-label="${cap}"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div></figure>`;
   const layout = (n, caps) => {
     const cols = Math.min(n, 3), rows = Math.ceil(n / cols);
     host.style.setProperty('--cols', cols);

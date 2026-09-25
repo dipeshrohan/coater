@@ -131,8 +131,8 @@ function c3dSetupTree() {
     <details class="grp cfd-grp" data-c3dgrp="geo"${C3D_OPEN.geo ? ' open' : ''}><summary>3D geometry</summary>
       ${seg('Blade', 'source', [['made', 'From the 2D setup'], ['file', 'From a file']])}
       ${C3D.source === 'made' ? `<p class="prop-note">The 2D's blade profile (entry, exit face, notch face length) extended across the region; its gap varies across the web with the inputs under Variation across the web.</p>
-        <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="c3dExport">Save the blade as STL</button></div>` : `
-        <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="c3dImport">Import STL or STEP…</button><input type="file" id="c3dFile" accept=".stl,.step,.stp" hidden></div>
+        <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="c3dExport">${uiIco('download')}Save the blade as STL</button></div>` : `
+        <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="c3dImport">${uiIco('upload')}Import STL or STEP…</button><input type="file" id="c3dFile" accept=".stl,.step,.stp" hidden></div>
         <p class="prop-note">${f ? `<b>${mEsc(f.name)}</b>: ${(f.tris.length / 9).toLocaleString()} triangles, ${f.kind.toUpperCase()}.` : 'No file yet: a blade only (the app adds the web below it at the gap, and the slurry).'}</p>
         ${f && f.kind === 'stl' ? sel('Units in the file', 'units', ['mm', 'cm', 'm', 'in'].map(u => opt(u, u, C3D.units)).join('')) : ''}
         ${sel('Machine direction', 'machine', axes.replace(`value="${C3D.machine}"`, `value="${C3D.machine}" selected`))}
@@ -520,14 +520,14 @@ function view3D() {
   const S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey3(S), running = C3D_RUN.status === 'running';
   const fld = C3D_FIELDS[C3D.field] || C3D_FIELDS.speed, showField = R && C3D.field !== 'none';
   const range = showField ? c3dFieldRange(R) : null;
-  const pane = (id, title, aria, legend = '') => `<figure class="pane"><figcaption>${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas>${legend ? `<div class="pane-legend">${legend}</div>` : ''}</figure>`;
+  const pane = (id, icon, title, aria, legend = '') => `<figure class="pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas>${legend ? `<div class="pane-legend">${legend}</div>` : ''}</figure>`;
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   const where = R && R.region === 'full' ? 'web' : 'strip';
   const charts = R ? `<div class="v3d-charts">
-      ${pane('c3dFilm', `Wet film across the ${where}${stale ? ' (out of date)' : ''}`, `Wet film thickness across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
-      ${pane('c3dCL', `Contact line up the exit face across the ${where}`, `Contact line height up the exit face across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
-      ${pane('c3dPB', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
-      ${pane('c3dPX', `Pressure along the blade, middle of the ${where}`, `Pressure along the blade and exit face at the middle of the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
+      ${pane('c3dFilm', 'film', `Wet film across the ${where}${stale ? ' (out of date)' : ''}`, `Wet film thickness across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${pane('c3dCL', 1, `Contact line up the exit face across the ${where}`, `Contact line height up the exit face across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${pane('c3dPB', 'pressure', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
+      ${pane('c3dPX', 'pressure', `Pressure along the blade, middle of the ${where}`, `Pressure along the blade and exit face at the middle of the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
     </div>` : '';
   view.innerHTML = moduleFrame({
     tools: `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${C3D.view === v}">${t}</button>`).join('')}</div>
@@ -536,9 +536,9 @@ function view3D() {
       <label class="fv-chk"${R ? '' : ' title="Solve first"'}><input type="checkbox" data-v3tog="stream"${C3D.stream ? ' checked' : ''}${R ? '' : ' disabled'}> Streamlines</label>
       ${R && C3D.stream ? `<select data-c3d="streamDensity" aria-label="Streamline density" title="How many streamlines">${Object.entries(C3D_STREAM).map(([k, d]) => `<option value="${k}"${k === C3D.streamDensity ? ' selected' : ''}>${d.l}</option>`).join('')}</select>` : ''}
       <select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>
-      ${running ? '<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">Stop</button>' : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">Solve 3D</button>`}`,
+      ${running ? `<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">${uiIco('stop')}Stop</button>` : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">${uiIco('play')}Solve 3D</button>`}`,
     panes: [],
-    extra: `<div id="c3dProg"></div><figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
+    extra: `<div id="c3dProg"></div><figure class="pane v3d"><figcaption>${uiBadge(9)}${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
       <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${(R ? R.skew : P.skew) ? `<span>Blade skewed ${(R ? R.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
@@ -566,7 +566,7 @@ function view3D() {
   }
   document.getElementById('st').innerHTML = st;
   c3dBusy();
-  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`;
+  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`;
   if (R) {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid];
     let wMax = 0; for (let n = 0; n < R.w.length; n++) wMax = Math.max(wMax, Math.abs(C3D_FIELDS.w.f(R, n) / 1000));

@@ -74,7 +74,7 @@ function updateScope(extra = '') {
   const hard = q.issues.some(x => x.includes('no finite'));
   el.className = 'scope ' + (hard ? 'bad' : q.issues.length ? 'warn' : '');
   el.innerHTML = q.issues.length
-    ? `<strong>${hard ? 'Result withheld' : 'Use with caution'}.</strong> ${q.issues.join('; ')}. Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`
+    ? `<strong>${hard ? 'Result withheld' : 'Use with caution'}.</strong> ${q.issues.join('; ').replace(/^./, c => c.toUpperCase())}. Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`
     : `<strong>Within the thin-film checks.</strong> Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`;
   el.title = el.textContent;   // (the status bar may cut it short)
   const pg = document.getElementById('pgScope');   // (the Results pages show it under their answer)
@@ -184,10 +184,10 @@ function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '' }) {
     <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
     <div class="verdict"><div class="status" id="st"></div><p class="vq">${TAB_Q[tab]}</p><p class="pg-scope" id="pgScope"></p></div>
     <div class="mod-results"><div class="stats" id="ss"></div></div>
-    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>
+    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${uiBadge(p.icon)}${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>
     <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
     <section class="dock mod-dock" aria-label="History">
-      <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">History<span class="tab-n" data-n="history"></span></button></div>
+      <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">${uiIco('history')}History<span class="tab-n" data-n="history"></span></button></div>
       <div class="dock-body"><div class="dock-panel" id="mod-history" role="tabpanel"><div class="history-host"></div></div></div>
     </section>
   </div>`;
@@ -241,11 +241,11 @@ function viewA() {
     </div></details>`;
   view.innerHTML = moduleFrame({
     tools: `<button id="ap" class="btn btn-primary btn-sm tool-run" type="button"></button>
-      <button id="ar" class="tool-btn" type="button">Restart</button>
+      <button id="ar" class="tool-btn" type="button">${uiIco('restart')}Restart</button>
       <div class="vp-time"><label for="at">Time</label><input type="range" class="prop-range" id="at" min="0" max="58" step="0.1"><output id="ato"></output></div>`,
     panes: [
-      { id: 'ca', title: 'Slurry metering under the fixed blade · fibre moving left to right', aria: 'Animation of slurry metering under the fixed blade onto the moving fibre', center: true },
-      { id: 'cb', title: 'Downstream meniscus, magnified · same simulation and clock', aria: 'Separate magnified animation of the downstream meniscus', center: true },
+      { id: 'ca', icon: 0, title: 'Slurry metering under the fixed blade · fibre moving left to right', aria: 'Animation of slurry metering under the fixed blade onto the moving fibre', center: true },
+      { id: 'cb', icon: 'zoom', title: 'Downstream meniscus, magnified · same simulation and clock', aria: 'Separate magnified animation of the downstream meniscus', center: true },
     ],
   });
 
@@ -256,7 +256,7 @@ function viewA() {
 
   const ap = document.getElementById('ap'), at = document.getElementById('at'), ato = document.getElementById('ato'),
     az = document.getElementById('az'), azo = document.getElementById('azo');
-  const syncPlayButton = () => { ap.textContent = ANIM.playing ? 'Pause' : 'Play'; ap.setAttribute('aria-pressed', ANIM.playing); };
+  const syncPlayButton = () => { ap.innerHTML = ANIM.playing ? `${uiIco('pause')}Pause` : `${uiIco('play')}Play`; ap.setAttribute('aria-pressed', ANIM.playing); };
   syncPlayButton();
   az.value = ANIM.z; azo.textContent = ANIM.z + ' mm'; syncSliderFill(az);
   syncSliderFill(at);
@@ -320,7 +320,7 @@ function fillA() {
     ['Film / gap', (st.h / i.H).toFixed(3)],
     ['Shear rate U/H', (P.U / 60 / (i.H / 1000)).toFixed(1) + ' 1/s'],
     ['Numerical state', ANIM.safe ? 'physical bounds passed' : 'surface solve stopped'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
 // ---------------------------------------------------------------------
@@ -376,9 +376,9 @@ function view1() {
   view.innerHTML = moduleFrame({
     cols: workbenchFits() ? 2 : 1,
     panes: [
-      { id: 'c1', title: 'Cross-section at the web centre', aria: 'Cross-section of blade, slurry and meniscus',
+      { id: 'c1', icon: 'section', title: 'Cross-section at the web centre', aria: 'Cross-section of blade, slurry and meniscus',
         note: 'The meniscus is the Young–Laplace profile from the contact line down to the flat film. It is pinned at the sharp edge when the contact angle is large, and climbs the flat face when it is small.' },
-      { id: 'c2', title: 'Top view: contact line across the web', aria: 'Contact line position across the web',
+      { id: 'c2', icon: 1, title: 'Top view: contact line across the web', aria: 'Contact line position across the web',
         note: 'Each point is where the contact line sits on the face, from the sharp edge (0) to the notch corner. Gap waviness, fibre thickness and wetting changes push it up and down.' },
     ],
   });
@@ -404,7 +404,7 @@ function view1() {
     ['Film range across web', hmn.toFixed(2) + ' to ' + hmx.toFixed(2) + ' mm'],
     ['Film variation', filmDeviation.toFixed(1) + ' %'],
     ['Contact line range', mn.toFixed(1) + ' to ' + mx.toFixed(1) + ' mm'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
 // ---------------------------------------------------------------------
@@ -415,9 +415,9 @@ function view2() {
 
   view.innerHTML = moduleFrame({
     panes: [
-      { id: 'c1', title: 'Edge growth from the blade to the oven', aria: 'Edge amplitude versus distance',
+      { id: 'c1', icon: 2, title: 'Edge growth from the blade to the oven', aria: 'Edge amplitude versus distance',
         note: 'The wet edge is a ridge of slurry along the fibre margin. Surface tension pulls it into beads (Rayleigh–Plateau), and viscosity slows that down. A yield stress larger than the capillary pressure freezes it.' },
-      { id: 'c2', title: 'Top view of the edge at the oven entrance', aria: 'Top view of the wet edge',
+      { id: 'c2', icon: 'top', title: 'Top view of the edge at the oven entrance', aria: 'Top view of the wet edge',
         note: 'Machine direction left to right.' },
     ],
   });
@@ -467,7 +467,7 @@ function view2() {
     ['Growth time constant', (1 / e.sig).toFixed(2) + ' s'],
     ['Time to oven', (ovenDistanceMm / 1000 / U).toFixed(0) + ' s'],
     ['Amplitude at oven', endAmplitude.toFixed(2) + ' mm'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
 // ---------------------------------------------------------------------
@@ -478,9 +478,9 @@ function view3() {
 
   view.innerHTML = moduleFrame({
     panes: [
-      { id: 'c1', title: 'Film surface across the web', aria: 'Film surface ripple before and after levelling',
+      { id: 'c1', icon: 3, title: 'Film surface across the web', aria: 'Film surface ripple before and after levelling',
         note: 'Deviation from the mean, in µm. Dashed: just after the blade. Solid: at the oven entrance.' },
-      { id: 'c2', title: 'Levelling in time', aria: 'Ripple amplitude versus time',
+      { id: 'c2', icon: 'period', title: 'Levelling in time', aria: 'Ripple amplitude versus time',
         note: `Surface tension smooths the film. A yield stress stops levelling at a residual amplitude that stays into the oven. The ripple source is the gap wobble (through the film sensitivity dh/dH = ${dhdH.toFixed(2)}) plus vibration.` },
     ],
   });
@@ -526,7 +526,7 @@ function view3() {
     ['Levelling time', tau.toFixed(2) + ' s'],
     ['Residual from yield', (Math.min(residualFromYield, 1) * 1e6).toFixed(0) + ' µm'],
     ['At oven, share of film', sharePct.toFixed(2) + ' %'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
 // ---------------------------------------------------------------------
@@ -548,7 +548,7 @@ function viewSummary() {
   const answer = (v, yes, warn) => v[1] === 'bad' ? yes : v[1] === 'warn' ? warn : 'No';
   const tone = v => v[1] === 'bad' ? '--bad' : v[1] === 'warn' ? '--warn' : '--ok';
   const card = (view, label, q, v, badge, value, unit, chart) => `<article class="sum-card" data-view="${view}" style="--c: var(${tone(v)})" title="${v[0]}">
-      <div class="sc-top"><span class="sc-lab">${label}</span><span class="sc-badge">${badge}</span></div>
+      <div class="sc-top"><span class="sc-lab">${uiBadge(view)}${label}</span><span class="sc-badge">${badge}</span></div>
       <h3>${q}</h3>
       <div class="sc-v"><strong>${value}</strong><span>${unit}</span></div>
       ${chart}
@@ -562,7 +562,7 @@ function viewSummary() {
       <div class="sum-top">
         <div><h1>Your coating at these settings</h1>
           <p class="sum-set">${[val('U', 'Web speed'), val('Hm', 'Scraper height'), val('mu', 'Viscosity'), val('ty', 'Yield stress')].join(' · ')}<button type="button" class="linkish" id="sumInputs">Edit inputs</button></p></div>
-        <div class="sum-film"><span>Wet film</span><strong>${hc.toFixed(2)} mm</strong><em>${ca.hmn.toFixed(2)} to ${ca.hmx.toFixed(2)} mm across the web</em></div>
+        <div class="sum-film"><span>${uiBadge('film')}Wet film</span><strong>${hc.toFixed(2)} mm</strong><em>${ca.hmn.toFixed(2)} to ${ca.hmx.toFixed(2)} mm across the web</em></div>
       </div>
       <div class="sum-cards">
         ${card(1, 'Contact line', 'Slurry on the dry edge?', ca.verdict, answer(ca.verdict, 'Yes', 'Uneven'),
@@ -578,9 +578,9 @@ function viewSummary() {
       <p class="pg-scope" id="pgScope"></p>
       <h2 class="sum-h">Go further</h2>
       <div class="sum-more">
-        <button type="button" data-sec="1"><b>Flow under the blade</b><span>1D along the blade, 2D CFD at four places across the web.</span></button>
-        <button type="button" data-sec="2"><b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
-        <button type="button" data-sec="3"><b>Check against your data</b><span>Import measurements and fit the model.</span></button>
+        <button type="button" data-sec="1">${uiBadge(4)}<b>Flow under the blade</b><span>1D along the blade, 2D CFD at four places across the web.</span></button>
+        <button type="button" data-sec="2">${uiBadge(5)}<b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
+        <button type="button" data-sec="3">${uiBadge(6)}<b>Check against your data</b><span>Import measurements and fit the model.</span></button>
       </div>
     </div>
   </div>`;
@@ -665,10 +665,10 @@ SECTIONS.forEach((s, i) => {
  * page. Flow: its stages (a stage opens on its page last shown), and the stage's pages under them.
  */
 function subTabs() {
-  const s = secOf(tab), btn = (v, t, on, title, row) => `<button type="button" role="tab" data-view="${v}" data-row="${row}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${title}">${t}</button>`;
+  const s = secOf(tab), btn = (v, t, on, title, row, icon = v) => `<button type="button" role="tab" data-view="${v}" data-row="${row}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${title}">${uiIco(icon)}${t}</button>`;
   if (s.groups) {
     const g = groupOfView(tab);
-    const top = `<div class="subtabs" role="tablist" aria-label="${s.t} stages">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.views[0], x.t, x === g, x.views.map(v => TABS[v]).join(' · '), 'g')).join('')}</div>`;
+    const top = `<div class="subtabs" role="tablist" aria-label="${s.t} stages">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.views[0], x.t, x === g, x.views.map(v => TABS[v]).join(' · '), 'g', GROUP_ICON[x.k])).join('')}</div>`;
     return top + (g && g.views.length > 1 ? `<div class="subtabs subtabs-2" role="tablist" aria-label="${g.t} pages">${g.views.map(v => btn(v, TABS[v], v === tab, TAB_Q[v], 'v')).join('')}</div>` : '');
   }
   if (s.views.length < 2) return '';

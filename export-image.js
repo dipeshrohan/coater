@@ -251,7 +251,9 @@ const legendItems = els => {
   }
   return out;
 };
-const chartName = (cv, fallback) => cv.getAttribute('aria-label') || cleanText(cv.closest('figure') && cv.closest('figure').querySelector('figcaption')) || fallback;
+/** A plot's title as its caption reads, without the caption's (i) button. */
+const captionText = fc => fc ? [...fc.childNodes].filter(n => !(n.nodeType === 1 && n.tagName === 'BUTTON')).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim() : '';
+const chartName = (cv, fallback) => cv.getAttribute('aria-label') || captionText(cv.closest('figure') && cv.closest('figure').querySelector('figcaption')) || fallback;
 
 /** The things in the current view that can be saved as an image. */
 function imageTargets() {
@@ -270,7 +272,7 @@ function imageTargets() {
       });
     }
     const panel = () => document.getElementById('dock-' + FV.dock);
-    const tb = document.querySelector(`.dock-tabs button[data-dock="${FV.dock}"]`), tabName = tb ? cleanText(tb.childNodes[0]) || cleanText(tb) : 'Results';
+    const tb = document.querySelector(`.dock-tabs button[data-dock="${FV.dock}"]`), tabName = tb ? cleanText([...tb.childNodes].find(n => n.nodeType === 3 && n.textContent.trim())) || cleanText(tb) : 'Results';
     const charts = () => [...(panel() ? panel().querySelectorAll('canvas[role="img"]') : [])];
     const legendNear = cv => { const fig = cv.closest('figure'); const own = fig && fig.querySelectorAll('.xl-legend .lg'); return own && own.length ? own : panel().querySelectorAll('.xl-legend .lg'); };
     charts().forEach((cv, n) => out.push({
@@ -283,7 +285,7 @@ function imageTargets() {
     const panes = () => [...document.querySelectorAll('#view .pane canvas[role="img"]')];
     panes().forEach((cv, n) => out.push({
       id: 'pane:' + n, slug: `plot-${n + 1}`, label: `Plot: ${chartName(cv, `${mod} ${n + 1}`)}`,
-      canvases: () => [panes()[n]].filter(Boolean), legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => cleanText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
+      canvases: () => [panes()[n]].filter(Boolean), legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => captionText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
     }));
     if (panes().length > 1) out.push({ id: 'panes', slug: 'plots', label: `All plots of “${mod}”`, canvases: panes, legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => '', subtitle: () => '', captions: true });
   }
@@ -309,7 +311,7 @@ function snapshotTarget(target, k, bg) {
     const cvs = target.canvases();
     if (!cvs.length) throw new Error('nothing to export');
     const boxes = cvs.map(cv => cv.getBoundingClientRect());
-    const caps = target.captions ? cvs.map(cv => { const fc = cv.closest('figure') && cv.closest('figure').querySelector('figcaption'); return fc ? { text: cleanText(fc), r: fc.getBoundingClientRect() } : null; }).filter(Boolean) : [];
+    const caps = target.captions ? cvs.map(cv => { const fc = cv.closest('figure') && cv.closest('figure').querySelector('figcaption'); return fc ? { text: captionText(fc), r: fc.getBoundingClientRect() } : null; }).filter(Boolean) : [];
     const all = boxes.concat(caps.map(c => c.r));
     const x0 = Math.min(...all.map(r => r.left)), y0 = Math.min(...all.map(r => r.top));
     const x1 = Math.max(...all.map(r => r.right)), y1 = Math.max(...all.map(r => r.bottom));
