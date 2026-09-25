@@ -42,7 +42,8 @@ const C3D_FIELDS = {
   p: { l: 'Pressure', u: 'Pa', f: (R, n) => R.p[n] },
   gd: { l: 'Shear rate', u: '1/s', f: (R, n) => R.gd[n] },
   mu: { l: 'Viscosity', u: 'Pa·s', f: (R, n) => R.mu[n] },
-  w: { l: 'Cross-web speed', u: 'mm/s', f: (R, n) => R.w[n] * 1000, div: true },
+  // (across the web in the machine frame: a skewed blade's solve is in the blade's frame, w along the blade)
+  w: { l: 'Cross-web speed', u: 'mm/s', f: (R, n) => (R.skew ? R.w[n] * Math.cos(R.skew * Math.PI / 180) - R.u[n] * Math.sin(R.skew * Math.PI / 180) : R.w[n]) * 1000, div: true },
 };
 
 // ---- the files: every file imported this session, by id (undo brings one back); the project keeps the one in use ----
@@ -238,7 +239,7 @@ function c3dEstimateText() {
     // (measured: the 2D at each station about 3 s; a strip's first 3D solve as estimated, the later sweeps' about 60 % of it; about 6 sweeps)
     const L = c3dWideLayout(), e = c3dEstimate(L.sub), NL = 2 * C3D.nzFull + 1;
     const perColour = Math.ceil(Math.ceil(L.subs.length / 2) / L.workers), secs = (NL / L.workers + 4) * 3 + 2 * perColour * e.secs3 * (1 + 0.6 * 5);
-    return `Solved as ${L.subs.length} overlapping strips (${L.sub} elements across each), ${L.workers} at a time, sweep after sweep until they agree; stations every ${(ACROSS_W / (NL - 1)).toFixed(1)} mm (variation across the web on a shorter scale is sampled there, not resolved); the web's edges are symmetry planes. About ${c3dMem(L.workers * e.bytes)} and ${c3dTime(secs)}.`;
+    return `Solved as ${L.subs.length} overlapping strips (${L.sub} elements across each), ${L.workers} at a time, sweep after sweep until they agree; stations every ${(ACROSS_W / (NL - 1)).toFixed(1)} mm (variation across the web on a shorter scale is sampled there, not resolved); ${P.skew ? 'the web\'s edges open (each held at its own station\'s flow: the slurry carried along the skewed blade leaves and enters there freely)' : 'the web\'s edges are symmetry planes'}. About ${c3dMem(L.workers * e.bytes)} and ${c3dTime(secs)}.`;
   }
   const e = c3dEstimate();
   return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${c3dMem(e.bytes)} for the solve, about ${c3dTime(e.secs)}.${e.bytes > C3D_MAX_BYTES ? ' <b>More memory than a browser can give one page: fewer elements across the strip or the gap.</b>' : ''}`;
@@ -258,7 +259,7 @@ function c3dStripSamples(i, W) {
 /** The shared inputs at the web's middle (no location's own): the full width's reference. */
 function c3dSharedGeometry() {
   const zc = ACROSS_W / 2, geo = cfdGeometry(0), uses = RHEO_MODELS[CFDG.model].uses;
-  const U = P.U / 60, H = cfdLocalGapMm(zc) / 1000, ty = uses.includes('ty') ? P.ty : 0, n = uses.includes('n') ? P.n : 1;
+  const U = P.U / 60 * Math.cos(skewRad()), H = cfdLocalGapMm(zc) / 1000, ty = uses.includes('ty') ? P.ty : 0, n = uses.includes('n') ? P.n : 1;
   return { ...geo, z: zc, U, H, contactDeg: cfdLocalContactDeg(zc), Pup: P.Pup * 1000, muRef: P.mu, ty, n, muRep: muLaw(U / H, P.mu, ty, n), gamma: P.g };
 }
 /** What the worker(s) are sent (file: false leaves out the file's rays, for the key). Strip: around the location; full: the web, stations from its middle. */
@@ -266,6 +267,8 @@ function c3dSolveMessage(withFile = true) {
   const full = C3D.region === 'full', i = C3D.loc;
   const msg = cfdWorkerMessage(full ? c3dSharedGeometry() : cfdGeometry(i));
   msg.solver = { ...msg.solver, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: C3D.ny };
+  // (a skewed blade: the web's speed along it, msg.U being its speed across it)
+  if (P.skew) { msg.skew = P.skew; msg.webW = msg.U * Math.tan(skewRad()); }
   let strip, W, zc;
   if (full) {
     W = ACROSS_W / 1000; zc = W / 2;
@@ -325,7 +328,7 @@ function c3dRun() {
     else if (!r.converged) { C3D_RUN.status = 'error'; C3D_RUN.error = `the 3D did not converge (residual ${r.residual.toExponential(1)} after ${r.iterations} Newton steps)`; }
     else {
       C3D_RUN.status = 'done';
-      r.zOff = CFD_LOCS[C3D.loc].z / 1000;
+      r.zOff = CFD_LOCS[C3D.loc].z / 1000; r.skew = m.msg.skew || 0;
       C3D_RES = { key, region: 'strip', loc: C3D.loc, width: C3D.stripW, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: r };
       V3.key = null;
     }
@@ -351,7 +354,7 @@ function c3dStop() {
  * (cfd-fem3d.js's solveCoaterWide, run in parallel).
  */
 async function c3dRunWide(m, key) {
-  const { msg, strip, file } = m, NL = 2 * strip.nEz + 1, zs = strip.zs, mid = (NL - 1) >> 1, L = c3dWideLayout(strip.nEz), subs = L.subs, P = L.workers;
+  const { msg, strip, file } = m, NL = 2 * strip.nEz + 1, zs = strip.zs, mid = (NL - 1) >> 1, L = c3dWideLayout(strip.nEz), subs = L.subs, P = L.workers, open = !!msg.webW;
   const run = ++C3D_RUN.id, workers = Array.from({ length: P }, () => makeWorker('cfd-3d-worker.js'));
   Object.assign(C3D_RUN, { worker: null, workers, status: 'running', progress: { stage: 'starting' }, error: null, t0: performance.now() });
   const alive = () => C3D_RUN.id === run && C3D_RUN.status === 'running';
@@ -381,10 +384,10 @@ async function c3dRunWide(m, key) {
     subs.forEach(([l0, l1], i) => { for (let l = l0; l <= l1; l++) mine[owner(i)].add(l); });
     stage(`2D at the ${NL} stations across the web`);
     const inits = await Promise.all(workers.map((w, k) => call(w, { type: 'wideInit', msg, strip, file, zs, ref: mid, stations: [...mine[k]] })));
-    const meta = inits[0], state = new Array(NL), film2 = [], s2 = [];
+    const meta = inits[0], state = new Array(NL), film2 = [], s2 = [], full2 = [];
     let top2 = null;
     inits.forEach(r => {
-      for (const l in r.states) state[l] = r.states[l];
+      for (const l in r.states) { state[l] = r.states[l]; full2[l] = r.full2[l]; }
       for (const l in r.film2) { film2[l] = r.film2[l]; s2[l] = r.s2[l]; }
       if (r.top2[mid]) top2 = r.top2[mid];
     });
@@ -404,7 +407,8 @@ async function c3dRunWide(m, key) {
             stage(`sweep ${sweeps + 1}${Number.isFinite(lastCh) ? ` (last change ${(lastCh * meta.H * 1e6).toFixed(3)} µm)` : ''}: strip ${++doneN} of ${subs.length}`);
             const states = {};
             for (let l = l0; l <= l1; l++) states[l] = state[l];
-            const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: l0 > 0, sideHi: l1 < NL - 1 });
+            // (a skewed blade: the web's edges held at their own stations' flow too, the slurry leaving and entering freely)
+            const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: l0 > 0 || open, sideHi: l1 < NL - 1 || open });
             unknowns = Math.max(unknowns, r.unknowns);
             for (const l in r.states) {
               const T = r.states[l], old = state[l], f0 = filmOf(old), f1 = filmOf(T);
@@ -420,9 +424,10 @@ async function c3dRunWide(m, key) {
     if (!alive()) return;
     if (!converged) throw new Error(`the strips did not agree after ${sweeps} sweeps (last change ${(history[history.length - 1] * meta.H * 1e6).toFixed(3)} µm)`);
     // the result, as a strip's: node arrays over every station, the stations, the middle's pressure along the top
-    const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', mode: meta.mode, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H,
+    const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', skew: msg.skew || 0, mode: meta.mode, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H,
       zOff: ACROSS_W / 2000, size: { unknowns, strips: subs.length, workers: P } };
     for (const f of ['x', 'y', 'z', 'u', 'v', 'w', 'p', 'gd', 'mu']) R[f] = new Float32Array(N);
+    for (let l = 0; l < NL; l++) if (!state[l].x) state[l] = { ...state[l], ...full2[l] };   // (a web edge held at its own station's flow)
     for (let l = 0; l < NL; l++) for (let c = 0; c < NC; c++) for (let k = 0; k < NR; k++) {
       const n3 = (c * NL + l) * NR + k, n2 = c * NR + k;
       for (const f of ['x', 'y', 'z', 'u', 'v', 'w', 'p', 'gd', 'mu']) R[f][n3] = state[l][f][n2];
@@ -482,7 +487,7 @@ function view3D() {
     extra: `<figure class="pane v3d"><figcaption>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
       <div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
-      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
+      <div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${(R ? R.skew : P.skew) ? `<span>Blade skewed ${(R ? R.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>
       ${charts}
       <div class="oned-table" id="oneDTable"></div>`,
   });
@@ -495,7 +500,7 @@ function view3D() {
       + (stale ? pill('Out of date: the inputs changed since (Solve 3D again)', 'warn') : '')
       + pill(R.mode === 'climbed' ? `Contact line ${Math.min(...cls).toFixed(2)} to ${Math.max(...cls).toFixed(2)} mm up the exit face` : 'Contact line pinned at the edge', '')
       + pill(R.region === 'full' ? `${c3dTime(S.ms / 1000)}: ${R.size.strips} strips, ${R.sweeps} sweeps until they agreed` : `${(S.ms / 1000).toFixed(0)} s, ${R.iterations} Newton steps`, '')
-      + (R.region === 'full' ? pill('The web\'s edges: symmetry planes (the edge bead is not modelled)', '') : '');
+      + (R.region === 'full' ? pill(R.skew ? 'The web\'s edges: open, each held at its own station\'s flow along the skewed blade (the edge bead is not modelled)' : 'The web\'s edges: symmetry planes (the edge bead is not modelled)', '') : '');
     void sm;
   }
   if (!running && C3D_RUN.status === 'error') st = pill('The 3D could not be solved: ' + C3D_RUN.error, 'bad') + st;
@@ -510,7 +515,7 @@ function view3D() {
   const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`;
   if (R) {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid];
-    let wMax = 0; for (let n = 0; n < R.w.length; n++) wMax = Math.max(wMax, Math.abs(R.w[n]));
+    let wMax = 0; for (let n = 0; n < R.w.length; n++) wMax = Math.max(wMax, Math.abs(C3D_FIELDS.w.f(R, n) / 1000));
     const dev = Math.max(...R.stations.map(s => Math.abs(s.film / s.film2 - 1))) * 100;
     const full = R.region === 'full', films = R.stations.map(s => s.film * 1000);
     document.getElementById('ss').innerHTML = [
@@ -638,19 +643,27 @@ function v3Draw(G, R) {
   V3.renderer.setSize(w, h); V3.camera.aspect = w / h; V3.camera.updateProjectionMatrix();
   V3.renderer.setClearColor(new THREE.Color(cssVar('--surface')), 1);
   const S = R ? c3dShown() : null;
-  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? C3D.streamDensity : '']);
+  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, C3D.mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? C3D.streamDensity : '', R ? '' : P.skew]);
   if (key !== V3.key) { v3Scene(G, R); const firstView = V3.key === null || !V3.sameRegion(G); V3.key = key; V3.region = G.key; if (firstView) v3Camera(); }
   v3Render();
 }
 V3.sameRegion = G => V3.region && G.key && JSON.parse(V3.region).slice(0, 4).join() === JSON.parse(G.key).slice(0, 4).join();
 function v3Render() { if (V3.renderer) V3.renderer.render(V3.scene, V3.camera); }
+/** A skewed blade drawn in the machine frame (the web along x): positions in mm (x, y, z triples) turned in place by skew degrees about
+ *  the metering edge at the region's middle (x0, z0, mm) -- the solve is in the blade's frame. None: nothing turned. */
+function v3Machine(skew, x0, z0) {
+  if (!skew) return null;
+  const a = skew * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
+  return arr => { for (let i = 0; i < arr.length; i += 3) { const dx = arr[i] - x0, dz = arr[i + 2] - z0; arr[i] = x0 + dx * cs + dz * sn; arr[i + 2] = z0 - dx * sn + dz * cs; } return arr; };
+}
 /** Build the scene from the geometry (and a solved result: its own mesh, coloured by the field): in mm, the heights drawn C3D.vscale times larger. */
 function v3Scene(G, R) {
   if (V3.group) { V3.scene.remove(V3.group); V3.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
   const grp = new THREE.Group(); grp.scale.set(1, C3D.vscale, 1); V3.group = grp; V3.scene.add(grp);
   if (R) { v3SceneSolved(G, R, grp); return; }
   if (!G.mesh) return;
-  const mm = a => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] * 1000; return o; };
+  const turn = v3Machine(P.skew, G.xe * 1000, (G.rg.z0 + G.rg.z1) / 2 * 1000);
+  const mm = a => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] * 1000; return turn ? turn(o) : o; };
   const col = v => new THREE.Color(cssVar(v));
   if (C3D.blade) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(mm(G.tris), 3)); g.computeVertexNormals();
@@ -672,13 +685,16 @@ function v3Scene(G, R) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(Array.from(m.lines));
     grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col('--ink'), transparent: true, opacity: 0.35 })));
   }
+  // (the web and the view's bounds around the region as drawn: turned with a skewed blade)
+  let bx0 = 0, bx1 = (G.xe + G.Ld) * 1000, bz0 = G.rg.z0 * 1000, bz1 = G.rg.z1 * 1000;
+  if (turn) { bx0 = bz0 = Infinity; bx1 = bz1 = -Infinity; for (let i = 0; i < pos.length; i += 3) { bx0 = Math.min(bx0, pos[i]); bx1 = Math.max(bx1, pos[i]); bz0 = Math.min(bz0, pos[i + 2]); bz1 = Math.max(bz1, pos[i + 2]); } }
   if (C3D.web) {
-    const x0 = -2, x1 = (G.xe + G.Ld) * 1000 + 2, z0 = G.rg.z0 * 1000 - 2, z1 = G.rg.z1 * 1000 + 2;
+    const x0 = bx0 - 2, x1 = bx1 + 2, z0 = bz0 - 2, z1 = bz1 + 2;
     const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, -0.001, (z0 + z1) / 2);
     grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--fibre'), roughness: 0.9, side: THREE.DoubleSide })));
   }
   // the bounds the camera fits: the slurry region and the blade near it (in the scaled scene)
-  const b = new THREE.Box3(new THREE.Vector3(-1, 0, G.rg.z0 * 1000), new THREE.Vector3((G.xe + G.Ld) * 1000 + 1, Math.min(G.box.max[1], G.cutY) * 1000 * C3D.vscale, G.rg.z1 * 1000));
+  const b = new THREE.Box3(new THREE.Vector3(bx0 - 1, 0, bz0), new THREE.Vector3(bx1 + 1, Math.min(G.box.max[1], G.cutY) * 1000 * C3D.vscale, bz1));
   V3.bounds = b;
 }
 /** The solved flow: the region's outer faces (the blade's underside, the exit face and the free surface on top; the
@@ -688,9 +704,12 @@ function v3SceneSolved(G, R, grp) {
   // (the solve's z is from the region's middle: placed where the region is across the web, as the blade is)
   const pos = new Float32Array(3 * N), zo = R.zOff || 0;
   for (let n = 0; n < N; n++) { pos[3 * n] = R.x[n] * 1000; pos[3 * n + 1] = R.y[n] * 1000; pos[3 * n + 2] = (R.z[n] + zo) * 1000; }
+  const turn = v3Machine(R.skew, R.xe * 1000, zo * 1000);   // (the result's own skew)
+  if (turn) turn(pos);
   const col = v => new THREE.Color(cssVar(v)), lines = C3D.stream ? v3Streamlines(R) : null, see = C3D.field !== 'none' || !!lines;
   if (C3D.blade && G.tris) {
     const g = new THREE.BufferGeometry(); const mm = Float32Array.from(G.tris, v => v * 1000);
+    if (turn) turn(mm);
     g.setAttribute('position', new THREE.BufferAttribute(mm, 3)); g.computeVertexNormals();
     const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), G.cutY * 1000 * C3D.vscale);
     grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--blade'), roughness: 0.65, metalness: 0.15, side: THREE.DoubleSide, flatShading: true, clippingPlanes: [cut], transparent: see, opacity: see ? 0.22 : 1, depthWrite: !see })));
@@ -722,15 +741,16 @@ function v3SceneSolved(G, R, grp) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(li);
     grp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col('--ink'), transparent: true, opacity: C3D.field !== 'none' ? 0.25 : 0.35 })));
   }
-  if (lines) grp.add(v3Tubes(R, lines, pos));
-  let xMax = 0, yMax = 0, zMin = Infinity, zMax = -Infinity;
-  for (let n = 0; n < N; n++) { xMax = Math.max(xMax, pos[3 * n]); yMax = Math.max(yMax, pos[3 * n + 1]); zMin = Math.min(zMin, pos[3 * n + 2]); zMax = Math.max(zMax, pos[3 * n + 2]); }
+  if (lines) grp.add(v3Tubes(R, lines, pos, turn));
+  let xMin = Infinity, xMax = 0, yMax = 0, zMin = Infinity, zMax = -Infinity;
+  for (let n = 0; n < N; n++) { xMin = Math.min(xMin, pos[3 * n]); xMax = Math.max(xMax, pos[3 * n]); yMax = Math.max(yMax, pos[3 * n + 1]); zMin = Math.min(zMin, pos[3 * n + 2]); zMax = Math.max(zMax, pos[3 * n + 2]); }
+  xMin = Math.min(0, xMin);
   if (C3D.web) {
-    const x0 = -2, x1 = xMax + 2, z0 = zMin - 2, z1 = zMax + 2;
+    const x0 = xMin - 2, x1 = xMax + 2, z0 = zMin - 2, z1 = zMax + 2;
     const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, -0.001, (z0 + z1) / 2);
     grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--fibre'), roughness: 0.9, side: THREE.DoubleSide })));
   }
-  V3.bounds = new THREE.Box3(new THREE.Vector3(-1, 0, zMin), new THREE.Vector3(xMax + 1, Math.min(yMax, G.cutY ? G.cutY * 1000 : yMax) * C3D.vscale, zMax));
+  V3.bounds = new THREE.Box3(new THREE.Vector3(xMin - 1, 0, zMin), new THREE.Vector3(xMax + 1, Math.min(yMax, G.cutY ? G.cutY * 1000 : yMax) * C3D.vscale, zMax));
 }
 /** The streamlines of a result (cfd-3d-stream.js), kept for it and the density. */
 function v3Streamlines(R) {
@@ -743,7 +763,7 @@ function v3Streamlines(R) {
 }
 /** The streamlines as round tubes (in the scene's mm, heights drawn C3D.vscale times larger; the tube's own scale undoes
  *  the group's so its section stays round), coloured along their length by the field shown on the same scale as the faces. */
-function v3Tubes(R, lines, pos) {
+function v3Tubes(R, lines, pos, turn) {
   const vs = C3D.vscale, zo = R.zOff || 0, NL = R.NL, NR = R.NR, id = (c, l, k) => (c * NL + l) * NR + k;
   let xMax = 0, yMax = 0, zMin = Infinity, zMax = -Infinity, hEdge = Infinity;
   for (let n = 0; n < pos.length / 3; n++) { xMax = Math.max(xMax, pos[3 * n]); yMax = Math.max(yMax, pos[3 * n + 1]); zMin = Math.min(zMin, pos[3 * n + 2]); zMax = Math.max(zMax, pos[3 * n + 2]); }
@@ -759,6 +779,7 @@ function v3Tubes(R, lines, pos) {
     const pts = [], cc = ln.cc, p = ln.pos, n = p.length / 3;
     for (let i = 0; i < n; i++) {
       const q = [p[3 * i] * 1000, p[3 * i + 1] * 1000 * vs, (p[3 * i + 2] + zo) * 1000];
+      if (turn) turn(q);
       const last = pts[pts.length - 1];
       if (i && i < n - 1 && last && Math.hypot(q[0] - last.q[0], q[1] - last.q[1], q[2] - last.q[2]) < rad) continue;
       pts.push({ q, i });

@@ -18,7 +18,7 @@ function oneDGeo(i) {
 /** At z (mm) across the web: the shared inputs with that position's gap and contact angle (no location's own values). */
 function oneDGeoAt(z) {
   const uses = RHEO_MODELS[CFDG.model].uses;
-  return { ...oneDGeo(0), z, U: P.U / 60, H: cfdLocalGapMm(z) / 1000, contactDeg: cfdLocalContactDeg(z), Pup: P.Pup * 1000, muRef: P.mu,
+  return { ...oneDGeo(0), z, U: P.U / 60 * Math.cos(skewRad()), H: cfdLocalGapMm(z) / 1000, contactDeg: cfdLocalContactDeg(z), Pup: P.Pup * 1000, muRef: P.mu,
     ty: uses.includes('ty') ? P.ty : 0, n: uses.includes('n') ? P.n : 1, gamma: P.g };
 }
 const oneDRipple = () => ({ dHum: P.dH, vibUm: P.vib, lamMm: P.lam });

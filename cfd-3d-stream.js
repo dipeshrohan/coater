@@ -6,14 +6,16 @@
  * mesh's own coordinates (C, L, K), continuous from element to element: in each element the position and velocity are
  * its quadratic interpolation of the nodes', and d(C, L, K)/dt = J⁻¹ (u, v, w), J the element's map to x, y, z. So a
  * line crosses elements exactly and cannot leave the flow: K is held between the web and the blade or free surface,
- * L between the region's sides; it ends at the outlet, back out of the inlet, where the flow stops, or after maxSteps.
+ * L between the region's sides (open sides -- a skewed blade's, the flow passing through them -- end a line that
+ * leaves through one); it ends at the outlet, back out of the inlet, where the flow stops, or after maxSteps.
  *
  * Seeds: at the inlet, spaced by equal flow rate up the gap (so lines crowd where the flow is fast, as the 2D's
  * automatic seeds), at evenly spaced stations across the region.
  *
- * streamlines3D(R, { across, up, step, maxSteps }) -> { lines: [{ pos: Float64Array (x, y, z per point, m),
- *   cc: Float64Array (C, L, K per point), end: 'outlet' | 'inlet' | 'stalled' | 'steps' }], seeds: [[C, L, K]] }
- * traceLine3D(R, [C, L, K], { step, maxSteps, sign }): one line from a point (sign -1: against the flow)
+ * streamlines3D(R, { across, up, step, maxSteps, open }) -> { lines: [{ pos: Float64Array (x, y, z per point, m),
+ *   cc: Float64Array (C, L, K per point), end: 'outlet' | 'inlet' | 'side' | 'stalled' | 'steps' }], seeds: [[C, L, K]] }
+ * traceLine3D(R, [C, L, K], { step, maxSteps, sign, open }): one line from a point (sign -1: against the flow; open: the
+ *   region's sides let the flow through, default for a result with a skewed blade, R.skew)
  *   R: a 3D result (NC, NR, NL; x, y, z, u, v, w per node, m and m/s); step: the largest move of C, L or K a step (0.05:
  *   the lines then follow the solved flow as closely as its mesh resolves it; maxSteps: 4 times the mesh across)
  * sample3D(R, vals, C, L, K): a node array's value at (C, L, K)
@@ -81,7 +83,7 @@ function sl3InletSeeds(R, L, n, c0) {
 }
 
 /** One line from (C, L, K) with the flow (sign -1: against it). */
-function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1 } = {}) {
+function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1, open = !!R.skew } = {}) {
   const C1 = R.NC - 1, L1 = R.NL - 1, K1 = R.NR - 1, w = sl3Work();
   maxSteps = maxSteps || Math.ceil(4 * (C1 + L1 + K1) / step);   // (a line four times as long as the mesh is across: a loop)
   const clampL = L => Math.min(L1, Math.max(0, L)), clampK = K => Math.min(K1, Math.max(0, K));
@@ -99,8 +101,13 @@ function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1 } = {}) {
     f(C + 0.5 * h * k1[0], clampL(L + 0.5 * h * k1[1]), clampK(K + 0.5 * h * k1[2]), k2);
     f(C + 0.5 * h * k2[0], clampL(L + 0.5 * h * k2[1]), clampK(K + 0.5 * h * k2[2]), k3);
     f(C + h * k3[0], clampL(L + h * k3[1]), clampK(K + h * k3[2]), k4);
-    const Cn = C + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
-    const Ln = clampL(L + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])), Kn = clampK(K + h / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]));
+    const Cn = C + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]), Lr = L + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+    const Ln = clampL(Lr), Kn = clampK(K + h / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]));
+    // (out through an open side first: the last point on that side)
+    if (open && (Lr > L1 || Lr < 0)) {
+      const b = Lr > L1 ? L1 : 0, t = (b - L) / (Lr - L), Ct = C + t * (Cn - C);
+      if (Ct < C1 && Ct > 0) { C = Ct; L = b; K = K + t * (Kn - K); push(); end = 'side'; break; }
+    }
     // (out of the outlet or back out of the inlet: the last point on that face)
     if (Cn >= C1 || Cn <= 0) { const b = Cn >= C1 ? C1 : 0, t = (b - C) / (Cn - C); C = b; L = L + t * (Ln - L); K = K + t * (Kn - K); push(); end = b ? 'outlet' : 'inlet'; break; }
     C = Cn; L = Ln; K = Kn;
@@ -109,13 +116,13 @@ function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1 } = {}) {
   return { pos: Float64Array.from(pos), cc: Float64Array.from(cc), end };
 }
 
-function streamlines3D(R, { across = 6, up = 10, step = 0.05, maxSteps } = {}) {
+function streamlines3D(R, { across = 6, up = 10, step = 0.05, maxSteps, open } = {}) {
   const L1 = R.NL - 1, c0 = 1e-3, seeds = [];
   for (let a = 0; a < across; a++) {
     const L = L1 * (a + 0.5) / across;
     for (const K of sl3InletSeeds(R, L, up, c0)) seeds.push([c0, L, K]);
   }
-  return { lines: seeds.map(sd => traceLine3D(R, sd, { step, maxSteps })), seeds };
+  return { lines: seeds.map(sd => traceLine3D(R, sd, { step, maxSteps, open })), seeds };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { streamlines3D, traceLine3D, sample3D, sl3Eval, sl3Work, sl3InletSeeds };

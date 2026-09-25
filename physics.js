@@ -38,6 +38,7 @@ const CFG = [
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
   { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120 },
   { k: 'tilt', l: 'Blade tilt across the web', min: -500, max: 500, step: 5, u: 'µm', d: 0, v: 0, h: 'gap difference edge to edge, centred; + wider at z = 300 mm' },
+  { k: 'skew', l: 'Blade skew across the web', min: -5, max: 5, step: 0.1, u: '°', d: 1, v: 0, h: 'edge\'s angle to the cross direction; + its end at z = 300 mm further downstream' },
   { k: 'dt', l: 'Fibre thickness variation', min: 0, max: 60, step: 1, u: 'µm', d: 0, v: 10 },
   { k: 'dth', l: 'Wetting variation on blade', min: 0, max: 20, step: 0.5, u: '°', d: 1, v: 4, h: 'contamination, residue' },
 
@@ -217,6 +218,10 @@ function rippleLevelling() {
  *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation. */
 const localGap = z => gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000;
 const localContactAngle = z => P.th + P.dth * spatialNoise(z, 4.1);
+/** The blade skewed across the web: its metering edge at P.skew degrees to the cross direction (+: the end at z = 300 mm
+ *  further downstream). The 1D, 2D and 3D work in the blade's frame: the web crosses the blade at U cos(skew) and moves
+ *  along it at U sin(skew); distances along the flow are measured across the blade (the oven's: oven cos(skew)). */
+const skewRad = () => (P.skew || 0) * Math.PI / 180;
 
 /**
  * Dimensionless checks on whether the thin-film/lubrication assumptions

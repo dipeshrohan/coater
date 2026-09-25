@@ -314,7 +314,7 @@ const cfdLocalContactDeg = z => P.th + P.dth * spatialNoise(z, 4.1);
 
 function cfdGeometry(i) {
   const z = CFD_LOCS[i].z, v = k => locInput(i, k), uses = RHEO_MODELS[CFDG.model].uses;
-  const U = v('U') / 60;                    // m/min -> m/s
+  const U = v('U') / 60 * Math.cos(skewRad());   // m/min -> m/s; across the blade (skewed: the web's speed x cos(skew))
   const H = v('gap') / 1000;                // mm -> m, gap at the metering edge
   const ty = uses.includes('ty') ? v('ty') : 0, n = uses.includes('n') ? v('n') : 1; // the model's parameters
   return {
@@ -323,7 +323,7 @@ function cfdGeometry(i) {
     Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
     muRep: muLaw(U / H, v('mu'), ty, n),    // at the representative shear rate U/H: one-viscosity estimates only
-    model: CFDG.model, ty, n, rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven,
+    model: CFDG.model, ty, n, rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven * Math.cos(skewRad()),   // (across the blade)
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
     solver: cfdSolverFor(i, H), solverOwn: Object.keys(CFD_LOCS[i].solver),
   };

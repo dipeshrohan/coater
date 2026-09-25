@@ -8,6 +8,8 @@
  *     station and are the 2D's streamlines there (the 2D stream function as constant along them as along the 2D's own).
  *  4. The same with the gap varying across the strip (flow across it): a line traced to the outlet and back against
  *     the flow returns to its seed, closer as the step shrinks.
+ *  5. Open sides (a skewed blade's): a uniform flow crossing the region's side -- the lines that reach it end on it,
+ *     still straight; closed (the default without skew), they stay in the region to the outlet.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -52,6 +54,23 @@ function curvedMesh(nEx, nEz, nEy, vel) {
   const ks = seeds.filter(s => Math.abs(s[1] - seeds[0][1]) < 1e-12).map(s => s[2]), K1 = R.NR - 1;
   const want = ks.map((_, i) => (i + 0.5) / ks.length * K1);
   check('  seeds share the inlet flow equally', ks.every((k, i) => Math.abs(k - want[i]) < 1e-3), `K ${ks.map(k => k.toFixed(3)).join(' ')}`);
+}
+
+// 5. open sides: a uniform flow crossing one
+{
+  const U = [1e-3, 0, 0.3e-3], R = curvedMesh(6, 3, 2, () => U), L1 = R.NL - 1;
+  const open = streamlines3D(R, { across: 3, up: 4, open: true }).lines, shut = streamlines3D(R, { across: 3, up: 4 }).lines;
+  let dev = 0, off = 0, len = 0;
+  for (const ln of open) {
+    const p = ln.pos, n = p.length / 3;
+    len = Math.max(len, Math.hypot(p[p.length - 3] - p[0], p[p.length - 1] - p[2]));
+    for (let i = 0; i < n; i++) dev = Math.max(dev, Math.abs(p[3 * i + 1] - p[1]), Math.abs(p[3 * i + 2] - p[2] - (p[3 * i] - p[0]) * U[2] / U[0]));
+    if (ln.end === 'side') off = Math.max(off, Math.abs(ln.cc[ln.cc.length - 2] - L1));
+  }
+  const sides = open.filter(l => l.end === 'side').length, outs = open.filter(l => l.end === 'outlet').length;
+  check('open sides: the lines that reach a side end on it, still straight; the rest reach the outlet', sides > 0 && outs > 0 && sides + outs === open.length && off === 0 && dev < 1e-6 * len,
+    `${sides} end on the side (exactly on it), ${outs} at the outlet; largest deviation from straight ${dev.toExponential(1)} m over ${(len * 1e3).toFixed(1)} mm`);
+  check('  closed (no skew): they stay in the region to the outlet', shut.every(l => l.end === 'outlet'), `${shut.length} lines, all to the outlet`);
 }
 
 // 2. a quadratic node field, interpolated exactly

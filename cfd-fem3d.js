@@ -67,11 +67,13 @@ const F3_BOTTOM = f3FaceRule('eta', -1), F3_TOP = f3FaceRule('eta', 1), F3_INLET
  * Solve. Options (as solveFEM's in cfd-fem.js, one dimension up):
  *   mesh: { nEx, nEy, nEz, spineFoot(c, l), spineTop(c, l, st) -> [x, y], spineSlope?(c, l, st), eta?(k), z(l), kind(c): 'wall' | 'free' }
  *     st = { h: Float64Array(NC*NL) (free spines' heights, index c*NL + l), s: Float64Array(NL) (contact line up the face) }
- *   U (web speed, along x), rho, g, gamma, mu(gd), gdMin, Hr, Ur (length and speed scales)
+ *   U (web speed, along x), webW (the web's speed along z: a blade skewed across the web, whose frame this is; 0),
+ *   rho, g, gamma, mu(gd), gdMin, Hr, Ur (length and speed scales)
  *   inlet: { type: 'traction', p(y) } | { type: 'wall' }; outlet: { type: 'plug' } | { type: 'traction', p(y) } | { type: 'wall' }
  *   sides: 'symmetry' (default) | 'wall'; topSpeed (moving top wall, along x); webSlip (Beavers–Joseph alpha / sqrt k, 1/m)
  *   sideData: { lo, hi } a side held at a neighbouring strip's solution instead: { u, v, w (at the station's nodes c*NR + k,
- *     m/s), p (Pa, there), h (the free spines' heights, m, per c), s (the contact line, m) } (a region solved strip by strip)
+ *     m/s), p (Pa, there), h (the free spines' heights, m, per c), s (the contact line, m) } (a region solved strip by strip;
+ *     with webW both sides must be held: the flow along the blade passes through them)
  *   contactLine: { spine, faceFrom, alphaDeg (a number, or one per station) } or null; freeze (surface fixed)
  *   init: { sol, h, s } a previous state on the same layout; initNodal: { u, v, w, p } at the nodes (dimensional)
  *   homotopy, tol, maxIter, onIteration, label, onSolveStart, onSolveEnd
@@ -101,7 +103,8 @@ function solveFEM3D(o) {
   const muTan = gd => { if (!(gd > 0)) return muStar(0); const d = 1e-5, a = gd * (1 + d), b = gd * (1 - d); return (muStar(a) * a - muStar(b) * b) / (a - b); };
   const Re = rho * Ur * Hr / muR, Gr = rho * grav * Hr * Hr / (muR * Ur);
   const invCa = gamma ? gamma / (muR * Ur) : 0;
-  const Us = U / Ur, Uts = Utop / Ur;
+  const Us = U / Ur, Uts = Utop / Ur, Ws = (o.webW || 0) / Ur;
+  if (Ws && !o.exactBC && !(sideOf(0) && sideOf(NL - 1))) throw new Error('a web moving along the blade (webW) needs both sides held (sideData lo and hi)');
 
   // ---- unknowns, column by column along the flow: u, v, w per node, p per vertex, then the column's spine heights ----
   const dU = new Int32Array(NN), dV = new Int32Array(NN), dW = new Int32Array(NN), dP = new Int32Array(NN).fill(-1), dH = new Int32Array(NC * NL).fill(-1);
@@ -153,15 +156,15 @@ function solveFEM3D(o) {
   } else {
     for (let c = 0; c < NC; c++) for (let l = 0; l < NL; l++) {
       const b = nid(c, l, 0), t = nid(c, l, NR - 1);
-      if (!lamS) { setDir(dU[b], Us); setDir(dW[b], 0); }
+      if (!lamS) { setDir(dU[b], Us); setDir(dW[b], Ws); }
       setDir(dV[b], 0);                                                        // web
       if (!free[c]) { setDir(dU[t], Uts); setDir(dV[t], 0); setDir(dW[t], 0); }  // blade / face / contact line
     }
     for (let l = 0; l < NL; l++) for (let k = 0; k < NR; k++) {
       const i = nid(0, l, k), e = nid(NC - 1, l, k);
-      setDir(dV[i], 0); setDir(dW[i], 0);                                        // inlet: no cross-flow
+      setDir(dV[i], 0); if (!Ws) setDir(dW[i], 0);                               // inlet: no cross-flow (the web moving along the blade: free)
       if (o.inlet.type === 'wall') setDir(dU[i], 0);
-      if (o.outlet.type === 'plug') { setDir(dU[e], Us); setDir(dV[e], 0); setDir(dW[e], 0); }
+      if (o.outlet.type === 'plug') { setDir(dU[e], Us); setDir(dV[e], 0); setDir(dW[e], Ws); }   // (the film moves with the web)
       else if (o.outlet.type === 'wall') { setDir(dU[e], 0); setDir(dV[e], 0); setDir(dW[e], 0); }
       else { setDir(dV[e], 0); setDir(dW[e], 0); }
     }
@@ -309,7 +312,7 @@ function solveFEM3D(o) {
   }
 
   // ---- boundary terms ----
-  /** Beavers–Joseph slip on the web under element (ex, ez): tau = mu lamS (u - U) along x, mu lamS w across; out[27]: u rows, [27..53]: w rows of the bottom face nodes (element-local a + 27 g... as 9 face nodes). */
+  /** Beavers–Joseph slip on the web under element (ex, ez): tau = mu lamS (u - U) along x, mu lamS (w - webW) across; out[27]: u rows, [27..53]: w rows of the bottom face nodes (element-local a + 27 g... as 9 face nodes). */
   const slipOut = new Float64Array(18);
   function slipFace(ex, ez) {
     slipOut.fill(0);
@@ -333,7 +336,7 @@ function solveFEM3D(o) {
       const Dxy = 0.5 * (uy + vx), Dxz = 0.5 * (uz + wx), Dyz = 0.5 * (vz + wy);
       const gd = Math.sqrt(2 * (ux * ux + vy * vy + wz * wz) + 4 * (Dxy * Dxy + Dxz * Dxz + Dyz * Dyz));
       const m = muStar(gd) * lamS;
-      for (let j = 0; j < 9; j++) { slipOut[j] += f.w * m * (u - Us) * f.N2[j] * dA; slipOut[9 + j] += f.w * m * w * f.N2[j] * dA; }
+      for (let j = 0; j < 9; j++) { slipOut[j] += f.w * m * (u - Us) * f.N2[j] * dA; slipOut[9 + j] += f.w * m * (w - Ws) * f.N2[j] * dA; }
     }
   }
   const bottomNode = (ex, ez, j) => nid(2 * ex + (j % 3), 2 * ez + Math.floor(j / 3), 0);
@@ -684,6 +687,69 @@ function solveFEM3D(o) {
 }
 
 /**
+ * The flow along the blade at a station, from its 2D solution (the blade skewed across the web: the web moves along it at
+ * webW): d/dx(mu dw/dx) + d/dy(mu dw/dy) = 0 on the station's mesh (its 9-node elements) -- the station as if the blade went
+ * on unchanged along it (nothing varies along it, no pressure along it). The viscosity at each quadrature point from the
+ * shear rate there, as the 3D solver takes it (the 2D's in-plane shear and this flow's own, a few passes until they agree;
+ * mu(gd) the law, gdMin its floor), not interpolated between nodes (a yield-stress slurry's viscosity jumps within an element).
+ * w = webW on the web (or, with slip, mu dw/dy = mu slip (w - webW) there), 0 on the blade and exit face, webW at the
+ * outlet (the film moves with the web); no shear on the free surface and at the inlet (outlet: 'free' for checks).
+ * r: solveCoaterFEM's result with keepMesh (x, y, u, v, NC, NR, meshDef). Returns w at the nodes (c*NR + k), m/s.
+ */
+function stationLateral(r, webW, { webSlip = 0, outlet = 'plug', mu, gdMin = 0, passes = 4 } = {}) {
+  const NC = r.NC, NR = r.NR, N = NC * NR, nEx = (NC - 1) / 2, nEy = (NR - 1) / 2, kind = r.meshDef && r.meshDef.mesh.kind;
+  const kl = 2 * NR + 2, W = 3 * kl + 1;
+  const G = [-Math.sqrt(0.6), 0, Math.sqrt(0.6)], GW = [5 / 9, 8 / 9, 5 / 9];
+  const q = (t, o) => { o[0] = 0.5 * t * (t - 1); o[1] = 1 - t * t; o[2] = 0.5 * t * (t + 1); }, dq = (t, o) => { o[0] = t - 0.5; o[1] = -2 * t; o[2] = t + 0.5; };
+  const qa = new Float64Array(3), qb = new Float64Array(3), da = new Float64Array(3), db = new Float64Array(3), nodes = new Int32Array(9), Nx = new Float64Array(9), Ny = new Float64Array(9);
+  // (no law given, checks: the nodes' viscosity, interpolated in its logarithm so it stays positive)
+  const muAt = (gd, i) => mu ? mu(Math.sqrt(gd * gd + gdMin * gdMin)) : Math.exp(i);
+  let w = new Float64Array(N);
+  for (let pass = 0; pass < passes; pass++) {
+    const A = new Float64Array(N * W), b = new Float64Array(N);
+    const add = (i, j, v) => { A[i * W + j - i + kl] += v; };
+    for (let ex = 0; ex < nEx; ex++) for (let ey = 0; ey < nEy; ey++) {
+      for (let a = 0; a < 3; a++) for (let c = 0; c < 3; c++) nodes[a * 3 + c] = (2 * ex + a) * NR + 2 * ey + c;
+      for (let gi = 0; gi < 3; gi++) for (let gj = 0; gj < 3; gj++) {
+        q(G[gi], qa); q(G[gj], qb); dq(G[gi], da); dq(G[gj], db);
+        let xs = 0, xt = 0, ys = 0, yt = 0, lm = 0;
+        for (let a = 0; a < 3; a++) for (let c = 0; c < 3; c++) {
+          const n = nodes[a * 3 + c], Ns = da[a] * qb[c], Nt = qa[a] * db[c];
+          xs += Ns * r.x[n]; xt += Nt * r.x[n]; ys += Ns * r.y[n]; yt += Nt * r.y[n]; if (!mu) lm += qa[a] * qb[c] * Math.log(r.mu[n]);
+        }
+        const det = xs * yt - xt * ys;
+        let ux = 0, uy = 0, vx = 0, vy = 0, wx = 0, wy = 0;
+        for (let a = 0; a < 3; a++) for (let c = 0; c < 3; c++) {
+          const i = a * 3 + c, n = nodes[i], Ns = da[a] * qb[c], Nt = qa[a] * db[c];
+          Nx[i] = (yt * Ns - ys * Nt) / det; Ny[i] = (-xt * Ns + xs * Nt) / det;
+          ux += r.u[n] * Nx[i]; uy += r.u[n] * Ny[i]; vx += r.v[n] * Nx[i]; vy += r.v[n] * Ny[i]; wx += w[n] * Nx[i]; wy += w[n] * Ny[i];
+        }
+        const gd = Math.sqrt(2 * (ux * ux + vy * vy) + (uy + vx) * (uy + vx) + wx * wx + wy * wy);
+        const wq = GW[gi] * GW[gj] * Math.abs(det) * muAt(gd, lm);
+        for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) add(nodes[i], nodes[j], wq * (Nx[i] * Nx[j] + Ny[i] * Ny[j]));
+        // slip on the web under the element: mu slip (w - webW) along its bottom edge, mu at this column's bottom quadrature point
+        if (webSlip && ey === 0 && gj === 0) {
+          let es = 0, et = 0;
+          for (let a = 0; a < 3; a++) { const n = nodes[a * 3]; es += da[a] * r.x[n]; et += da[a] * r.y[n]; }
+          const ws = GW[gi] * Math.hypot(es, et) * muAt(gd, lm) * webSlip;
+          for (let a = 0; a < 3; a++) { b[nodes[a * 3]] += ws * webW * qa[a]; for (let c = 0; c < 3; c++) add(nodes[a * 3], nodes[c * 3], ws * qa[a] * qa[c]); }
+        }
+      }
+    }
+    const dir = (n, v) => { for (let j = Math.max(0, n - kl); j <= Math.min(N - 1, n + kl); j++) A[n * W + j - n + kl] = 0; A[n * W + kl] = 1; b[n] = v; };
+    for (let c = 0; c < NC; c++) {
+      if (!webSlip) dir(c * NR, webW);                                        // the web
+      if (!kind || kind(c) !== 'free') dir(c * NR + NR - 1, 0);                // the blade, the exit face up to the contact line
+    }
+    if (outlet === 'plug') for (let k = 0; k < NR; k++) dir((NC - 1) * NR + k, webW);
+    const f = bandFactor(A, N, kl, kl);
+    bandSolve(A, f, N, kl, kl, b);
+    w = b;
+    if (!mu) break;   // (fixed viscosity: one pass)
+  }
+  return w;
+}
+/**
  * Each station across a region solved in 2D at its own gap and contact angle (solveCoaterFEM, its mesh
  * layout kept), with the same number of elements up the exit face at every station: those layouts side
  * by side are the 3D mesh, and those solutions its starting state. The meniscus mode (pinned at the edge,
@@ -691,7 +757,8 @@ function solveFEM3D(o) {
  * opts: solveCoaterFEM's, and dH(z), contactAt(z), hAt(z) (see solveCoater3D); zs: the stations (m, from
  * the region's reference); ref: the station whose 2D sets the face elements (default the middle); only: a
  * set of the stations to solve (the rest left empty; ref is always solved -- a worker's share of a wide region).
- * Returns { r2: per station, M: their meshes, mode, climbed, cCL, cCorner, NC, NR, H, ms } or { error }.
+ * With opts.webW (a skewed blade), each solved station's flow along the blade too (stationLateral): w2.
+ * Returns { r2: per station, w2, M: their meshes, mode, climbed, cCL, cCorner, NC, NR, H, ms } or { error }.
  */
 function coaterStations(opts, zs, ref = (zs.length - 1) >> 1, only = null) {
   const log = t => opts.onStage && opts.onStage(t), NL = zs.length, t0 = Date.now();
@@ -714,10 +781,13 @@ function coaterStations(opts, zs, ref = (zs.length - 1) >> 1, only = null) {
       return { error: `the meniscus is ${mode} at ${(zs[ref] * 1e3).toFixed(1)} mm but ${r.meniscus.mode} at ${(zs[l] * 1e3).toFixed(1)} mm: a region where it changes is not modelled`, r2 };
     r2[l] = r;
   }
-  return { r2, M: r2.map(r => r.meshDef.mesh), zs, thl, mode, climbed, cCL: m0.cCL, cCorner: m0.cCorner, NC: m0.NC, NR: 2 * m0.mesh.nEy + 1, H: hl(ref)(opts.xe), ms: Date.now() - t0 };
+  const w2 = opts.webW ? r2.map(r => r ? stationLateral(r, opts.webW, { webSlip: opts.webSlip, mu: opts.mu, gdMin: opts.gdMin }) : null) : null;
+  return { r2, w2, M: r2.map(r => r ? r.meshDef.mesh : null), zs, thl, mode, climbed, cCL: m0.cCL, cCorner: m0.cCorner, NC: m0.NC, NR: 2 * m0.mesh.nEy + 1, H: hl(ref)(opts.xe), ms: Date.now() - t0 };
 }
-/** A station's state from its 2D solution: u, v, w, p at its nodes (c*NR + k), the free spines' heights, the contact line. */
-const stationFrom2D = r => ({ u: Float64Array.from(r.u), v: Float64Array.from(r.v), w: new Float64Array(r.u.length), p: Float64Array.from(r.p), h: Float64Array.from(r.state.h), s: r.surface.s });
+/** A station's state from its 2D solution: u, v, w, p at its nodes (c*NR + k), the free spines' heights, the contact line (w: its flow along the blade, or none). */
+const stationFrom2D = (r, w) => ({ u: Float64Array.from(r.u), v: Float64Array.from(r.v), w: w ? Float64Array.from(w) : new Float64Array(r.u.length), p: Float64Array.from(r.p), h: Float64Array.from(r.state.h), s: r.surface.s });
+/** Station l's state from the station set's 2D (with its flow along the blade when the web moves along it). */
+const stationState = (S, l) => stationFrom2D(S.r2[l], S.w2 && S.w2[l]);
 /** Station j's state from a 3D result (and its node positions, shear rate, viscosity, flow rate, for the output). */
 function stationFrom3D(r3, j) {
   const NC = r3.NC, NR = r3.NR, NL = r3.NL, n = NC * NR, o = { u: new Float64Array(n), v: new Float64Array(n), w: new Float64Array(n), p: new Float64Array(n), x: new Float64Array(n), y: new Float64Array(n), z: new Float64Array(n), gd: new Float64Array(n), mu: new Float64Array(n), h: new Float64Array(NC) };
@@ -730,8 +800,8 @@ function stationFrom3D(r3, j) {
 }
 /**
  * The 3D over stations l0..l1 (an even count of intervals) of a station set: their 2D meshes side by side;
- * each side symmetric, or held at the station's current state (sideLo / sideHi: a neighbouring strip's);
- * starting from the stations' states.
+ * each side symmetric, or held at the station's current state (sideLo / sideHi: a neighbouring strip's, or, the web
+ * moving along the blade (opts.webW), the station's own: its flow as if the blade went on unchanged); starting from the stations' states.
  */
 function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, extra = {}) {
   const NL = l1 - l0 + 1, nEz = (NL - 1) / 2, NC = S.NC, NR = S.NR, M = S.M;
@@ -755,7 +825,7 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
   }
   const side = T => ({ u: T.u, v: T.v, w: T.w, p: T.p, h: T.h, s: S.climbed ? T.s : null });
   return solveFEM3D({
-    mesh, U: opts.U, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: S.H, Ur: Math.abs(opts.U) || 1e-3,
+    mesh, U: opts.U, webW: opts.webW || 0, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: S.H, Ur: Math.abs(opts.U) || 1e-3,
     inlet: { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
     sideData: sideLo || sideHi ? { lo: sideLo ? side(state[l0]) : null, hi: sideHi ? side(state[l1]) : null } : null,
     h0: (c, j) => state[l0 + j].h[c], s0: S.climbed ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
@@ -771,7 +841,8 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
  *   nEf, nEs, nEy, ...) for the middle, and width (m), nEz (elements across), dH(z) (the gap's change at z,
  *   m, from the middle's; z from -width/2 to width/2), contactAt(z) (the contact angle there, deg; default
  *   contactDeg everywhere), hAt(z) (instead of hFn and dH: the blade's underside at z, a function of x --
- *   a blade read from a file), maxIter3, onStage, onIteration3.
+ *   a blade read from a file), webW (the web's speed along the blade: a blade skewed across the web, whose frame this
+ *   is; U then the web's speed across it), maxIter3, onStage, onIteration3.
  * Returns { r2 (the 2D results per station), r3 (solveFEM3D's), stations: [{ z, dH, film, q, s, film2, s2 }], error? }.
  */
 function solveCoater3D(opts) {
@@ -780,7 +851,8 @@ function solveCoater3D(opts) {
   if (S.error) return { error: S.error, r2: S.r2 };
   opts.onStage && opts.onStage(`3D: ${S.NC * NL * S.NR} nodes`);
   const t1 = Date.now();
-  const r3 = coaterStrip3D(opts, S, 0, NL - 1, S.r2.map(stationFrom2D), false, false, { label: '3D strip' });
+  const open = !!opts.webW;   // (the web moving along the blade: the sides held at their stations' own flow)
+  const r3 = coaterStrip3D(opts, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), open, open, { label: '3D strip' });
   const ms3 = Date.now() - t1, NC = S.NC, NR = S.NR;
   const stations = zs.map((z, l) => {
     const top = ((NC - 1) * NL + l) * NR + NR - 1;
@@ -794,6 +866,7 @@ function solveCoater3D(opts) {
  * overlapping by overlap elements, each solved in 3D with its neighbours' latest solution held on its inner
  * sides, in two colours (alternate strips, then the others), sweep after sweep until the stations stop
  * changing (alternating Schwarz). Converges to the 3D solve of the whole region; memory: one strip at a time.
+ * The web moving along the blade (opts.webW): its two edges held at their own stations' flow (it leaves and enters freely).
  * opts: solveCoater3D's, and sub (default 4), overlap (default 2), maxSweeps (default 15), tolSweep (the
  *   largest change of film or contact line between sweeps, relative to the gap; default 1e-6), onSweep.
  * Returns { r2, state (per station: u, v, w, p, x, y, z, gd, mu, h, s, q), stations, sweeps, history, converged, ms2, ms3 }.
@@ -803,7 +876,7 @@ function solveCoaterWide(opts) {
   const sub = Math.min(opts.sub ?? 4, nEz), ov = Math.min(opts.overlap ?? 2, sub - 1), step = sub - ov;
   const S = coaterStations(opts, zs);
   if (S.error) return { error: S.error, r2: S.r2 };
-  const state = S.r2.map(stationFrom2D);
+  const state = zs.map((_, l) => stationState(S, l)), open = !!opts.webW;
   const subs = [];
   for (let e0 = 0; ; e0 += step) { const e1 = Math.min(nEz, e0 + sub); subs.push([2 * Math.max(0, e1 - sub), 2 * e1]); if (e1 === nEz) break; }
   const t1 = Date.now(), history = [];
@@ -814,9 +887,10 @@ function solveCoaterWide(opts) {
     for (const colour of [0, 1]) for (let i = colour; i < subs.length; i += 2) {
       const [l0, l1] = subs[i];
       opts.onStage && opts.onStage(`sweep ${sweeps + 1}: strip ${i + 1} of ${subs.length} (${(zs[l0] * 1e3).toFixed(0)} to ${(zs[l1] * 1e3).toFixed(0)} mm)`);
-      const r3 = coaterStrip3D(opts, S, l0, l1, state, l0 > 0, l1 < NL - 1, { label: `strip ${i + 1}` });
+      const lo = l0 > 0 || open, hi = l1 < NL - 1 || open;   // (the web's edges: held at their own stations' flow when the web moves along the blade)
+      const r3 = coaterStrip3D(opts, S, l0, l1, state, lo, hi, { label: `strip ${i + 1}` });
       if (!r3.converged) { err = `strip ${i + 1} (${(zs[l0] * 1e3).toFixed(0)} to ${(zs[l1] * 1e3).toFixed(0)} mm) did not converge in sweep ${sweeps + 1}`; break; }
-      for (let j = l0 > 0 ? 1 : 0; j <= (l1 < NL - 1 ? l1 - l0 - 1 : l1 - l0); j++) {
+      for (let j = lo ? 1 : 0; j <= (hi ? l1 - l0 - 1 : l1 - l0); j++) {
         const T = stationFrom3D(r3, j), old = state[l0 + j];
         const f0 = film(old), f1 = film(T);
         change = Math.max(change, f0 == null ? Infinity : Math.abs(f1 - f0) / S.H, S.climbed ? Math.abs(T.s - old.s) / S.H : 0);
@@ -828,7 +902,9 @@ function solveCoaterWide(opts) {
     opts.onSweep && opts.onSweep({ sweep: sweeps + 1, change });
     if (change < (opts.tolSweep ?? 1e-6)) converged = true;
   }
-  const stations = zs.map((z, l) => ({ z, dH: opts.dH ? opts.dH(z) : 0, film: film(state[l]), q: state[l].q, s: S.climbed ? state[l].s : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed ? S.r2[l].surface.s : 0 }));
+  // (the web's edges held at their own stations' flow, the web moving along the blade: those stations are their 2D's)
+  const top2 = l => S.r2[l].y[(S.NC - 1) * S.NR + S.NR - 1];
+  const stations = zs.map((z, l) => ({ z, dH: opts.dH ? opts.dH(z) : 0, film: film(state[l]) ?? top2(l), q: state[l].q ?? S.r2[l].Q, s: S.climbed ? state[l].s : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed ? S.r2[l].surface.s : 0 }));
   return { r2: S.r2, S, state, stations, subs, sweeps, history, converged: converged && !err, error: err || (converged ? undefined : `not converged after ${sweeps} sweeps (last change ${history[history.length - 1].toExponential(1)} of the gap)`), mode: S.mode, ms2: S.ms, ms3: Date.now() - t1 };
 }
 
@@ -847,5 +923,5 @@ function f3Dense(A, b) {
 
 if (typeof module !== 'undefined' && module.exports) {
   if (typeof solveCoaterFEM === 'undefined') global.solveCoaterFEM = require('./cfd-fem.js').solveCoaterFEM;
-  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, F3_QP, f3Shape };
+  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, stationState, stationLateral, F3_QP, f3Shape };
 }
