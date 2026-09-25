@@ -145,8 +145,8 @@ Phase C: 3D solver (one or more merges)
   possibly beyond a browser's memory. Convergence of a 3D free surface is not
   certain; if it cannot be made reliable this is reported, not hidden.
 
-Phase C status: the 3D solver is built and checked; the strip is solved on the page; the full width's
-method is built and checked, its page part next.
+Phase C status: built. The 3D solver is checked; the strip and the full web width are solved on
+the page.
 - cfd-fem3d.js: steady 3D Navier–Stokes, Taylor–Hood Q2–Q1 hexahedra on
   spines (the 2D's method one dimension up), generalized Newtonian, inertia,
   gravity, Beavers–Joseph slip over the web; the free surface as a height
@@ -196,6 +196,18 @@ method is built and checked, its page part next.
   edge mass balances see only half their elements and the sweeps settle
   0.26 µm off the whole-region answer. Checked: 60 mm solved as three
   overlapping strips equals the one-piece 3D solve to 0.02 nm in 4 sweeps.
+- The full width on the page: the shared inputs (a location's own inputs
+  are its own), the web's middle the reference; strips of 2 elements across
+  overlapping by 1, as many at once as the machine has cores (up to 4, one
+  left for the page), each worker keeping the 2D meshes of its strips'
+  stations; alternate strips, then the others; until the stations change by
+  less than 1e-5 of the gap between sweeps. In the browser, 9 stations
+  across the web (4 elements): 3 strips, 6 sweeps, 112 s, and the same answer
+  as the one-piece 3D solve of those inputs (film within 0.0004 µm, contact
+  line within 0.0017 µm). FULL30
+  The stations sample the variation across the web at their spacing
+  (shorter-scale variation is not resolved), and the web's edges are
+  symmetry planes (the edge bead is not modelled): both said on the page.
 - The page (ui-3d.js, cfd-3d-worker.js): Solve 3D (Ctrl+Enter, Esc stops)
   runs the strip in a worker (21 s at the defaults, coarse mesh); the view
   colours the flow by speed, pressure, shear rate, viscosity or cross-web

@@ -689,10 +689,11 @@ function solveFEM3D(o) {
  * by side are the 3D mesh, and those solutions its starting state. The meniscus mode (pinned at the edge,
  * or climbed up the face) must be the same at every station.
  * opts: solveCoaterFEM's, and dH(z), contactAt(z), hAt(z) (see solveCoater3D); zs: the stations (m, from
- * the region's reference); ref: the station whose 2D sets the face elements (default the middle).
+ * the region's reference); ref: the station whose 2D sets the face elements (default the middle); only: a
+ * set of the stations to solve (the rest left empty; ref is always solved -- a worker's share of a wide region).
  * Returns { r2: per station, M: their meshes, mode, climbed, cCL, cCorner, NC, NR, H, ms } or { error }.
  */
-function coaterStations(opts, zs, ref = (zs.length - 1) >> 1) {
+function coaterStations(opts, zs, ref = (zs.length - 1) >> 1, only = null) {
   const log = t => opts.onStage && opts.onStage(t), NL = zs.length, t0 = Date.now();
   const dHl = zs.map(z => (opts.dH ? opts.dH(z) : 0)), thl = zs.map(z => (opts.contactAt ? opts.contactAt(z) : opts.contactDeg));
   const hl = l => opts.hAt ? opts.hAt(zs[l]) : x => opts.hFn(x) + dHl[l];
@@ -704,7 +705,7 @@ function coaterStations(opts, zs, ref = (zs.length - 1) >> 1) {
   if (r0.error || !r0.meshDef || !r0.converged) return { error: `2D at ${(zs[ref] * 1e3).toFixed(1)} mm: ` + (r0.error || 'did not converge'), r2 };
   const mode = r0.meniscus.mode, climbed = mode === 'climbed', m0 = r0.meshDef, nF = (m0.cCL - m0.cCorner) / 2;
   for (let l = 0; l < NL; l++) {
-    if (l === ref) continue;
+    if (l === ref || (only && !only.has(l))) continue;
     if (!opts.hAt && dHl[l] === dHl[ref] && thl[l] === thl[ref]) { r2[l] = r0; continue; }
     log(`2D at ${(zs[l] * 1e3).toFixed(1)} mm${opts.hAt ? '' : ` (gap ${dHl[l] >= 0 ? '+' : ''}${(dHl[l] * 1e6).toFixed(1)} µm)`}`);
     const r = solve2(l, climbed ? { nFaceFixed: nF } : {});
