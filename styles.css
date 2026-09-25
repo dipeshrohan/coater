@@ -1103,9 +1103,7 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; -webkit-font-smoothing: antial
 .inputs-btn:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .inputs-btn[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 32%, var(--line)); color: var(--accent); }
 .inputs-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* the inputs bar: its button is in the tab bar now; on the Summary page it can be gone altogether */
-.tree-head .tree-toggle { display: none; }
-.tree-off .tree-head { display: none; }
+/* the inputs bar: hidden and shown by its own button and by the Inputs button in the tab bar; on the Summary page it can be gone altogether */
 .wb-body.tree-none { grid-template-columns: minmax(0, 1fr); }
 .wb-body.tree-none > .tree, .wb-body.tree-none > #treeSplit { display: none; }
 /* the status bar: on pages that show the validity line themselves (Results, the 1D), only while the CFD is solving */
