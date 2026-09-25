@@ -1326,3 +1326,111 @@ body:has(#pgScope) #scope { display: none; }
 .sum-more button > .ico-b { grid-row: 1 / span 2; width: 34px; height: 34px; border-radius: 10px; }
 .sum-more button > .ico-b .ui-i { width: 17px; height: 17px; }
 @media (max-width: 699px) { .sum-film > span { justify-content: flex-start; } }
+
+/* Flow › 2D and 3D as steps (cfd-steps.js): the step bar beside 1D | 2D | 3D */
+.step-bar { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 12px; background: var(--seg); flex: 0 1 auto; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.step-bar::-webkit-scrollbar { display: none; }
+.step-bar button { display: inline-flex; align-items: center; gap: 8px; padding: 4px 11px 4px 5px; border: 0; border-radius: 9px; background: none; color: var(--muted); font: 500 13px var(--sans); cursor: pointer; text-align: left; white-space: nowrap; }
+.step-bar button b { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; font: 600 11.5px var(--sans); background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.step-bar button b svg { width: 12px; height: 12px; }
+.step-bar button span { display: flex; flex-direction: column; line-height: 1.15; }
+.step-bar button small { font: 400 11px var(--sans); color: var(--muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.step-bar button:hover { color: var(--ink); }
+.step-bar button[aria-selected=true] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 1px 1px rgba(16, 24, 40, .04); }
+.step-bar button[aria-selected=true] b { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.step-bar button.st-done:not([aria-selected=true]) b { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); border-color: transparent; }
+.step-bar button.st-bad:not([aria-selected=true]) b { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); border-color: transparent; }
+.step-bar button.st-warn small { color: var(--warn); }
+.step-bar button.st-bad small { color: var(--bad); }
+.step-bar button.st-run small { color: var(--accent); }
+.step-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.step-sep { color: var(--muted); font-style: normal; opacity: .55; font-size: 14px; }
+/* each step's toolbar, view and bottom tabs (Results: the page as it was) */
+.tb-group { display: contents; }
+.tb-group[hidden] { display: none; }
+#cfdWb:not([data-step="results"]) :is(#cbarPop, #cfdSeeds, #cfdPlots, #cfdLegend) { display: none !important; }
+#cfdWb:is([data-step="geometry"], [data-step="mesh"]) :is(#cfdProg, #cfdBusy, #cfdLive) { display: none !important; }
+#cfdWb[data-step="results"] #cfdStepView { display: none; }
+#cfdStepView { flex: 1 1 auto; min-height: 0; display: flex; }
+#cfdWb[data-step="solve"] #cfdProg { order: -2; }
+#cfdWb[data-step="solve"] #cfdLive { order: -1; }
+#cfdWb[data-step="solve"] #cfdStepView { min-height: 280px; }
+#cfdWb[data-step="geometry"] .dock-tabs > [data-steps]:not([data-steps~="geometry"]),
+#cfdWb[data-step="mesh"] .dock-tabs > [data-steps]:not([data-steps~="mesh"]),
+#cfdWb[data-step="solve"] .dock-tabs > [data-steps]:not([data-steps~="solve"]),
+#cfdWb[data-step="results"] .dock-tabs > [data-steps]:not([data-steps~="results"]) { display: none; }
+.step-view { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 12px; }
+.step-draw { position: relative; min-width: 0; min-height: 240px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 10px; overflow: hidden; }
+.step-side { min-height: 0; overflow: auto; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; }
+.step-side h4 { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; font-size: 13px; }
+.step-side h4:not(:first-child) { margin-top: 14px; }
+.kv { width: 100%; border-collapse: collapse; }
+.kv td { padding: 4px 0; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.kv td:last-child { text-align: right; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.kv tr.on td { color: var(--accent); font-weight: 600; }
+.kv input.geo-in { width: 78px; text-align: right; font: 12px var(--mono); padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.kv .u { display: inline-block; min-width: 26px; margin-left: 4px; color: var(--muted); text-align: left; }
+.side-note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.q-hist { display: flex; align-items: flex-end; gap: 2px; height: 48px; margin: 12px 0 2px; }
+.q-hist i { flex: 1; background: var(--accent); opacity: .75; border-radius: 2px 2px 0 0; }
+.q-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.loc-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+/* the blade to scale (Geometry) and the boundary conditions on it (Solve) */
+.blade-svg { display: block; width: 100%; height: 100%; font-family: var(--sans); }
+.blade-svg .blade { fill: url(#bladeHatch); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+.blade-svg .hatch { stroke: var(--muted); stroke-width: 1; opacity: .35; }
+.blade-svg .slurry { fill: color-mix(in srgb, var(--accent) 10%, transparent); }
+.blade-svg .web { stroke: var(--ink); stroke-width: 2; }
+.blade-svg .fibre { fill: color-mix(in srgb, #b8a07a 40%, transparent); }
+.blade-svg .domain-end { stroke: var(--muted); stroke-dasharray: 4 4; }
+.blade-svg .leader, .blade-svg .dimline line { stroke: var(--muted); fill: none; stroke-width: 1; }
+.blade-svg line.leader { stroke-dasharray: 3 3; }
+.blade-svg .gapline { stroke: var(--accent); stroke-width: 1.5; }
+.blade-svg .dim-chip rect { fill: var(--surface); stroke: var(--line); }
+.blade-svg .dim-chip text { font-size: 12px; fill: var(--ink); }
+.blade-svg .dim-v { font-family: var(--mono); font-weight: 600; fill: var(--accent); }
+.blade-svg .dim-muted .dim-v { fill: var(--ink); }
+.blade-svg .dim-edit { cursor: pointer; }
+.blade-svg .dim-edit rect { fill: color-mix(in srgb, var(--accent) 9%, var(--surface)); stroke: color-mix(in srgb, var(--accent) 45%, transparent); }
+.blade-svg .dim-edit:hover rect, .blade-svg .dim-edit:focus rect { stroke: var(--accent); stroke-width: 1.5; }
+.blade-svg .dim-edit:focus { outline: none; }
+.blade-svg .dim-h { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: grab; }
+.blade-svg .dim-h:hover { fill: var(--accent); }
+.blade-svg .note, .blade-svg .scale-bar text { font-size: 11px; fill: var(--muted); }
+.blade-svg .scale-bar line { stroke: var(--ink); stroke-width: 2; }
+.dim-input { position: absolute; z-index: 5; box-sizing: border-box; font: 600 12.5px var(--mono); padding: 0 6px; border: 2px solid var(--accent); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.dim-tip { position: absolute; z-index: 6; pointer-events: none; background: var(--ink); color: var(--surface); font: 500 12px var(--sans); padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+.blade-svg .bc-line { stroke-width: 3.5; fill: none; stroke-linecap: round; }
+.blade-svg .bc-in { stroke: #8b5cf6; }
+.blade-svg .bc-web { stroke: #16a34a; }
+.blade-svg .bc-face { stroke: #d97706; }
+.blade-svg .bc-free { stroke: var(--accent); stroke-dasharray: 6 4; }
+.blade-svg .bc-out { stroke: #64748b; }
+.blade-svg .bc-t { font-size: 12px; fill: var(--ink); }
+.blade-svg .bc-name { font-weight: 600; }
+.blade-svg .bc-sub { fill: var(--muted); }
+.blade-svg .bc-edit { cursor: pointer; fill: var(--accent); font-family: var(--mono); font-weight: 600; text-decoration: underline dotted; }
+.blade-svg .bc-own { fill: var(--warn); }
+.blade-svg .bc-g line, .blade-svg .bc-g path { stroke: var(--muted); fill: none; stroke-width: 1.4; }
+.blade-svg .bc-g text { fill: var(--muted); font-size: 12px; font-style: italic; }
+/* the mesh (Mesh) */
+.mesh-view #cfdMeshPlot { display: flex; flex-direction: column; padding: 8px 10px; }
+.mesh-view .fv-plot { position: relative; flex: 1 1 auto; min-height: 0; }
+@media (max-width: 1023px) {
+  .step-view { grid-template-columns: minmax(0, 1fr); }
+  .step-draw { min-height: 300px; }
+}
+.blade-svg .bc-lead { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.blade-svg .bc-name.c-in { fill: #8b5cf6; } .blade-svg .bc-name.c-web { fill: #16a34a; } .blade-svg .bc-name.c-face { fill: #d97706; }
+.blade-svg .bc-name.c-free { fill: var(--accent); } .blade-svg .bc-name.c-out { fill: #64748b; } .blade-svg .bc-name.c-blade { fill: var(--ink); }
+.bc-list { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 7px; font-size: 12px; line-height: 1.4; color: var(--ink); }
+.bc-list li { display: grid; grid-template-columns: 10px minmax(0, 1fr); column-gap: 8px; align-items: start; }
+.bc-list i { width: 10px; height: 4px; margin-top: 7px; border-radius: 2px; }
+.bc-list .c-in { background: #8b5cf6; } .bc-list .c-blade { background: var(--ink); } .bc-list .c-web { background: #16a34a; } .bc-list .c-face { background: #d97706; }
+.bc-list .c-free { background: var(--accent); } .bc-list .c-out { background: #64748b; } .bc-list .c-g { background: var(--muted); }
+.vp-ctl input[type=number] { width: 62px; font: 12px var(--mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.c3d-mesh { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+.c3d-mesh .step-side { max-height: clamp(320px, calc(100vh - 360px), 860px); }
+/* (a drawing keeps a legible width: on a narrow screen its frame scrolls sideways) */
+.step-draw:has(> .blade-svg) { overflow-x: auto; overflow-y: hidden; }
+.nowrap-table td, .nowrap-table th { white-space: nowrap; }

@@ -891,7 +891,8 @@ function solveCoaterFEM(opts) {
    * 'climbed' with free = false: held at distance s up the face (surface angle there free);
    * free = true: on the face at the contact angle, starting from s.
    */
-  function solveAt(mode, s, free, fInfNow, from, aUse = alphaDeg, iterCap = mode === 'climbed' && !free ? 80 : 200, minQ = null) {
+  /** The mesh a solve at (mode, s) starts on: its starting surface, and the best-shaped of the layouts tried. */
+  function layoutAt(mode, s, free, fInfNow, from, aUse = alphaDeg) {
     const stat = from ? shiftedCurve(from, mode, s) : staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf: fInfNow, xEnd, mode, sFix: mode === 'climbed' && !free ? s : null });
     stat.alphaEdgeDeg = stat.alphaEdge != null ? stat.alphaEdge * 180 / Math.PI : alphaDeg;
     stat.alphaCL = aUse;
@@ -905,6 +906,10 @@ function solveCoaterFEM(opts) {
       if (opts.onLayout) opts.onLayout({ r0, gap, rMax, lean0 }, t.quality, s0);
       if (!m || t.quality > m.quality) m = t;
     }
+    return { stat, s0, m };
+  }
+  function solveAt(mode, s, free, fInfNow, from, aUse = alphaDeg, iterCap = mode === 'climbed' && !free ? 80 : 200, minQ = null) {
+    const { stat, s0, m } = layoutAt(mode, s, free, fInfNow, from, aUse);
     if (opts.onMesh) opts.onMesh(m, m.h0, s0, stat);
     if (!(m.quality > 0)) return { error: `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
     if (minQ != null && !(m.quality > minQ)) return { error: 'no better-shaped mesh there', notBetter: true };
@@ -977,6 +982,17 @@ function solveCoaterFEM(opts) {
   if (alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
   if (alphaDeg > -5) return { error: `the surface would leave the exit face level or rising (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be below 175°)` };
   let fInf = opts.fInfGuess ?? H;
+
+  // opts.preview: not solved -- the mesh the solve starts on, laid out as its first solve lays it out (with
+  // flow: the contact line at the edge, the surface on the static meniscus), its nodes and its shape quality
+  if (opts.preview) {
+    const st0 = U ? null : staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd, mode: opts.mode ?? null });
+    const mode = st0 && st0.mode === 'climbed' ? 'climbed' : 'pinned';
+    const { s0, m } = layoutAt(mode, mode === 'climbed' ? st0.s : 0, true, fInf);
+    if (!(m.quality > 0)) return { error: `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
+    const { X, Y } = femNodes(m.mesh, { h: m.h0, s: s0 });
+    return { preview: true, x: X, y: Y, NC: m.NC, NR: 2 * nEy + 1, surface: { s: s0 }, meshInfo: { mode, cCL: m.cCL, cCorner: m.cCorner, nEy, quality: m.quality }, meniscus: { mode } };
+  }
 
   if (!U) {
     // no flow: the static meniscus decides pinned / climbed and is the starting shape

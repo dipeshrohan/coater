@@ -177,11 +177,11 @@ document.addEventListener('click', e => {
   const n = e.target.closest && e.target.closest('[data-note]');
   if (n) { const id = n.dataset.note; if (PANE_NOTES.has(id)) PANE_NOTES.delete(id); else PANE_NOTES.add(id); render(); }
 });
-function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '' }) {
+function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '', steps = '' }) {
   // the page reads top down: its sub tabs (and controls), the answer (verdict, the question, the other
   // checks, the thin-film validity), the key numbers, then the plots; its history opens from Edit > History
   return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
-    <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
+    <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${steps}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
     <div class="verdict"><div class="status" id="st"></div><p class="vq">${TAB_Q[tab]}</p><p class="pg-scope" id="pgScope"></p></div>
     <div class="mod-results"><div class="stats" id="ss"></div></div>
     <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${uiBadge(p.icon)}${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>

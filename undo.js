@@ -330,8 +330,9 @@ function renderHistory() {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 /** Open this view's History panel. */
 function showHistory() {
-  const b = document.querySelector('#view .dock-tabs button[data-dock="history"]') || document.querySelector('#view [data-dock-more="history"]');
-  if (b) { b.click(); const t = document.querySelector('#view .dock-tabs button[data-dock="history"]'); if (t) t.focus(); }
+  const shown = () => [...document.querySelectorAll('#view .dock-tabs button[data-dock="history"]')].find(x => x.offsetParent !== null);
+  const b = shown() || document.querySelector('#view [data-dock-more="history"]');
+  if (b) { b.click(); const t = shown(); if (t) t.focus(); }
   renderHistory();
 }
 (function editMenu() {

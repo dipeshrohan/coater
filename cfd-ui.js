@@ -275,6 +275,13 @@ const FV = {
   meshQuality: false,     // ... filled by their quality instead of the field colours
   dockH: null,            // results panel height (px; null: 35 % of the page's height)
   diff: { a: 0, b: 1, pct: false, cmap: 'div' },   // Difference view: B − A on A's geometry, absolute or percent, diverging or Jet colours
+  step: null,             // the page's step (cfd-steps.js): 'geometry' | 'mesh' | 'solve' | 'results'; null: Results when solved, else Geometry
+  stepLoc: 0,             // the location Geometry, Mesh and Solve show
+  stepDock: {},           // each step's last bottom tab
+  stepDims: true,         // Geometry: the dimensions on the drawing
+  meshShow: 'solved',     // Mesh: the solved mesh when there is one up to date, else the starting one
+  meshShade: true,        // Mesh: elements shaded by their quality
+  stepAuto: false,        // a Run from Solve: open Results when it ends
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -403,16 +410,18 @@ function runLocation(i) {
     } else logCFD(i, `failed: ${run.error}`, 'bad');
     renderRunChips();
     renderCFD();
+    stepAfterRuns2D();
   };
-  worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); };
+  worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
   worker.postMessage(cfdWorkerMessage(geo));
   renderRunChips();
   renderCFD();
 }
 
-function runAllLocations() { CFD_LOCS.forEach((_, i) => runLocation(i)); }
+function runAllLocations() { runFromSolve2D(); CFD_LOCS.forEach((_, i) => runLocation(i)); }
 
 function cancelAllLocations() {
+  FV.stepAuto = false;
   stopMeshStudy();
   cfdWorkers.forEach((w, i) => {
     if (!w) return;
@@ -565,20 +574,22 @@ function viewCFD() {
       <div class="loc-edit" id="cfdLocEdit" hidden></div>`)}`;
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
 
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${uiIco(DOCK_ICON[k])}${t}<span class="tab-n" data-n="${k}"></span></button>`;
+  const stepNow = step2D();
+  stepDockFix2D(stepNow);
+  const stepsOf = k => Object.keys(STEP_DOCK_2D).filter(q => STEP_DOCK_2D[q].includes(k)).join(' ');
+  const dockTab = (k, t, steps = stepsOf(k)) => `<button type="button" role="tab" data-dock="${k}" data-steps="${steps}" aria-selected="${FV.dock === k}" aria-controls="dock-${k}">${uiIco(DOCK_ICON[k])}${t}<span class="tab-n" data-n="${k}"></span></button>`;
   // (the tabs used less, in a menu at the end of the row: the one open shows as a tab)
   const dockMore = (...items) => {
     const cur = items.find(([k]) => k === FV.dock);
-    return `${cur ? dockTab(cur[0], cur[1]) : ''}<details class="vp-pop dock-more"><summary class="dock-more-s" title="More results panels">${uiIco('more')}More<span class="tab-n" data-n="more"></span></summary>
+    return `${cur ? dockTab(cur[0], cur[1], 'results') : ''}<details class="vp-pop dock-more" data-steps="results"><summary class="dock-more-s" title="More results panels">${uiIco('more')}More<span class="tab-n" data-n="more"></span></summary>
       <div class="pop-body pop-menu" role="menu" aria-label="More results panels">${items.filter(([k]) => k !== FV.dock).map(([k, t]) => `<button class="menu-item" type="button" role="menuitem" data-dock-more="${k}">${uiIco(DOCK_ICON[k])}${t}<span class="tab-n" data-n="${k}"></span></button>`).join('')}</div></details>`;
   };
   const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
-  view.innerHTML = `<div class="vp-bar pg-bar flow-head" role="toolbar" aria-label="Flow stages">${subTabs()}</div>
-    <div class="cfd-wb" id="cfdWb" style="--dock-h: ${dockHCss(FV.dockH)}">
-      <div class="vp-bar" role="toolbar" aria-label="Solve and display">
-        <button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run<span class="hide-mid"> all 4</span></button>
-        <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
-        <span class="vp-sep" aria-hidden="true"></span>
+  view.innerHTML = `<div class="vp-bar pg-bar flow-head" role="toolbar" aria-label="Flow stages">${subTabs()}${stepBar('2d', stepNow, stepStatus2D())}</div>
+    <div class="cfd-wb" id="cfdWb" data-step="${stepNow}" style="--dock-h: ${dockHCss(FV.dockH)}">
+      <div class="vp-bar" role="toolbar" aria-label="${stepNow === 'results' ? 'Display' : STEPS.find(q => q[0] === stepNow)[1]}">
+        ${stepNow === 'results' ? '' : stepToolsHTML2D(stepNow) + '<span class="vp-spacer"></span>' + aboutButton()}
+        <span class="tb-group" data-for="results"${stepNow === 'results' ? '' : ' hidden'}>
         <div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div>
         <span class="vp-sep" aria-hidden="true"></span>
         <label class="vp-ctl"><span class="hide-mid">Field</span> <select id="fvBase" aria-label="Field">
@@ -639,8 +650,10 @@ function viewCFD() {
           </div>
         </details>
         ${aboutButton()}
+        </span>
       </div>
       <div class="viewport" id="cfdViewport">
+        <div id="cfdStepView"></div>
         <div class="cbar-pop" id="cbarPop" role="dialog" aria-label="Colour scale" hidden></div>
         <div id="cfdProg"></div>
         <div id="cfdBusy"></div>
@@ -652,10 +665,12 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}
+          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry')}
           ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'])}
         </div>
         <div class="dock-body">
+          ${panel('dims', '<div id="cfdDims"></div>')}
+          ${panel('meshlocs', '<div id="cfdMeshLocs"></div>')}
           ${panel('metrics', '<div id="cfdMetrics"></div>')}
           ${panel('probes', `<div class="fv-bar">
               <span class="fv-ctl">Add a probe at</span>
@@ -709,7 +724,8 @@ function viewCFD() {
   });
   wireDockSplit();
 
-  document.getElementById('cfdRunAll').onclick = runAllLocations;
+  const runBtn = document.getElementById('cfdRunAll'); if (runBtn) runBtn.onclick = runAllLocations;
+  wireStepTools2D();
   document.querySelectorAll('#cfdShape button').forEach(b => { b.onclick = () => { CFDG.shape = b.dataset.shape; viewCFD(); }; });
   const geoNum = (id, key, lo, hi) => {
     const el = document.getElementById(id), row = el.closest('.prop');
@@ -744,7 +760,7 @@ function viewCFD() {
   document.getElementById('cfdTol').addEventListener('change', e => { CFDS.tol = +e.target.value; renderCFD(); });
   document.getElementById('cfdSolverReset').onclick = () => { undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
   document.getElementById('cfdStudyOpen').onclick = () => { FV.dock = 'mesh'; viewCFD(); };
-  document.getElementById('cfdCancel').onclick = cancelAllLocations;
+  const stopBtn = document.getElementById('cfdCancel'); if (stopBtn) stopBtn.onclick = cancelAllLocations;
   document.getElementById('cfdCaseSave').onclick = saveCase;
   document.getElementById('xlMetric').addEventListener('change', e => { FV.across = e.target.value; renderAcross(); });
   document.getElementById('cfdCsvField').onclick = () => exportField();
@@ -856,11 +872,19 @@ function renderCFD() {
   renderGeoNote();
   renderLocCards();
   renderViewSeg();
-  renderSeedPanel();
+  const onResults = step2D() === 'results';
+  renderStepBar2D();
+  stepBarScroll();
+  if (onResults) renderSeedPanel();
   updateBusy();
-  renderLegend();          // (before the plots: its height sets theirs)
-  renderFlowPlots();
-  renderColourControls();
+  if (onResults) {
+    renderLegend();          // (before the plots: its height sets theirs)
+    renderFlowPlots();
+    renderColourControls();
+  } else renderStepView2D();
+  renderDims2D();
+  renderMeshLocs2D();
+  requestMeshPreviews();
   renderCases();
   renderProbes();
   renderCuts();
@@ -1304,6 +1328,9 @@ function renderRunChips() {
 }
 /** The status bar's progress (≈): the 2D runs together, and the 3D, while they solve (seen on every page). */
 function renderSbProg() {
+  // (the step bar's Solve line follows the progress too)
+  if (tab === 4 && typeof renderStepBar2D === 'function') renderStepBar2D();
+  else if (tab === 9 && typeof renderStepBar3D === 'function') renderStepBar3D();
   const el = document.getElementById('sbProg');
   if (!el) return;
   const items = [['2D', cfdProgShare()], ['3D', typeof c3dProgShare === 'function' ? c3dProgShare() : null]].filter(([, s]) => s != null);
@@ -1391,10 +1418,11 @@ function cfdProgShare() {
 function drawCfdLive() {
   const box = document.getElementById('cfdLive');
   if (!box) return;
-  const shown = viewLocs().filter(i => cfdRuns[i].status === 'running' && cfdRuns[i].live);
+  const onSolve = step2D() === 'solve', locs = onSolve ? CFD_LOCS.map((_, i) => i) : viewLocs();
+  const shown = locs.filter(i => cfdRuns[i].status === 'running' && cfdRuns[i].live);
   box.hidden = !shown.length;
   if (!shown.length) return;
-  const big = !viewLocs().some(i => cfdRuns[i].field);
+  const big = !onSolve && !viewLocs().some(i => cfdRuns[i].field);
   box.classList.toggle('big', big);
   const w = box.clientWidth || 600, h = big ? Math.max(160, box.clientHeight - 16) : 140;
   drawLiveResiduals(box.querySelector('canvas'), h / w, shown.map(i => ({ name: `Location ${i + 1}`, short: `L${i + 1}`, color: locColor(i), live: cfdRuns[i].live })));
@@ -1655,8 +1683,8 @@ function renderFlowPlots() {
     host.innerHTML = running && viewLocs().some(i => cfdRuns[i].status === 'running') ? '' : running ? '<p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Solving: the field appears here when the run finishes.</p>'
       : emptyHint(none ? 'Nothing solved yet' : compare ? 'No location has a result yet' : `Location ${FV.view + 1} has no result yet`,
         `Set the inputs on the left (the shared ones and the CFD setup), then run: each of the four locations across the web takes about 10 s, solved at the same time.`,
-        `<button type="button" class="btn btn-primary btn-sm" data-hint-run>${uiIco('play')}Run all 4 locations</button>${keyLabel('run.run') ? `<span class="fv-why">or ${keyLabel('run.run')}</span>` : ''}`);
-    const hb = host.querySelector('[data-hint-run]'); if (hb) hb.onclick = runAllLocations;
+        `<button type="button" class="btn btn-primary btn-sm" data-hint-run>${uiIco('play')}Open Solve</button>${keyLabel('run.run') ? `<span class="fv-why">or ${keyLabel('run.run')} to run</span>` : ''}`);
+    const hb = host.querySelector('[data-hint-run]'); if (hb) hb.onclick = () => goStep2D('solve');
     return;
   }
   const zoomBtn = (act, title, icon) => `<button type="button" class="zb" data-z="${act}" title="${title}" aria-label="${title}"><svg viewBox="0 0 16 16" aria-hidden="true">${icon}</svg></button>`;
@@ -1710,25 +1738,25 @@ function plotRanges(fields, list, win) {
 
 /** Draw (or redraw) one flow plot at its location's current zoom; fast = half-resolution colours (while zooming / panning). */
 function paintPlot(el, fast) {
-  const ctx = el._ctx, i = +el.dataset.i, run = cfdRuns[i], f = run.field, compare = ctx.compare, ds = ctx.ds;
+  const ctx = el._ctx, i = +el.dataset.i, run = ctx.runs ? ctx.runs[i] : cfdRuns[i], f = run.field, compare = ctx.compare, ds = ctx.ds, mo = !!ctx.meshOnly;
   const zk = el.dataset.zk || i, zoom = FV.zoom[zk] || null;
-  const ranges = ds ? { base: zoom ? diffRange(ds, zoom) : ctx.shared.base, line: null, speed: ctx.shared.speed } : zoom ? plotRanges([f], [i], zoom) : ctx.shared;
-  const sl = FV.streamlines ? streamlinesFor(run) : null;
+  const ranges = mo ? ctx.shared : ds ? { base: zoom ? diffRange(ds, zoom) : ctx.shared.base, line: null, speed: ctx.shared.speed } : zoom ? plotRanges([f], [i], zoom) : ctx.shared;
+  const sl = FV.streamlines && !mo ? streamlinesFor(run) : null;
   const cv = el.querySelector('.fv-main');
   const map = drawFlowPlot(cv, {
     f, webSpeed: run.geo.U, yMax: ctx.yMax, yScale: FV.yScale, compact: compare, maxH: ctx.maxH, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
     exitAngle: run.geo.exitAngle, bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : 'blade land (fixed)',
-    scalar: ds ? { ...ranges.base, key: `${ranges.base.key}|${fieldId(ds.fb)}` } : scalarFor(ranges.base, f), lineScalar: scalarFor(ranges.line, f),
+    scalar: mo ? null : ds ? { ...ranges.base, key: `${ranges.base.key}|${fieldId(ds.fb)}` } : scalarFor(ranges.base, f), lineScalar: mo ? null : scalarFor(ranges.line, f),
     streamlines: sl ? sl.lines : null, lineWidth: LINE_W[FV.lineWidth] * (compare ? 0.8 : 1), arrows: FV.arrows,
-    vectorSample: FV.vectors && !ds ? (nc, nr, win) => sampleVectors(f, nc, nr, win) : null,
+    vectorSample: FV.vectors && !ds && !mo ? (nc, nr, win) => sampleVectors(f, nc, nr, win) : null,
     vectorSpacing: VEC_SPACING[FV.vectorDensity] * (compare ? 0.8 : 1), vectorScale: FV.vectorScale,
-    vectorNormalize: FV.vectorNormalize, vectorVmax: ctx.vmax, vectorColor: FV.vectorColor, vectorScalar: scalarFor(ranges.speed, f),
+    vectorNormalize: FV.vectorNormalize, vectorVmax: ctx.vmax, vectorColor: FV.vectorColor, vectorScalar: mo ? null : scalarFor(ranges.speed, f),
     seeds: sl ? sl.seeds : null, manualSeeds: FV.seedMode === 'manual',
-    probes: ds ? [] : cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
+    probes: ds || mo ? [] : cfdProbes.map(q => ({ ...q, inside: fieldInside(f, q.x, q.y) })),
     view: zoom, fast,
-    mesh: FV.mesh && f.curv ? { quality: FV.meshQuality && !ds ? meshQuality(f) : null } : null,
-    contours: ds ? diffContours(ds, ranges.base) : contourSpec(f, ranges, zoom, ctx.fields),
-    cuts: ds ? [] : cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
+    mesh: mo ? { quality: ctx.quality ? meshQuality(f) : null } : FV.mesh && f.curv ? { quality: FV.meshQuality && !ds ? meshQuality(f) : null } : null,
+    contours: mo ? null : ds ? diffContours(ds, ranges.base) : contourSpec(f, ranges, zoom, ctx.fields),
+    cuts: ds || mo ? [] : cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
   });
   el._map = map;
   if (zoom) FV.zoom[zk] = map.view;           // (kept as clamped to the domain)
@@ -1743,7 +1771,7 @@ function paintPlot(el, fast) {
   const ex = el.previousElementSibling && el.previousElementSibling.querySelector && el.previousElementSibling.querySelector('.fv-ex');
   if (ex) {
     const vs = map.exaggeration > 1.05 ? `vertical scale ×${map.exaggeration.toFixed(1)}` : map.exaggeration < 0.95 ? `vertical scale ×${map.exaggeration.toFixed(2)}` : 'true 1:1 scale';
-    const mqTxt = FV.mesh && FV.meshQuality && f.curv && !ds ? ` · mesh quality worst ${meshQuality(f).worst.toFixed(2)}` : '';
+    const mqTxt = (mo ? ctx.quality : FV.mesh && FV.meshQuality) && f.curv && !ds ? ` · ${mo ? 'shaded by quality, ' : 'mesh quality '}worst ${meshQuality(f).worst.toFixed(2)}` : '';
     ex.textContent = (zoom ? `zoomed: x ${(map.view.x0 * 1000).toFixed(2)}–${(map.view.x1 * 1000).toFixed(2)} mm, y ${(map.view.y0 * 1000).toFixed(3)}–${(map.view.y1 * 1000).toFixed(3)} mm · ${vs} · colours span the view` : vs) + mqTxt;
     ex.parentElement.title = ex.parentElement.textContent;   // (the caption line may be cut short)
     if (ds) ex.textContent += ranges.base.capped ? ' · colours clamped at the ends of the range' : '';
@@ -1907,8 +1935,8 @@ function contourSpec(f, ranges, zoom, fields) {
 }
 
 /** Zoom windows for the one-click presets (m), from a location's solution. */
-function zoomPreset(i, which) {
-  const run = cfdRuns[i], r = run.result, H = run.geo.H, xe = r.xe;
+function zoomPreset(i, which, run = cfdRuns[i]) {
+  const r = run.result, H = run.geo.H, xe = r.xe;
   if (which === 'edge') return { x0: xe - 2.5 * H, x1: xe + 1.5 * H, y0: 0, y1: 1.6 * H };
   // meniscus: from just upstream of the edge to where the free surface has flattened onto the film
   let xFlat = r.xEnd;
@@ -1943,7 +1971,7 @@ function wirePlotZoom(el) {
   const onCbar = ([px, py]) => { const b = el._map.cbar; return b && px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h; };
   cv.addEventListener('pointermove', e => { if (!drag) el.classList.toggle('on-cbar', onCbar(at(e))); });
   cv.addEventListener('pointerleave', () => el.classList.remove('on-cbar'));
-  cv.addEventListener('click', e => { if (!el._suppressClick && onCbar(at(e))) openCbarPop(i); });
+  cv.addEventListener('click', e => { if (!el._suppressClick && !(el._ctx && el._ctx.meshOnly) && onCbar(at(e))) openCbarPop(i); });
   cv.addEventListener('wheel', e => {
     const pt = at(e);
     if (!inPlot(pt)) return;
@@ -2012,7 +2040,7 @@ function wirePlotZoom(el) {
     const z = b.dataset.z, v = el._map.view;
     if (z === 'in' || z === 'out') setView(scaleAbout((v.x0 + v.x1) / 2, (v.y0 + v.y1) / 2, z === 'in' ? 1 / 1.5 : 1.5), false);
     else if (z === 'fit') setView(null, false);
-    else if (z === 'edge' || z === 'meniscus') setView(zoomPreset(i, z), false);
+    else if (z === 'edge' || z === 'meniscus') setView(zoomPreset(i, z, el._ctx && el._ctx.runs ? el._ctx.runs[i] : cfdRuns[i]), false);
     else if (z === 'img') openImageDialog('plots');
     else if (z === 'box') { FV.boxZoom = !FV.boxZoom; document.querySelectorAll('.zoom-ctl [data-z="box"]').forEach(x => x.setAttribute('aria-pressed', FV.boxZoom)); document.querySelectorAll('.fv-plot').forEach(p => p.classList.toggle('box-mode', FV.boxZoom)); }
   });

@@ -17,10 +17,11 @@ const tabRunning = () => tab === 4 ? cfdRuns.some(r => r.status === 'running') |
 const onCfd = () => tab === 4 && !!document.getElementById('cfdWb');
 /** Click a zoom button of the flow plot(s) shown. */
 const zoomClick = z => { const bs = document.querySelectorAll(`#cfdPlots .zoom-ctl [data-z="${z}"]`); if (!bs.length) return false; bs.forEach(b => b.click()); return true; };
-const setFvView = v => { if (!onCfd()) return false; FV.view = v; viewCFD(); return true; };
+// (Geometry, Mesh and Solve: a location key picks their location; Compare and Difference are Results' views)
+const setFvView = v => { if (!onCfd()) return false; if (step2D() !== 'results' && typeof v === 'number') FV.stepLoc = v; else FV.view = v; viewCFD(); return true; };
 /** The bottom panel's tabs of the view shown, and the selected one. */
 function dockCycle(step) {
-  const bs = [...document.querySelectorAll('#view .dock-tabs button[role="tab"]')];
+  const bs = [...document.querySelectorAll('#view .dock-tabs button[role="tab"]')].filter(x => x.offsetParent !== null);
   if (bs.length < 2) return false;
   const k = bs.findIndex(b => b.getAttribute('aria-selected') === 'true');
   const b = bs[(k + step + bs.length) % bs.length];
