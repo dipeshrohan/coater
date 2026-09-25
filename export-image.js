@@ -270,7 +270,7 @@ function imageTargets() {
       });
     }
     const panel = () => document.getElementById('dock-' + FV.dock);
-    const tb = document.querySelector(`.dock-tabs button[data-dock="${FV.dock}"]`), tabName = tb ? cleanText(tb.childNodes[0]) || cleanText(tb) : 'Results';
+    const tb = document.querySelector(`.dock-tabs button[data-dock="${FV.dock}"]`), tabName = tb ? cleanText([...tb.childNodes].find(n => n.nodeType === 3 && n.textContent.trim())) || cleanText(tb) : 'Results';
     const charts = () => [...(panel() ? panel().querySelectorAll('canvas[role="img"]') : [])];
     const legendNear = cv => { const fig = cv.closest('figure'); const own = fig && fig.querySelectorAll('.xl-legend .lg'); return own && own.length ? own : panel().querySelectorAll('.xl-legend .lg'); };
     charts().forEach((cv, n) => out.push({

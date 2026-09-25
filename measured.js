@@ -44,7 +44,7 @@ const measSetName = k => k === 'gap' ? 'Gap at the metering edge' : (CFG.find(c 
 const measSetUnit = k => k === 'gap' ? 'mm' : (CFG.find(c => c.k === k) || { u: '' }).u;
 const MEAS_FIT_GROUPS = { angle: ['th', 'dth'], rheo: ['mu', 'n', 'ty'], bead: ['Pup'] };
 
-const MEAS = { sets: [], sel: null, dock: 'compare', dockH: 300, fit: null, fitSets: null, fitKeys: ['th'], fitRange: {} };
+const MEAS = { sets: [], sel: null, dock: 'compare', dockH: null, fit: null, fitSets: null, fitKeys: ['th'], fitRange: {} };
 const measCfdCache = new Map();   // dataset id -> its CFD predictions (kept aside so undo does not drop them)
 let measIdN = 0;
 const measNewId = () => 'm' + Date.now().toString(36) + (++measIdN);
@@ -514,7 +514,7 @@ function measRemove(id) {
 function viewMeasured() {
   const ds = measSelected();
   if (ds) MEAS.sel = ds.id;
-  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${MEAS.dock === k}" aria-controls="meas-${k}">${t}${k === 'history' || k === 'msgs' ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
+  const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${MEAS.dock === k}" aria-controls="meas-${k}">${uiIco(DOCK_ICON[k])}${t}${k === 'history' || k === 'msgs' ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   const panel = (k, body) => `<div class="dock-panel" id="meas-${k}" role="tabpanel"${MEAS.dock === k ? '' : ' hidden'}>${body}</div>`;
   document.getElementById('setupExtra').innerHTML = `<div class="tree-sep">Measured data</div>
     <details class="grp" open><summary>Datasets</summary>
@@ -523,9 +523,9 @@ function viewMeasured() {
         <button type="button" class="icon-btn" data-rm="${d.id}" aria-label="Remove ${mEsc(d.name)}" title="Remove">✕</button></div>`).join('') : '<p class="prop-note">None yet: Import CSV in the toolbar above the plot.</p>'}</div>
     </details>`;
   view.innerHTML = `
-    <div class="cfd-wb meas-wb" id="measWb" style="--dock-h: ${MEAS.dockH}px">
+    <div class="cfd-wb meas-wb" id="measWb" style="--dock-h: ${dockHCss(MEAS.dockH)}">
       <div class="vp-bar" role="toolbar" aria-label="Measured data">
-        <button id="measImport" class="btn btn-primary btn-sm tool-run" type="button" title="Import measured data from a CSV file">Import CSV…</button>
+        <button id="measImport" class="btn btn-primary btn-sm tool-run" type="button" title="Import measured data from a CSV file">${uiIco('upload')}Import CSV…</button>
         <span class="vp-sep" aria-hidden="true"></span>
         <label class="vp-ctl">Dataset <select id="measSel"${MEAS.sets.length ? '' : ' disabled'}>${MEAS.sets.map(d => `<option value="${d.id}"${d.id === MEAS.sel ? ' selected' : ''}>${mEsc(d.name)}</option>`).join('')}</select></label>
         <button id="measCfd" class="tool-btn" type="button" title="Solve each point of this dataset in the CFD (each different point is one run)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Solve in CFD</button>
@@ -565,12 +565,12 @@ function viewMeasured() {
   const setH = h => { MEAS.dockH = Math.round(Math.max(140, Math.min(wb.clientHeight - 220, h))); wb.style.setProperty('--dock-h', MEAS.dockH + 'px'); };
   sp.addEventListener('pointerdown', e => {
     e.preventDefault(); sp.setPointerCapture(e.pointerId);
-    const y0 = e.clientY, h0 = MEAS.dockH;
+    const y0 = e.clientY, h0 = dockHNow(MEAS.dockH, wb);
     const move = ev => setH(h0 - (ev.clientY - y0));
     const up = () => { sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up); renderMeasPlot(); };
     sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
   });
-  sp.addEventListener('keydown', e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); setH(MEAS.dockH + (e.key === 'ArrowUp' ? 30 : -30)); renderMeasPlot(); } });
+  sp.addEventListener('keydown', e => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); setH(dockHNow(MEAS.dockH, wb) + (e.key === 'ArrowUp' ? 30 : -30)); renderMeasPlot(); } });
   renderMeasured();
 }
 /** Everything that follows the data and the predictions (the module showing, else nothing). */
@@ -626,13 +626,13 @@ function renderMeasPlot() {
   const ds = measSelected();
   if (!ds) {
     host.innerHTML = emptyHint('No measured data yet', 'Import a CSV with a header row (for example "z (mm), wet film (µm)" or "web speed, viscosity, coat weight (g/m²)"): the columns are matched from their names and units, and you check them before importing. Each point is then compared with the models, and a fit can adjust the uncertain inputs to your data.',
-      '<button type="button" class="btn btn-primary btn-sm" data-hint-import>Import CSV…</button>');
+      `<button type="button" class="btn btn-primary btn-sm" data-hint-import>${uiIco('upload')}Import CSV…</button>`);
     host.querySelector('[data-hint-import]').onclick = importMeasured;
     lg.innerHTML = ''; return;
   }
   const { K, fast, c, stale } = measRows(ds);
   const cap = `Predicted against measured · ${K.yl} (${K.yu})`;
-  host.innerHTML = `<figure class="pane"><figcaption>${mEsc(ds.name)} · ${mEsc(cap)}</figcaption><div class="xl-chart"><canvas role="img" aria-label="${mEsc(ds.name)}: ${mEsc(cap)}"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div></figure>`;
+  host.innerHTML = `<figure class="pane"><figcaption>${uiBadge(6)}${mEsc(ds.name)} · ${mEsc(cap)}</figcaption><div class="xl-chart"><canvas role="img" aria-label="${mEsc(ds.name)}: ${mEsc(cap)}"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div></figure>`;
   const cv = host.querySelector('canvas');
   const colF = locColor(0), colC = locColor(1), muted = cssVar('--muted');
   const ptsF = ds.rows.map((p, i) => fast[i] == null ? null : [p.y, fast[i], i]).filter(Boolean);

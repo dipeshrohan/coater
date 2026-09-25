@@ -1268,7 +1268,8 @@ body:has(#pgScope) #scope { display: none; }
 /* Flow › 3D: the three.js view */
 .mod-extra:has(.v3d) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .v3d { min-width: 0; }
-.pg-tools:has([data-v3view]) { flex: 1 1 auto; flex-wrap: wrap; }
+/* (its tools on their own row under the stages, as on Flow › 2D; the (i) stays by the stages) */
+.pg-tools:has([data-v3view]) { order: 3; flex: 1 1 100%; flex-wrap: wrap; }
 .pg-tools:has([data-v3view]) > .seg { flex: none; }
 .v3d-host { position: relative; height: clamp(320px, calc(100vh - 400px), 820px); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .v3d-host canvas { display: block; max-width: 100%; touch-action: none; cursor: grab; }
@@ -1286,3 +1287,40 @@ body:has(#pgScope) #scope { display: none; }
    progLayout), and the viewport scrolls (after the parts' own flex rules, which it overrides) */
 #cfdViewport.has-prog { overflow-y: auto; }
 #cfdViewport.has-prog > * { flex: 0 0 auto; }
+
+/* icons (icons.js): plain in the sub tabs, the results panels' tabs, menus and buttons; in a tinted badge on the
+   number tiles, the chart titles and the Summary cards (like the input groups) */
+.ui-i { width: 14px; height: 14px; flex: 0 0 auto; }
+.ico-b { display: inline-grid; place-items: center; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 7px; font-style: normal;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.ico-b .ui-i { width: 14px; height: 14px; }
+.subtabs button { display: inline-flex; align-items: center; gap: 6px; padding-left: 12px; padding-right: 12px; }
+.subtabs-2 button { padding-left: 10px; padding-right: 10px; }
+.subtabs button .ui-i { opacity: .8; }
+.subtabs button[aria-selected=true] .ui-i { opacity: 1; color: var(--accent); }
+.dock-tabs button, .dock-more > summary.dock-more-s { display: inline-flex; align-items: center; gap: 4px; padding-left: 8px; padding-right: 8px; }
+/* (a row too long for the panel, on a narrow window, goes onto a second line rather than past the edge) */
+.dock-tabs { flex-wrap: wrap; padding-left: 6px; padding-right: 6px; }
+.dock-tabs button .tab-n, .dock-more-s .tab-n { margin-left: 0; }
+.dock-tabs button .ui-i, .dock-more-s .ui-i { width: 13px; height: 13px; opacity: .75; }
+.dock-tabs button[aria-selected=true] .ui-i { opacity: 1; color: var(--accent); }
+.menu-item .ui-i { margin-right: 8px; color: var(--muted); }
+.btn:has(> .ui-i) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn .ui-i, .tool-btn .ui-i { width: 13px; height: 13px; }
+.zb.zb-t { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; }
+.zb.zb-t .ui-i { width: 12px; height: 12px; }
+/* a tile: its badge before the label; the values of a row in line when a label takes two lines */
+.stat > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; line-height: 1.25; }
+.mod-results .stat, .dock-stats .stat { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.mod-results .stat > span:first-child { margin-bottom: 4px; }
+/* (a value too long for its tile goes onto a second line rather than being cut short) */
+.mod-results .stat strong { white-space: normal; overflow: visible; text-wrap: balance; }
+/* the Summary: each card's badge by its name, the wet film's by its label, the Go-further cards' at their left */
+.sc-lab { display: inline-flex; align-items: center; gap: 9px; }
+.sc-lab .ico-b { width: 28px; height: 28px; border-radius: 8px; }
+.sc-lab .ico-b .ui-i { width: 16px; height: 16px; }
+.sum-film > span { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.sum-more button { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; align-items: start; }
+.sum-more button > .ico-b { grid-row: 1 / span 2; width: 34px; height: 34px; border-radius: 10px; }
+.sum-more button > .ico-b .ui-i { width: 17px; height: 17px; }
+@media (max-width: 699px) { .sum-film > span { justify-content: flex-start; } }

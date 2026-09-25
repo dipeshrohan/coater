@@ -79,7 +79,7 @@ function applyMeasured(m) {
   measCfdCache.clear(); for (const d of MEAS.sets) if (d.cfd) measCfdCache.set(d.id, d.cfd);
   MEAS.sel = MEAS.sets.some(d => d.id === m.sel) ? m.sel : MEAS.sets.length ? MEAS.sets[0].id : null;
   MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
-  MEAS.dock = m.dock || 'compare'; MEAS.dockH = m.dockH || 300;
+  MEAS.dock = m.dock || 'compare'; MEAS.dockH = dockHSaved(m.dockH);
 }
 /** The 3D setup of a project, its blade file and its last 3D solve (none: the defaults, no file, no result). */
 function applyC3D(c) {
@@ -106,6 +106,7 @@ function applyProject(p) {
     writeCases(list);
   }
   Object.assign(FV, JSON.parse(JSON.stringify(FV_DEFAULTS)), (p.view && p.view.FV) || {});
+  FV.dockH = dockHSaved(FV.dockH);
   // results: the fields rebuilt from the solutions
   cfdRuns.forEach((r, i) => {
     for (const k of Object.keys(r)) delete r[k];
@@ -118,7 +119,7 @@ function applyProject(p) {
   cfdAutoStarted = cfdRuns.some(r => r.field);
   meshStudy = p.meshStudy ? { ...p.meshStudy, runs: p.meshStudy.runs.map(r => ({ ...r, metrics: r.r ? flowMetrics(makeFlowField(r.r, { rho: RHO, ty: cfdGeometry(p.meshStudy.loc).ty })) : null })) } : null;
   const d = p.doe || {};
-  Object.assign(DOE, DOE_DEFAULTS, { loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: d.dockH || 300,
+  Object.assign(DOE, DOE_DEFAULTS, { loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: dockHSaved(d.dockH),
     design: d.design ? d.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null, runs: d.runs || [], status: d.runs && d.runs.length ? (d.status || 'done') : 'idle', key: d.key || null, t0: d.t0 || 0, t1: d.t1 || 0, active: new Set() });
   cfdLog.length = 0; for (const m of p.messages || []) cfdLog.push({ ...m, t: new Date(m.t) });
   applyMeasured(p.measured);

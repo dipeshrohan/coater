@@ -72,7 +72,7 @@ function oneDSetupTree() {
       ${row('Fibre (web slip)', FIBRES[CFDG.fibre].l)}
       ${row('Location shown', `L${i + 1} · z ${CFD_LOCS[i].z} mm`)}
       <p class="prop-note">The 1D uses the same blade, rheology, fibre and locations as the 2D, so the two compare like for like. They are set in 2D.</p>
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="oneDToCfd">Edit in 2D</button></div>
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="oneDToCfd">${uiIco(4)}Edit in 2D</button></div>
     </details>`;
   document.getElementById('oneDToCfd').onclick = () => { tab = 4; render(); };
 }
@@ -102,12 +102,12 @@ function view1DGap() {
     tools: oneDLocTools(),
     cols: workbenchFits() ? 2 : 1,
     panes: [
-      { id: 'g1', title: 'Pressure along the blade', aria: 'Pressure along the blade, 1D and 2D', legend: oneDLegend([['1D', cssVar('--accent')], ['2D, along the web (if solved)', cssVar('--muted'), 'dash']]),
+      { id: 'g1', icon: 'pressure', title: 'Pressure along the blade', aria: 'Pressure along the blade, 1D and 2D', legend: oneDLegend([['1D', cssVar('--accent')], ['2D, along the web (if solved)', cssVar('--muted'), 'dash']]),
         note: 'The bead pressure at the inlet (the pool edge, or the start of the flat land) falls to ambient at the metering edge. The 2D line is its pressure along the web; there the meniscus sets the pressure at the edge.' },
-      { id: 'g2', title: 'Gap along the blade', aria: 'Gap height along the blade' },
-      { id: 'g3', title: 'Shear stress on the walls', aria: 'Shear stress on the web and on the blade', legend: oneDLegend([['on the web', cssVar('--accent')], ['on the blade', cssVar('--warn')]]),
+      { id: 'g2', icon: 'height', title: 'Gap along the blade', aria: 'Gap height along the blade' },
+      { id: 'g3', icon: 'shear', title: 'Shear stress on the walls', aria: 'Shear stress on the web and on the blade', legend: oneDLegend([['on the web', cssVar('--accent')], ['on the blade', cssVar('--warn')]]),
         note: 'The shear stress the slurry puts on the moving web and on the fixed blade, along the blade.' },
-      { id: 'g4', title: 'Velocity across the gap', aria: 'Velocity profiles across the gap', legend: oneDLegend([['inlet', cssVar('--muted')], ['midway', cssVar('--ok')], ['metering edge', cssVar('--accent')]]),
+      { id: 'g4', icon: 'profile', title: 'Velocity across the gap', aria: 'Velocity profiles across the gap', legend: oneDLegend([['inlet', cssVar('--muted')], ['midway', cssVar('--ok')], ['metering edge', cssVar('--accent')]]),
         note: 'The exact profile for the rheology: the web moves at the web speed (less the slip over the fibre), the blade is still. A yield stress leaves a flat, unsheared plug.' },
     ],
     extra: '<div class="oned-table" id="oneDTable"></div>',
@@ -149,7 +149,7 @@ function view1DGap() {
     ['Pressure gradient at the edge', (L.G[n] / 1000).toFixed(1) + ' kPa/m'],
     ['Web shear at the edge', L.tauWeb[n].toFixed(1) + ' Pa'],
     ['Blade shear at the edge', L.tauBlade[n].toFixed(1) + ' Pa'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
   document.getElementById('oneDTable').innerHTML = oneDCompareTable();
 }
 
@@ -203,12 +203,12 @@ function view1DFilm() {
     tools: oneDLocTools(),
     cols: workbenchFits() ? 2 : 1,
     panes: [
-      { id: 'f1', title: 'Film near the metering edge', aria: 'Film height just after the metering edge',
+      { id: 'f1', icon: 'film', title: 'Film near the metering edge', aria: 'Film height just after the metering edge',
         note: 'The 1D thin-film equation (surface tension, gravity, the web dragging the film) from the full gap at the edge, with the flow rate of the 1D gap flow. It settles to q / U (dashed) within a few millimetres.' },
-      { id: 'f2', title: 'Film from the edge to the oven', aria: 'Film height from the metering edge to the oven' },
-      { id: 'f3', title: 'Ripple on the film, blade to oven', aria: 'Ripple amplitude from the blade to the oven',
+      { id: 'f2', icon: 10, title: 'Film from the edge to the oven', aria: 'Film height from the metering edge to the oven' },
+      { id: 'f3', icon: 'ripple', title: 'Ripple on the film, blade to oven', aria: 'Ripple amplitude from the blade to the oven',
         note: 'The ripple the gap waviness (through the film\'s sensitivity to the gap) and vibration leave, levelled by surface tension on this film; a yield stress stops it at a residual.' },
-      { id: 'f4', title: 'Film surface across the web', aria: 'Film surface ripple just after the blade and at the oven', legend: oneDLegend([['just after the blade', cssVar('--muted'), 'dash'], ['at the oven', cssVar('--accent')]]) },
+      { id: 'f4', icon: 3, title: 'Film surface across the web', aria: 'Film surface ripple just after the blade and at the oven', legend: oneDLegend([['just after the blade', cssVar('--muted'), 'dash'], ['at the oven', cssVar('--accent')]]) },
     ],
   });
   const R = ONE_D.res;
@@ -250,7 +250,7 @@ function view1DFilm() {
     ['Starting ripple', (Rp.a0 * 1e6).toFixed(0) + ' µm'],
     ['Levelling time', Rp.tau.toFixed(2) + ' s'],
     ['Ripple at the oven', remain.toFixed(remain < 10 ? 1 : 0) + ' µm'],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
 // ---------------------------------------------------------------------
@@ -263,9 +263,9 @@ function view1DAcross() {
   view.innerHTML = moduleFrame({
     cols: workbenchFits() ? 2 : 1,
     panes: [
-      { id: 'a1', title: 'Wet film across the web', aria: 'Wet film against position across the web', legend: oneDLegend([['1D at every position', cssVar('--accent')], ['2D at the four locations (if solved)', cssVar('--ink'), 'dot']]),
+      { id: 'a1', icon: 'film', title: 'Wet film across the web', aria: 'Wet film against position across the web', legend: oneDLegend([['1D at every position', cssVar('--accent')], ['2D at the four locations (if solved)', cssVar('--ink'), 'dot']]),
         note: 'At each position the 1D gap flow with that position\'s gap (blade waviness and fibre thickness variation) and the shared inputs.' },
-      { id: 'a2', title: 'Contact line across the web', aria: 'Contact line up the exit face against position across the web', legend: oneDLegend([['1D (static meniscus)', cssVar('--accent')], ['2D (if solved)', cssVar('--ink'), 'dot']]),
+      { id: 'a2', icon: 1, title: 'Contact line across the web', aria: 'Contact line up the exit face against position across the web', legend: oneDLegend([['1D (static meniscus)', cssVar('--accent')], ['2D (if solved)', cssVar('--ink'), 'dot']]),
         note: 'Where the meniscus leaves the blade: the static meniscus from the 1D film up the exit face, with that position\'s contact angle. Past the notch corner (dashed) the slurry reaches the dry edge.' },
     ],
   });
@@ -294,6 +294,6 @@ function view1DAcross() {
     ['Flow rate range', `${Math.min(...qs).toFixed(2)} to ${Math.max(...qs).toFixed(2)} mm²/s`],
     ['Contact line range', `${sMn.toFixed(1)} to ${sMx.toFixed(1)} mm`],
     ['Positions solved', `${A.length} over ${ACROSS_W} mm`],
-  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
