@@ -687,7 +687,7 @@ function viewCFD() {
   const panel = (k, body) => `<div class="dock-panel" id="dock-${k}" role="tabpanel"${FV.dock === k ? '' : ' hidden'}>${body}</div>`;
   view.innerHTML = `<div class="vp-bar pg-bar flow-head" role="toolbar" aria-label="Flow stages">${subTabs()}${stepBar('2d', stepNow, stepStatus2D())}</div>
     <div class="cfd-wb" id="cfdWb" data-step="${stepNow}" style="--dock-h: ${dockHCss(FV.dockH)}">
-      <div class="vp-bar" role="toolbar" aria-label="${stepNow === 'results' ? 'Display' : STEPS.find(q => q[0] === stepNow)[1]}">
+      <div class="vp-bar${stepNow === 'geometry' && bladeShapedFace() ? ' vp-tight' : ''}" role="toolbar" aria-label="${stepNow === 'results' ? 'Display' : STEPS.find(q => q[0] === stepNow)[1]}">
         ${stepNow === 'results' ? '' : stepToolsHTML2D(stepNow) + '<span class="vp-spacer"></span>' + aboutButton()}
         <span class="tb-group" data-for="results"${stepNow === 'results' ? '' : ' hidden'}>
         <div class="seg" role="tablist" aria-label="Location shown" id="cfdViewSeg"></div>

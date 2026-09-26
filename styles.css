@@ -443,6 +443,9 @@ details > summary::-webkit-details-marker { display: none; }
 .dock input[type=number], .pop-body input[type=number] { width: 72px; font-family: var(--mono); }
 .vp-bar select:focus-visible, .dock select:focus-visible, .dock input:focus-visible, .pop-body select:focus-visible, .pop-body input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .vp-bar .seg button { padding: 3px 9px; font-size: 12px; }
+/* (the Geometry step with the contact-line switch too: closer, so it keeps to one row where the page is wide enough) */
+.vp-bar.vp-tight { column-gap: 6px; }
+.vp-bar.vp-tight .seg button { padding: 3px 7px; }
 .vp-bar #fvBase { max-width: 200px; }
 .pop-body .fv-grid fieldset { align-self: start; }
 .vp-sep { width: 1px; height: 20px; background: var(--line); }
