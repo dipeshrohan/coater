@@ -23,6 +23,11 @@ const DOE_FACTORS = [
   { k: 'exitAngle', l: 'Exit face to the web', u: '°', kind: 'geo', g: 'Blade geometry', d: 0, lo: 30, hi: 150, shape: ['round', 'flat', 'bevel', 'radius', 'wedge', 'twostep'] },
   { k: 'L', l: 'Land length', u: 'mm', kind: 'land', g: 'Blade geometry', d: 1, lo: 1, hi: 100, shape: ['flat', 'bevel', 'radius', 'wedge', 'twostep'] },
   ...BLADE_DIMS.map(b => ({ k: b.k, l: b.l, u: b.u, kind: 'geo', g: 'Blade geometry', d: b.step < 0.1 ? 2 : b.step < 1 ? 1 : 0, lo: b.lo, hi: b.hi, shape: b.shapes })),
+  // (the blade across the web: set for the run, the location's gap follows; the film across the web from the 1D)
+  { k: 'bowUm', l: 'Bow at the middle (typed)', u: 'µm', kind: 'acr', g: 'Blade across the web', d: 1, lo: -500, hi: 500 },
+  { k: 'tilt', l: 'Blade tilt across the web', u: 'µm', kind: 'p', g: 'Blade across the web', d: 0, lo: -500, hi: 500 },
+  { k: 'endD', l: 'Chamfer depth (both ends)', u: 'µm', kind: 'acr', g: 'Blade across the web', d: 1, lo: 0, hi: 500 },
+  { k: 'endC', l: 'Chamfer length (both ends)', u: 'mm', kind: 'acr', g: 'Blade across the web', d: 1, lo: 0.5, hi: 150 },
   { k: 'mesh', l: 'Mesh', u: '', kind: 'solver', g: 'Mesh and solver', cat: ['coarse', 'medium', 'fine'], cl: v => MESH_PRESETS[v].l },
   { k: 'tol', l: 'Newton tolerance', u: '', kind: 'solver', g: 'Mesh and solver', cat: SOLVER_TOLS, cl: v => fmtTol(v) },
 ];
@@ -39,6 +44,7 @@ const DOE_OUTPUTS = [
   { k: 'recirc', l: 'Recirculation area', u: 'mm²', g: 'Flow quality', d: 3 },
   { k: 'stag', l: 'Stagnation points', u: '', g: 'Flow quality', d: 0 },
   { k: 'tres', l: 'Mean residence time to the edge', u: 's', g: 'Flow quality', d: 2 },
+  { k: 'filmAcross', l: 'Film range across the web (1D)', u: 'µm', g: 'Across the web', d: 2 },
 ];
 const DOE = {
   loc: 0,
@@ -55,7 +61,15 @@ function doeBase(f, i) {
   if (f.kind === 'loc') return locInput(i, f.k);
   if (f.kind === 'geo') return CFDG[f.k];
   if (f.kind === 'land') return P.L;
+  if (f.kind === 'p') return P[f.k];
+  if (f.kind === 'acr') return { bowUm: ACR.bow.on && ACR.bow.mode === 'typed' ? ACR.bow.um : 0, endD: ACR.ends.on ? ACR.ends.left.d : 0, endC: ACR.ends.left.c }[f.k];
   return solverOf(i)[f.k];
+}
+/** A factor of the blade across the web set (the settings as they were are given back by the caller). */
+function doeSetAcross(f, v) {
+  if (f.k === 'bowUm') ACR.bow = { ...ACR.bow, on: true, mode: 'typed', um: v };
+  else if (f.k === 'endD') ACR.ends = { on: true, left: { ...ACR.ends.left, d: v }, right: { ...ACR.ends.right, d: v } };
+  else if (f.k === 'endC') ACR.ends = { on: true, left: { ...ACR.ends.left, c: v }, right: { ...ACR.ends.right, c: v } };
 }
 /** A new factor row: levels around the base value (categories: all of them). */
 function doeNewFactor(k, i) {
@@ -74,17 +88,20 @@ const doeLabel = f => f.l + (f.u ? ` (${f.u})` : '');
 const doeRunCount = () => DOE.factors.filter(fs => doeAvailable(doeFactor(fs.k))).reduce((a, fs) => a * doeLevels(fs).length, 1);
 
 /** The geometry of location i with the factors set to given values (the base case otherwise). */
-function doeGeometry(i, set) {
-  const loc = CFD_LOCS[i], keep = { over: { ...loc.over }, solver: { ...loc.solver }, cfdg: { ...CFDG }, L: P.L };
+function doeGeometry(i, set, across = false) {
+  const loc = CFD_LOCS[i], keep = { over: { ...loc.over }, solver: { ...loc.solver }, cfdg: { ...CFDG }, L: P.L, p: { ...P }, acr: JSON.stringify(ACR) };
   try {
     for (const { f, v } of set) {
       if (f.kind === 'loc') loc.over[f.k] = v;
       else if (f.kind === 'geo') CFDG[f.k] = v;
       else if (f.kind === 'land') P.L = v;
+      else if (f.kind === 'p') P[f.k] = v;
+      else if (f.kind === 'acr') doeSetAcross(f, v);
       else loc.solver[f.k] = v;
     }
-    return cfdGeometry(i);
-  } finally { loc.over = keep.over; loc.solver = keep.solver; Object.assign(CFDG, keep.cfdg); P.L = keep.L; }
+    // (across: also the 1D's inputs at every position across the web, as Flow › 1D › Across the web solves them)
+    return across ? { geo: cfdGeometry(i), across: acrossPositions().map(oneDGeoAt), ripple: oneDRipple() } : cfdGeometry(i);
+  } finally { loc.over = keep.over; loc.solver = keep.solver; Object.assign(CFDG, keep.cfdg); P.L = keep.L; Object.assign(P, keep.p); applyAcross(JSON.parse(keep.acr)); }
 }
 /** A run's outputs from its solution. */
 function doeOutputs(r, geo) {
@@ -134,7 +151,7 @@ function doePump() {
   }
 }
 function doeStart(run) {
-  const geo = doeGeometry(DOE.loc, DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] })));
+  const G = doeGeometry(DOE.loc, DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] })), true), geo = G.geo;
   // (inputs outside what the solver can do: the run is not solved)
   const errs = checkGeometry(geo, null).filter(p => p.level === 'error');
   if (errs.length) { Object.assign(run, { status: 'error', error: `not solved: ${errs.map(p => p.text).join(' ')}`, ms: 0 }); return; }
@@ -147,12 +164,25 @@ function doeStart(run) {
   const settle = () => { doePump(); renderDOE(); };
   w.onmessage = e => {
     if (e.data.progress) { run.progress = e.data.progress; liveAdd(run.live, run.progress); doeStatusLine(); drawDOELive(); return; }
-    end();
     const r = e.data.ok ? e.data.result : null;
-    if (!r) Object.assign(run, { status: 'error', error: e.data.error });
-    else if (!r.converged && !(r.stalled && r.residual < 1e-4)) Object.assign(run, { status: 'error', error: `did not converge (residual ${r.residual.toExponential(1)})` });
-    else { try { Object.assign(run, { status: 'done', out: doeOutputs(r, geo) }); } catch (err) { Object.assign(run, { status: 'error', error: err.message }); } }
-    settle();
+    if (!r) { end(); Object.assign(run, { status: 'error', error: e.data.error }); settle(); return; }
+    if (!r.converged && !(r.stalled && r.residual < 1e-4)) { end(); Object.assign(run, { status: 'error', error: `did not converge (residual ${r.residual.toExponential(1)})` }); settle(); return; }
+    let out;
+    try { out = doeOutputs(r, geo); } catch (err) { end(); Object.assign(run, { status: 'error', error: err.message }); settle(); return; }
+    // then the film across the web: the 1D at every position (in the run's own slot, a 1D worker)
+    w.terminate();
+    const w1 = makeWorker('cfd-1d-worker.js');
+    run.worker = w1;
+    w1.onmessage = e1 => {
+      end1();
+      const A = e1.data.ok && e1.data.across;
+      out.filmAcross = A ? (Math.max(...A.map(q => q.film)) - Math.min(...A.map(q => q.film))) * 1e6 : NaN;
+      Object.assign(run, { status: 'done', out });
+      settle();
+    };
+    w1.onerror = () => { end1(); Object.assign(run, { status: 'done', out: { ...out, filmAcross: NaN } }); settle(); };
+    const end1 = () => { w1.terminate(); run.worker = null; DOE.active.delete(run); run.ms = performance.now() - t0; };
+    w1.postMessage({ id: 1, locs: [], across: G.across, ripple: G.ripple });
   };
   w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); settle(); };
   w.postMessage(cfdWorkerMessage(geo));

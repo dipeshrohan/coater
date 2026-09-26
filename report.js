@@ -114,6 +114,7 @@ async function repModule(m, statsTitle = 'Results') {
   if (m === 0) {
     html += '<h3>Scenario</h3>' + repRows(ANIM_UNDO.map(([k, l, f]) => [repEsc(l), repEsc(f(ANIM[k]))]), ['Setting', 'Value']);
   }
+  if (m === 11) html += acrossReportHTML();
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
   const figs = imageTargets().filter(t => t.id.startsWith('pane:'));
@@ -126,12 +127,14 @@ async function repModule(m, statsTitle = 'Results') {
 /** Flow › 3D: its setup, then the page (the 3D view drawn once three.js is in). */
 async function rep3D() {
   try { await load3DLibs(); } catch (e) { /* (the report goes without the 3D view) */ }
-  const G = c3dBuild(), rg = C3D.region === 'strip' ? `strip ${C3D.stripW} mm wide at L${C3D.loc + 1} (z ${CFD_LOCS[C3D.loc].z} mm)` : `full web width, ${ACROSS_W} mm`;
+  const eg = C3D.region === 'edge' ? c3dEdgeGeom() : null;
+  const G = c3dBuild(), rg = C3D.region === 'strip' ? `strip ${C3D.stripW} mm wide at L${C3D.loc + 1} (z ${CFD_LOCS[C3D.loc].z} mm)` : eg ? `edge strip ${C3D.edgeW} mm wide at the ${C3D.edgeEnd} end, from z ${+eg.out.toFixed(2)} mm inward; its outer side open (the edge bead), its inner side a symmetry plane; contact angles on the blade ${cfdLocalContactDeg(eg.out).toFixed(1)}°, on the web ${P.thw}°; the bead pressure raised in steps from none` : `full web width, ${ACROSS_W} mm${C3D.webEdges === 'open' ? ', its edges open (the edge bead)' : ''}`;
   const rows = [['Blade', repEsc(G.label || 'no file imported')], ['Region', repEsc(rg)],
     ['Mesh', repEsc(C3D.frac3 || c3dZAdapted() ? `adapted by meshing to an accuracy: ${c3dCounts().a1} along the flow, ${c3dCounts().ny} across the gap, ${c3dNz()} ${C3D.region === 'strip' ? 'across the strip' : 'across the web'}`
-      : `elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : C3D.nzFull + ' across the web'}`)],
+      : `elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : eg ? `${C3D.edgeNz} across the strip (${c3dEdgeElemsText()})` : C3D.webEdges === 'open' ? `${C3D.nzFull} across the web between the edge strips, each edge strip ${C3D.edgeW} mm of ${C3D.edgeNz} (${c3dEdgeElemsText()})` : C3D.nzFull + ' across the web'}`)],
     ['Refinement zones', repEsc(`along the flow and up the gap: ${zonesText(C3D.region === 'full' ? CFDS.zones : solverOf(C3D.loc).zones)}${C3D.zoneScale !== 1 ? ` (sizes ÷${(+C3D.zoneScale).toFixed(2)})` : ''}; across: ${c3dZonesText(C3D.zZones)}${c3dNz() !== (C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull) ? ` (${c3dNz()} elements)` : ''}`)]];
-  if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(`${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
+  if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(C3D.webEdges === 'open' ? `each end first as an edge strip (its outer side open, the bead pressure raised in steps from none; contact angle on the web ${P.thw}°); if both hold the set bead pressure, ${L.subs.length} overlapping strips (the edge strips the end strips, open on their outer sides), sweep after sweep until they agree`
+    : `${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
   if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`],
     ['Exit face', C3D.fileFace === 'file' ? 'from the file: each station\'s side section (the contact line as in 2D)' : `straight at the 2D setup's angle (${CFDG.exitAngle}°)`]);
   // (solved: its Results step; else the Geometry step's numbers and view, then the Mesh step with its view)
@@ -144,7 +147,16 @@ async function rep3D() {
     if (geo.length || figs) pre = '<h3>Geometry</h3>' + (geo.length ? repRows(geo, ['Geometry', 'Value']) : '') + figs;
     C3D.step = 'mesh';
   }
-  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + await repModule(9, c3dShown() ? 'Results' : 'Mesh');
+  const body = await repModule(9, c3dShown() ? 'Results' : 'Mesh');
+  // (an open edge: its answer and its bead pressure step by step, each end's)
+  let edge = '';
+  if (c3dShown()) for (const box of document.querySelectorAll('.c3d-ends-ans .edge-answer, .c3d-edge')) {
+    const a = box.classList.contains('edge-answer') ? box : box.querySelector('.edge-answer'), t = box.querySelector && box.querySelector('.c3d-steps'), h = box.querySelector && box.querySelector('.c3d-end-title');
+    if (h) edge += `<h4>${repEsc(cleanText(h))}</h4>`;
+    if (a) edge += `<p>${repEsc(cleanText(a))}</p>`;
+    if (t) edge += repRows([...t.querySelectorAll('tbody tr')].map(r => [...r.children].map(td => repEsc(cleanText(td)))), [...t.querySelectorAll('th')].map(th => repEsc(cleanText(th))));
+  }
+  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + body + (edge ? '<h3>The web\'s edge</h3>' + edge : '');
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };

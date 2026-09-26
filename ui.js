@@ -177,14 +177,14 @@ document.addEventListener('click', e => {
   const n = e.target.closest && e.target.closest('[data-note]');
   if (n) { const id = n.dataset.note; if (PANE_NOTES.has(id)) PANE_NOTES.delete(id); else PANE_NOTES.add(id); render(); }
 });
-function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '', steps = '' }) {
+function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '', steps = '', top = '' }) {
   // the page reads top down: its sub tabs (and controls), the answer (verdict, the question, the other
   // checks, the thin-film validity), the key numbers, then the plots; its history opens from Edit > History
   return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
     <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${steps}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
     <div class="verdict"><div class="status" id="st"></div><p class="vq">${TAB_Q[tab]}</p><p class="pg-scope" id="pgScope"></p></div>
     <div class="mod-results"><div class="stats" id="ss"></div></div>
-    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${uiBadge(p.icon)}${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>
+    <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${top ? `<div class="mod-top">${top}</div>` : ''}${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${uiBadge(p.icon)}${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>
     <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
     <section class="dock mod-dock" aria-label="History">
       <div class="dock-tabs" role="tablist" aria-label="Panels"><button type="button" role="tab" data-dock="history" aria-selected="true" aria-controls="mod-history">${uiIco('history')}History<span class="tab-n" data-n="history"></span></button></div>
@@ -213,8 +213,8 @@ function paneRoom(cv) {
   if (!vp || !workbenchFits()) return Infinity;
   const cols = +vp.dataset.cols || 1, rows = Math.ceil(vp.querySelectorAll('.pane').length / cols);
   const cs = getComputedStyle(vp), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom), gap = parseFloat(cs.rowGap) || 0;
-  const fig = cv.closest('.pane');
-  return Math.max(120, (vp.clientHeight - pad - gap * (rows - 1)) / rows - (fig.offsetHeight - cv.offsetHeight) - 2);
+  const fig = cv.closest('.pane'), top = vp.querySelector('.mod-top'), topH = top ? top.offsetHeight + gap : 0;   // (a page's block above its panes)
+  return Math.max(120, (vp.clientHeight - pad - topH - gap * (rows - 1)) / rows - (fig.offsetHeight - cv.offsetHeight) - 2);
 }
 /** A canvas's aspect ratio (height / width) in its pane: `want`, or flatter so the panes fit. */
 const fitAspect = (cv, want) => Math.max(0.12, Math.min(want, paneRoom(cv) / (cv.parentElement.clientWidth || 600)));
@@ -328,10 +328,11 @@ function fillA() {
 // ---------------------------------------------------------------------
 /** The contact line and the wet film across the web (300 points over 300 mm), their ranges and the verdict. */
 function contactAcross() {
-  const N = 300, WIDTH = 300, pts = [], film = [];
+  // (where the blade is: it may end inside the web -- past its end no blade meters the film)
+  const N = 300, WIDTH = 300, pts = [], film = [], sp = acrossSpanNow(), za = Math.max(0, sp[0]), zb = Math.min(WIDTH, sp[1]);
   let mx = 0, mn = 1e9, over = 0, hmn = 1e9, hmx = 0;
   for (let i = 0; i < N; i++) {
-    const z = i / (N - 1) * WIDTH;
+    const z = za === 0 && zb === WIDTH ? i / (N - 1) * WIDTH : za + (zb - za) * i / (N - 1);
     const H = localGap(z), th = localContactAngle(z);
     const r = contactLine(H, th);
     pts.push([z, r.s]); film.push([z, r.h]);
@@ -700,6 +701,7 @@ function render() {
   const af = document.activeElement, keepF = af && af.closest && (af.closest('.subtabs [data-view]') || af.closest('[data-l1d]'))
     ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.view ?? af.dataset.l1d);
   undoBeforeRender();
+  const acrF = acrFocusSave();   // (the blade across the web's panels are drawn anew: the focus goes back to the same control)
   const sec = secOf(tab), grp = groupOfView(tab);
   SEC_LAST[sec.k] = tab;
   if (grp) GROUP_LAST[grp.k] = tab;
@@ -716,6 +718,7 @@ function render() {
   work.classList.add('fill');
   [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross][tab]();
   wireModDock();
+  acrossSidebar();
   decorateImageButtons();
   applyHelp();
   updateProjectTitle();
@@ -725,6 +728,7 @@ function render() {
   applyKeyLabels();
   decorateTree();
   if (keepF) { const bs = [...document.querySelectorAll(keepF)], f = bs.find(x => (x.dataset.view ?? x.dataset.l1d) === keepV) || bs.find(x => x.getAttribute('aria-selected') === 'true'); if (f) f.focus(); }
+  acrFocusRestore(acrF);
 }
 
 // ---- theme: follows the system until switched here (remembered in this browser)
@@ -765,7 +769,7 @@ document.getElementById('reset').onclick = () => {
     s.value = c.v;
     s.dispatchEvent(new Event('input'));
   });
-  imgToast(`The shared inputs are back to their defaults (the CFD setup stays).${keyLabel('edit.undo') ? ` Undo: ${keyLabel('edit.undo')}.` : ''}`);
+  imgToast(`The shared inputs are back to their defaults (the CFD setup and the blade across the web stay).${keyLabel('edit.undo') ? ` Undo: ${keyLabel('edit.undo')}.` : ''}`);
 };
 
 

@@ -89,8 +89,8 @@ function groupOf(details) {
 // ---- which shared inputs each tab uses ----
 const ALL_IN = CFG.map(c => c.k);
 const USES = [
-  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib'].includes(k)),
-  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib'].includes(k)),
+  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw'].includes(k)),
+  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw'].includes(k)),
   ['U', 'Hm', 'tf', 'oven', 'mu', 'n', 'ty', 'g', 'Pup', 'L', 'a0e'],
   ['U', 'Hm', 'tf', 'oven', 'mu', 'n', 'ty', 'g', 'Pup', 'L', 'dH', 'lam', 'vib'],
   null, null,     // (CFD, DOE: below, with the setup)
@@ -110,7 +110,8 @@ function unusedWhy(k) {
   return `not used in ${TABS[tab]}`;
 }
 // (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web and the 3D blade the notch face)
-const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 || tab === 9 ? [...cfdUses(), 'face'] : USES[tab]; return !u || u.includes(k); };
+// (the 3D also the contact angle on the web: its open edges)
+const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : tab === 9 ? [...cfdUses(), 'face', 'thw'] : USES[tab]; return !u || u.includes(k); };
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {

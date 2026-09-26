@@ -101,7 +101,9 @@ function plotChart(cv, aspectRatio, opts) {
     c.strokeStyle = ref.c; c.setLineDash([5, 4]);
     c.beginPath(); c.moveTo(X(ref.x), margin.t); c.lineTo(X(ref.x), margin.t + plotH); c.stroke();
     c.setLineDash([]);
-    c.fillStyle = ref.c; c.textAlign = 'left'; c.fillText(ref.t, X(ref.x) + 4, margin.t + 12);
+    // (a label that would run past the plot's right side goes on the line's left)
+    const flip = X(ref.x) + 4 + c.measureText(ref.t).width > w - margin.r;
+    c.fillStyle = ref.c; c.textAlign = flip ? 'right' : 'left'; c.fillText(ref.t, X(ref.x) + (flip ? -4 : 4), margin.t + 12);
   });
 
   // data series

@@ -1339,6 +1339,7 @@ function saveCase() {
     P: Object.fromEntries(CFG.map(q => [q.k, P[q.k]])),
     CFDG: { ...CFDG },
     CFDS: { ...CFDS },
+    across: JSON.parse(JSON.stringify(ACR)),
     locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes.map(q => ({ ...q })),
     cuts: cfdCuts.map(q => ({ ...q })),
@@ -1364,6 +1365,7 @@ function loadCase(name) {
   }
   for (const k of Object.keys(CFDG)) if (c.CFDG && k in c.CFDG) CFDG[k] = c.CFDG[k];   // (older cases: fields since renamed are skipped)
   Object.assign(CFDS, SOLVER_DEFAULTS, c.CFDS || {});   // (older cases: the default solver settings)
+  applyAcross(c.across);   // (older cases: the blade across the web with no new part, as it was then)
   c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; CFD_LOCS[i].solver = { ...(l.solver || {}) }; } });
   if (Array.isArray(c.probes)) { cfdProbes = c.probes.map(q => ({ ...q })); saveProbes(); }
   if (Array.isArray(c.cuts)) { cfdCuts = c.cuts.map(q => ({ ...q })); saveCuts(); }

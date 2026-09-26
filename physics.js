@@ -33,6 +33,7 @@ const CFG = [
   { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.02, u: 'kPa', d: 2, v: 0.72, h: 'set to give 1.45 mm at default' },
   { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed' },
   { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed' },
+  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed; where the slurry\'s side meets the bare web (3D, open edges)' },
   { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'assumed, measure on the blade' },
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
@@ -215,8 +216,10 @@ function rippleLevelling() {
 }
 
 /** Local gap (mm) and contact angle (deg) at position z (mm) across the web (0 to 300 mm): waviness, the blade's tilt
- *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation. */
-const localGap = z => gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000;
+ *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation; and the blade
+ *  across the web's other parts (across-ui.js: a bow, more sines, chamfered ends, a measured gap, a crown -- none on:
+ *  nothing added, and the waviness's crest where it always was). */
+const localGap = z => gapHeight() + (acrossWave(z) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000 + acrossExtraMm(z);
 const localContactAngle = z => P.th + P.dth * spatialNoise(z, 4.1);
 /** The blade skewed across the web: its metering edge at P.skew degrees to the cross direction (+: the end at z = 300 mm
  *  further downstream). The 1D, 2D and 3D work in the blade's frame: the web crosses the blade at U cos(skew) and moves

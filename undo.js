@@ -127,6 +127,8 @@ const UNDO_UNITS = (() => {
     const [l, f] = C3D_UNDO[k];
     u.push({ id: 'c3d.' + k, get: () => C3D[k], set: v => { C3D[k] = v; }, label: (a, b) => undoChange(l, a, b, f) });
   }
+  // (the blade across the web: a unit per setting)
+  for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });
   u.push({ id: 'c3d.file', get: () => C3D_FILE ? C3D_FILE.id : null, set: v => { C3D_FILE = v != null && C3D_FILES.get(v) || null; C3D_GEO = null; },
     label: (a, b) => b ? `Import 3D blade ${(C3D_FILES.get(b) || {}).name || ''}`.trim() : 'Remove the 3D blade file' });
   return u;
