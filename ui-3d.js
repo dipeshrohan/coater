@@ -1030,8 +1030,9 @@ function c3dEndsHTML(F) {
   return `<div class="c3d-ends">${['left', 'right'].map(end => { const E = c3dEndView(F, end);
     return c3dEdgeHTML(E, false, { sfx: end === 'left' ? 'L' : 'R', answer: false, title: `The ${end} end${F.held ? ' (the width\'s own solution)' : E.valid ? ` at ${(+E.P).toFixed(1)} Pa, the most it holds (its edge strip)` : ' (its edge strip)'}` }); }).join('')}</div>`;
 }
-/** The stations with a film of their own: all but the edge blocks' (the full width with its edges open). */
-const c3dFilmStations = R => R.openEdges ? R.stations.slice(2 * R.edgeM, R.NL - 2 * R.edgeM) : R.stations;
+/** The stations with a film of their own: all but the edge blocks' (an edge strip; the full width with its edges open). */
+const c3dFilmStations = R => R.openEdges ? R.stations.slice(2 * R.edgeM, R.NL - 2 * R.edgeM)
+  : R.region === 'edge' && R.open ? R.stations.filter((_, l) => !R.open.stations.slice(1).includes(l)) : R.stations;
 /** The edge's verdict as a status pill. */
 const c3dEdgePill = R => R.held ? pill(`The ${R.edgeGeom.left ? 'left' : 'right'} end holds the set bead pressure (${(+R.Pset).toFixed(1)} Pa)`, 'ok')
   : pill(`The ${R.edgeGeom.left ? 'left' : 'right'} end holds ${R.valid ? `up to ${(+R.P).toFixed(1)} Pa` : 'no bead pressure'} of the ${(+R.Pset).toFixed(1)} Pa set`, 'bad');
@@ -1064,7 +1065,8 @@ function c3dEdgeCharts(R, sfx = '') {
       const c = cv.getContext('2d'), kb = p.findIndex(q => q[1] === bead);
       c.fillStyle = acc; c.globalAlpha = 0.12; c.beginPath(); c.moveTo(M.X(p[0][0]), M.Y(0)); p.forEach(q => c.lineTo(M.X(q[0]), M.Y(q[1]))); c.lineTo(M.X(p[p.length - 1][0]), M.Y(0)); c.closePath(); c.fill(); c.globalAlpha = 1;
       c.fillStyle = bad; c.beginPath(); c.arc(M.X(p[kb][0]), M.Y(bead), 4, 0, 7); c.fill();
-      c.font = '12px ' + cssVar('--sans'); c.textAlign = 'left'; c.fillText(`bead ${bead.toFixed(3)} mm (${((bead / inner - 1) * 100).toFixed(1)} % above)`, M.X(p[kb][0]) + 6, M.Y(bead) - 6);
+      // (the label below the point, clear of the lines' own labels along the top)
+      c.font = '12px ' + cssVar('--sans'); c.textAlign = 'left'; c.fillText(`bead ${bead.toFixed(3)} mm (${((bead / inner - 1) * 100).toFixed(1)} % above)`, M.X(p[kb][0]) + 8, M.Y(bead) + 18);
     } }
   // 3: from above: the contact line on the web along the flow, the top contact point under the blade
   { const cv = document.getElementById('c3dEdgePlan' + sfx);
