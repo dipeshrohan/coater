@@ -1284,6 +1284,14 @@ body:has(#pgScope) #scope { display: none; }
 @media (max-width: 1023px) { .v3d-charts { grid-template-columns: minmax(0, 1fr); } }
 .pg-tools select[data-c3d] { width: auto; max-width: 11em; }
 .c3d-busy { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* an open edge (the Edge region; the full width with its edges open): its answer, its views and steps, the two ends side by side */
+.edge-answer { padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 6px; font-size: 13.5px; line-height: 1.5; }
+.edge-answer.bad { border-left-color: var(--bad); }
+.c3d-edge { display: grid; gap: 16px; min-width: 0; }
+.c3d-end-title { margin: 0; font-size: 14px; }
+.c3d-ends-ans, .c3d-ends { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.c3d-ends .v3d-charts { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1023px) { .c3d-ends-ans, .c3d-ends { grid-template-columns: minmax(0, 1fr); } }
 .v3d-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
 
 /* Flow › 2D while the progress bars show: the parts under them keep the heights they have without them (set by

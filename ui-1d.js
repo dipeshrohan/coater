@@ -177,8 +177,10 @@ function oneDCompareTable() {
     if (!S) return null;
     const R = S.result, stale = S.key !== c3dSolveKey3(S);
     if (S.region === 'full') {
-      const zi = CFD_LOCS[i].z / 1000 - R.zOff;
-      let m = 0; R.stations.forEach((st, l) => { if (Math.abs(st.z - zi) < Math.abs(R.stations[m].z - zi)) m = l; });
+      // (the web's edges open: nothing when the width was not solved, and only stations with a film of their own, not an edge block's)
+      if (!R.stations) return null;
+      const zi = CFD_LOCS[i].z / 1000 - R.zOff, own = new Set(c3dFilmStations(R));
+      let m = -1; R.stations.forEach((st, l) => { if (own.has(st) && (m < 0 || Math.abs(st.z - zi) < Math.abs(R.stations[m].z - zi))) m = l; });
       return { R, m, stale };
     }
     return S.loc === i ? { R, m: (R.NL - 1) / 2, stale } : null;

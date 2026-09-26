@@ -14,10 +14,11 @@
  * Messages out: { id, progress: { stage, it, residual, path, r0, add, solves } } while solving (for the progress
  *   bars: path, how far along its continuation the Newton solve is; r0, the 3D solve's first residual; add and solves,
  *   a station's 2D solves as cfd-worker.js sends them), then { id, ok: true, result } or { id, ok: false, error }.
- * A wide region (the full web width): messages with type 'wideInit' / 'wideSolve' (below).
+ * A wide region (the full web width): messages with type 'wideInit' / 'wideSolve' (below); with its edges open, an end strip's
+ *   wideSolve has open: { lo | hi: its edge } and init (its edge strip's state, keep: true on that 'edge' message).
  * A web edge: type 'edge', { msg, strip, file, edge: { side, m, zEnd, zWeb, thWeb, thBlade } }: the strip with its outer side
  *   open, the bead pressure raised in steps from none; messages { id, step } after each step; the result as a strip's (at the
- *   highest pressure the edge held) with { region: 'edge', held, P, Pset, limit, steps, valid, open (the surface round the edge) }.
+ *   highest pressure the edge held) with { region: 'edge', held, P, Pset, limit, steps, valid, squeeze, open (the surface round the edge) }.
  */
 importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-fem3d.js');
 
@@ -98,6 +99,8 @@ function wideOpts(o, strip, file) {
   return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
     webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
     fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0,
+    // (an open edge under a blade from a file: its underside across the edge from the file, at x along the flow)
+    ...(file ? { dTop: (() => { const f = fileHAt(file); return (z, x) => f(z)(x); })() } : {}),
     meshZones: sv.zones || null, meshFrac: sv.frac || null, ...(profileAt ? { profileAt, profile: p0, clModel: o.clModel || 'full' } : {}) };
 }
 const packStation = T => { const o = {}; for (const f of ['u', 'v', 'w', 'p', 'x', 'y', 'z', 'gd', 'mu', 'h']) if (T[f]) o[f] = Float64Array.from(T[f]); o.s = T.s; o.q = T.q; return o; };
@@ -128,8 +131,11 @@ function wide(e) {
       onStage: pp.stage, onIteration: pp.iter2, onSolveStart: pp.solve2, onIteration3: pp.iter3, onStep: s => postMessage({ id, step: s }) };
     const r = solveEdgeStrip(opts);
     if (r.error) { postMessage({ id, ok: false, error: r.error }); return; }
-    const valid = r.steps.some(s => s.ok), result = { region: 'edge', held: r.held, P: r.P, Pset: d.msg.Pup, limit: r.limit, steps: r.steps, valid };
+    const valid = r.steps.some(s => s.ok), result = { region: 'edge', held: r.held, P: r.P, Pset: d.msg.Pup, limit: r.limit, steps: r.steps, valid, squeeze: r.squeeze };
     const tr = [];
+    // (the full width with its edges open: this edge's solution and its stations' meniscus, to start the region's end strip from)
+    if (d.keep && valid) { const st = { sol: Float64Array.from(r.r3.state.sol), s: Float64Array.from(r.r3.state.s) }; tr.push(st.sol.buffer, st.s.buffer);
+      result.state = { ...st, mode: r.S.mode, k: r.S.k ?? null, NC: r.S.NC, NR: r.S.NR, cCL: r.S.cCL }; }
     if (valid) {
       const R = r.r3, S = r.S, NC = R.NC, NL = R.NL, NR = R.NR, inner = d.edge.side === 'hi' ? 0 : NL - 1, E = r.open, f32 = a => { const v = Float32Array.from(a); tr.push(v.buffer); return v; };
       const top = { x: [], y: [], p3: [], p2: [] };
@@ -143,16 +149,32 @@ function wide(e) {
     postMessage({ id, ok: true, result }, tr);
     return;
   }
-  // wideSolve: one strip l0..l1; the states of its stations (the held sides among them)
-  const { l0, l1, states, sideLo, sideHi } = d, state = [];
+  // wideSolve: one strip l0..l1; the states of its stations (the held sides among them); an end strip with its outer side open
+  // (open: { lo | hi: its edge }), started from its own last solution, or from init (its edge strip's, that strip lying zOff lower in z)
+  const { l0, l1, states, sideLo, sideHi, open } = d, state = [];
   for (let l = l0; l <= l1; l++) state[l] = states[l];
   const pp = progressPoster(id, 300);
   const opts = { ...WIDE.opts, onStage: null, onIteration: null, onSolveStart: null, onIteration3: pp.iter3 };
-  const r3 = coaterStrip3D(opts, WIDE.S, l0, l1, state, sideLo, sideHi, { label: `strip ${l0}-${l1}` });
+  let extra = { label: `strip ${l0}-${l1}` };
+  if (open) {
+    const side = open.lo ? 'lo' : 'hi', key = `${l0}-${l1}`, last = WIDE.last && WIDE.last[key], S = WIDE.S, I = d.init;
+    const fits = I && I.mode === S.mode && I.k === (S.k ?? null) && I.NC === S.NC && I.NR === S.NR && I.cCL === S.cCL;
+    const from = last ? { sol: last.sol, s: last.s } : fits ? { sol: I.sol, s: I.s, zOff: I.zOff } : null;
+    extra = { ...extra, open: { [side]: { ...open[side], dTop: opts.dTop || opts.dH || null } }, maxIter: opts.maxIter3 ?? 80,
+      ...(from ? { init: from, initNodal: null, h0: null, s0: null } : {}) };
+  }
+  const r3 = coaterStrip3D(opts, WIDE.S, l0, l1, state, sideLo, sideHi, extra);
   if (!r3.converged) { postMessage({ id, ok: false, error: `the strip from station ${l0} to ${l1} did not converge (residual ${r3.residual.toExponential(1)})` }); return; }
   const out = {};
   for (let j = sideLo ? 1 : 0; j <= (sideHi ? l1 - l0 - 1 : l1 - l0); j++) out[l0 + j] = packStation(stationFrom3D(r3, j));
-  postMessage({ id, ok: true, result: { states: out, iterations: r3.iterations, unknowns: r3.size.unknowns } });
+  let openOut = null;
+  if (open) {
+    (WIDE.last = WIDE.last || {})[`${l0}-${l1}`] = { sol: r3.state.sol, s: r3.state.s };
+    const E = r3.open[0];
+    openOut = { side: E.side, stations: E.stations.map(j => l0 + j), z: E.z, y: E.y, top: Array.from(E.top), web: E.web, angleTop: Array.from(E.angleTop), angleWeb: Array.from(E.angleWeb),
+      pinTop: Array.from(E.pinTop), pinWeb: E.pinWeb, climb: E.climb.length, spill: E.spill.length };
+  }
+  postMessage({ id, ok: true, result: { states: out, iterations: r3.iterations, unknowns: r3.size.unknowns, open: openOut, flow: r3.flow || null } });
 }
 
 onmessage = e => {

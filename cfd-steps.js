@@ -938,7 +938,7 @@ function stepAfterRun3D() {
 /** The 3D mesh's size: elements along the flow (blade + exit face + film), up the gap, across; solved, or as set. */
 function c3dMeshSize() {
   const S = c3dShown(), R = S && S.result;
-  if (R) {
+  if (R && R.x) {   // (an edge that held nothing: no mesh solved)
     const a = (R.NC - 1) / 2, y = (R.NR - 1) / 2, z = (R.NL - 1) / 2, nB = R.cCorner != null ? R.cCorner / 2 : C3D.nxGap, face = R.cCL != null ? (R.cCL - R.cCorner) / 2 : a - C3D.nxGap - C3D.nxFilm;
     return { solved: true, a0: a, a1: a, ny: y, nz: z, face, nB, nS: a - nB - face };
   }
@@ -964,9 +964,13 @@ function c3dHexQuality(R) {
   const NC = R.NC, NR = R.NR, NL = R.NL, eC = (NC - 1) / 2, eR = (NR - 1) / 2, eL = (NL - 1) / 2;
   const N = t => [t * (t - 1) / 2, 1 - t * t, t * (t + 1) / 2], dN = t => [t - 0.5, -2 * t, t + 0.5], P3 = [-1, 0, 1].map(t => ({ N: N(t), d: dN(t) }));
   const idx = (c, l, k) => (c * NL + l) * NR + k;
-  let worst = Infinity, sum = 0, n = 0, below = 0;
+  let worst = Infinity, sum = 0, n = 0, below = 0, wedges = 0;
   const hist = new Array(10).fill(0);
+  // (an open edge: its fan's outermost elements at the web, where the side's last spine lies along the web -- wedges, a corner
+  // collapsed onto the contact line by design: counted apart)
+  const sides = R.region === 'edge' && R.open ? [R.open.side] : R.openEdges && R.open ? ['lo', 'hi'] : [], wedgeAt = el => sides.includes(el === 0 ? 'lo' : el === eL - 1 ? 'hi' : '');
   for (let ec = 0; ec < eC; ec++) for (let el = 0; el < eL; el++) for (let er = 0; er < eR; er++) {
+    if (er === 0 && wedgeAt(el)) { wedges++; continue; }
     let jmin = Infinity, jmax = -Infinity;
     for (let pa = 0; pa < 3; pa++) for (let pb = 0; pb < 3; pb++) for (let pd = 0; pd < 3; pd++) {
       const A = P3[pa], B = P3[pb], D = P3[pd];
@@ -982,7 +986,7 @@ function c3dHexQuality(R) {
     const q = jmax > 0 ? Math.max(-1, jmin / jmax) : -1;
     worst = Math.min(worst, q); sum += q; n++; if (q < 0.5) below++; hist[Math.min(9, Math.max(0, Math.floor(q * 10)))]++;
   }
-  return (R._hexQ = { worst, mean: sum / n, n, below, hist });
+  return (R._hexQ = { worst, mean: sum / n, n, below, hist, wedges });
 }
 /** Before solving (the blade made from the 2D setup): the stations' starting layout, as the 2D lays out a station with the 3D's counts, at the strip's location. */
 const C3D_PV = { key: null, stats: null, error: null };
@@ -1002,13 +1006,14 @@ function stepStatus3D() {
   const G = c3dBuild(), S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey3(S), m = c3dMeshSize(), st = {};
   st.geometry = G.error ? { state: 'bad', note: 'cannot be built', title: G.error } : G.empty ? { state: 'warn', note: 'no blade file yet' }
     : G.open || G.multi ? { state: G.open ? 'bad' : 'warn', note: G.open ? 'blade misses the region' : 'blade overhangs' }
-      : { state: 'done', note: `${C3D.source === 'made' ? 'from the 2D setup' : 'from a file'} · ${C3D.region === 'strip' ? `${C3D.stripW} mm at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip ${C3D.edgeW} mm at the ${C3D.edgeEnd} end` : 'full width'}` };
-  const q = R ? c3dHexQuality(R).worst : C3D_PV.stats && C3D_PV.key === c3dPreviewKey() ? C3D_PV.stats.worst : null;
+      : { state: 'done', note: `${C3D.source === 'made' ? 'from the 2D setup' : 'from a file'} · ${C3D.region === 'strip' ? `${C3D.stripW} mm at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip ${C3D.edgeW} mm at the ${C3D.edgeEnd} end` : C3D.webEdges === 'open' ? 'full width, its edges open' : 'full width'}` };
+  const q = R && R.x ? c3dHexQuality(R).worst : C3D_PV.stats && C3D_PV.key === c3dPreviewKey() ? C3D_PV.stats.worst : null;
   const hx = m.a0 === m.a1 ? c3dHexes(m.a0, m).toLocaleString() : `${c3dHexes(m.a0, m).toLocaleString()}–${c3dHexes(m.a1, m).toLocaleString()}`;
   st.mesh = { state: G.mesh || R ? (q != null && q < 0.2 ? 'warn' : 'done') : '', note: `${hx} hexahedra${q != null ? ` · worst ${q.toFixed(2)}` : ''}` };
   st.solve = C3D_RUN.status === 'running' ? { state: 'run', note: `solving ≈ ${Math.floor(100 * (c3dProgShare() || 0))} %` }
     : C3D_RUN.status === 'error' ? { state: 'bad', note: 'failed', title: C3D_RUN.error } : R ? { state: stale ? 'warn' : 'done', note: stale ? 'out of date' : `solved in ${c3dTime(S.ms / 1000)}` } : { state: '', note: 'not solved' };
-  st.results = !R ? { state: '', note: 'nothing yet' } : stale ? { state: 'warn', note: 'out of date' } : R.region === 'edge' ? { state: R.held ? 'done' : 'warn', note: R.held ? 'the end holds' : R.valid ? `holds up to ${(+R.P).toFixed(1)} Pa` : 'the end does not hold' } : { state: 'done', note: 'flow, film, pressure' };
+  st.results = !R ? { state: '', note: 'nothing yet' } : stale ? { state: 'warn', note: 'out of date' } : R.region === 'edge' ? { state: R.held ? 'done' : 'warn', note: R.held ? 'the end holds' : R.valid ? `holds up to ${(+R.P).toFixed(1)} Pa` : 'the end does not hold' }
+    : R.openEdges ? { state: R.held ? 'done' : 'warn', note: R.held ? 'both ends hold; flow, film, beads' : 'an end does not hold' } : { state: 'done', note: 'flow, film, pressure' };
   return st;
 }
 /** The Mesh step's report on the 3D page. */
@@ -1016,6 +1021,10 @@ function stepStatus3D() {
 function c3dZonesHTML() {
   const z = c3dZones(), full = C3D.region === 'full', where = full ? 'web' : 'strip', rg = c3dRegion(), set = rg.nz, n = c3dNz();
   const z2 = zonesText(full || C3D.region === 'edge' ? CFDS.zones : solverOf(C3D.loc).zones);
+  // (the full width with its edges open: each end's edge strip as the Edge region lays it out, the set count evenly between)
+  if (full && C3D.webEdges === 'open') return `<h4>${uiBadge('grading')}Refinement zones</h4>
+    <p class="side-note" style="margin-top:0">Along the flow and up the gap, at every station: the 2D's zones (${z2}). <button type="button" class="linkish" id="c3dZ2d">Set them on Flow › 2D, Mesh</button></p>
+    <p class="side-note">Across the web: at each end its edge strip (${C3D.edgeW} mm, ${C3D.edgeNz} elements: ${c3dEdgeElemsText()}, the rest evenly inward), and ${C3D.nzFull} elements evenly between them (Inputs › 3D mesh); ${n} in all. Zones across the web are not used with the edges open.</p>`;
   // (an edge strip: its own elements across -- round the edge at their size, the rest evenly inward)
   if (C3D.region === 'edge') return `<h4>${uiBadge('grading')}Refinement zones</h4>
     <p class="side-note" style="margin-top:0">Along the flow and up the gap, at every station: the 2D's zones (${z2}). <button type="button" class="linkish" id="c3dZ2d">Set them on Flow › 2D, Mesh</button></p>
@@ -1052,12 +1061,12 @@ function wireC3dZones(host) {
   };
 }
 function c3dMeshSideHTML() {
-  const S = c3dShown(), R = S && S.result, m = c3dMeshSize(), e = c3dEstimate(), hq = R ? c3dHexQuality(R) : null, pv = !R && C3D_PV.key === c3dPreviewKey() ? C3D_PV : null;
+  const S = c3dShown(), R = S && S.result, m = c3dMeshSize(), e = c3dEstimate(), hq = R && R.x ? c3dHexQuality(R) : null, pv = !(R && R.x) && C3D_PV.key === c3dPreviewKey() ? C3D_PV : null;
   const q = hq || (pv && pv.stats), hmax = q ? Math.max(...q.hist, 1) : 1;
   const hx = m.a0 === m.a1 ? c3dHexes(m.a0, m).toLocaleString() : `${c3dHexes(m.a0, m).toLocaleString()} to ${c3dHexes(m.a1, m).toLocaleString()}`;
   const nd = m.a0 === m.a1 ? c3dNodes(m.a0, m).toLocaleString() : `${c3dNodes(m.a0, m).toLocaleString()} to ${c3dNodes(m.a1, m).toLocaleString()}`;
   const st = pv && pv.stats, nB = st ? st.nB : C3D.nxGap, nS = st ? st.nS : C3D.nxFilm;
-  return `${c3dZonesHTML()}${C3D.region === 'edge' ? '' : acc3HTML()}<h4>${uiBadge('mesh')}3D mesh, ${C3D.region === 'strip' ? `strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip at the ${C3D.edgeEnd} end` : 'full width'}${R ? '' : ' (before solving)'}</h4><table class="kv">
+  return `${c3dZonesHTML()}${c3dOpenEdges() ? '' : acc3HTML()}<h4>${uiBadge('mesh')}3D mesh, ${C3D.region === 'strip' ? `strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip at the ${C3D.edgeEnd} end` : C3D.webEdges === 'open' ? 'full width, its edges open' : 'full width'}${R ? '' : ' (before solving)'}</h4><table class="kv">
     <tr><td>Along the flow</td><td>${m.solved ? `${m.nB} + ${m.face} + ${m.nS}` : `${nB} + 0–${m.a1 - m.a0} + ${nS}`}</td></tr>
     <tr><td>Up the gap × across</td><td>${m.ny} × ${m.nz}</td></tr>
     <tr><td>Hexahedra (27 nodes)</td><td>${hx}</td></tr><tr><td>Nodes</td><td>${nd}</td></tr>
@@ -1065,7 +1074,7 @@ function c3dMeshSideHTML() {
     ${C3D.region === 'strip' ? `<tr><td>Memory, time (estimated)</td><td>${c3dMem(e.bytes)}, ${c3dTime(e.secs)}</td></tr>` : C3D.region === 'edge' ? `<tr><td>Memory, time per step (estimated)</td><td>${c3dMem(e.bytes)}, ${c3dTime(e.secs)}</td></tr>` : ''}
     <tr><td>Quality, worst</td><td>${q ? q.worst.toFixed(2) : '—'}</td></tr><tr><td>Quality, mean</td><td>${q ? q.mean.toFixed(2) : '—'}</td></tr></table>
     ${q ? `<div class="q-hist" aria-label="Quality histogram, 0 to 1">${q.hist.map((n, k) => `<i style="height:${Math.max(2, 46 * n / hmax)}px" title="${k / 10}–${(k + 1) / 10}: ${n}"></i>`).join('')}</div><div class="q-axis"><span>quality 0</span><span>1</span></div>` : ''}
-    <p class="side-note">${R ? 'Quality of the solved hexahedra: each one\'s smallest over largest Jacobian of its triquadratic map (1 = undistorted).'
+    <p class="side-note">${R ? `Quality of the solved hexahedra: each one's smallest over largest Jacobian of its triquadratic map (1 = undistorted)${q && q.wedges ? `; not counting the ${q.wedges} round the edge at the web's contact line, wedges by design (the side's last spine lies along the web)` : ''}.`
       : pv && pv.stats ? `Quality before solving: each station is laid out as the 2D lays out its mesh, with these counts (at L${C3D.loc + 1}, the contact line at the edge); neighbouring stations are joined across.`
         : C3D.source === 'made' ? 'Laying out the stations…' : 'The quality is known once solved (a blade from a file: its stations are laid out from the file\'s underside).'}
       The view shows the mesh's outer faces. Counts: Inputs › 3D mesh.</p>`;

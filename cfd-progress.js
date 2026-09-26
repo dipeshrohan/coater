@@ -121,18 +121,22 @@ function progSweeps(hist, done, tolSweep, maxSweeps) {
 /**
  * The full width (several workers): the 2D at the stations (n2 station solves in all, several at once: stations, by
  * worker), then sweeps of nStrips strips (several at once: strips, by strip index) until the change between sweeps (hist)
- * falls below tolSweep. t2, ts1, ts: the estimated times of the stations' 2D, the first sweep and a later one.
+ * falls below tolSweep. t2, ts1, ts: the estimated times of the stations' 2D, the first sweep and a later one; with the
+ * web's edges open, te: of the two edge strips first (phase 'edges', fe of it done).
  */
 function prog3DWide(o) { return { ...o, share: 0, done2: 0, stations: new Map(), sweep: 0, doneS: 0, strips: new Map(), hist: [], E: PROG.sweeps }; }
 function prog3DWideShare(P) {
+  // (the full width with its edges open: each end first as an edge strip, te the estimated time of that, fe its share done)
+  const te = P.te || 0;
+  if (P.phase === 'edges') { P.share = Math.max(P.share, Math.min(0.999, te * P.fe / (te + P.t2 + P.ts1 + (P.E - 1) * P.ts))); return P; }
   let f2 = P.done2; for (const S of P.stations.values()) f2 += S.P.share;
   f2 = P.n2 ? Math.min(1, f2 / P.n2) : 1;
   const sweeping = P.sweep > 0 || P.doneS > 0 || P.strips.size > 0;
   let fs = P.doneS; for (const S of P.strips.values()) fs += S.f;
   fs = Math.min(1, fs / P.nStrips);
   P.E = progSweeps(P.hist, P.sweep, P.tolSweep, P.maxSweeps);
-  const t = P.t2 * (sweeping ? 1 : f2) + (!sweeping ? 0 : P.sweep === 0 ? P.ts1 * fs : P.ts1 + (P.sweep - 1 + fs) * P.ts);
-  P.share = Math.max(P.share, Math.min(0.999, t / (P.t2 + P.ts1 + (P.E - 1) * P.ts)));
+  const t = te + P.t2 * (sweeping ? 1 : f2) + (!sweeping ? 0 : P.sweep === 0 ? P.ts1 * fs : P.ts1 + (P.sweep - 1 + fs) * P.ts);
+  P.share = Math.max(P.share, Math.min(0.999, t / (te + P.t2 + P.ts1 + (P.E - 1) * P.ts)));
   return P;
 }
 

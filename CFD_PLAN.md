@@ -32,6 +32,45 @@ part, switchable, one undo step; also a CSV).
 - Nothing removed: today's waviness, tilt, skew, fibre thickness and wetting variation stay as they are
   (the first sine is today's waviness); new parts default off, so the old results stay the same.
 
+P4e, the edge bead in 3D (user, with mock-ups): no side plates, "the viscosity and surface tension must hold
+the slurry" (Q13); the contact angle on the bare web its own input, default 35 deg (Q14); the pool's pressure
+right up to the open end, the 3D solving the edge while the end holds it and saying how much it holds past
+that (Q15); a third region, Strip | Edge | Full width, the Edge region with its end, strip width and elements
+round the edge, the full width with a "Web edges: Symmetry | Open" switch (Q16); the edge's views: its answer,
+cross-sections, the film across the edge, from above, the angle along the blade, the pressure steps (Q17); the
+full width with open edges on one page, the width then both ends side by side (Q18); across the web the set
+count between the edge strips plus each edge strip's own (Q19).
+
+Build notes (as built):
+- cfd-fem3d.js: an open side is an edge block, the outer m elements of a strip, whose spines fan out from the
+  web (upright at its inner station, lying along the web at the outer one), so the slurry's whole outer surface
+  -- its top under the blade, round the edge, down to the web -- is one row of the mesh. Unknowns per column:
+  the top contact point V and the ray lengths. Rows: kinematic on the surface; at the blade's end and the web's
+  edge one complementarity row each (Fischer-Burmeister, smoothed 1e-9: inside with the contact angle there, or
+  held at the end with any larger angle -- Gibbs' lower limit; the upper, contact angle + 90 deg, is checked
+  after: climb / spill), solved in one Newton solve (it replaced rounds of pinning and letting go, which could
+  zipper along the blade column by column). The web carries its contact line: the web's angle at the inlet,
+  straight from there. The fan is laid out from the stations' 2D solutions (blockRef), so a solve lands on the
+  same solution however it starts; it starts from a still slurry's side: a plane from the blade's end down to
+  the web at the web's contact angle, clamped at the web's edge.
+- solveEdgeStrip: the stations' 2D with no bead pressure, the 3D with none, then the bead pressure in steps
+  (10 Pa, doubled after a quick solve, halved on a failure down to 5 %), each from the last; stops at a
+  climb, a spill or no steady edge (Newton does not converge). squeeze: the 2D at the blade's end with no bead
+  pressure, where its pressure under the blade most exceeds 2 gamma / h (about the most a surface across the
+  gap h holds).
+- solveCoaterWide with open ends: each end first as an edge strip; if both hold, the region strip by strip with
+  those as its end strips, open on their outer sides (from the edge strips' solutions, then their own).
+- Validation (cfd-fem3d.validate.js 8-9): still slurry arcs to microns, Gibbs let-go, flow in = out, the
+  bead; open ends strip by strip = the whole region at once (0.008 nm); the same edge from its 2D or from
+  another pressure's solution (0.001 nm).
+- Findings: with the app's defaults (round entry R 100 mm, 35 deg, the blade ending at the web's edge) the
+  end holds no bead pressure: with none the flow itself raises the pressure under the round entry to about
+  140 Pa where the gap is 2.4 mm, over the about 59 Pa (2 gamma / h) a surface across that gap holds. A
+  flat land (negative pressure under it) with 70 deg on the blade holds 10 Pa: the slurry 2.75 mm past the
+  blade's end, a bead 11 % above the film inside.
+- Cost: the first solve (from the 2D) takes about 15-40 Newton steps, each later step 5-8; the edge strip's
+  elements across enter the band, so a fine edge mesh is slow (the estimate says so).
+
 ### Phase 3: more blade shapes and a custom profile (built)
 
 User (with mock-ups): shapes bevel, edge radius, wedge, two-step, custom; custom from CSV / text points,

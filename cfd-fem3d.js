@@ -85,7 +85,7 @@ const F3_SIDE_LO = f3FaceRule('zeta', -1), F3_SIDE_HI = f3FaceRule('zeta', 1);
  *     with webW both sides must be held: the flow along the blade passes through them)
  *   contactLine: { spine, faceFrom, alphaDeg (a number, or one per station: a number, or a function of s, m) } or null; freeze (surface fixed)
  *   open: { lo?, hi? } open sides (a web edge): { m (elements round the edge, 2 to nEz), zEnd, zWeb (m: the blade's end, the web's
- *     edge; null: none within reach), thWeb, thBlade (deg), qFrac, dTop(z) (the blade's height change along the edge) };
+ *     edge; null: none within reach), thWeb, thBlade (deg), qFrac, dTop(z, x) (the blade's underside across the edge, m, at x along) };
  *     blockRef: a state (as st) their fans are laid out from (default the starting state)
  *   init: { sol, h, s, zOff } a previous state on the same layout (zOff, m: its strip lay that much lower in z); initNodal: { u, v, w, p } at the nodes (dimensional)
  *   homotopy, tol, maxIter, onIteration, label, onSolveStart, onSolveEnd
@@ -189,7 +189,7 @@ function solveFEM3D(o) {
     let pz, py;
     if (wall && j <= E.jt) {
       pz = zi + j / E.jt * (sol[E.dV[c]] - zi);
-      if (E.dTop) yt += E.dTop(pz * Hr) - E.dTop(zl[l] * Hr);
+      if (E.dTop) yt += E.dTop(pz * Hr, xt) - E.dTop(zl[l] * Hr, xt);
       py = yt / Hr;
     } else {
       const [dz, dy] = rayDir(E, c, j, sol[E.dV[c]]), r = sol[E.dG[c * NL + l]];
@@ -295,14 +295,16 @@ function solveFEM3D(o) {
       const xb = mesh.spineFoot(c, E.lIn), [xt, yt] = mesh.spineTop(c, E.lIn, st0), T = mesh.spineSlope ? mesh.spineSlope(c, E.lIn, st0) * yt : 2 * (xt - xb);
       E.prof[c] = { xb, xt, yt, T }; E.yRef[c] = yt / Hr;
     }
+    // (the side at the start: from the outer station at the top, a plane down to the web at the web's contact angle -- a still
+    // slurry's side with no pressure -- reaching no further than the web's edge; upright when the web ends there)
     if (!(o.init && o.init.sol && o.init.sol.length === ND)) for (let c = 0; c < NC; c++) {
-      const top = E.yRef[c];
+      const top = E.yRef[c], out = top / Math.tan(E.thWeb * Math.PI / 180), foot = zo + E.sgn * Math.max(0, E.zWeb == null ? out : Math.min(out, E.sgn * (E.zWeb / Hr - zo)));
       sol[E.dV[c]] = zo;
       for (let j = 1; j <= E.J; j++) {
         const d = E.dG[c * NL + E.lj(j)], b = E.base[j];
         if (d < 0) continue;
-        const [dz, dy] = rayDir(E, c, j, zo);
-        sol[d] = Math.min(dy > 1e-12 ? top / dy : Infinity, E.sgn * dz > 1e-12 ? (zo - b) / dz : Infinity);
+        const [dz, dy] = rayDir(E, c, j, zo), den = dz + (foot - zo) * dy / top;
+        sol[d] = Math.min(dy > 1e-12 ? top / dy : Infinity, E.sgn * den > 1e-12 ? (foot - b) / den : Infinity);
       }
     }
   }
@@ -1237,7 +1239,7 @@ function solveCoaterWide(opts) {
     edges = {};
     for (const side of ['lo', 'hi']) {
       const [l0, l1] = side === 'lo' ? subs[0] : subs[subs.length - 1], E = EO[side], zc = (zs[l0] + zs[l1]) / 2, sh = f => f && (z => f(z + zc));
-      const r = solveEdgeStrip({ ...opts, open: null, width: zs[l1] - zs[l0], nEz: (l1 - l0) / 2, zs: zs.slice(l0, l1 + 1).map(z => z - zc), dH: sh(opts.dH), contactAt: sh(opts.contactAt), hAt: sh(opts.hAt),
+      const r = solveEdgeStrip({ ...opts, open: null, width: zs[l1] - zs[l0], nEz: (l1 - l0) / 2, zs: zs.slice(l0, l1 + 1).map(z => z - zc), dH: sh(opts.dH), contactAt: sh(opts.contactAt), hAt: sh(opts.hAt), dTop: opts.dTop && ((z, x) => opts.dTop(z + zc, x)),
         profileAt: sh(opts.profileAt), edge: { side, m: E.m, zEnd: E.zEnd - zc, zWeb: E.zWeb == null ? null : E.zWeb - zc, thWeb: E.thWeb, thBlade: E.thBlade, qFrac: E.qFrac } });
       if (r.error) return { error: `the ${side === 'lo' ? 'first' : 'last'} edge strip: ${r.error}`, edges };
       edges[side] = r;
@@ -1263,7 +1265,7 @@ function solveCoaterWide(opts) {
       let extra = { label: `strip ${i + 1}` };
       if (os) {
         const E = EO[os], prev = last[i] || (same(edges[os].S, S) ? edges[os].r3 : null), zOff = last[i] ? 0 : (zs[l0] + zs[l1]) / 2;
-        extra = { ...extra, open: { [os]: { m: E.m, zEnd: E.zEnd, zWeb: E.zWeb, thWeb: E.thWeb, thBlade: E.thBlade, qFrac: E.qFrac, dTop: opts.dH || null } }, maxIter: opts.maxIter3 ?? 80,
+        extra = { ...extra, open: { [os]: { m: E.m, zEnd: E.zEnd, zWeb: E.zWeb, thWeb: E.thWeb, thBlade: E.thBlade, qFrac: E.qFrac, dTop: opts.dTop || opts.dH || null } }, maxIter: opts.maxIter3 ?? 80,
           ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s, zOff }, initNodal: null, h0: null, s0: null } : {}) };
       }
       const r3 = coaterStrip3D(opts, S, l0, l1, state, lo, hi, extra);
@@ -1315,7 +1317,9 @@ function wideSubs(nEz, sub, ov, nE = 0) {
  *   m, zEnd, zWeb (m, in the strip's z), thWeb, thBlade (deg), qFrac }, pTol (Pa; default the larger of 0.5 and 5 % of the pressure held),
  *   dP0 (the first step, Pa; default the smaller of 10 and Pup), onStep({ P, ok, held, web, angle, it }).
  * Returns { held (at opts.Pup), P (the pressure of the result), limit ('climb' | 'spill' | 'steady' | null: what stops it),
- *   r3, S, open (the side), stations, steps: [{ P, ok, why?, web, angle, it }], error? }.
+ *   r3, S, open (the side), stations, steps: [{ P, ok, why?, web, angle, it }], squeeze: { x, h, p, cap, xe } (the outer
+ *   station's 2D with no bead pressure, under the blade where its pressure p most exceeds cap = 2 gamma / h, about the most
+ *   a meniscus across the gap h holds; xe, the metering edge), error? }.
  */
 function solveEdgeStrip(opts) {
   const nEz = opts.nEz, NL = 2 * nEz + 1, zs = stationZs(opts, NL), E0 = opts.edge, target = opts.Pup;
@@ -1323,7 +1327,15 @@ function solveEdgeStrip(opts) {
   const at0 = { ...opts, Pup: 0 };
   const S = coaterStations(at0, zs);
   if (S.error) return { error: S.error, held: false, steps };
-  const openOpt = { [E0.side]: { m: E0.m, zEnd: E0.zEnd, zWeb: E0.zWeb, thWeb: E0.thWeb, thBlade: E0.thBlade, qFrac: E0.qFrac, dTop: opts.dH || null } };
+  // (the 2D at the outer station with no bead pressure: the pressure under the blade against about the most a meniscus across
+  // the gap h holds, 2 gamma / h -- where it most exceeds it)
+  const squeeze = (() => {
+    const r = S.r2[E0.side === 'hi' ? zs.length - 1 : 0], NR = S.NR;
+    let best = null;
+    for (let c = 0; c <= S.cCorner; c++) { const n = c * NR + NR - 1, h = r.y[n], p = r.p[n], cap = 2 * opts.gamma / h; if (!best || p - cap > best.p - best.cap) best = { x: r.x[n], h, p, cap }; }
+    return { ...best, xe: r.x[S.cCorner * NR + NR - 1] };
+  })();
+  const openOpt = { [E0.side]: { m: E0.m, zEnd: E0.zEnd, zWeb: E0.zWeb, thWeb: E0.thWeb, thBlade: E0.thBlade, qFrac: E0.qFrac, dTop: opts.dTop || opts.dH || null } };
   const solveAt = (P, prev) => (opts.onStage && opts.onStage(`3D at the edge, bead pressure ${P.toFixed(1)} Pa`), coaterStrip3D({ ...opts, Pup: P }, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, {
     label: `edge at ${P.toFixed(1)} Pa`, open: openOpt, maxIter: opts.maxIter3 ?? (prev ? 80 : 150),
     ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s }, initNodal: null, h0: null, s0: null } : {}) }));
@@ -1337,7 +1349,7 @@ function solveEdgeStrip(opts) {
   };
   let good = null, goodP = 0, last = null;
   const r0 = solveAt(0, null), s0 = judge(0, r0);
-  if (!s0.ok) return { held: false, P: 0, limit: s0.why, r3: r0.converged ? r0 : null, S, open: r0.open ? r0.open[0] : null, stations: zs, steps };
+  if (!s0.ok) return { held: false, P: 0, limit: s0.why, r3: r0.converged ? r0 : null, S, open: r0.open ? r0.open[0] : null, stations: zs, steps, squeeze };
   good = r0;
   let P = 0, dP = Math.min(opts.dP0 ?? 10, target);
   while (goodP < target) {
@@ -1349,7 +1361,7 @@ function solveEdgeStrip(opts) {
     if (dP < pTol(goodP)) break;
   }
   P = goodP;
-  return { held: goodP >= target, P, limit: goodP >= target ? null : last && last.why, r3: good, S, open: good.open[0], stations: zs, steps };
+  return { held: goodP >= target, P, limit: goodP >= target ? null : last && last.why, r3: good, S, open: good.open[0], stations: zs, steps, squeeze };
 }
 
 /** Small dense solve (Gaussian elimination, partial pivoting). */
