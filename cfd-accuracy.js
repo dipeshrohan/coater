@@ -123,15 +123,17 @@ function accIndicator(g) {
  * Returns { frac, cols, rows } (how many columns and rows were split).
  */
 function accRefine(frac, ind, o = {}) {
-  const nB = frac.b.length - 1, nF = frac.f.length - 1, nS = frac.s.length - 1, nY = frac.y.length - 1;
-  if (nB + nF + nS !== ind.nEx || nY !== ind.nEy) throw new Error('the mesh and its element ends do not match');
+  // (a shaped blade's face has a fixed part below the corner under the contact line, fk, before its moving part, f)
+  const nB = frac.b.length - 1, nK = frac.fk ? frac.fk.length - 1 : 0, nF = frac.f.length - 1, nS = frac.s.length - 1, nY = frac.y.length - 1;
+  if (nB + nK + nF + nS !== ind.nEx || nY !== ind.nEy) throw new Error('the mesh and its element ends do not match');
   const col = new Float64Array(ind.nEx), row = new Float64Array(ind.nEy);
   for (let ey = 0; ey < ind.nEy; ey++) for (let ex = 0; ex < ind.nEx; ex++) { const e = ind.eta2[ey * ind.nEx + ex]; col[ex] += e; row[ey] += e; }
   const mc = accMark(col, o.thetaCol ?? 0.5, Math.ceil(0.5 * ind.nEx));
   const mr = accMark(row, o.thetaRow ?? 0.3, Math.max(0, Math.min(Math.ceil(0.5 * ind.nEy), (o.maxRows ?? 40) - ind.nEy)));
-  const b = accSplit(frac.b, mc.subarray(0, nB)), f = nF ? accSplit(frac.f, mc.subarray(nB, nB + nF)) : { out: frac.f.slice(), n: 0 };
-  const s = accSplit(frac.s, mc.subarray(nB + nF)), y = accSplit(frac.y, mr);
-  return { frac: { b: b.out, f: f.out, s: s.out, y: y.out }, cols: b.n + f.n + s.n, rows: y.n };
+  const b = accSplit(frac.b, mc.subarray(0, nB)), k = nK ? accSplit(frac.fk, mc.subarray(nB, nB + nK)) : null;
+  const f = nF ? accSplit(frac.f, mc.subarray(nB + nK, nB + nK + nF)) : { out: frac.f.slice(), n: 0 };
+  const s = accSplit(frac.s, mc.subarray(nB + nK + nF)), y = accSplit(frac.y, mr);
+  return { frac: { b: b.out, f: f.out, ...(k ? { fk: k.out } : {}), s: s.out, y: y.out }, cols: b.n + (k ? k.n : 0) + f.n + s.n, rows: y.n };
 }
 /** Mark the largest of E until theta of their total (at most cap of them). */
 function accMark(E, theta, cap) {

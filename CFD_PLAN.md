@@ -12,6 +12,29 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Phase 3 (design): more blade shapes and a custom profile (in progress)
+
+User (with mock-ups): shapes bevel, edge radius, wedge, two-step, custom; custom from CSV / text points,
+DXF polyline, placed points, a section of an STL/STEP blade (the 3D page's file or one loaded in the 2D
+editor, cut at a chosen z); contact line "Both, a switch" (Full: the exit face a curve of pieces, the
+contact line pinned at any corner by Gibbs' condition or free on any piece; Simple: the bevel / radius
+always wetted, the contact line from its top C, pinned or climbing as today); 3D "Yes, and file faces"
+(the made-here blade extruded from the new shapes; STL/STEP blades give their own exit face per station).
+Details: two-step riser up to 90° (a fan of spines at a steep step, custom undersides too); custom corners
+auto by the turning angle (default 10°) then toggled per point; straight lines between imported points
+(DXF arcs kept), a spline through placed points broken at corners; M (metering point: the downstream end of
+the lowest part) and C (the highest corner on the face) automatic with handles; inputs as shown: bevel L,
+β, b (along the bevel); edge radius L, r; wedge L, inlet gap; two-step land 1, step height, riser angle,
+land 2 = L; every shape keeps the exit face angle and the notch face.
+- Geometry: the blade as an underside h(x) (0..xe, the metering point M at xe; steep parts meshed by a fan)
+  and a face path from M (pieces: lines and arcs; arc length s; tangent angle; corners with the angles
+  either side). Round entry and flat land with a straight face: the old code path, node for node.
+- Contact line, full model: states "pinned at corner k" (Gibbs: the surface's leaving angle between
+  contact + theta_k- - 180 and contact + theta_k+ - 180) and "free on piece k" (the local face angle sets
+  the direction); the solve walks from the metering edge up: pinned, climbs its piece (today's strategy
+  on that piece), passes its top corner, pinned there or climbs the next. The wetted pieces below the
+  contact line are fixed wall in the mesh with nodes on their corners. Simple model: the same from C.
+
 ### Phase 2 (meshing): refinement zones and mesh to an accuracy (built)
 
 User (with mock-ups): zones "A and B" (named feature zones, and bands / layers drawn on the drawing);

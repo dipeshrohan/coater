@@ -107,7 +107,8 @@ function femQuality(m, st) {
  * Solve. See the header. Options:
  *   mesh: { nEx, nEy, spineFoot, spineTop(c, st), eta?, kind(c): 'wall'|'free' (top of spine c) }
  *     st = { h: Float64Array per spine (free spines' heights), s: contact-line distance }
- *   geometry unknowns: freeSpines (list of c with kind 'free'), contactLine: { spine, faceFrom (first spine whose top moves with s), alphaDeg } or null
+ *   geometry unknowns: freeSpines (list of c with kind 'free'), contactLine: { spine, faceFrom (first spine whose top moves with s), alphaDeg
+ *     (the surface's direction there, deg: a number, or a function of s, m) } or null
  *   U (web speed), rho, g (gravity, m/s^2), gamma (surface tension), mu(gd), gdMin
  *   inlet: { type: 'traction', p: (y) => Pa }
  *   outlet: { type: 'plug' } | { type: 'traction', p: (y) => Pa }
@@ -355,7 +356,8 @@ function solveFEM(o) {
     const d = dq2(-1);
     let xt = 0, yt = 0;
     for (let a = 0; a < 3; a++) { xt += X[ns[a]] * d[a]; yt += Y[ns[a]] * d[a]; }
-    const al = CL.alphaDeg * Math.PI / 180;
+    // (alphaDeg: a number, or a function of the contact line's place s, m, on a curved face)
+    const al = (typeof CL.alphaDeg === 'function' ? CL.alphaDeg(sStar * Hr) : CL.alphaDeg) * Math.PI / 180;
     return (yt * Math.cos(al) - xt * Math.sin(al)) / Math.hypot(xt, yt);
   }
 
@@ -736,6 +738,66 @@ function staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd,
 }
 
 /**
+ * Static meniscus on a face given as a path (a shaped blade's, cfd-blade.js): P(s) -> [x, y] and thDeg(s), the
+ * face's direction (deg), at arc length s from the metering point. pin: the contact line held at that point of
+ * the face, the surface leaving it at whatever angle; else free on the part of the face from sB (a corner) to
+ * sTop (the next), meeting the face at the contact angle, found as staticMeniscus finds it on a straight face
+ * (only where the face's direction lets the surface leave between -86 and -5 degrees). Returns { mode:
+ * 'pinned' (at sB: it would sit below it) | 'climbed' | 'beyond' (it would climb past sTop), s, xs, f, alphaEdge }.
+ */
+function staticMeniscusFace({ P, thDeg, sB, sTop, contactDeg, gamma, rho, g, fInf, xEnd, H, n = 200, pin = null }) {
+  const alphaOf = s => (contactDeg + thDeg(s) - 180) * Math.PI / 180;
+  const solve = (pinned, s) => {
+    const [x0, y0] = P(s);
+    const xs = Array.from({ length: n }, (_, i) => x0 + (xEnd - x0) * Math.pow(i / (n - 1), 1.5));
+    let f = xs.map(() => fInf);
+    for (let pass = 0; pass < 30; pass++) {
+      const A = xs.map(() => new Float64Array(n)), b = new Float64Array(n);
+      if (pinned) { A[0][0] = 1; b[0] = y0; }
+      else { const h1 = xs[1] - xs[0], h2 = xs[2] - xs[1]; A[0][0] = -(2 * h1 + h2) / (h1 * (h1 + h2)); A[0][1] = (h1 + h2) / (h1 * h2); A[0][2] = -h1 / (h2 * (h1 + h2)); b[0] = Math.tan(alphaOf(s)); }
+      for (let i = 1; i < n - 1; i++) {
+        const hm = xs[i] - xs[i - 1], hp = xs[i + 1] - xs[i], sl = (f[i + 1] - f[i - 1]) / (hm + hp), w = gamma / Math.pow(1 + sl * sl, 1.5);
+        A[i][i - 1] = w * 2 / (hm * (hm + hp)); A[i][i + 1] = w * 2 / (hp * (hm + hp)); A[i][i] = -w * 2 / (hm * hp) - rho * g; b[i] = -rho * g * fInf;
+      }
+      A[n - 1][n - 1] = 1; b[n - 1] = fInf;
+      const fn = femDense(A, b);
+      let d = 0; for (let i = 0; i < n; i++) d = Math.max(d, Math.abs(fn[i] - f[i]));
+      f = Array.from(fn);
+      if (d < 1e-12) break;
+    }
+    return { xs, f };
+  };
+  const pinnedAt = s => { const sol = solve(true, s); return { ...sol, alphaEdge: Math.atan((sol.f[1] - sol.f[0]) / (sol.xs[1] - sol.xs[0])) }; };
+  if (pin != null) return { mode: pin > sB ? 'climbed' : 'pinned', s: pin, ...pinnedAt(pin) };
+  // where on [sB, sTop] the face lets the surface leave between -86 and -5 degrees (the first such stretch)
+  const ok = s => { const a = contactDeg + thDeg(s) - 180; return a > -86 && a < -5; };
+  let lo = null, hi = null;
+  for (let i = 0; i <= 200; i++) {
+    const s = sB + (sTop - sB) * i / 200;
+    if (ok(s)) { if (lo == null) lo = s; hi = s; } else if (lo != null) break;
+  }
+  if (lo == null) {
+    // nowhere: a face too steep for the surface to leave it (it runs up to sTop) or too flat (it stays at sB)
+    return contactDeg + thDeg(0.5 * (sB + sTop)) - 180 <= -86 ? { mode: 'beyond', s: sTop } : { mode: 'pinned', s: sB, ...pinnedAt(sB) };
+  }
+  // where the face's height equals the height the surface has where it leaves the face at the contact angle: G(s) =
+  // face height - surface height at its start rises with s (the face rises, the surface's climb shrinks as the face
+  // turns up); bracketed on [lo, hi] and found by false position (Illinois)
+  const G = q => { const sol = solve(false, q); return { s: q, g: P(q)[1] - sol.f[0], sol }; };
+  let a = G(lo), b = G(hi);
+  if (a.g >= 0) return lo > sB ? { mode: 'climbed', s: lo, ...a.sol } : { mode: 'pinned', s: sB, ...pinnedAt(sB) };
+  if (b.g < 0) return hi < sTop ? { mode: 'climbed', s: hi, ...b.sol } : { mode: 'beyond', s: sTop };
+  let side = 0, fa = a.g, fb = b.g, best = Math.abs(a.g) < Math.abs(b.g) ? a : b;
+  for (let k = 0; k < 60 && Math.abs(best.g) > 1e-13 && b.s - a.s > 1e-13; k++) {
+    const q = G(b.s - fb * (b.s - a.s) / (fb - fa));
+    if (q.g < 0) { a = q; fa = q.g; if (side === -1) fb *= 0.5; side = -1; } else { b = q; fb = q.g; if (side === 1) fa *= 0.5; side = 1; }
+    if (Math.abs(q.g) < Math.abs(best.g)) best = q;
+  }
+  const s = best.s, sol = best.sol;
+  return { mode: 'climbed', s, ...sol };
+}
+
+/**
  * Refinement zones and adapted meshes: the element ends along one part of the spine mesh (the blade,
  * the exit face, the free surface, or the rows across the gap). base: its ends without zones
  * (increasing); hZone(p): the element size the zones ask for at p (Infinity: none). Each base element
@@ -965,8 +1027,212 @@ function solveCoaterFEM(opts) {
     return { mesh, NC, cCL, cCorner, h0, frac };
   }
 
-  if (alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
-  if (alphaDeg > -5) return { error: `the surface would leave the exit face level or rising (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be below 175°)` };
+  // ---- a shaped blade: opts.profile (cfd-blade.js's bladeProfile; the round entry and flat land run the code above
+  // and below as they always have). The underside is a path; its steep parts (a step's riser) are meshed by a fan of
+  // spines between the bisectors of the corners at their ends. The face is a path of pieces with corners; the contact
+  // line is pinned at a corner k, or on the face above it (held there, or at the contact angle). The face below it is
+  // wall with nodes on its corners, and only the part above corner k moves with the contact line. ----
+  const prof = opts.profile && !opts.profile.legacy ? opts.profile : null;
+  const PU = prof && prof.under, PF = prof && prof.face;
+  const thOff = prof ? prof.faceCorners[0].thp - PF.th(0) : 0;
+  /** The face's direction at arc length s from M (rad); the surface's direction the contact angle c asks for there (deg). */
+  const thAt = s => PF.th(s) + thOff;
+  const alphaAt = (s, c = contactDeg) => c + thAt(s) * 180 / Math.PI - 180;
+  // the corners the contact line can be held at: the face's (M first); the simple model's C one too
+  const fCorners = prof ? prof.faceCorners.map(c => ({ ...c })) : null;
+  if (prof && opts.clModel === 'simple' && prof.C > 0 && !fCorners.some(c => Math.abs(c.s - prof.C) < 1e-12)) {
+    const t = thAt(prof.C);
+    fCorners.push({ s: prof.C, thm: t, thp: t, turn: 0 }); fCorners.sort((a, b) => a.s - b.s);
+  }
+  const kFirst = prof && opts.clModel === 'simple' ? Math.max(0, fCorners.findIndex(c => Math.abs(c.s - prof.C) < 1e-12)) : 0;
+  const sTopOf = k => k + 1 < fCorners.length ? fCorners[k + 1].s : PF.len;
+  // the underside's x-like coordinate xi (x along its gentle parts, arc length along its steep ones, so a riser gets
+  // elements), as a table against arc length, and its steep stretches
+  const UX = prof ? (() => {
+    const S = [0], XI = [0], steep = [], sinSteep = Math.sin((prof.steepDeg ?? 60) * Math.PI / 180);
+    PU.pieces.forEach((p, i) => {
+      const s0 = PU.s0[i], L = PU.s0[i + 1] - s0, m = p.kind === 'arc' ? 32 : 1;
+      for (let j = 1; j <= m; j++) {
+        const a = PU.at(s0 + L * (j - 1) / m), b = PU.at(s0 + L * j / m), isSteep = Math.abs(Math.sin(PU.at(s0 + L * (j - 0.5) / m)[2])) > sinSteep;
+        S.push(s0 + L * j / m); XI.push(XI[XI.length - 1] + (isSteep ? L / m : Math.abs(b[0] - a[0])));
+        if (isSteep) { const last = steep[steep.length - 1]; if (last && last[1] === S[S.length - 2]) last[1] = S[S.length - 1]; else steep.push([S[S.length - 2], S[S.length - 1]]); }
+      }
+    });
+    const lerp = (A, B, v) => { let lo = 0, hi = A.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (A[m] <= v) lo = m; else hi = m; } const t = A[hi] > A[lo] ? (v - A[lo]) / (A[hi] - A[lo]) : 0; return B[lo] + Math.min(1, Math.max(0, t)) * (B[hi] - B[lo]); };
+    return { len: XI[XI.length - 1], steep, sOf: xi => lerp(XI, S, xi), xiOf: s => lerp(S, XI, s) };
+  })() : null;
+  /**
+   * Element ends E with nodes put on the points R (kept apart: an end within 0.3 of an element of one is moved onto it,
+   * else one is added), and at least two elements between the two ends of each of the pairs in minTwo.
+   */
+  function snapEnds(E, R, minTwo = []) {
+    const out = E.slice(), L = out[out.length - 1], locked = new Set([0, L]);
+    for (const r of R) {
+      if (!(r > 1e-12 * L && r < L * (1 - 1e-12)) || locked.has(r)) continue;
+      let j = 0; while (j < out.length - 2 && out[j + 1] <= r) j++;
+      const h = out[j + 1] - out[j], dl = r - out[j], dr = out[j + 1] - r;
+      if (dl <= 0.3 * h && !locked.has(out[j])) out[j] = r;
+      else if (dr <= 0.3 * h && !locked.has(out[j + 1])) out[j + 1] = r;
+      else if (dl > 0 && dr > 0) out.splice(j + 1, 0, r);
+      locked.add(r);
+    }
+    for (const [a, b] of minTwo) if (!out.some(e => e > a + 1e-12 * L && e < b - 1e-12 * L)) { const j = out.findIndex(e => e >= b); out.splice(j, 0, 0.5 * (a + b)); }
+    return out;
+  }
+  /** The bisector of the liquid's side (on the right of a path) where the path turns from direction ti to to. */
+  const bisect = (ti, to) => { let sw = (to - (ti + Math.PI)) % (2 * Math.PI); if (sw <= 0) sw += 2 * Math.PI; return ti + Math.PI + sw / 2; };
+
+  /**
+   * The mesh for a shaped blade: the contact line pinned at face corner ctx.k (ctx.mode 'pinned', sCL0 its arc length)
+   * or on the face above it (ctx.mode 'climbed', laid out at sCL0); stat: the starting surface; fan: the layout's
+   * choices (as buildMesh's). Returns buildMesh's parts plus cBase (the spine at corner k: the first one whose top
+   * moves with the contact line).
+   */
+  function buildMeshP(ctx, sCL0, stat, fan) {
+    const sB = fCorners[ctx.k].s, climbed = ctx.mode === 'climbed', hasFan = sCL0 > 0;
+    const xs = stat.xs, fs = stat.f, nS = xs.length, arc = new Float64Array(nS);
+    for (let i = 1; i < nS; i++) arc[i] = arc[i - 1] + Math.hypot(xs[i] - xs[i - 1], fs[i] - fs[i - 1]);
+    const arcTot = arc[nS - 1];
+    const ends = (n, f) => Array.from({ length: n + 1 }, (_, k) => f(k));
+    const etaV0 = (j, n) => 1 - Math.pow(1 - j / n, gradeY);
+    const node = (E, k) => k % 2 ? 0.5 * (E[(k - 1) / 2] + E[(k + 1) / 2]) : E[k / 2];
+    const cot = a => Math.cos(a) / Math.sin(a);
+    // --- element ends: the underside in xi graded toward M, the face's fixed part per stretch between corners, its
+    // moving part, the free surface by arc length, the rows (as buildMesh; zones and adapted meshes too) ---
+    const XIL = UX.len, aG = 1 / gradeB, xiB0 = t => XIL * (1 - (1 - t) * (aG + (1 - aG) * (1 - t)));
+    const stretches = [0, ...fCorners.filter(c => c.s > 1e-15 && c.s < sB - 1e-15).map(c => c.s), sB].filter((v, i, a) => i === 0 || v > a[i - 1]);
+    const nFix = (a, b) => Math.max(1, Math.min(nEf, Math.ceil(nEf * (b - a) / H - 1e-9)));
+    const nMov = climbed ? opts.nFaceFixed ?? Math.max(1, Math.min(nEf, Math.ceil(nEf * (sCL0 - sB) / H - 1e-9))) : 0;
+    let Xi, Tfix = [0], Tmov = [], Ss, Ey;
+    const G = MZ ? MZ.growth ?? 1.2 : 1.2, grow = (sz, d) => zoneGrow(sz, d, G), none = Infinity;
+    const band = x => { let h = none; for (const b of (MZ && MZ.bands) || []) h = Math.min(h, grow(b.size, Math.max(b.x0 - x, x - b.x1))); return h; };
+    const zAt = (x, dEdge, dCL, dFace, dFilm) => Math.min(band(x), MZ.edge ? grow(MZ.edge, dEdge) : none, MZ.cl ? grow(MZ.cl, dCL) : none,
+      MZ.face && hasFan ? grow(MZ.face, dFace) : none, MZ.film ? grow(MZ.film, dFilm) : none);
+    const xS = S => { let i = 0; while (i < nS - 2 && arc[i + 1] < S) i++; const t = Math.min(1, (S - arc[i]) / (arc[i + 1] - arc[i] || 1)); return xs[i] + t * (xs[i + 1] - xs[i]); };
+    const fixedCounts = opts.nFaceFixedK && opts.nFaceFixedK.length === stretches.length - 1 ? opts.nFaceFixedK : null;
+    if (MF && MF.b) {
+      Xi = MF.b.map(f => f * XIL); Ss = MF.s.map(f => f * arcTot); Ey = MF.y.slice();
+      Tfix = sB > 0 && MF.fk && MF.fk.length > 1 ? MF.fk.map(f => f * sB) : sB > 0 ? stretches.slice(0, -1).flatMap((a, i) => ends(nFix(a, stretches[i + 1]), k => a + (stretches[i + 1] - a) * k / nFix(a, stretches[i + 1])).slice(i ? 1 : 0)) : [0];
+      Tmov = climbed ? (MF.f && MF.f.length > 1 ? MF.f.map(f => sB + f * (sCL0 - sB)) : ends(nMov, k => sB + (sCL0 - sB) * k / nMov)).slice(1) : [];
+    } else {
+      const xiBase = ends(nEb, k => xiB0(k / nEb));
+      Xi = MZ ? zonedEnds(xiBase, xi => { const q = PU.P(UX.sOf(xi)); return zAt(q[0], XIL - xi, XIL - xi + sCL0, XIL - xi, XIL - xi + sCL0); }, FC ? FC.b : null) : xiBase;
+      for (let i = 0; i + 1 < stretches.length; i++) {
+        const a = stretches[i], b = stretches[i + 1], n = fixedCounts ? fixedCounts[i] : nFix(a, b);
+        const e = MZ ? zonedEnds(ends(n, k => a + (b - a) * k / n), sg => zAt(PF.P(sg)[0], sg, sCL0 - sg, 0, sCL0 - sg), fixedCounts ? n : null) : ends(n, k => a + (b - a) * k / n);
+        Tfix.push(...e.slice(1));
+      }
+      if (climbed) {
+        const e = MZ ? zonedEnds(ends(nMov, k => sB + (sCL0 - sB) * k / nMov), sg => zAt(PF.P(sg)[0], sg, sCL0 - sg, 0, sCL0 - sg), FC ? FC.f : opts.nFaceFixed ?? null) : ends(nMov, k => sB + (sCL0 - sB) * k / nMov);
+        Tmov = e.slice(1);
+      }
+      const Sbase = ends(nEs, k => arcTot * Math.pow(k / nEs, gradeS));
+      Ss = MZ ? zonedEnds(Sbase, S => zAt(xS(S), S + sCL0, S, S, 0), FC ? FC.s : null) : Sbase;
+      const Ybase = ends(nEy, j => etaV0(j, nEy));
+      if (MZ) {
+        const lay = L => L ? { n: L.n, first: L.first / H, growth: L.growth } : null, Lw = lay(MZ.web), Lt = lay(MZ.top);
+        Ey = zonedEnds(Ybase, e => Math.min(Lw ? layerSize(e, Lw, G) : none, Lt ? layerSize(1 - e, Lt, G) : none), FC ? FC.y : null, 60);
+      } else Ey = Ybase;
+    }
+    // nodes on the underside's corners and at its steep stretches' ends (at least two elements on each)
+    Xi = snapEnds(Xi, [...prof.underCorners.map(c => UX.xiOf(c.s)), ...UX.steep.flat().map(UX.xiOf)], UX.steep.map(([a, b]) => [UX.xiOf(a), UX.xiOf(b)]));
+    const Tf = [...Tfix, ...Tmov];                        // arc lengths along the face (at the layout), M to the contact line
+    const nEbM = Xi.length - 1, nF = Tf.length - 1, nEsM = Ss.length - 1, nEyM = Ey.length - 1;
+    const nEx = nEbM + nF + nEsM, NC = 2 * nEx + 1;
+    const cCorner = 2 * nEbM, cCL = 2 * (nEbM + nF), cBase = cCorner + 2 * (Tfix.length - 1), M = 2 * nEsM;
+    const frac = { b: Xi.map(v => v / XIL), f: climbed ? [0, ...Tmov].map((v, i) => i ? (v - sB) / (sCL0 - sB) : 0) : [0], fk: sB > 0 ? Tfix.map(v => v / sB) : null, s: Ss.map(S => S / arcTot), y: Ey.slice() };
+
+    // --- the face fan: the corner spine at M, the contact-line spine, the spines between (as buildMesh) ---
+    const thU = fCorners[0].thm, thF = fCorners[0].thp;
+    const aSurf = (climbed ? stat.alphaCL : stat.alphaEdgeDeg) * Math.PI / 180;
+    const aFace = climbed ? thAt(sCL0) + Math.PI : hasFan ? fCorners[ctx.k].thm + Math.PI : thU + Math.PI;
+    let a2 = aSurf; while (a2 < aFace) a2 += 2 * Math.PI;
+    const betaCL = (aFace + a2) / 2;
+    const beta0 = hasFan ? 1.5 * Math.PI + (thU + thF) / 2 : betaCL;
+    const sigCL = cot(betaCL), r0 = fan.r0;
+    const [xCL0, yCL0] = hasFan ? PF.P(sCL0) : [xe, H];
+    let sig0 = fan.lean0 === 'match' ? sigCL : cot(beta0) * fan.lean0, rCL = r0;
+    if (hasFan) {
+      const gap = fan.gap * sCL0, f0 = () => xe - r0 * sig0 * H;
+      rCL = Math.max(0.5, r0);
+      if (sigCL < 0) rCL = Math.min(fan.rMax, Math.max(rCL, (f0() + gap - xCL0) / (-sigCL * yCL0)));
+      const fCL = xCL0 - rCL * sigCL * yCL0;
+      if (fCL - gap < f0() && sig0 < 0) sig0 = -Math.max(0.15, (fCL - gap - xe) / (r0 * H));
+    }
+    const footCL = xCL0 - rCL * sigCL * yCL0;
+
+    // --- the underside's spines: tops on the path; leaning toward the M corner spine over the last 1.5 H, and toward
+    // each fan's end spines over 1.5 local gaps either side; a fan's spines between its end spines ---
+    const Lr = 1.5 * H;
+    const fans = UX.steep.map(([a, b]) => {
+      const A = PU.at(a), B = PU.at(b), sgA = cot(bisect(PU.at(a - 1e-9 * PU.len)[2], A[2])), sgB = cot(bisect(PU.at(b - 1e-9 * PU.len)[2], a === b ? B[2] : PU.at(Math.min(PU.len, b + 1e-9 * PU.len))[2]));
+      return { a, b, xA: A[0], yA: A[1], xB: B[0], yB: B[1], sgA, sgB, fA: A[0] - r0 * sgA * A[1], fB: B[0] - r0 * sgB * B[1] };
+    });
+    const NU = cCorner + 1, uTop = new Array(NU), uFoot = new Float64Array(NU), uSlope = new Float64Array(NU);
+    for (let c = 0; c < NU; c++) {
+      const s = c === cCorner ? PU.len : UX.sOf(node(Xi, c)), q = PU.at(s), x = q[0], y = c === cCorner ? H : q[1];
+      uTop[c] = [c === cCorner ? xe : x, y];
+      const fanIn = fans.find(f => s >= f.a - 1e-12 && s <= f.b + 1e-12);
+      const wM = Math.min(1, Math.max(0, (x - (xe - Lr)) / Lr)), leanM = sig0 * wM * wM;
+      if (fanIn) {
+        const t = (s - fanIn.a) / (fanIn.b - fanIn.a || 1);
+        uFoot[c] = fanIn.fA + t * (fanIn.fB - fanIn.fA) - r0 * leanM * y;
+        uSlope[c] = ((1 - t) * fanIn.sgA * fanIn.yA + t * fanIn.sgB * fanIn.yB) / y + leanM;
+        continue;
+      }
+      let lean = leanM;
+      for (const f of fans) {
+        if (s < f.a) { const w = Math.min(1, Math.max(0, 1 - (f.xA - x) / (1.5 * f.yA))); lean += f.sgA * w * w; }
+        else { const w = Math.min(1, Math.max(0, 1 - (x - f.xB) / (1.5 * f.yB))); lean += f.sgB * w * w; }
+      }
+      uSlope[c] = lean; uFoot[c] = x - r0 * lean * y;
+    }
+    const footM = uFoot[cCorner], TM = uSlope[cCorner] * H;
+
+    // --- the face's spines: the fixed ones (at or below corner k) from the layout; the moving ones' tops from corner k
+    // to the contact line, their top slope x height between corner k's and the contact line's ---
+    const sig = c => node(Tf, c - cCorner);                                  // (the layout's arc length of face spine c)
+    const tOf = c => hasFan ? sig(c) / sCL0 : 0;
+    const TB = (1 - sB / (sCL0 || 1)) * TM + (sB / (sCL0 || 1)) * sigCL * yCL0;
+    const uOf = c => (sig(c) - sB) / (sCL0 - sB);
+    const faceTop = (c, st) => sig(c) <= sB + 1e-15 ? PF.P(sig(c)) : PF.P(sB + uOf(c) * (st.s - sB));
+    const faceT = (c, st) => sig(c) <= sB + 1e-15 ? (1 - tOf(c)) * TM + tOf(c) * sigCL * yCL0 : (1 - uOf(c)) * TB + uOf(c) * sigCL * PF.P(st.s)[1];
+    const faceFoot = c => footM + tOf(c) * (footCL - footM);
+
+    // --- the free surface (as buildMesh) ---
+    const xT0 = new Float64Array(M + 1), hT0 = new Float64Array(M + 1), kap = new Float64Array(M + 1);
+    const kFace = climbed ? cot(thAt(sCL0)) : sigCL;
+    const Sv = m => Ss[m / 2];
+    for (let m = 0, i = 0; m <= M; m++) {
+      const S = m % 2 ? 0.5 * (Sv(m - 1) + Sv(m + 1)) : Sv(m);
+      while (i < nS - 2 && arc[i + 1] < S) i++;
+      const t = Math.min(1, (S - arc[i]) / (arc[i + 1] - arc[i]));
+      xT0[m] = xs[i] + t * (xs[i + 1] - xs[i]); hT0[m] = fs[i] + t * (fs[i + 1] - fs[i]);
+      const kN = Math.max(-2, Math.min(2, -(fs[i + 1] - fs[i]) / (xs[i + 1] - xs[i]))), wb = Math.pow(1 - Math.min(1, S / H), 2);
+      kap[m] = m === M ? 0 : wb * kFace + (1 - wb) * kN;
+    }
+    const dCL = footCL - xCL0, Lw = Math.max(4 * Math.abs(dCL), H);
+    const wS = m => { const u = Math.min(1, (xT0[m] - xT0[0]) / Lw); return (1 - u) * (1 - u); };
+    const h0 = new Float64Array(NC);
+    for (let m = 1; m <= M; m++) h0[cCL + m] = hT0[m];
+    const mesh = {
+      nEx, nEy: nEyM,
+      eta: k => k % 2 ? 0.5 * (Ey[(k - 1) / 2] + Ey[(k + 1) / 2]) : Ey[k / 2],
+      spineFoot: c => c <= cCorner ? uFoot[c] : c <= cCL ? faceFoot(c) : xT0[c - cCL] + dCL * wS(c - cCL),
+      spineTop: (c, st) => {
+        if (c <= cCorner) return uTop[c];
+        if (c <= cCL) return faceTop(c, st);
+        const m = c - cCL, hgt = st.h[c];
+        return [xT0[m] + kap[m] * (hgt - hT0[m]), hgt];
+      },
+      spineSlope: (c, st) => c <= cCorner ? uSlope[c] : c <= cCL ? faceT(c, st) / faceTop(c, st)[1] : sigCL * wS(c - cCL),
+      kind: c => c > cCL ? 'free' : 'wall',
+    };
+    return { mesh, NC, cCL, cCorner, cBase, h0, frac, nFixK: stretches.slice(0, -1).map((a, i) => Tfix.filter(v => v > a + 1e-15 && v <= stretches[i + 1] + 1e-15).length) };
+  }
+
+  if (!prof && alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
+  if (!prof && alphaDeg > -5) return { error: `the surface would leave the exit face level or rising (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be below 175°)` };
   const log = t => opts.onStage && opts.onStage(t);
   // the surface's direction (deg) where it leaves the contact line / edge: end tangent of the first quadratic surface edge
   const leaveDeg = (r, cCL) => {
@@ -981,7 +1247,8 @@ function solveCoaterFEM(opts) {
    * free = true: on the face at the contact angle, starting from s.
    */
   /** The mesh a solve at (mode, s) starts on: its starting surface, and the best-shaped of the layouts tried. */
-  function layoutAt(mode, s, free, fInfNow, from, aUse = alphaDeg) {
+  function layoutAt(mode, s, free, fInfNow, from, aUse = alphaDeg, ctx = null) {
+    if (ctx) return layoutAtP(ctx, s, free, fInfNow, from, aUse);
     const stat = from ? shiftedCurve(from, mode, s) : staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf: fInfNow, xEnd, mode, sFix: mode === 'climbed' && !free ? s : null });
     stat.alphaEdgeDeg = stat.alphaEdge != null ? stat.alphaEdge * 180 / Math.PI : alphaDeg;
     stat.alphaCL = aUse;
@@ -997,12 +1264,12 @@ function solveCoaterFEM(opts) {
     }
     return { stat, s0, m };
   }
-  function solveAt(mode, s, free, fInfNow, from, aUse = alphaDeg, iterCap = mode === 'climbed' && !free ? 80 : 200, minQ = null) {
-    const { stat, s0, m } = layoutAt(mode, s, free, fInfNow, from, aUse);
+  function solveAt(mode, s, free, fInfNow, from, aUse = alphaDeg, iterCap = mode === 'climbed' && !free ? 80 : 200, minQ = null, ctx = null) {
+    const { stat, s0, m } = layoutAt(mode, s, free, fInfNow, from, aUse, ctx);
     if (opts.onMesh) opts.onMesh(m, m.h0, s0, stat);
-    if (!(m.quality > 0)) return { error: `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
+    if (!(m.quality > 0)) return { error: ctx ? `no valid mesh for this blade shape (contact angle ${contactDeg} deg)` : `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
     if (minQ != null && !(m.quality > minQ)) return { error: 'no better-shaped mesh there', notBetter: true };
-    const where = mode === 'pinned' ? 'contact line at the edge' : free ? `contact line free on the face (from ${(s0 * 1e3).toFixed(3)} mm)` : `contact line held ${(s0 * 1e3).toFixed(3)} mm up the face`;
+    const where = ctx ? whereP(ctx, s0, free) : mode === 'pinned' ? 'contact line at the edge' : free ? `contact line free on the face (from ${(s0 * 1e3).toFixed(3)} mm)` : `contact line held ${(s0 * 1e3).toFixed(3)} mm up the face`;
     log(`${where}: flow, surface frozen`);
     let frozen = null;
     if (from && from.r) {
@@ -1014,20 +1281,20 @@ function solveCoaterFEM(opts) {
     if (!frozen.converged) return { error: 'flow with the surface frozen did not converge', r: frozen, m, stat };
     log(`${where}: surface and flow coupled`);
     // (held trial heights fail fast: a failure only halves the step toward them)
-    const r = solveFEM({ ...base, label: `${where}: surface and flow coupled`, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: m.cCorner, alphaDeg: aUse } : null, s0,
+    const r = solveFEM({ ...base, label: `${where}: surface and flow coupled`, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: ctx ? m.cBase : m.cCorner, alphaDeg: aUse } : null, s0,
       homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, iterCap) });
-    r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac };
+    r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac, ...(ctx ? { k: ctx.k, cBase: m.cBase, nFixK: m.nFixK } : {}) };
     if (!r.converged) return { error: 'surface and flow coupled did not converge', r, m, stat };
-    return { r, m, stat, s: s0, leave: leaveDeg(r, m.cCL), alpha: aUse };
+    return { r, m, stat, s: s0, leave: leaveDeg(r, m.cCL), alpha: aUse, ...(ctx ? { ctx } : {}) };
   }
   /**
    * Starting surface from an earlier solution: its surface polyline, with the contact-line end moved to
    * the new point (distance s up the face; 0 = the edge) and the change fading out over max(2|move|, H).
    */
-  function shiftedCurve(from, mode, s) {
+  function shiftedCurve(from, mode, s, Pt = null, sPinned = 0) {
     const r = from.r, NR = r.NR, c0 = from.m.cCL, xs = [], f = [];
     for (let c = c0; c < r.NC; c++) { xs.push(r.x[c * NR + NR - 1]); f.push(r.y[c * NR + NR - 1]); }
-    const P = mode === 'climbed' ? [xe + s * Math.cos(th), H + s * Math.sin(th)] : [xe, H];
+    const P = Pt || (mode === 'climbed' ? [xe + s * Math.cos(th), H + s * Math.sin(th)] : [xe, H]);
     const dx = P[0] - xs[0], dy = P[1] - f[0], L = Math.max(2 * Math.hypot(dx, dy), H);
     let arc = 0;
     for (let i = 0; i < xs.length; i++) {
@@ -1035,7 +1302,7 @@ function solveCoaterFEM(opts) {
       const w = Math.pow(Math.max(0, 1 - arc / L), 2);
       xs[i] += dx * w; f[i] += dy * w;
     }
-    return { mode, s: mode === 'climbed' ? s : 0, xs, f, alphaEdge: Math.atan2(f[1] - f[0], xs[1] - xs[0]) };
+    return { mode, s: mode === 'climbed' ? s : sPinned, xs, f, alphaEdge: Math.atan2(f[1] - f[0], xs[1] - xs[0]) };
   }
   /**
    * The face fan was laid out for the starting height; once the contact line has settled somewhere
@@ -1046,12 +1313,14 @@ function solveCoaterFEM(opts) {
    * and the caller places the contact line another way.
    */
   function remeshed(o, held = false) {
+    // (a shaped blade: measured from the corner below the contact line, the part of the face that moves)
+    const ctx = o.ctx || null, sB = ctx ? fCorners[ctx.k].s : 0;
     for (let k = 0; k < 2; k++) {
       const sNow = held ? o.s : o.r.surface.s, sMesh = o.s;
-      if (!(Math.abs(sNow - sMesh) > 0.15 * sMesh)) return o;
-      const far = sNow > 2 * sMesh || sNow < 0.5 * sMesh;
-      const o2 = solveAt('climbed', sNow, !held, fInf, { ...o, s: sNow }, undefined, undefined, far ? femQuality(o.m.mesh, { h: o.r.state.h, s: o.r.state.s }) : null);
-      if (o2.error || !(o2.r.surface.s > 0)) {
+      if (!(Math.abs(sNow - sMesh) > 0.15 * (sMesh - sB))) return o;
+      const far = sNow - sB > 2 * (sMesh - sB) || sNow - sB < 0.5 * (sMesh - sB);
+      const o2 = solveAt('climbed', sNow, !held, fInf, { ...o, s: sNow }, ctx ? o.alpha : undefined, undefined, far ? femQuality(o.m.mesh, { h: o.r.state.h, s: o.r.state.s }) : null, ctx);
+      if (o2.error || !(o2.r.surface.s > sB)) {
         log(`laid out again for ${(sNow * 1e3).toFixed(3)} mm: ${o2.notBetter ? 'no better-shaped mesh there' : 'did not converge'}${far ? ` (the mesh it has was laid out for ${(sMesh * 1e3).toFixed(3)} mm)` : ''}`);
         return far ? { ...o, relayoutFailed: true } : o;
       }
@@ -1068,9 +1337,216 @@ function solveCoaterFEM(opts) {
     r.meniscus = { mode, alphaMaxDeg: alphaDeg, s: r.surface ? r.surface.s : null, sMesh: o.s ?? null, leaveDeg: o.leave, static: o.stat, ...extra };
     return r;
   };
-  if (alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
-  if (alphaDeg > -5) return { error: `the surface would leave the exit face level or rising (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be below 175°)` };
+  /** A shaped blade's layout for a solve (as layoutAt): the contact line pinned at face corner ctx.k, or on the face above it at s. */
+  function layoutAtP(ctx, s, free, fInfNow, from, aUse) {
+    const sB = fCorners[ctx.k].s, sTop = sTopOf(ctx.k), climbed = ctx.mode === 'climbed';
+    const thDeg = q => thAt(q) * 180 / Math.PI, sm = pin => staticMeniscusFace({ P: PF.P, thDeg, sB, sTop, contactDeg, gamma, rho, g, fInf: fInfNow, xEnd, H, pin });
+    // (the earlier surface with its end moved -- unless it comes from another corner or stretch of the face, or is
+    // moved far: moved that far it curls; the static meniscus then, the earlier flow still the warm start)
+    const Pn = PF.P(climbed ? s : sB), jump = from && from.r ? Math.hypot(Pn[0] - from.r.x[from.m.cCL * from.r.NR + from.r.NR - 1], Pn[1] - from.r.y[from.m.cCL * from.r.NR + from.r.NR - 1]) : 0;
+    const shift = from && jump <= 0.25 * H && (from.ctx ? from.ctx.k : 0) === ctx.k;
+    let stat = shift ? shiftedCurve(from, ctx.mode, s, Pn, sB) : sm(!climbed ? sB : !free ? s : null);
+    // (the flow pulls it up where statically it stays at the corner, or statically it would climb past the next one:
+    // start a little above the corner, or below the next)
+    if (climbed && stat.mode !== 'climbed') { const d = Math.min(0.1 * H, 0.5 * (sTop - sB)); stat = sm(stat.mode === 'beyond' ? sTop - d : sB + d); }
+    stat.alphaEdgeDeg = stat.alphaEdge != null ? stat.alphaEdge * 180 / Math.PI : alphaAt(sB);
+    stat.alphaCL = climbed ? (typeof aUse === 'function' ? aUse(stat.s) : aUse) : null;
+    const s0 = climbed ? stat.s : sB;
+    let m = null;
+    for (const r0 of [1 / 3, 0.45, 0.6]) for (const gap of [0.5, 0.3, 0.15]) for (const rMax of [1.2, 2.5, 4]) for (const lean0 of [1, 0.7, 0.4, 'match']) {
+      if (!(s0 > 0) && (gap !== 0.5 || rMax !== 1.2 || lean0 !== 1)) continue;
+      const t = buildMeshP(ctx, s0, stat, { r0, gap, rMax, lean0 });
+      t.quality = femQuality(t.mesh, { h: t.h0, s: s0 });
+      if (opts.onLayout) opts.onLayout({ r0, gap, rMax, lean0 }, t.quality, s0);
+      if (!m || t.quality > m.quality) m = t;
+    }
+    return { stat, s0, m };
+  }
+  /** Where a shaped blade's solve holds the contact line (for the log and the convergence record). */
+  const whereP = (ctx, s0, free) => {
+    const at = k => k === 0 ? 'the edge' : `corner ${k} (${(fCorners[k].s * 1e3).toFixed(3)} mm along the face)`;
+    if (ctx.mode === 'pinned') return `contact line at ${at(ctx.k)}`;
+    return free ? `contact line free on the face above ${at(ctx.k)} (from ${(s0 * 1e3).toFixed(3)} mm)` : `contact line held ${(s0 * 1e3).toFixed(3)} mm along the face`;
+  };
+
+  /**
+   * The strategy for a shaped blade: the contact line pinned at the first corner (M; the simple model: C) and,
+   * where Gibbs' condition lets it go, up the face corner by corner. At corner k it stays while the surface leaves
+   * between contact + (the face's direction below) - 180 and contact + (above) - 180 degrees; flatter, it climbs the
+   * face above (as the round entry and flat land climb theirs: free at once, by continuation in the contact angle, or
+   * held at trial places and bracketed); past the next corner it is held there and the same asked again.
+   */
+  function solveShaped() {
+    const model = opts.clModel === 'simple' ? 'simple' : 'full';
+    const D = 180 / Math.PI, thDeg = q => thAt(q) * D;
+    const ctxP = k => ({ k, mode: 'pinned' }), ctxC = k => ({ k, mode: 'climbed' });
+    /** The surface's direction the contact angle c asks for on the face above corner k: a number on a straight stretch, else a function of s. */
+    const aOn = (k, c = contactDeg) => {
+      const sB = fCorners[k].s, sT = sTopOf(k), vs = Array.from({ length: 17 }, (_, i) => alphaAt(sB + (sT - sB) * (0.001 + 0.998 * i / 16), c));
+      return vs.every(v => Math.abs(v - vs[0]) < 1e-9) ? vs[0] : q => alphaAt(q, c);
+    };
+    const aVal = (a, q) => typeof a === 'function' ? a(q) : a;
+    const gibbs = k => [contactDeg + fCorners[k].thm * D - 180, contactDeg + fCorners[k].thp * D - 180];
+    const fin = (o, mode, k, extra = {}) => finish(o, mode, { k, model, alphaMaxDeg: mode === 'pinned' ? gibbs(k)[1] : aVal(aOn(k), o.r && o.r.surface ? o.r.surface.s : fCorners[k].s), ...extra });
+    const staticWalk = () => {
+      for (let k = kFirst; k < fCorners.length; k++) {
+        const st = staticMeniscusFace({ P: PF.P, thDeg, sB: fCorners[k].s, sTop: sTopOf(k), contactDeg, gamma, rho, g, fInf, xEnd, H });
+        if (st.mode !== 'beyond') return { k, mode: st.mode, s: st.s };
+      }
+      return { k: fCorners.length - 1, mode: 'beyond' };
+    };
+
+    if (opts.preview) {
+      let w = { k: kFirst, mode: 'pinned', s: fCorners[kFirst].s };
+      if (!U && opts.mode !== 'pinned') { w = staticWalk(); if (w.mode === 'beyond') w = { k: w.k, mode: 'pinned', s: fCorners[w.k].s }; }
+      const ctx = { k: w.k, mode: w.mode };
+      const { s0, m } = layoutAt(w.mode, w.s, true, fInf, null, aOn(w.k), ctx);
+      if (!(m.quality > 0)) return { error: `no valid mesh for this blade shape (contact angle ${contactDeg} deg)` };
+      const { X, Y } = femNodes(m.mesh, { h: m.h0, s: s0 });
+      return { preview: true, x: X, y: Y, NC: m.NC, NR: 2 * m.mesh.nEy + 1, surface: { s: s0 }, meshInfo: { mode: w.mode, k: w.k, cCL: m.cCL, cCorner: m.cCorner, cBase: m.cBase, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac }, meniscus: { mode: w.mode, k: w.k, model } };
+    }
+    if (!U) {
+      // no flow: the static meniscus, corner by corner, decides where it is and is the starting shape
+      const w = opts.mode === 'pinned' ? { k: kFirst, mode: 'pinned' } : staticWalk();
+      if (w.mode === 'beyond') return { error: 'the contact line would climb past the top of the exit face' };
+      if (w.mode === 'climbed') return fin(solveAt('climbed', w.s, true, fInf, null, aOn(w.k), undefined, null, ctxC(w.k)), 'climbed', w.k);
+      return fin(solveAt('pinned', fCorners[w.k].s, false, fInf, null, undefined, undefined, null, ctxP(w.k)), 'pinned', w.k);
+    }
+
+    /** Up the face above corner k from the solution pinned there: { o } (settled on it), { beyond, o } (past its top corner), { pinned } or { error }. */
+    function climbFrom(k, pin) {
+      const sB = fCorners[k].s, sTop = sTopOf(k), ctx = ctxC(k), aK = aOn(k), aAt = q => aVal(aK, q);
+      const last = k + 1 >= fCorners.length, sCap = last ? Math.min(sTop, sB + 8 * H) : sTop;
+      // (only where the surface can leave at the contact angle: between -86 and -5 degrees)
+      let sLo = null;
+      for (let i = 0; i <= 200; i++) { const q = sB + (sTop - sB) * i / 200, a = aAt(q); if (a > -86 && a < -5) { sLo = q; break; } }
+      if (sLo == null) return aAt(0.5 * (sB + sTop)) <= -86 ? { beyond: true, o: null } : { pinned: true };
+      const sStart = Math.max(sB + Math.min(0.1 * H, 0.5 * (sTop - sB)), sLo);
+      const past = o => o.r.surface.s >= sTop - 1e-9 * H;
+      const settled = o => { const rm = remeshed(o); return rm.relayoutFailed ? null : past(rm) ? { beyond: true, o: rm } : { o: rm }; };
+      // free at once, from a little up
+      {
+        const o = solveAt('climbed', sStart, true, fInf, { ...pin, s: sB }, aK, 60, null, ctx);
+        if (!o.error && o.r.surface.s > sB) {
+          log(`contact line free on the face: settled ${(o.r.surface.s * 1e3).toFixed(3)} mm along it`);
+          if (past(o)) return { beyond: true, o };
+          const d = settled(o); if (d) return d;
+        }
+      }
+      // continuation in the contact angle: held a little up, the surface leaves at some angle -- the free solution
+      // for the contact angle that gives that; step the contact angle from there to its own
+      {
+        let cur = solveAt('climbed', sStart, false, fInf, { ...pin, s: sB }, aK, undefined, null, ctx);
+        if (!cur.error) {
+          let c = cur.leave - thDeg(cur.s) + 180, dc = Math.sign(contactDeg - c) * Math.min(Math.abs(contactDeg - c), 10);
+          cur = { ...cur, sNow: cur.s };
+          log(`contact angle continuation from ${c.toFixed(1)}° to ${contactDeg.toFixed(1)}°`);
+          while (Math.abs(dc) >= 0.25) {
+            const c1 = Math.abs(contactDeg - c) <= Math.abs(dc) ? contactDeg : c + dc, a1 = aOn(k, c1);
+            const r1 = solveFEM({ ...base, label: `contact angle ${c1.toFixed(1)}°, contact line free on the face`, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cBase, alphaDeg: a1 }, s0: cur.sNow,
+              homotopy: true, maxIter: 60 });
+            if (r1.converged && r1.surface.s > sB) {
+              r1.meshInfo = cur.r.meshInfo;
+              cur = { ...cur, r: r1, sNow: r1.surface.s, leave: leaveDeg(r1, cur.m.cCL), alpha: a1 };
+              c = c1;
+              log(`contact angle ${c.toFixed(1)}°: contact line ${(r1.surface.s * 1e3).toFixed(3)} mm along the face`);
+              if (past(cur)) return { beyond: true, o: cur };
+              if (c === contactDeg) { const d = settled({ ...cur, s: cur.s }); if (d) return d; break; }
+              dc *= 1.5;
+              if (Math.abs(cur.sNow - cur.s) > 0.3 * (cur.s - sB)) {
+                const re = solveAt('climbed', cur.sNow, true, fInf, { ...cur, s: cur.sNow }, a1, undefined, null, ctx);
+                if (!re.error && re.r.surface.s > sB) cur = { ...re, sNow: re.r.surface.s };
+              }
+            } else dc *= 0.5;
+          }
+        }
+      }
+      // held at trial places and bracketed: F = leave - the contact angle's direction there falls as it goes up
+      const F = o => o.leave - aAt(o.s), solved = [{ ...pin, s: sB }];
+      const near = sv => solved.reduce((a, b) => Math.abs(b.s - sv) < Math.abs(a.s - sv) ? b : a);
+      const held = sv => {
+        for (let tries = 0; tries < 5; tries++) {
+          const from = near(sv), o = solveAt('climbed', sv, false, fInf, from, aK, undefined, null, ctx);
+          if (!o.error) { solved.push(o); log(`held ${(o.s * 1e3).toFixed(3)} mm along the face: surface leaves at ${o.leave.toFixed(2)} deg`); return o; }
+          const mid = 0.5 * (from.s + sv), om = solveAt('climbed', mid, false, fInf, from, aK, undefined, null, ctx);
+          if (om.error) { sv = mid; continue; }
+          solved.push(om);
+        }
+        return { error: 'the contact line could not be moved along the face' };
+      };
+      let A = solved[0], B = null;
+      while (!B) {
+        const P = solved.length > 1 ? solved[solved.length - 2] : null;
+        let sv = A.s + 0.1 * H;
+        if (P && F(P) !== F(A)) sv = Math.min(A.s + 0.25 * H, Math.max(A.s + 0.02 * H, A.s - F(A) * (A.s - P.s) / (F(A) - F(P))));
+        if (sv > sCap) {
+          // (the top of the stretch: held there, the surface still flatter than the contact angle asks: past it)
+          if (A.s >= sCap - 1e-6 * H) return last && sCap < sTop ? { error: 'the contact line would climb more than 8 gap heights up the face', o: A } : { beyond: true, o: A.r ? A : null };
+          sv = sCap;
+        }
+        const o = held(sv);
+        if (o.error) return { error: o.error, o };
+        if (F(o) <= 0) B = o; else A = o;
+        if (!B && F(o) < 20) {
+          const fr = solveAt('climbed', o.s, true, fInf, o, aK, undefined, null, ctx);
+          if (!fr.error && fr.r.surface.s > sB) {
+            log(`contact line free on the face: settled ${(fr.r.surface.s * 1e3).toFixed(3)} mm along it`);
+            if (past(fr)) return { beyond: true, o: fr };
+            const rm = remeshed(fr);
+            return past(rm) ? { beyond: true, o: rm } : { o: rm };
+          }
+        }
+      }
+      let Fa = F(A), Fb = F(B), best = Math.abs(Fa) < Math.abs(Fb) ? A : B;
+      for (let it = 0; it < 8 && Math.abs(F(best)) > 0.5; it++) {
+        const o = held(B.s - Fb * (B.s - A.s) / (Fb - Fa));
+        if (o.error) return { error: o.error, o };
+        const Fc = F(o);
+        if (Fc * Fb < 0) { A = B; Fa = Fb; } else Fa *= 0.5;
+        B = o; Fb = Fc;
+        if (Math.abs(Fc) < Math.abs(F(best))) best = o;
+      }
+      if (best.s <= sB) return { pinned: true };
+      best = remeshed(best, true);
+      log('contact line free on the face: final solve');
+      const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cBase, alphaDeg: aK }, s0: best.s,
+        homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
+      r.meshInfo = { mode: 'climbed', k, cCL: best.m.cCL, cCorner: best.m.cCorner, cBase: best.m.cBase, nFixK: best.m.nFixK, nEy: best.m.mesh.nEy, quality: best.m.quality, frac: best.m.frac };
+      const o = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL), alpha: aK, ctx } : { ...best, error: undefined, heldOnly: true };
+      if (r.converged && past(o)) return { beyond: true, o };
+      return { o, extra: r.converged ? {} : { note: 'contact-angle solve did not converge; result held at the bracketed place' } };
+    }
+
+    // with flow: from the first corner up
+    let k = kFirst, from = null;
+    for (;;) {
+      const [lo, hi] = gibbs(k);
+      const pin = solveAt('pinned', fCorners[k].s, false, fInf, from, undefined, undefined, null, ctxP(k));
+      if (pin.error) return fin(pin, 'pinned', k);
+      log(`at ${k ? `corner ${k}` : 'the edge'}: surface leaves at ${pin.leave.toFixed(2)} deg (held there needs ${lo.toFixed(1)} .. ${hi.toFixed(1)} deg)`);
+      if (pin.leave < lo) {
+        if (k === kFirst && model === 'full') return fin({ ...pin, error: 'the meniscus would recede under the blade (dewetting its underside): not modelled' }, 'pinned', k);
+        // (the simple model keeps the face below C wetted; up from the corner below: it settles at this corner)
+        return fin(pin, 'pinned', k, { note: k === kFirst ? 'the surface would pull back below C: the simple model keeps the face below C wetted (the full model follows it)' : 'settled at the corner, coming up from the face below it' });
+      }
+      if (pin.leave <= hi) return fin(pin, 'pinned', k);
+      fInf = pin.r.Q / U;
+      const up = climbFrom(k, pin);
+      if (up.error) return fin(up.o && up.o.r ? { ...up.o, error: up.error } : { ...pin, error: up.error }, 'climbed', k);
+      if (up.pinned) return fin(pin, 'pinned', k);
+      if (up.beyond) {
+        if (k + 1 >= fCorners.length) return fin({ ...(up.o && up.o.r ? up.o : pin), error: 'the contact line would climb past the top of the exit face' }, 'climbed', k);
+        from = up.o && up.o.r ? up.o : pin;
+        k++;
+        continue;
+      }
+      return fin(up.o, 'climbed', k, up.extra || {});
+    }
+  }
+  if (!prof && alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
+  if (!prof && alphaDeg > -5) return { error: `the surface would leave the exit face level or rising (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be below 175°)` };
   let fInf = opts.fInfGuess ?? H;
+  if (prof) return solveShaped();
 
   // opts.preview: not solved -- the mesh the solve starts on, laid out as its first solve lays it out (with
   // flow: the contact line at the edge, the surface on the static meniscus), its nodes and its shape quality

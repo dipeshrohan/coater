@@ -5,7 +5,8 @@
  * (cfd-fem.js), then the 1D thin-film development from the end of that 2D
  * domain to the oven (cfd-solver.js's solveDownstreamFilm).
  *
- * Message in:  { geometry: 'round'|'flat', H, L, R, Xup, exitAngle, contactDeg,
+ * Message in:  { geometry: 'round'|'flat' (or a shaped blade's shape), H, L, R, Xup, exitAngle, contactDeg,
+ *                blade (a shaped blade: cfd-blade.js's bladeProfile spec, H from the gap), clModel ('full' | 'simple'),
  *                U, Pup, rho, muRef, ty, n, muRep, gamma, g, ovenDistance,
  *                webSlip (1 / slip length, 1/m: slip over the fibre surface;
  *                0 = no slip) }
@@ -25,7 +26,7 @@
  *   used: index in solves of the solve whose solution is the result.
  */
 // (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
-importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-1d.js');
+importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {
@@ -33,6 +34,22 @@ function lubricationQ(o, shape) {
   let I2 = 0, I3 = 0;
   for (let k = 0; k < M; k++) { const h = shape.h((k + 0.5) * shape.Lx / M); I2 += shape.Lx / M / (h * h); I3 += shape.Lx / M / (h * h * h); }
   return (o.Pup + 6 * mu * o.U * I2) / (12 * mu * I3);
+}
+
+/**
+ * A shaped blade's extras for the result: where the contact line is (k: the face corner it is at or above; note), the
+ * face from the contact line up (points, m: the plot draws the blade's face from there), the face's corners (m).
+ */
+function shapedOut(prof, r) {
+  if (!prof) return {};
+  const s = r.surface ? r.surface.s : 0, F = prof.face, pts = [F.P(s)];
+  for (let i = 0; i < F.pieces.length; i++) {
+    const a = F.s0[i], b = F.s0[i + 1];
+    if (b <= s) continue;
+    const m = F.pieces[i].kind === 'arc' ? Math.max(2, Math.ceil(Math.abs(F.pieces[i].da) * 180 / Math.PI / 3)) : 1;
+    for (let k = 1; k <= m; k++) { const q = Math.max(s, a) + (b - Math.max(s, a)) * k / m; pts.push(F.P(q)); }
+  }
+  return { shaped: { k: r.meniscus ? r.meniscus.k : 0, model: r.meniscus ? r.meniscus.model : null, note: r.meniscus ? r.meniscus.note || null : null, faceAbove: pts, corners: prof.faceCorners.map(c => F.P(c.s)), sCL: s } };
 }
 
 onmessage = e => {
@@ -64,6 +81,7 @@ onmessage = e => {
       Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb, nEf: sv.nEf ?? 6, nEs: sv.nEs ?? 24, nEy: sv.nEy ?? 6, fInfGuess: qLub / o.U,
       gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY, tol: sv.tol, maxIter: sv.maxIter,
       meshZones: sv.zones || null, meshFrac: sv.frac || null,     // (refinement zones; an adapted mesh)
+      profile: shape.profile || null, clModel: o.clModel || 'full',  // (a shaped blade, and its contact-line model)
     };
     if (o.preview) {
       // the mesh the solve starts on (not solved): as the post-processing grid, with no flow on it
@@ -72,7 +90,7 @@ onmessage = e => {
       const N = pv.NC * pv.NR, z = () => new Float64Array(N);
       const g = coaterGrid({ ...pv, u: z(), v: z(), p: z(), psi: z(), gd: z(), mu: z(), tauXY: z(), tauXX: z(), tauYY: z(), omega: z(), Q: 0, converged: false, residual: NaN, iterations: 0 },
         { xe, H, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U });
-      postMessage({ ok: true, preview: o.preview, result: { ...g, Hedge: H, nEb, preview: true } });
+      postMessage({ ok: true, preview: o.preview, result: { ...g, Hedge: H, nEb, preview: true, ...shapedOut(shape.profile, pv) } });
       return;
     }
     const r = solveCoaterFEM({
@@ -89,13 +107,17 @@ onmessage = e => {
     // 1D profile for the pressure gradient the 2D solution has at mid-land
     // must match it there -- shown as the reference. (Not the bead pressure
     // over the land length: the meniscus sets the pressure at the edge.)
+    // (a shaped blade: at the middle of the level land its underside ends with -- a bevel's, an edge radius's, a
+    // two-step's metering land -- if it has one)
     let prof1D = null;
-    if (o.geometry !== 'round') {
+    const lastU = shape.profile && shape.profile.under.pieces[shape.profile.under.pieces.length - 1];
+    const land = !shape.profile ? (o.geometry !== 'round' ? [0, xe] : null) : lastU.kind === 'line' && lastU.y1 === lastU.y0 && lastU.x1 > lastU.x0 ? [lastU.x0, lastU.x1] : null;
+    if (land) {
       let i = 1;
-      while (i < g.iCorner - 1 && g.xWeb[i] < 0.5 * xe) i++;
+      while (i < g.iCorner - 1 && g.xWeb[i] < 0.5 * (land[0] + land[1])) i++;
       const G = -(g.pWeb[i + 1] - g.pWeb[i - 1]) / (g.xWeb[i + 1] - g.xWeb[i - 1]);
       // (with slip over the fibre, the wall moves at the solution's own web-surface velocity there)
-      const p1 = solveFullyDeveloped1D({ Ly: o.H, U: g.uWeb[i], G, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
+      const p1 = solveFullyDeveloped1D({ Ly: shape.profile ? shape.h(g.xWeb[i]) : o.H, U: g.uWeb[i], G, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
       prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd), x: g.xWeb[i], G, uWall: g.uWeb[i] };
     }
 
@@ -111,7 +133,7 @@ onmessage = e => {
       nx: 200, maxSteps: 150000, tol: 1e-8,
     }) : { error: 'the oven is inside the 2D domain' };
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace } });
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...shapedOut(shape.profile, r) } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }
