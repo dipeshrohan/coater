@@ -114,4 +114,53 @@ function beamBow({ L, EI, supports, q, n = 120, nq = 600 }) {
 /** The beam's section from the blade's height h and thickness t (mm), or I typed (mm^4): I (m^4), area (m^2). */
 const beamSection = (b) => ({ I: (b.I > 0 ? b.I : b.t * Math.pow(b.h, 3) / 12) * 1e-12, A: b.t * b.h * 1e-6 });
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { acrossSpan, acrossSine, acrossBowTyped, acrossEnds, acrossPchip, beamGreen, beamBow, beamSection };
+/** The spread of values over the counted positions: max - min, standard deviation, mean. */
+function acrossSpread(v, counted) {
+  const u = v.filter((_, k) => counted[k]), m = u.reduce((a, x) => a + x, 0) / u.length;
+  return { range: Math.max(...u) - Math.min(...u), sd: Math.sqrt(u.reduce((a, x) => a + (x - m) * (x - m), 0) / u.length), mean: m };
+}
+
+/**
+ * The crown that evens the film (Phase 4). film(k, dg): the film (m) at position k with the gap there changed by dg (m);
+ * counted[k]: the position is in the span to be made even (the edge bands left out); p[k]: the parabola's shape there
+ * (1 - u^2 over the blade, 1 at its middle). Each position's film against its gap is nearly straight over a few microns:
+ * its slope s_k (from +-delta), then
+ *  - the best parabola a p(z): the least-squares a for an even film (linear in a), refined on the films solved with it;
+ *  - the free curve c_k: c_k = -(film_k - target) / s_k, target today's mean film over the counted span, solved again and
+ *    corrected until even; past the counted span it holds the edge's value.
+ * Returns { f0, s, parab: { a, films, spread }, free: { c, films, spread, iters }, base: spread }.
+ */
+function crownFind({ n, counted, film, p, delta = 5e-6, iters = 5, tol = 2e-8, progress = () => {} }) {
+  const ks = [...Array(n).keys()], f0 = ks.map(k => film(k, 0));
+  progress('the film at each position, and its slope with the gap');
+  const s = ks.map(k => (film(k, delta) - film(k, -delta)) / (2 * delta));
+  const base = acrossSpread(f0, counted);
+  // the best parabola: min sum (f_k + s_k p_k a - mean)^2 over the counted positions
+  const lsq = (f, x) => { const c = ks.filter(k => counted[k]), fm = c.reduce((a, k) => a + f[k], 0) / c.length, xm = c.reduce((a, k) => a + x[k], 0) / c.length;
+    let num = 0, den = 0; for (const k of c) { num += (x[k] - xm) * (f[k] - fm); den += (x[k] - xm) ** 2; } return den > 0 ? -num / den : 0; };
+  const sp = ks.map(k => s[k] * p[k]);
+  let a = lsq(f0, sp), fa = null;
+  for (let it = 0; it < 3; it++) {
+    progress(`the best parabola: round ${it + 1}`);
+    fa = ks.map(k => film(k, a * p[k]));
+    const da = lsq(fa, sp);
+    a += da;
+    if (Math.abs(da) < 1e-9) { fa = ks.map(k => film(k, a * p[k])); break; }
+    if (it === 2) fa = ks.map(k => film(k, a * p[k]));
+  }
+  // the free curve
+  const T = base.mean, first = ks.find(k => counted[k]), last = [...ks].reverse().find(k => counted[k]);
+  const hold = c => ks.map(k => k < first ? c[first] : k > last ? c[last] : c[k]);
+  let c = hold(ks.map(k => counted[k] ? -(f0[k] - T) / s[k] : 0)), fc = null, it = 0;
+  for (; it < iters; it++) {
+    progress(`the free curve: round ${it + 1}`);
+    fc = ks.map(k => film(k, c[k]));
+    const err = Math.max(...ks.filter(k => counted[k]).map(k => Math.abs(fc[k] - T)));
+    if (err < tol) break;
+    c = hold(ks.map(k => counted[k] ? c[k] - (fc[k] - T) / s[k] : c[k]));
+  }
+  if (it === iters) fc = ks.map(k => film(k, c[k]));
+  return { f0, s, base, parab: { a, films: fa, spread: acrossSpread(fa, counted) }, free: { c, films: fc, spread: acrossSpread(fc, counted), iters: Math.min(it + 1, iters) } };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { acrossSpan, acrossSine, acrossBowTyped, acrossEnds, acrossPchip, beamGreen, beamBow, beamSection, acrossSpread, crownFind };

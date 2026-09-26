@@ -249,6 +249,7 @@ function acrossPanelHTML(where) {
   h += `<div class="acr-part">${chk('crown', c.on, 'Crown', col.crown)}${c.on && c.pts.length ? seg('crown.kind', c.kind, [['parabola', 'Parabola'], ['free', 'Free curve']], 'Crown: parabola or free curve') : ''}</div>`;
   if (c.on && c.kind === 'parabola') h += row('at the middle', `${num('crown.um', c.um)}<span class="u">µm</span>`);
   if (c.on && c.kind === 'free') h += `<p class="acr-note">The free curve found${c.name ? ` (${escAttr(c.name)})` : ''}: ${c.pts.length} points.</p>`;
+  if (pg) h += acrossCrownHTML();
   if (pg) h += `<div class="acr-part"><span class="acr-chk">Skew</span></div>` + row('to the cross direction', `${pnum('skew')}<span class="u">°</span>`);
   // the blade's ends
   h += `<div class="acr-part"><span class="acr-chk">Blade's ends</span></div>`
@@ -498,3 +499,74 @@ function acrossReportHTML() {
   return '<h3>The blade across the web</h3>' + repRows(acrossRows().map(([a, b]) => [repEsc(a), repEsc(b)]), ['Part', 'Setting'])
     + (svg ? `<figure><img src="${svgImage(svg)}" alt="The gap across the web, seen from the front" style="max-width:${svg.getAttribute('width')}px;background:#fff"><figcaption>The gap's change across the web, seen from the front: each part (dashed) and their sum, the blade's edge (solid).</figcaption></figure>` : '');
 }
+
+// ---- the crown finder: the best parabola and the free curve that even the film (the 1D, in a worker) ----
+const ACR_CROWN = { worker: null, id: 0, busy: false, stage: '', key: null, res: null, error: null, ms: 0 };
+/** What the crown is found for: each position's 1D inputs with the gap as it is but without a crown, the counted span, the parabola's shape. */
+function acrossCrownInput() {
+  const keep = ACR.crown.on;
+  ACR.crown.on = false;
+  try {
+    const zs = acrossPositions(), sp = acrossSpanNow(), a = Math.max(0, sp[0]) + ACR.edgeBand, b = Math.min(ACR_W, sp[1]) - ACR.edgeBand;
+    return { zs, geos: zs.map(z => oneDGeoAt(z)), counted: zs.map(z => z >= a - 1e-9 && z <= b + 1e-9), p: zs.map(z => acrossBowTyped(z, 1, 'parabola', sp)) };
+  } finally { ACR.crown.on = keep; }
+}
+const acrossCrownKey = c => JSON.stringify([c.geos, c.counted, c.p]);
+/** Find the crown (the worker; the page follows its progress). */
+function acrossCrownRun() {
+  if (ACR_CROWN.busy) return;
+  const c = acrossCrownInput();
+  if (c.counted.filter(Boolean).length < 3) { ACR_CROWN.error = 'the edge bands leave fewer than 3 positions to make even: narrower bands'; render(); return; }
+  if (!ACR_CROWN.worker) ACR_CROWN.worker = makeWorker('cfd-1d-worker.js');
+  const id = ++ACR_CROWN.id, key = acrossCrownKey(c);
+  Object.assign(ACR_CROWN, { busy: true, stage: 'starting', error: null });
+  ACR_CROWN.worker.onmessage = e => {
+    if (e.data.id !== id) return;
+    if (e.data.progress) { ACR_CROWN.stage = e.data.progress.stage; const el = document.querySelector('.acr-panel .acr-crown-stage'); if (el) el.textContent = `Finding the crown: ${ACR_CROWN.stage}…`; return; }
+    ACR_CROWN.busy = false;
+    if (e.data.ok) Object.assign(ACR_CROWN, { key, res: { ...e.data.crown, zs: c.zs, counted: c.counted }, ms: e.data.ms });
+    else ACR_CROWN.error = e.data.error;
+    if (tab === 11) render();
+  };
+  ACR_CROWN.worker.onerror = e => { ACR_CROWN.busy = false; ACR_CROWN.error = e.message || 'the crown worker failed'; if (tab === 11) render(); };
+  ACR_CROWN.worker.postMessage({ id, crown: { geos: c.geos, counted: c.counted, p: c.p } });
+  render();
+}
+/** The crown found, if it is for the inputs as they are (else null). */
+const acrossCrownNow = () => ACR_CROWN.res && ACR_CROWN.key === acrossCrownKey(acrossCrownInput()) ? ACR_CROWN.res : null;
+/** The crown finder's part of the page's panel. */
+function acrossCrownHTML() {
+  const R = ACR_CROWN.res, now = acrossCrownNow(), um = v => (v * 1e6).toFixed(2), f = v => (v * 1e6).toFixed(2);
+  let h = row2('edge bands left out', `<input type="number" class="acr-in" id="acr_pg_edgeBand" data-acr="edgeBand" value="${acrFmt(ACR.edgeBand, 1)}" step="any" min="0" max="100" aria-label="Crown: edge band left out, mm"><span class="u">mm</span>`)
+    + `<div class="acr-row"><button type="button" class="btn btn-secondary btn-sm" data-acr-act="crown-find"${ACR_CROWN.busy ? ' disabled' : ''}>${uiIco('tolerance')}${R ? 'Find the crown again' : 'Find the crown'}</button><span class="acr-hint">the 1D at ${ACROSS_N} positions</span></div>`;
+  if (ACR_CROWN.busy) h += `<p class="acr-note acr-crown-stage"><i class="spin" aria-hidden="true"></i>Finding the crown: ${escAttr(ACR_CROWN.stage)}…</p>`;
+  if (ACR_CROWN.error) h += `<p class="acr-note"><span class="warn-text">The crown could not be found: ${escAttr(ACR_CROWN.error)}.</span></p>`;
+  if (R) {
+    const inUse = k => ACR.crown.on && (k === 'parabola' ? ACR.crown.kind === 'parabola' && Math.abs(ACR.crown.um - +um(R.a)) < 0.005 : ACR.crown.kind === 'free' && ACR.crown.name === R.name);
+    h += `<div class="acr-crown${now ? '' : ' stale'}">${now ? '' : '<p class="acr-note"><span class="warn-text">Found for the inputs as they were: find it again.</span></p>'}
+      <p class="acr-note">Film range over the counted span now: <b>${f(R.spread.base.range)} µm</b> (s.d. ${f(R.spread.base.sd)} µm).</p>
+      <div class="acr-crow"><span class="acr-sw" style="background:${ACROSS_COLS.bow}"></span><span><b>Best parabola</b> ${um(R.a) >= 0 ? '+' : ''}${um(R.a)} µm at the middle: range ${f(R.spread.parab.range)} µm</span>
+        <span class="acr-cbtn"><button type="button" class="btn btn-secondary btn-sm" data-acr-act="crown-csv" data-v="parabola">CSV</button><button type="button" class="btn btn-${inUse('parabola') ? 'secondary' : 'primary'} btn-sm" data-acr-act="crown-use" data-v="parabola"${now ? '' : ' disabled'}>${inUse('parabola') ? 'In use' : 'Use this crown'}</button></span></div>
+      <div class="acr-crow"><span class="acr-sw" style="background:${ACROSS_COLS.meas}"></span><span><b>Free curve</b> (${R.c.length} points, ${R.iters} round${R.iters === 1 ? '' : 's'}): range ${f(R.spread.free.range)} µm</span>
+        <span class="acr-cbtn"><button type="button" class="btn btn-secondary btn-sm" data-acr-act="crown-csv" data-v="free">CSV</button><button type="button" class="btn btn-${inUse('free') ? 'secondary' : 'primary'} btn-sm" data-acr-act="crown-use" data-v="free"${now ? '' : ' disabled'}>${inUse('free') ? 'In use' : 'Use this crown'}</button></span></div>
+      <p class="acr-note">Found in ${(ACR_CROWN.ms / 1000).toFixed(1)} s. The films with each are drawn on the wet film chart (dashed).</p></div>`;
+  }
+  if (ACR.crown.on) h += `<div class="acr-row"><button type="button" class="btn btn-secondary btn-sm" data-acr-act="crown-3d">${uiIco(9)}Check the crown in use with the 3D (full width)</button></div>`;
+  return h;
+}
+const row2 = (l, v) => `<div class="acr-row"><span class="acr-l">${l}</span><span class="acr-v">${v}</span></div>`;
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-acr-act^="crown-"]');
+  if (!t) return;
+  const act = t.dataset.acrAct, R = ACR_CROWN.res;
+  if (act === 'crown-find') acrossCrownRun();
+  else if (act === 'crown-use' && R) {
+    if (t.dataset.v === 'parabola') acrossSet('crown', { ...ACR.crown, on: true, kind: 'parabola', um: +(R.a * 1e6).toFixed(2) }, `Use the crown: parabola ${(R.a * 1e6).toFixed(2)} µm at the middle`);
+    else { R.name = R.name || `found ${new Date().toLocaleString()}`; acrossSet('crown', { ...ACR.crown, on: true, kind: 'free', pts: R.zs.map((z, k) => [+z.toFixed(4), +(R.c[k] * 1e6).toFixed(4)]), name: R.name }, `Use the crown: the free curve (${R.c.length} points)`); }
+  } else if (act === 'crown-csv' && R) {
+    const sp = acrossSpanNow(), rows = t.dataset.v === 'parabola' ? R.zs.map(z => [z, acrossBowTyped(z, R.a * 1e6, 'parabola', sp)]) : R.zs.map((z, k) => [z, R.c[k] * 1e6]);
+    saveBlob(new Blob([`z_mm,crown_um\n${rows.map(([z, v]) => `${z.toFixed(3)},${v.toFixed(4)}`).join('\n')}\n`], { type: 'text/csv' }), `crown-${t.dataset.v === 'parabola' ? 'parabola' : 'free-curve'}.csv`);
+  } else if (act === 'crown-3d') {
+    Object.assign(C3D, { region: 'full', source: 'made', step: 'solve' }); tab = 9; render(); c3dRun(true);
+  }
+});

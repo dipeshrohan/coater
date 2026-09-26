@@ -5,6 +5,8 @@
  *  2. The parts: today's waviness unchanged with no crest set (bit for bit), a crest where it is asked; the typed
  *     bow's shapes (zero at the blade's ends, the amount at the middle, the arc against the parabola); chamfered ends.
  *  3. The monotone curve through measured points: through every point, no overshoot, flat beyond the ends.
+ *  4. The crown finder: a parabolic bow taken out exactly; bow and waviness made even by the free curve; the 1D gap flow
+ *     with a bow: the best parabola is its negative.
  */
 const A = require('./cfd-across.js');
 let fails = 0;
@@ -69,6 +71,30 @@ console.log('\n3. The curve through measured points');
   check('a flat stretch stays flat', Math.abs(f(135) - 18) < 1e-12);
   check('unsorted and repeated points: sorted, repeats averaged', Math.abs(A.acrossPchip([[10, 1], [0, 0], [10, 3]])(10) - 2) < 1e-12);
   check('one point: constant; none: zero', A.acrossPchip([[5, 7]])(100) === 7 && A.acrossPchip([])(3) === 0);
+}
+
+console.log('\n4. The crown finder');
+{
+  // a film law with some curvature (m), a gap across the web: a parabolic bow and a sine
+  const n = 61, zs = Array.from({ length: n }, (_, k) => 300 * k / (n - 1)), p = zs.map(z => 1 - ((z - 150) / 150) ** 2);
+  const law = g => 0.9 * g + 120 * g * g, counted = zs.map(z => z >= 10 && z <= 290);
+  const bowOnly = zs.map((z, k) => 1.7e-3 + 40e-6 * p[k]);
+  const r1 = A.crownFind({ n, counted, film: (k, dg) => law(bowOnly[k] + dg), p });
+  check('a gap bowed as a parabola: the best parabola takes the bow out (-40 µm), the film even', Math.abs(r1.parab.a + 40e-6) < 1e-9 && r1.parab.spread.range < 1e-12,
+    `a ${(r1.parab.a * 1e6).toFixed(6)} µm, spread ${r1.base.range.toExponential(2)} → ${r1.parab.spread.range.toExponential(2)} m`);
+  const wavy = zs.map((z, k) => 1.7e-3 + 40e-6 * p[k] + 15e-6 * Math.sin(2 * Math.PI * z / 120));
+  const r2 = A.crownFind({ n, counted, film: (k, dg) => law(wavy[k] + dg), p });
+  check('bow and waviness: the parabola takes out most, the free curve evens it to 20 nm over the counted span', r2.parab.spread.range < r2.base.range && r2.free.spread.range < 2e-8,
+    `range ${(r2.base.range * 1e6).toFixed(3)} → parabola ${(r2.parab.spread.range * 1e6).toFixed(3)} → free ${(r2.free.spread.range * 1e9).toFixed(3)} nm in ${r2.free.iters} rounds`);
+  check('  the free curve keeps the mean film (the target), and holds the edge value in the bands', Math.abs(r2.free.spread.mean - r2.base.mean) < 2e-8 && r2.free.c[0] === r2.free.c[2] && r2.free.c[n - 1] === r2.free.c[n - 3]);
+  // the real 1D: a flat land with a 40 µm bow at its middle
+  const S = require('./cfd-solver.js'); Object.assign(global, S); Object.assign(global, require('./cfd-blade.js'));
+  const D = require('./cfd-1d.js');
+  const geo = { shape: 'flat', L: 0.01, U: 0.28 / 60, Pup: 720, muRef: 10.5, ty: 5, n: 1, webSlip: 337632 };
+  const m = 13, zz = Array.from({ length: m }, (_, k) => 300 * k / (m - 1)), pp = zz.map(z => 1 - ((z - 150) / 150) ** 2), cc = zz.map(() => true);
+  const t0 = Date.now(), r3 = A.crownFind({ n: m, counted: cc, p: pp, film: (k, dg) => D.gapFlow1D({ ...geo, H: 1.7e-3 + 40e-6 * pp[k] + dg }, { nx: 60, ny: 80 }).film });
+  check('the 1D gap flow (flat land, Herschel-Bulkley): a 40 µm bow → the best parabola -40 µm, the film even', Math.abs(r3.parab.a + 40e-6) < 0.05e-6 && r3.parab.spread.range < 1e-8,
+    `a ${(r3.parab.a * 1e6).toFixed(4)} µm, film range ${(r3.base.range * 1e6).toFixed(3)} → ${(r3.parab.spread.range * 1e9).toFixed(3)} nm, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

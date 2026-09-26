@@ -6,8 +6,9 @@
  * Message in:  { id, locs: [geo], across: [geo] | null, ripple: { dHum, vibUm, lamMm } }
  *              geo: cfd-ui.js's cfdGeometry fields (SI), plus z (mm).
  * Message out: { id, ok: true, locs: [result], across: [result] | null, ms } or { id, ok: false, error }.
+ * Or the crown (crownRun below): { id, crown: {...} } in, progress then { id, ok: true, crown } out.
  */
-importScripts('cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js');
+importScripts('cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-across.js');
 
 /** A location: its gap flow (arrays and three velocity profiles), film to the oven, ripple, meniscus. */
 function oneLocation(geo, ripple, full) {
@@ -33,7 +34,24 @@ function oneLocation(geo, ripple, full) {
   return out;
 }
 
+/**
+ * The crown (Phase 4): { id, crown: { geos (each position's 1D inputs, the gap without a crown), counted, p } }. Found on a
+ * lighter 1D (60 x 80: the film within 0.02 % of the page's), then each variant solved at the page's resolution.
+ */
+function crownRun(id, c) {
+  const t0 = performance.now();
+  const post = stage => postMessage({ id, progress: { stage } });
+  const film = res => (k, dg) => gapFlow1D({ ...c.geos[k], H: c.geos[k].H + dg }, res).film;
+  const r = crownFind({ n: c.geos.length, counted: c.counted, p: c.p, film: film({ nx: 60, ny: 80 }), progress: post });
+  post('each variant at the page\'s resolution');
+  const full = film({});
+  const base = c.geos.map((_, k) => full(k, 0)), fa = c.geos.map((_, k) => full(k, r.parab.a * c.p[k])), fc = c.geos.map((_, k) => full(k, r.free.c[k]));
+  postMessage({ id, ok: true, crown: { a: r.parab.a, c: r.free.c, s: r.s, base, parab: fa, free: fc, iters: r.free.iters,
+    spread: { base: acrossSpread(base, c.counted), parab: acrossSpread(fa, c.counted), free: acrossSpread(fc, c.counted) } }, ms: performance.now() - t0 });
+}
+
 onmessage = e => {
+  if (e.data.crown) { try { crownRun(e.data.id, e.data.crown); } catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); } return; }
   const { id, locs, across, ripple } = e.data;
   try {
     const t0 = performance.now();

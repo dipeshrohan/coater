@@ -1558,3 +1558,8 @@ body:has(#pgScope) #scope { display: none; }
 .acr-side .acr-row { padding-left: 8px; }
 .acr-side .acr-note { margin-left: 8px; }
 @media (max-width: 1100px) { .acr-top { grid-template-columns: minmax(0, 1fr); } .acr-panel { max-height: none; } }
+.acr-crown { margin: 4px 0 2px 18px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }
+.acr-crown.stale { opacity: .7; }
+.acr-crown .acr-note { margin-left: 0; }
+.acr-crow { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 2px 6px; align-items: center; padding: 4px 0; }
+.acr-crow .acr-cbtn { grid-column: 2; display: flex; gap: 6px; justify-content: flex-end; }
