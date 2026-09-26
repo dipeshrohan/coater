@@ -796,6 +796,7 @@ function c3dMeshSize() {
  */
 function c3dCounts() {
   const F = C3D.frac3;
+  // (an adapted mesh: its element ends along and up; across, its own when for this region)
   if (F) { const a0 = F.b.length - 1 + F.s.length - 1; return { a0, a1: a0 + (F.f.length > 1 ? F.f.length - 1 : C3D.nxFace), ny: F.y.length - 1, nz: c3dNz() }; }
   const pv = C3D_PV.key === c3dPreviewKey() && C3D_PV.stats;
   const a0 = pv ? pv.nB + pv.nS : C3D.nxGap + C3D.nxFilm, face = pv && pv.nF ? pv.nF : C3D.nxFace;

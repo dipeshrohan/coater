@@ -452,7 +452,10 @@ function renderAccuracy() {
   const runs = Object.values(ACC.runs);
   if (!runs.length) { host.innerHTML = head + '<p class="cap">Not run yet. It solves one location (or all four, side by side) on finer and finer meshes until the wet film and contact line stop changing, then its mesh can be kept.</p>'; accWire(host); return; }
   const body = runs.map(st => {
-    const stale = cfdInputsKey(cfdGeometry(st.i)) !== st.key;
+    const own0 = CFD_LOCS[st.i].solver, last0 = st.cycles[st.cycles.length - 1];
+    const kept0 = last0 && last0.settings && ((last0.settings.mesh === 'adapted' && own0.frac === last0.settings.frac) || (last0.settings.mesh === 'custom' && own0.mesh === 'custom' && own0.nEb === last0.settings.nEb && own0.nEy === last0.settings.nEy));
+    // (its mesh kept: the location's settings changed to it, which is not "out of date")
+    const stale = !kept0 && cfdInputsKey(cfdGeometry(st.i)) !== st.key;
     const rows = st.cycles.map((c, n) => `<tr><td>${n + 1}${c.reused ? ' <small>(its result)</small>' : ''}</td><td>${c.nEx} × ${c.nEy} = ${c.elements.toLocaleString()}</td><td>${(c.film * 1000).toFixed(5)}</td><td class="${c.dFilm != null && Math.abs(c.dFilm) >= st.target ? 'warn-text' : ''}">${c.dFilm != null ? accPct(c.dFilm) : ''}</td>
       <td>${c.mode === 'climbed' ? (c.sCL * 1000).toFixed(4) : 'pinned'}</td><td class="${c.dCL != null && !(Math.abs(c.dCL) < st.target) ? 'warn-text' : ''}">${c.dCL != null ? accPct(c.dCL) : ''}</td><td>${c.reused ? '—' : `${(c.ms / 1000).toFixed(0)} s`}</td><td>${c.split ? `split ${c.split.cols} columns, ${c.split.rows} rows` : ''}</td></tr>`).join('');
     const now = st.status === 'running' ? `<tr><td>${st.cycles.length + 1}</td><td colspan="7" data-acc-now="${st.i}">${accNowText(st)}</td></tr>` : '';
@@ -492,7 +495,7 @@ function accWire(host) {
  * inputs' limits) and every zone's size / 1.25, the 2D's zones too (zoneScale).
  */
 const ACC3 = { method: 'adaptive', target: 1, film: true, cl: true, max: 4, cycles: [], status: 'idle', stop: false };
-const ACC3_KEYS = ['nxGap', 'nxFace', 'nxFilm', 'ny', 'nzStrip', 'nzFull', 'zZones', 'frac3', 'zFrac', 'zoneScale'];
+const ACC3_KEYS = ['nxGap', 'nxFace', 'nxFilm', 'ny', 'nzStrip', 'nzFull', 'zZones', 'frac3', 'zFrac', 'zFracFor', 'zoneScale'];
 const acc3Snap = () => Object.fromEntries(ACC3_KEYS.map(k => [k, JSON.parse(JSON.stringify(C3D[k] ?? null))]));
 async function acc3Set(v) { await undoQuiet(() => { Object.assign(C3D, JSON.parse(JSON.stringify(v))); if (C3D.zoneScale == null) C3D.zoneScale = 1; C3D_GEO = null; }); }
 /** A 3D result's outputs: the film and the contact line at the strip's middle station, or their means across the web. */
@@ -534,13 +537,13 @@ async function acc3Run() {
       if (run.method === 'adaptive') {
         const R = res.result, ref = accRefine3(R.frac, acc3ZFrac(R), accIndicator3(R), { maxRows: C3D_MESH_LIMITS.ny[1], maxZ: C3D.region === 'strip' ? 24 : 150 });
         cyc.split = ref;
-        next = { ...acc3Snap(), frac3: ref.frac, zFrac: ref.zFrac };
+        next = { ...acc3Snap(), frac3: ref.frac, zFrac: ref.zFrac, zFracFor: c3dRegionKey() };
       } else {
         const f = Math.pow(1.25, ACC3.cycles.length), O = ACC3.orig, lim = (q, v) => Math.max(C3D_MESH_LIMITS[q][0], Math.min(C3D_MESH_LIMITS[q][1], Math.round(v)));
         const z = c3dZones(O.zZones);
         z.edges.size = +(z.edges.size / f).toPrecision(6); z.bands.forEach(b => { b.size = +(b.size / f).toPrecision(6); });
         next = { ...O, nxGap: lim('nxGap', O.nxGap * f), nxFace: lim('nxFace', O.nxFace * f), nxFilm: lim('nxFilm', O.nxFilm * f), ny: lim('ny', O.ny * f),
-          nzStrip: lim('nzStrip', O.nzStrip * f), nzFull: lim('nzFull', O.nzFull * f), zZones: O.zZones ? z : null, frac3: null, zFrac: null, zoneScale: (O.zoneScale || 1) * f };
+          nzStrip: lim('nzStrip', O.nzStrip * f), nzFull: lim('nzFull', O.nzFull * f), zZones: O.zZones ? z : null, frac3: null, zFrac: null, zFracFor: null, zoneScale: (O.zoneScale || 1) * f };
       }
       await acc3Set(next);
       // (a strip's next mesh beyond what a browser page can hold: stop here, the last mesh kept on offer)
@@ -582,7 +585,7 @@ function acc3Use() {
 /** Back to the element counts (the adapted 3D mesh set aside; one undo step). */
 function acc3Counts() {
   undoHint('3D: the mesh from the element counts');
-  C3D.frac3 = null; C3D.zFrac = null; C3D.zoneScale = 1; C3D_GEO = null;
+  C3D.frac3 = null; C3D.zFrac = null; C3D.zFracFor = null; C3D.zoneScale = 1; C3D_GEO = null;
   render();
 }
 function acc3Status() {
@@ -598,7 +601,7 @@ function acc3HTML() {
     : ACC3.status === 'notmet' ? `<span class="warn-text">Not met</span> after ${ACC3.cycles.length} meshes.`
       : ACC3.status === 'limit' ? `<span class="warn-text">Not met</span> after ${ACC3.cycles.length} meshes: the next would need more memory than a browser can give one page.` : ACC3.status === 'stopped' ? 'Stopped.' : ACC3.status === 'error' ? `<span class="warn-text">Failed:</span> ${escAttr(ACC3.error || '')}` : '';
   const rich = ACC3.rich && ACC3.rich.film ? `<p class="side-note">Richardson: film → ${(ACC3.rich.film.extrapolated * 1000).toFixed(4)} mm (order ${ACC3.rich.film.p.toFixed(2)}, index ${(ACC3.rich.film.gci * 100).toFixed(3)} %).</p>` : '';
-  const adapted = C3D.frac3 || C3D.zFrac;
+  const adapted = C3D.frac3 || c3dZAdapted() || C3D.zoneScale !== 1;
   return `<h4>${uiBadge('tolerance')}Mesh to an accuracy</h4>
     <div class="acc3-bar"><label>Method <select id="acc3Method"${dis}>${opt('adaptive', 'Adaptive', ACC3.method)}${opt('everywhere', 'Refine everywhere ×1.25', ACC3.method)}</select></label>
       <label>Target <input type="number" class="zone-in" id="acc3Target" min="0.05" max="20" step="0.1" value="${ACC3.target}"${dis} aria-label="Target change, %"> %</label>

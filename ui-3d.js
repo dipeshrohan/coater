@@ -12,7 +12,7 @@
  */
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40,
   nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 2, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true,
-  stream: false, streamDensity: 'medium', step: null, zZones: null, frac3: null, zFrac: null, zoneScale: 1 };
+  stream: false, streamDensity: 'medium', step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1 };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -31,6 +31,7 @@ const C3D_UNDO = {
   zZones: ['3D zones across the web', v => c3dZonesText(v)],
   frac3: ['3D mesh from meshing to an accuracy', v => v ? `adapted, ${v.b.length - 1 + v.s.length - 1} along × ${v.y.length - 1} up` : 'the counts'],
   zFrac: ['3D mesh across, from meshing to an accuracy', v => v ? `${v.length - 1} elements` : 'the counts'],
+  zFracFor: ['3D mesh across: the region it was adapted for', v => v || 'none'],
   zoneScale: ['3D: the 2D zones\' sizes', v => v === 1 ? 'as set' : `÷${(+v).toFixed(2)}`],
 };
 /** The view settings (not part of "unsaved changes"). */
@@ -91,9 +92,12 @@ function c3dZonesText(v) {
  * each element spans the same integral of 1 / size -- never fewer elements than set, at most 24 on a strip
  * and 150 across the web.
  */
+/** The region an adapted mesh across belongs to (its ends across are used only there). */
+const c3dRegionKey = () => C3D.region === 'full' ? 'full' : `strip L${C3D.loc + 1} ${C3D.stripW} mm`;
+const c3dZAdapted = () => !!C3D.zFrac && C3D.zFracFor === c3dRegionKey();
 function c3dZEnds() {
   const rg = c3dRegion();
-  if (C3D.zFrac) return C3D.zFrac.map(f => rg.z0 + f * (rg.z1 - rg.z0));   // (an adapted mesh: its own ends across)
+  if (c3dZAdapted()) return C3D.zFrac.map(f => rg.z0 + f * (rg.z1 - rg.z0));   // (an adapted mesh: its own ends across)
   const n0 = rg.nz, z = c3dZones(), even = Array.from({ length: n0 + 1 }, (_, k) => rg.z0 + (rg.z1 - rg.z0) * k / n0);
   if (!c3dZActive(z)) return even;
   const G = z.growth, grow = (sz, d) => sz + (G - 1) * Math.max(0, d), mm = v => v * 1000;

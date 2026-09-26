@@ -128,7 +128,7 @@ async function rep3D() {
   try { await load3DLibs(); } catch (e) { /* (the report goes without the 3D view) */ }
   const G = c3dBuild(), rg = C3D.region === 'strip' ? `strip ${C3D.stripW} mm wide at L${C3D.loc + 1} (z ${CFD_LOCS[C3D.loc].z} mm)` : `full web width, ${ACROSS_W} mm`;
   const rows = [['Blade', repEsc(G.label || 'no file imported')], ['Region', repEsc(rg)],
-    ['Mesh', repEsc(C3D.frac3 || C3D.zFrac ? `adapted by meshing to an accuracy: ${c3dCounts().a1} along the flow, ${c3dCounts().ny} across the gap, ${c3dNz()} ${C3D.region === 'strip' ? 'across the strip' : 'across the web'}`
+    ['Mesh', repEsc(C3D.frac3 || c3dZAdapted() ? `adapted by meshing to an accuracy: ${c3dCounts().a1} along the flow, ${c3dCounts().ny} across the gap, ${c3dNz()} ${C3D.region === 'strip' ? 'across the strip' : 'across the web'}`
       : `elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : C3D.nzFull + ' across the web'}`)],
     ['Refinement zones', repEsc(`along the flow and up the gap: ${zonesText(C3D.region === 'full' ? CFDS.zones : solverOf(C3D.loc).zones)}${C3D.zoneScale !== 1 ? ` (sizes ÷${(+C3D.zoneScale).toFixed(2)})` : ''}; across: ${c3dZonesText(C3D.zZones)}${c3dNz() !== (C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull) ? ` (${c3dNz()} elements)` : ''}`)]];
   if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(`${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
