@@ -93,7 +93,7 @@ const UNDO_UNITS = (() => {
   }
   for (const k of Object.keys(SOLVER_DEFAULTS)) {
     const q = SOLVER_INPUTS.find(x => x.k === k);
-    const [l, f] = k === 'mesh' ? ['Mesh', v => (MESH_PRESETS[v] || {}).l || v] : k === 'tol' ? ['Newton tolerance', fmtTol] : [q ? q.l : k, v => undoNum(v, q && q.d)];
+    const [l, f] = k === 'mesh' ? ['Mesh', v => (MESH_PRESETS[v] || {}).l || v] : k === 'tol' ? ['Newton tolerance', fmtTol] : k === 'zones' ? ['Refinement zones', v => zonesText(v)] : [q ? q.l : k, v => undoNum(v, q && q.d)];
     u.push({ id: 'cfds.' + k, get: () => CFDS[k], set: v => { CFDS[k] = v; }, label: (a, b) => undoChange(l, a, b, f) });
   }
   CFD_LOCS.forEach((loc, i) => {

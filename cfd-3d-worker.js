@@ -4,7 +4,8 @@
  * the stations coupled in 3D).
  *
  * Message in: { id, msg: the 2D solve's message for the location (cfd-worker.js's, the mesh counts the
- *   3D's), strip: { width (m), nEz, gap: [[z, dH]...] (m, z from the location), th: [[z, deg]...] },
+ *   3D's), strip: { width (m), nEz, zs? (the stations, m: refinement zones across the web), gap: [[z, dH]...] (m, z from
+ *   the location), th: [[z, deg]...] },
  *   file: null, or a blade read from a file: { xs, zs, low } (its underside height over the web at xs
  *   along the flow and zs across, m, z from the location) with msg.Xup its inlet distance }
  * Messages out: { id, progress: { stage, it, residual, path, r0, add, solves } } while solving (for the progress
@@ -70,7 +71,8 @@ function wideOpts(o, strip, file) {
   const qLub = (o.Pup + 6 * o.muRep * o.U * I2) / (12 * o.muRep * I3), sv = o.solver;
   return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
     webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
-    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0 };
+    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0,
+    meshZones: sv.zones || null, meshFrac: sv.frac || null };
 }
 const packStation = T => { const o = {}; for (const f of ['u', 'v', 'w', 'p', 'x', 'y', 'z', 'gd', 'mu', 'h']) if (T[f]) o[f] = Float64Array.from(T[f]); o.s = T.s; o.q = T.q; return o; };
 function wide(e) {
@@ -88,7 +90,7 @@ function wide(e) {
     // blade -- is never solved in 3D, and the result takes it from these)
     const full2 = {};
     for (const l of d.stations) { const r = S.r2[l]; full2[l] = { x: Float64Array.from(r.x), y: Float64Array.from(r.y), z: new Float64Array(r.x.length).fill(d.zs[l]), gd: Float64Array.from(r.gd), mu: Float64Array.from(r.mu), q: r.Q }; }
-    postMessage({ id, ok: true, result: { states, full2, mode: S.mode, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe,
+    postMessage({ id, ok: true, result: { states, full2, mode: S.mode, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe, frac: S.r2[d.ref].meshDef.frac,
       film2: Object.fromEntries(d.stations.map(l => [l, S.r2[l].Q / opts.U])), s2: Object.fromEntries(d.stations.map(l => [l, S.climbed ? S.r2[l].surface.s : 0])),
       top2: Object.fromEntries(d.stations.map(l => [l, Array.from({ length: S.NC }, (_, c) => S.r2[l].p[c * S.NR + S.NR - 1])])) } });
     return;
@@ -127,8 +129,8 @@ onmessage = e => {
     const res = solveCoater3D({
       hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
       webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
-      fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, webW: o.webW || 0,
-      width: strip.width, nEz: strip.nEz, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z),
+      fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, webW: o.webW || 0, meshZones: sv.zones || null, meshFrac: sv.frac || null,
+      width: strip.width, nEz: strip.nEz, zs: strip.zs || null, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z),
       onStage: pp.stage, onIteration: pp.iter2, onSolveStart: pp.solve2, onIteration3: pp.iter3,
     });
     if (!res.r3) throw new Error(res.error || 'no solution');
@@ -142,7 +144,7 @@ onmessage = e => {
     const f32 = a => Float32Array.from(a);
     const result = {
       mode: res.mode, converged: r3.converged, iterations: r3.iterations, residual: r3.residual, history: r3.history.map(h => h.residual),
-      ms2: res.ms2, ms3: res.ms3, size: r3.size, NC, NR, NL, cCorner: m.cCorner, cCL: m.cCL, xe, H,
+      ms2: res.ms2, ms3: res.ms3, size: r3.size, NC, NR, NL, cCorner: m.cCorner, cCL: m.cCL, xe, H, frac: m.frac,
       stations: res.stations, top,
       x: f32(r3.x), y: f32(r3.y), z: f32(r3.z), u: f32(r3.u), v: f32(r3.v), w: f32(r3.w), p: f32(r3.p), gd: f32(r3.gd), mu: f32(r3.mu),
     };

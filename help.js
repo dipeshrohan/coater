@@ -70,6 +70,9 @@ const HELP = {
   'sol.tol': { t: 'Newton tolerance', d: 'Residual below which a solve counts as converged (in the solver\'s scaled units).', r: '10⁻⁶ to 10⁻¹⁰ · default 10⁻⁸', e: 'Looser: faster but less accurate; tighter: slower.', u: 'CFD, the DOE' },
   'sol.reset': { t: 'Defaults', d: 'Put all solver and mesh settings back to their defaults (Medium mesh, tolerance 10⁻⁸).' },
   'sol.study': { t: 'Mesh study', d: 'Open the Mesh study tab: solve a location on a coarser, its own and a finer mesh and compare the results.' },
+  'sol.zones': { t: 'Refinement zones', d: 'Smaller elements where you ask: at the metering edge, the contact line, the exit face or along the film, layers at the web or the blade and surface, or bands along the flow. Set on the Mesh step, beside the mesh; they apply at every location.' },
+  'sol.acc': { t: 'Mesh to an accuracy', d: 'Solve a location on finer and finer meshes -- adaptively where the error is, or everywhere -- until the wet film and contact line change less than a target; then keep that mesh (with its solution) for the location.' },
+  'sol.band': { t: 'Add a band', d: 'A band along the flow (x from the inlet) with its own element size. It covers the gap\'s full height; drag its ends on the drawing or type them.' },
   // CFD: locations
   'loc.z': { t: 'Position across the web', d: 'Where across the web this location is (0 to 300 mm): it sets its gap and contact angle from the across-web variation.', u: 'CFD' },
   'loc.own': { t: 'Inputs for this location only', d: 'Open the location\'s own inputs and solver settings: set a value here to override the shared one for this location only.' },
@@ -185,7 +188,7 @@ const HELP_RESULTS = {
 const HELP_BY_ID = {
   cfdR: 'cfd.R', cfdPool: 'cfd.pool', cfdExit: 'cfd.exit', cfdModel: 'cfd.model', cfdFibreSel: 'cfd.fibre', cfdGsm: 'cfd.gsm', cfdRhoF: 'cfd.rhoF',
   cfdDFrom: 'cfd.dFrom', cfdDen: 'cfd.den', cfdNf: 'cfd.nf', cfdAirPerm: 'cfd.airPerm', cfdAirDP: 'cfd.airDP', cfdKoz: 'cfd.koz', cfdAirFrac: 'cfd.airFrac',
-  cfdAirU: 'cfd.airU', cfdAirT: 'cfd.airT', cfdPlenum: 'cfd.plenum', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study',
+  cfdAirU: 'cfd.airU', cfdAirT: 'cfd.airT', cfdPlenum: 'cfd.plenum', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
   cfdShape: 'cfd.shape', cfdRunAll: 'tb.run', cfdCancel: 'tb.stop', cfdViewSeg: 'tb.view', fvBase: 'tb.field', fvStream: 'tb.stream', fvVec: 'tb.vec',
   fvContours: 'tb.contours', cfdCutPlace: 'tb.cut', cfdProbePlace: 'tb.probe', imgBtn: 'tb.image', themeBtn: 'tb.theme',
   fvScale: 'dp.scale', fvContourField: 'dp.contourField', fvMesh: 'dp.mesh', fvMeshQ: 'dp.meshQ', fvDensity: 'dp.density', fvSeedMode: 'dp.seeds',

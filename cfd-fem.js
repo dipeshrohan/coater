@@ -736,6 +736,49 @@ function staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd,
 }
 
 /**
+ * Refinement zones and adapted meshes: the element ends along one part of the spine mesh (the blade,
+ * the exit face, the free surface, or the rows across the gap). base: its ends without zones
+ * (increasing); hZone(p): the element size the zones ask for at p (Infinity: none). Each base element
+ * keeps its own size where no zone asks for less, and the ends are spread so that every element spans
+ * the same integral of 1 / size (equidistribution): without a zone asking for less, the base ends come
+ * back. count: a fixed number of elements (the 3D's stations keep the middle one's), else as many as
+ * that integral needs, never fewer than the base's and at most cap.
+ */
+function zonedEnds(base, hZone, count = null, cap = 400) {
+  const nB = base.length - 1, K = 32, P = [base[0]], I = [0];
+  let tot = 0;
+  for (let e = 0; e < nB; e++) {
+    const a = base[e], b = base[e + 1], hb = b - a, d = hb / K;
+    let fPrev = 1 / Math.min(hb, hZone(a));
+    for (let k = 1; k <= K; k++) {
+      const p = k === K ? b : a + k * d, f = 1 / Math.min(hb, hZone(p));
+      tot += 0.5 * (fPrev + f) * d; fPrev = f;
+      P.push(p); I.push(tot);
+    }
+  }
+  const n = Math.max(1, count ?? Math.min(cap, Math.max(nB, Math.ceil(tot - 1e-6))));
+  const out = [base[0]];
+  for (let k = 1, j = 1; k < n; k++) {
+    const t = tot * k / n;
+    while (j < I.length - 1 && I[j] < t) j++;
+    const w = (t - I[j - 1]) / (I[j] - I[j - 1] || 1);
+    out.push(P[j - 1] + w * (P[j] - P[j - 1]));
+  }
+  out.push(base[nB]);
+  return out;
+}
+/** A zone's element size at distance d outside it: size inside, growing by (growth - 1) x d (a geometric growth of the elements). */
+const zoneGrow = (size, d, growth) => size + (growth - 1) * Math.max(0, d);
+/**
+ * Layers at a wall (fractions of the local gap): n layers, the first `first` thick, each `growth` times the
+ * one before; beyond them the size grows at `after`.
+ */
+function layerSize(d, L, after) {
+  const g = L.growth, dn = g === 1 ? L.n * L.first : L.first * (Math.pow(g, L.n) - 1) / (g - 1);
+  return d <= dn ? L.first + (g - 1) * d : L.first * Math.pow(g, L.n) + (after - 1) * (d - dn);
+}
+
+/**
  * The coating flow under the blade and beyond the metering edge, with the
  * meniscus and the free film solved together with the flow.
  *
@@ -765,7 +808,15 @@ function staticMeniscus({ xe, H, faceDeg, contactDeg, gamma, rho, g, fInf, xEnd,
  *       keepMesh: the result keeps the final mesh layout as meshDef { mesh, NC, cCL, cCorner, h0 } (functions)
  *       nFaceFixed: elements up the exit face when the contact line climbs it (default: from its height; the 3D
  *         solver holds it equal at every station across the web)
- * Returns solveFEM's result plus meshInfo { mode, cCL, cCorner, nEy, quality } and
+ *       meshZones: refinement zones { bands: [{ x0, x1, size }] (x along the web from the inlet, m), edge, cl,
+ *         face, film (element sizes, m, at the metering edge, the contact line, along the exit face, along the
+ *         free film), web / top: layers at the web / at the blade, face and surface { n, first (m, as a share
+ *         of the gap at the edge), growth }, growth (of the size away from a zone, default 1.2) }
+ *       meshFrac: an adapted mesh { b, f, s, y }: element ends as fractions of the blade (x / xe), the exit
+ *         face (from the edge), the free surface (arc length from the contact line) and the rows (up the
+ *         spines); takes the place of the counts, the grading and the zones
+ *       meshCounts: { b, f, s, y } element counts the zones keep (the 3D's stations: the middle one's)
+ * Returns solveFEM's result plus meshInfo { mode, cCL, cCorner, nEy, quality, frac (the element ends, as meshFrac) } and
  * meniscus { mode, alphaMaxDeg, s, leaveDeg, static }, or { error } for an unsupported case.
  */
 function solveCoaterFEM(opts) {
@@ -777,10 +828,50 @@ function solveCoaterFEM(opts) {
     inlet: { type: 'traction', p: y => Pup - rho * g * y }, outlet: { type: 'plug' }, flatEnd: !U, webSlip: opts.webSlip,
     tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration, onSolveStart: opts.onSolveStart, onSolveEnd: opts.onSolveEnd };
 
+  const MZ = opts.meshZones || null, MF = opts.meshFrac || null, FC = opts.meshCounts || null;
   function buildMesh(mode, s0, stat, fan) {
     // face elements: nEf for a climb of H or more, fewer (at least one) for a short one
-    const nF = mode === 'climbed' ? opts.nFaceFixed ?? Math.max(1, Math.min(nEf, Math.ceil(nEf * s0 / H - 1e-9))) : 0, nEx = nEb + nF + nEs, NC = 2 * nEx + 1;
-    const cCorner = 2 * nEb, cCL = 2 * (nEb + nF), M = 2 * nEs;
+    const nF0 = mode === 'climbed' ? opts.nFaceFixed ?? Math.max(1, Math.min(nEf, Math.ceil(nEf * s0 / H - 1e-9))) : 0;
+    // the starting surface by arc length from the contact line (the free-surface spines are laid along it)
+    const xs = stat.xs, fs = stat.f, nS = xs.length, arc = new Float64Array(nS);
+    for (let i = 1; i < nS; i++) arc[i] = arc[i - 1] + Math.hypot(xs[i] - xs[i - 1], fs[i] - fs[i - 1]);
+    const arcTot = arc[nS - 1];
+    // element ends without zones: blade x graded toward the edge (spacing there 1/gradeB of the mean), the
+    // face even, the surface graded from the contact line, the rows graded toward the blade / face / surface
+    const aG = 1 / gradeB, xB0 = t => xe * (1 - (1 - t) * (aG + (1 - aG) * (1 - t)));
+    const etaV0 = (j, n) => 1 - Math.pow(1 - j / n, gradeY);
+    const ends = (n, f) => Array.from({ length: n + 1 }, (_, k) => f(k));
+    // zones / an adapted mesh: the element ends of each part (x, face fraction, arc length, row fraction)
+    let Xb = null, Tf = null, Ss = null, Ey = null;
+    if (MF) {
+      Xb = MF.b.map(f => f * xe); Ss = MF.s.map(f => f * arcTot); Ey = MF.y.slice();
+      Tf = mode !== 'climbed' ? [0] : MF.f && MF.f.length > 1 ? MF.f.slice() : ends(nF0, k => k / nF0);
+    } else if (MZ) {
+      const G = MZ.growth ?? 1.2, grow = (sz, d) => zoneGrow(sz, d, G), none = Infinity;
+      const band = x => { let h = none; for (const b of MZ.bands || []) h = Math.min(h, grow(b.size, Math.max(b.x0 - x, x - b.x1))); return h; };
+      const climbed = mode === 'climbed';
+      // the zones' sizes at a point: its x, and its distances along the top from the edge, the contact line,
+      // the exit face and the free film
+      const at = (x, dEdge, dCL, dFace, dFilm) => Math.min(band(x), MZ.edge ? grow(MZ.edge, dEdge) : none, MZ.cl ? grow(MZ.cl, dCL) : none,
+        MZ.face && climbed ? grow(MZ.face, dFace) : none, MZ.film ? grow(MZ.film, dFilm) : none);
+      Xb = zonedEnds(ends(nEb, k => xB0(k / nEb)), x => at(x, xe - x, xe - x + s0, xe - x, xe - x + s0), FC ? FC.b : null);
+      if (climbed) {
+        const xF = sg => xe + sg * Math.cos(th);
+        Tf = zonedEnds(ends(nF0, k => s0 * k / nF0), sg => at(xF(sg), sg, s0 - sg, 0, s0 - sg), FC ? FC.f : opts.nFaceFixed ?? null).map(v => v / s0);
+      } else Tf = [0];
+      const xS = S => { let i = 0; while (i < nS - 2 && arc[i + 1] < S) i++; const t = Math.min(1, (S - arc[i]) / (arc[i + 1] - arc[i] || 1)); return xs[i] + t * (xs[i + 1] - xs[i]); };
+      Ss = zonedEnds(ends(nEs, k => arcTot * Math.pow(k / nEs, gradeS)), S => at(xS(S), S + s0, S, S, 0), FC ? FC.s : null);
+      const lay = L => L ? { n: L.n, first: L.first / H, growth: L.growth } : null, Lw = lay(MZ.web), Lt = lay(MZ.top);
+      Ey = zonedEnds(ends(nEy, j => etaV0(j, nEy)), e => Math.min(Lw ? layerSize(e, Lw, G) : none, Lt ? layerSize(1 - e, Lt, G) : none), FC ? FC.y : null, 60);
+    }
+    const zoned = !!Xb;
+    const nEbM = zoned ? Xb.length - 1 : nEb, nF = zoned ? Tf.length - 1 : nF0, nEsM = zoned ? Ss.length - 1 : nEs, nEyM = zoned ? Ey.length - 1 : nEy;
+    const nEx = nEbM + nF + nEsM, NC = 2 * nEx + 1;
+    const cCorner = 2 * nEbM, cCL = 2 * (nEbM + nF), M = 2 * nEsM;
+    // (the element ends as fractions: kept with the result, where the adaptive refinement starts from)
+    const frac = zoned ? { b: Xb.map(x => x / xe), f: Tf.slice(), s: Ss.map(S => S / arcTot), y: Ey.slice() }
+      : { b: ends(nEb, k => xB0(k / nEb) / xe), f: nF ? ends(nF, k => k / nF) : [0], s: ends(nEs, k => Math.pow(k / nEs, gradeS)), y: ends(nEy, j => etaV0(j, nEy)) };
+    const node = (E, k) => k % 2 ? 0.5 * (E[(k - 1) / 2] + E[(k + 1) / 2]) : E[k / 2];
     // Each spine: a foot on the web, a top, and the slope dx/dy it arrives
     // at the top with (femNodes' Hermite shape). Directions below point from
     // the top back into the liquid.
@@ -818,11 +909,11 @@ function solveCoaterFEM(opts) {
     }
     const footCL = xCL0 - rCL * sigCL * yCL0, footCorner = xe - r0 * sig0 * H;
     // blade x positions graded toward the edge: spacing there = 1/gradeB of the mean, never zero
-    const aG = 1 / gradeB, xB = c => { const t = c / cCorner; return xe * (1 - (1 - t) * (aG + (1 - aG) * (1 - t))); };
+    const xB = c => zoned ? node(Xb, c) : xB0(c / cCorner);
     const Lr = 1.5 * H, sigB = c => { const w = Math.min(1, Math.max(0, (xB(c) - (xe - Lr)) / Lr)); return sig0 * w * w; };
     const hB = c => c === cCorner ? H : hFn(xB(c));
     // face spines (fraction t of the way from the edge to the contact line)
-    const tF = c => (c - cCorner) / (cCL - cCorner);
+    const tF = c => zoned ? node(Tf, c - cCorner) : (c - cCorner) / (cCL - cCorner);
     // face spines: foot, top and (top slope x height) all linear between the corner's and the contact
     // line's, so every node lies between those two spines (the Hermite shape is linear in them)
     const sigF = (c, st) => {
@@ -838,13 +929,11 @@ function solveCoaterFEM(opts) {
     // the contact line does (moving them normal to the surface there, in the
     // thin wedge, left Newton with a near-singular step); the feet and top
     // slopes relax from the contact-line spine's to vertical over Lw.
-    const xs = stat.xs, fs = stat.f, nS = xs.length, arc = new Float64Array(nS);
-    for (let i = 1; i < nS; i++) arc[i] = arc[i - 1] + Math.hypot(xs[i] - xs[i - 1], fs[i] - fs[i - 1]);
     const xT0 = new Float64Array(M + 1), hT0 = new Float64Array(M + 1), kap = new Float64Array(M + 1);
     const kFace = mode === 'climbed' ? cot(th) : sigCL;                    // pinned: the contact-line spine's own direction
     // element ends graded; each element's middle spine at the middle of its arc (an off-centre
     // middle node distorts the quadratic edge, and its end tangent carries the contact angle)
-    const Sv = m => arc[nS - 1] * Math.pow(m / M, gradeS);
+    const Sv = m => zoned ? Ss[m / 2] : arcTot * Math.pow(m / M, gradeS);
     for (let m = 0, i = 0; m <= M; m++) {
       const S = m % 2 ? 0.5 * (Sv(m - 1) + Sv(m + 1)) : Sv(m);
       while (i < nS - 2 && arc[i + 1] < S) i++;
@@ -859,9 +948,9 @@ function solveCoaterFEM(opts) {
     const h0 = new Float64Array(NC);
     for (let m = 1; m <= M; m++) h0[cCL + m] = hT0[m];
     // rows graded toward the blade / face / surface (element ends; middle rows halfway between)
-    const etaV = j => 1 - Math.pow(1 - j / nEy, gradeY);
+    const etaV = j => zoned ? Ey[j] : etaV0(j, nEy);
     const mesh = {
-      nEx, nEy,
+      nEx, nEy: nEyM,
       eta: k => k % 2 ? 0.5 * (etaV((k - 1) / 2) + etaV((k + 1) / 2)) : etaV(k / 2),
       spineFoot: c => c <= cCorner ? xB(c) - r0 * sigB(c) * hB(c) : c <= cCL ? footF(c) : xT0[c - cCL] + dCL * wS(c - cCL),
       spineTop: (c, st) => {
@@ -873,7 +962,7 @@ function solveCoaterFEM(opts) {
       spineSlope: (c, st) => c <= cCorner ? sigB(c) : c <= cCL ? sigF(c, st) : sigCL * wS(c - cCL),
       kind: c => c > cCL ? 'free' : 'wall',
     };
-    return { mesh, NC, cCL, cCorner, h0 };
+    return { mesh, NC, cCL, cCorner, h0, frac };
   }
 
   if (alphaDeg < -86) return { error: `the surface would leave the exit face (near-)vertically or overhanging (exit-face angle + contact angle = ${(faceDeg + contactDeg).toFixed(1)}°, must be above 94°)` };
@@ -927,7 +1016,7 @@ function solveCoaterFEM(opts) {
     // (held trial heights fail fast: a failure only halves the step toward them)
     const r = solveFEM({ ...base, label: `${where}: surface and flow coupled`, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: m.cCorner, alphaDeg: aUse } : null, s0,
       homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, iterCap) });
-    r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy, quality: m.quality };
+    r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac };
     if (!r.converged) return { error: 'surface and flow coupled did not converge', r, m, stat };
     return { r, m, stat, s: s0, leave: leaveDeg(r, m.cCL), alpha: aUse };
   }
@@ -991,7 +1080,7 @@ function solveCoaterFEM(opts) {
     const { s0, m } = layoutAt(mode, mode === 'climbed' ? st0.s : 0, true, fInf);
     if (!(m.quality > 0)) return { error: `no valid mesh for this geometry (face ${faceDeg} deg, contact angle ${contactDeg} deg)` };
     const { X, Y } = femNodes(m.mesh, { h: m.h0, s: s0 });
-    return { preview: true, x: X, y: Y, NC: m.NC, NR: 2 * nEy + 1, surface: { s: s0 }, meshInfo: { mode, cCL: m.cCL, cCorner: m.cCorner, nEy, quality: m.quality }, meniscus: { mode } };
+    return { preview: true, x: X, y: Y, NC: m.NC, NR: 2 * m.mesh.nEy + 1, surface: { s: s0 }, meshInfo: { mode, cCL: m.cCL, cCorner: m.cCorner, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac }, meniscus: { mode } };
   }
 
   if (!U) {
@@ -1095,7 +1184,7 @@ function solveCoaterFEM(opts) {
   log('contact line free on the face: final solve');
   const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cCorner, alphaDeg }, s0: best.s,
     homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
-  r.meshInfo = { mode: 'climbed', cCL: best.m.cCL, cCorner: best.m.cCorner, nEy, quality: best.m.quality };
+  r.meshInfo = { mode: 'climbed', cCL: best.m.cCL, cCorner: best.m.cCorner, nEy: best.m.mesh.nEy, quality: best.m.quality, frac: best.m.frac };
   const fin = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL) } : { ...best, error: undefined, heldOnly: true };
   return finish(fin, 'climbed', r.converged ? {} : { note: 'contact-angle solve did not converge; result held at the bracketed height' });
 }
@@ -1132,8 +1221,8 @@ function coaterGrid(r, geo) {
     xEnd: g.gx[top(nx - 1)], hEnd: g.gy[top(nx - 1)],
     xWeb, pWeb, uWeb: Array.from({ length: nx }, (_, i) => g.u[i]), xTop, yTop, pTop, pMax, pMaxLoc: [g.gx[kMax], g.gy[kMax]], pMin, pMinLoc: [g.gx[kMin], g.gy[kMin]],
     pMinAtCorner: Math.hypot(g.gx[kMin] - geo.xe, g.gy[kMin] - geo.H) < 0.3 * geo.H,       // in the edge corner's singular zone
-    mesh: { nEx: (nx - 1) / 2, nEy: (ny - 1) / 2, quality: r.meshInfo.quality },
+    mesh: { nEx: (nx - 1) / 2, nEy: (ny - 1) / 2, quality: r.meshInfo.quality, frac: r.meshInfo.frac },
   };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveFEM, solveCoaterFEM, staticMeniscus, femNodes, femQuality, femInterpolate, coaterGrid, FEM_QP };
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveFEM, solveCoaterFEM, staticMeniscus, femNodes, femQuality, femInterpolate, coaterGrid, FEM_QP, zonedEnds, layerSize };

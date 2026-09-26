@@ -12,7 +12,55 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
-### Plan: graphene oxide film, from dispersion to graphene film (awaiting approval)
+### Phase 2 (meshing): refinement zones and mesh to an accuracy (built)
+
+User (with mock-ups): zones "A and B" (named feature zones, and bands / layers drawn on the drawing);
+accuracy "Both" (adaptive, and refine everywhere); targets: wet film thickness and contact line; 3D "Yes":
+the 2D's zones at every station, zones across the web, and meshing to an accuracy.
+
+The mesh is structured (spines): a zone can only add whole columns or rows. So a zone is an element size
+limit: the metering edge, the contact line, the exit face, the film (sizes along the top boundary), bands
+along the flow (x from the inlet), layers at the web and at the blade / face / surface (n, first thickness
+at the edge's gap, growth); the size grows away from a zone at the growth rate (default 1.2). Each part's
+element ends are the base (counts and grading) where no zone asks for less, spread by equidistribution
+of 1 / size (cfd-fem.js zonedEnds); with no zone on, the old code path runs: nodes identical.
+- Engine: solveCoaterFEM opts meshZones (sizes, m), meshFrac (explicit element ends as fractions: an
+  adapted mesh), meshCounts (the 3D's stations keep the middle one's counts); meshInfo.frac returned
+  (coaterGrid mesh.frac). solveCoater3D / solveCoaterWide take zs (stations across, uneven).
+- 2D Mesh step: the zones panel beside the mesh (ticks, sizes, layers, bands with trash; drag a band's
+  ends on the drawing, arrow keys on a focused end); the zones drawn over the mesh; a note of how much
+  longer a solve takes (columns x rows^3). Undo, project, report, help, guide, the model tree (a link).
+- Mesh to an accuracy (cfd-accuracy.js; the Mesh step's bottom tab): a location (or all four) solved,
+  refined, solved again until the wet film and contact line change less than the target:
+  adaptive = Zienkiewicz-Zhu with superconvergent patch recovery (2 x 2 Gauss samples, a quadratic fitted
+  per interior corner patch, x and y scaled apart), viscosity-weighted; Dorfler marking of columns (0.5)
+  and rows (0.3), split in two, neighbours kept within x2; everywhere = counts x1.25 and zone sizes / 1.25,
+  Richardson (Celik et al., unequal ratios) from the last three. Use this mesh: the location's own
+  settings (Adapted: its element ends; or Custom counts with scaled zones) and its solution as the result
+  (same settings, same answer: checked bit for bit).
+- 3D: the 2D's zones at every station (a location's adapted 2D mesh is not sent); zones across: the
+  region's ends (default half the even element) and bands (z across the web); c3dZEnds / c3dStations;
+  the counts, estimate and view follow. Mesh to an accuracy on the 3D Mesh step drives the page's own
+  3D solve a mesh at a time (trial settings without undo steps, the page's mesh and result restored at
+  the end; Use this mesh = one undo step): adaptive with the hexahedra's estimate (27-node, 2 x 2 x 2
+  samples, 10-term quadratic) splitting columns, rows and layers across (frac3, zFrac), or everywhere
+  (counts x1.25 within the inputs' limits, zone sizes / 1.25, the 2D's too via zoneScale); stops when the
+  next strip mesh would exceed a browser page's memory.
+- Checks: no zones = main's mesh node for node, the 2D and 3D validations identical to main's; zones
+  refine where asked (neighbours within x1.23); an adapted mesh gives its ends back; cfd-accuracy.validate.js
+  (zero estimate on flows the elements hold, effectivity near 1 in 2D and approaching 1 in 3D, rate h^3.7,
+  marking and splitting, Richardson orders exact, one adaptive step in 2D and in 3D on the coater).
+- Measured (app defaults, L1): no zones 4.5 s; edge + contact line 0.1 mm 8 s; with 3 layers at the web from
+  0.05 mm 28 s (the defaults); a contact line at 0.03 mm alone 133 s; layers from 0.02 mm alone 63 s; both
+  with an edge zone and a band: over 26 min, not finished (the free contact line no longer converges directly
+  and is walked up in held steps).
+- Browser runs: 2D adaptive, 3 meshes (67x6, 89x12, 109x13): film changed +0.015 %, +0.004 %, contact
+  line -0.48 %, +1.02 % (0.2 % not met); kept, re-solved bit for bit. 2D everywhere (67x6, 83x8, 103x9): film
+  +0.008 %, +0.002 %, Richardson 1.697545 mm (index 0.0014 %); contact line +2.2 %, +0.46 %. 3D strip adaptive
+  (45x4x2, 67x8x3): middle film -0.08 %, contact line +10 %. The contact line depends on the mesh far more
+  than the film does (as found in D1).
+
+### Plan: graphene oxide film, from dispersion to graphene film (approved: "Ok continue")
 
 User: expand the scope; think of STAR-CCM+ and Fluent, material modelling,
 graphene oxide and graphene film modelling, and FEM ("gem"). Answers: FEM
