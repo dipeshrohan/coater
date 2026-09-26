@@ -50,6 +50,13 @@ function f3Shape(xi, et, ze) {
 const F3_QP = [];
 for (let gz = 0; gz < 3; gz++) for (let gb = 0; gb < 3; gb++) for (let ga = 0; ga < 3; ga++) F3_QP.push({ w: F3_W[ga] * F3_W[gb] * F3_W[gz], ...f3Shape(F3_G[ga], F3_G[gb], F3_G[gz]) });
 /** A face's 3x3 rule: 2D Q2 functions over the face's two directions (index t*3 + s), and the 3D element functions there. */
+/**
+ * One row for a contact point that may be held at an edge (a complementarity condition, Fischer-Burmeister, smoothed by
+ * F3_NCP_MU): a (its distance inside the edge) and b (its angle's excess over the contact angle, as a cosine) both at least
+ * 0 and one of them 0. F3_HELD: held when within this of the edge (gap units).
+ */
+const F3_NCP_MU = 1e-9, F3_HELD = 1e-7;
+const f3Ncp = (a, b) => a + b - Math.sqrt(a * a + b * b + F3_NCP_MU * F3_NCP_MU);
 function f3FaceRule(fix, val) {
   const out = [];
   for (let gt = 0; gt < 3; gt++) for (let gs = 0; gs < 3; gs++) {
@@ -77,7 +84,10 @@ const F3_SIDE_LO = f3FaceRule('zeta', -1), F3_SIDE_HI = f3FaceRule('zeta', 1);
  *     m/s), p (Pa, there), h (the free spines' heights, m, per c), s (the contact line, m) } (a region solved strip by strip;
  *     with webW both sides must be held: the flow along the blade passes through them)
  *   contactLine: { spine, faceFrom, alphaDeg (a number, or one per station: a number, or a function of s, m) } or null; freeze (surface fixed)
- *   init: { sol, h, s } a previous state on the same layout; initNodal: { u, v, w, p } at the nodes (dimensional)
+ *   open: { lo?, hi? } open sides (a web edge): { m (elements round the edge, 2 to nEz), zEnd, zWeb (m: the blade's end, the web's
+ *     edge; null: none within reach), thWeb, thBlade (deg), qFrac, dTop(z) (the blade's height change along the edge) };
+ *     blockRef: a state (as st) their fans are laid out from (default the starting state)
+ *   init: { sol, h, s, zOff } a previous state on the same layout (zOff, m: its strip lay that much lower in z); initNodal: { u, v, w, p } at the nodes (dimensional)
  *   homotopy, tol, maxIter, onIteration, label, onSolveStart, onSolveEnd
  *   checks: force(x, y, z) -> [fx, fy, fz] and exactBC(x, y, z) -> [u, v, w] (nondimensional; velocity set on every
  *     boundary node but an outlet of type 'stress': { type: 'stress', sigma(x, y, z) -> 3x3 }, the full stress there),
@@ -258,7 +268,11 @@ function solveFEM3D(o) {
   if (o.h0) for (let c = 0; c < NC; c++) if (free[c]) for (let l = 0; l < NL; l++) sol[dH[sid(c, l)]] = o.h0(c, l) / Hr;
   if (o.s0) for (let l = 0; l < NL; l++) sStar[l] = (typeof o.s0 === 'function' ? o.s0(l) : o.s0) / Hr;
   if (o.init) {
-    if (o.init.sol && o.init.sol.length === ND) sol.set(o.init.sol);
+    if (o.init.sol && o.init.sol.length === ND) {
+      sol.set(o.init.sol);
+      // (a solution from a strip whose z is this one's less zOff: its top contact points moved into this strip's z)
+      if (o.init.zOff) for (const E of OPEN) for (let c = 0; c < NC; c++) sol[E.dV[c]] += o.init.zOff / Hr;
+    }
     if (o.init.h) for (let c = 0; c < NC; c++) if (free[c]) for (let l = 0; l < NL; l++) sol[dH[sid(c, l)]] = o.init.h[sid(c, l)] / Hr;
     if (o.init.s) for (let l = 0; l < NL; l++) sStar[l] = o.init.s[l] / Hr;
   }
@@ -273,15 +287,14 @@ function solveFEM3D(o) {
     const zi = zl[E.lIn], zo = zl[E.lOut], q = E.qFrac * Math.abs(zo - zi);
     E.base = Float64Array.from({ length: E.J + 1 }, (_, j) => zi + E.sgn * j / E.J * q);
     E.Q = E.base[E.J];
-    const st0 = stNow();
+    // (the fan's reference, the inner station's spine at every column: from o.blockRef, else the starting state -- the same
+    // mesh however the solve is started)
+    const st0 = o.blockRef || stNow();
     E.prof = new Array(NC); E.yRef = new Float64Array(NC);
     for (let c = 0; c < NC; c++) {
       const xb = mesh.spineFoot(c, E.lIn), [xt, yt] = mesh.spineTop(c, E.lIn, st0), T = mesh.spineSlope ? mesh.spineSlope(c, E.lIn, st0) * yt : 2 * (xt - xb);
       E.prof[c] = { xb, xt, yt, T }; E.yRef[c] = yt / Hr;
     }
-    const I = o.init && o.init.open && o.init.open[E.side];
-    if (I) { E.pinTop.set(I.pinTop); E.pinWeb = I.pinWeb ? 1 : 0; }
-    else { for (let c = 0; c < NC; c++) E.pinTop[c] = !free[c] && E.zEnd != null && Math.abs(zo - E.zEnd / Hr) < 1e-9 ? 1 : 0; E.pinWeb = E.zWeb != null && Math.abs(zo - E.zWeb / Hr) < 1e-9 ? 1 : 0; }
     if (!(o.init && o.init.sol && o.init.sol.length === ND)) for (let c = 0; c < NC; c++) {
       const top = E.yRef[c];
       sol[E.dV[c]] = zo;
@@ -292,8 +305,11 @@ function solveFEM3D(o) {
         sol[d] = Math.min(dy > 1e-12 ? top / dy : Infinity, E.sgn * dz > 1e-12 ? (zo - b) / dz : Infinity);
       }
     }
-    if (o.initNodal) {
-      placeNodes();
+  }
+  // (both blocks set up before the nodes are placed: two open sides)
+  if (OPEN.length && o.initNodal) {
+    placeNodes();
+    for (const E of OPEN) {
       for (let c = 0; c < NC; c++) for (let l = 0; l < NL; l++) if (blockOf[l] === E) for (let k = 0; k < NR; k++) {
         const n = nid(c, l, k), y = Y[n], at = (step, get) => {
           let k1 = step; while (k1 < NR - 1 && Y[nid(c, E.lIn, k1)] < y) k1 += step;
@@ -305,16 +321,8 @@ function solveFEM3D(o) {
       }
     }
   }
-  /** The pins as Dirichlet conditions: the top contact point at the blade's end, the web's contact line at the web's edge. */
-  function applyPins() {
-    for (const E of OPEN) for (let c = 0; c < NC; c++) {
-      if (!free[c]) { if (E.pinTop[c]) setDir(E.dV[c], E.zEnd / Hr); else clrDir(E.dV[c]); }
-      const dr = E.dG[c * NL + E.lOut];
-      if (E.pinWeb) setDir(dr, E.sgn * (E.zWeb / Hr - E.Q)); else clrDir(dr);
-      if (o.freeze) { setDir(E.dV[c], sol[E.dV[c]]); for (let l = 0; l < NL; l++) if (blockOf[l] === E && E.dG[c * NL + l] >= 0) setDir(E.dG[c * NL + l], sol[E.dG[c * NL + l]]); }
-    }
-  }
-  applyPins();
+  // (the edge blocks frozen where they are: o.freeze)
+  if (o.freeze) for (const E of OPEN) for (let c = 0; c < NC; c++) { setDir(E.dV[c], sol[E.dV[c]]); for (let l = 0; l < NL; l++) if (blockOf[l] === E && E.dG[c * NL + l] >= 0) setDir(E.dG[c * NL + l], sol[E.dG[c * NL + l]]); }
   const sFixed = new Array(NL).fill(null);
   for (const l of [0, NL - 1]) {
     const sd = sideOf(l);
@@ -583,18 +591,25 @@ function solveFEM3D(o) {
     return [-ty / L, tx / L, 0];
   }
   /** The angle (deg) through the slurry between its surface and the web at the contact line (web), or the blade at the top contact point, at column c. */
+  /** How far inside the blade's end the top contact point is at column c, and the web's contact line inside the web's edge (gap units). */
+  const endGap = (E, c) => E.sgn * (E.zEnd / Hr - sol[E.dV[c]]), webGap = E => E.sgn * E.zWeb / Hr - E.sgn * E.Q - sol[E.dG[E.lOut]];
   function edgeAngle(E, c, web) {
     const l = web ? E.lOut : E.lj(E.jt), first = web ? !E.hi : E.hi, n = topNormal(c, l, first), w = web ? [0, -1, 0] : bladeNormal(c, l);
     return Math.acos(Math.max(-1, Math.min(1, -(n[0] * w[0] + n[1] * w[1] + n[2] * w[2])))) * 180 / Math.PI;
   }
   /** An edge block's own rows at column c: the top contact point (its contact angle with the blade; downstream it runs on
    *  unchanged), the web's contact line (its contact angle at the inlet, straight from there), and at the inlet and outlet the
-   *  surface along the flow. (Pinned: Dirichlet rows instead.) */
+   *  surface along the flow; at the blade's end and the web's edge, held there or not (f3Ncp). */
   function blockRows(E, c, R) {
     const dv = E.dV[c], dr = E.dG[c * NL + E.lOut];
-    if (!free[c]) { const n = topNormal(c, E.lj(E.jt), E.hi), w = bladeNormal(c, E.lj(E.jt)); R[dv] = n[0] * w[0] + n[1] * w[1] + n[2] * w[2] + Math.cos(E.thBlade * Math.PI / 180); }
-    else R[dv] = sol[dv] - sol[E.dV[c - 1]];
-    R[dr] = c === 0 ? topNormal(0, E.lOut, !E.hi)[1] - Math.cos(E.thWeb * Math.PI / 180) : sol[dr] - sol[E.dG[(c - 1) * NL + E.lOut]];
+    // (held or not, one row: the slurry inside the blade's end and its angle there past the contact angle, one of the two
+    // exactly -- the angle at the contact angle inside, or held at the end with any larger angle; so too at the web's edge)
+    if (!free[c]) {
+      const n = topNormal(c, E.lj(E.jt), E.hi), w = bladeNormal(c, E.lj(E.jt)), b = n[0] * w[0] + n[1] * w[1] + n[2] * w[2] + Math.cos(E.thBlade * Math.PI / 180);
+      R[dv] = E.zEnd == null ? b : f3Ncp(endGap(E, c), b);
+    } else R[dv] = sol[dv] - sol[E.dV[c - 1]];
+    if (c === 0) { const b = topNormal(0, E.lOut, !E.hi)[1] - Math.cos(E.thWeb * Math.PI / 180); R[dr] = E.zWeb == null ? b : f3Ncp(webGap(E), -b); }
+    else R[dr] = sol[dr] - sol[E.dG[(c - 1) * NL + E.lOut]];
     if (c === 0 || c === NC - 1) {
       const dq = c === 0 ? dQm : dQp, c0 = c === 0 ? 0 : NC - 3;
       for (let j = 1; j < E.J; j++) {
@@ -886,35 +901,11 @@ function solveFEM3D(o) {
   setPath(tEnd);
   if (o.homotopy) { res = residual(); if (converged && !(norms(res) < 10 * tol)) converged = false; }
   // ---- open sides: where the top contact point is held at the blade's end and the web's contact line at the web's edge
-  // (Gibbs: held while the angle there lies between the contact angles on the edge's two faces, 90 degrees apart; reaching the
-  // end or edge, held) ----
-  // (a place that would be let go when held but pass the end when let go is held there: its angle at the contact angle, the two
-  // states' common edge -- after it has turned twice, it stays held)
-  let pinRounds = 0, pinSettled = true;
-  if (OPEN.length && converged) {
-    pinSettled = false;
-    for (const E of OPEN) { E.flips = new Uint8Array(NC); E.flipsWeb = 0; }
-    for (; pinRounds < 12; pinRounds++) {
-      let changed = 0;
-      for (const E of OPEN) {
-        if (E.zEnd != null) for (let c = 0; c < NC; c++) if (!free[c]) {
-          if (E.pinTop[c]) { if (E.flips[c] < 2 && edgeAngle(E, c, false) < E.thBlade - 1e-6) { E.pinTop[c] = 0; E.flips[c]++; changed++; } }
-          else if (E.sgn * (sol[E.dV[c]] * Hr - E.zEnd) > 1e-12) { E.pinTop[c] = 1; E.flips[c]++; changed++; }
-        }
-        if (E.zWeb != null) {
-          const zw = E.Q + E.sgn * sol[E.dG[E.lOut]], now = E.pinWeb ? E.flipsWeb >= 2 || edgeAngle(E, 0, true) >= E.thWeb - 1e-6 : E.sgn * (zw * Hr - E.zWeb) > 1e-12;
-          if (!!now !== !!E.pinWeb) { E.pinWeb = now ? 1 : 0; E.flipsWeb++; changed++; }
-        }
-      }
-      if (!changed) { pinSettled = true; break; }
-      applyPins();
-      for (let d = 0; d < ND; d++) if (isDir[d]) sol[d] = dirVal[d];
-      maxIter = it + (o.maxIter ?? 60);
-      converged = newton(tol, maxIter);
-      if (!converged) break;
-    }
-    if (!pinSettled) converged = false;
-    placeNodes();
+  // (Gibbs: held while the angle there lies between the contact angles on the edge's two faces, 90 degrees apart -- the
+  // rows hold the lower limit; past the upper one the slurry would climb the end face or spill over the edge) ----
+  for (const E of OPEN) {
+    for (let c = 0; c < NC; c++) E.pinTop[c] = !free[c] && E.zEnd != null && endGap(E, c) < F3_HELD ? 1 : 0;
+    E.pinWeb = E.zWeb != null && webGap(E) < F3_HELD ? 1 : 0;
   }
   placeNodes();
 
@@ -1010,8 +1001,8 @@ function solveFEM3D(o) {
     NC, NR, NL, nEx, nEy, nEz, x: xo, y: yo, z: zo, u: uo, v: vo, w: wo, p: po, gd: gdo, mu: muo, q, converged, iterations: it, factorizations, stages, history, solveId,
     residual: resid, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca: invCa ? 1 / invCa : Infinity },
     size: { unknowns: ND, band: kl, bytes: LU.byteLength, msFactor },
-    state: { sol: Float64Array.from(sol), h: st.h, s: st.s, ...(OPEN.length ? { open: Object.fromEntries(OPEN.map(E => [E.side, { pinTop: Uint8Array.from(E.pinTop), pinWeb: E.pinWeb }])) } : {}) },
-    ...(OPEN.length ? { flow, open: openOut, pinRounds, pinSettled } : {}),
+    state: { sol: Float64Array.from(sol), h: st.h, s: st.s },
+    ...(OPEN.length ? { flow, open: openOut } : {}),
   };
 }
 
@@ -1169,13 +1160,19 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
     u[n3] = T.u[n2]; v[n3] = T.v[n2]; w[n3] = T.w[n2]; p[n3] = T.p[n2];
   }
   const side = T => ({ u: T.u, v: T.v, w: T.w, p: T.p, h: T.h, s: S.climbed ? T.s : null });
+  // (open sides: their edge blocks laid out from the stations' 2D solutions, whatever the solve starts from)
+  let blockRef = null;
+  if (extra.open) {
+    blockRef = { h: new Float64Array(NC * NL), s: new Float64Array(NL) };
+    for (let j = 0; j < NL; j++) { const r = S.r2[l0 + j]; for (let c = 0; c < NC; c++) blockRef.h[c * NL + j] = r.state.h[c]; blockRef.s[j] = r.surface.s; }
+  }
   return solveFEM3D({
     mesh, U: opts.U, webW: opts.webW || 0, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: S.H, Ur: Math.abs(opts.U) || 1e-3,
     inlet: { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
     sideData: sideLo || sideHi ? { lo: sideLo ? side(state[l0]) : null, hi: sideHi ? side(state[l1]) : null } : null,
     h0: (c, j) => state[l0 + j].h[c], s0: S.climbed || S.k ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
     contactLine: S.climbed ? { spine: S.cCL, faceFrom: S.cBase ?? S.cCorner, alphaDeg: Array.from({ length: NL }, (_, j) => S.alphaL ? S.alphaL[l0 + j] : S.thl[l0 + j] + opts.faceDeg - 180) } : null,
-    homotopy: true, tol: opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D', ...extra,
+    homotopy: true, tol: opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D', blockRef, ...extra,
   });
 }
 
@@ -1220,29 +1217,58 @@ function solveCoater3D(opts) {
  * sides, in two colours (alternate strips, then the others), sweep after sweep until the stations stop
  * changing (alternating Schwarz). Converges to the 3D solve of the whole region; memory: one strip at a time.
  * The web moving along the blade (opts.webW): its two edges held at their own stations' flow (it leaves and enters freely).
+ * Open ends (opts.open, the edge bead): each end first solved as an edge strip on its own (its first or last nE elements,
+ * solveEdgeStrip: the bead pressure raised in steps from none); only if both hold it, the region, those strips its end strips
+ * with their outer sides open (each started from its edge strip's solution, then from its own last).
  * opts: solveCoater3D's, and sub (default 4), overlap (default 2), maxSweeps (default 15), tolSweep (the
- *   largest change of film or contact line between sweeps, relative to the gap; default 1e-6), onSweep.
- * Returns { r2, state (per station: u, v, w, p, x, y, z, gd, mu, h, s, q), stations, sweeps, history, converged, ms2, ms3 }.
+ *   largest change of film or contact line between sweeps, relative to the gap; default 1e-6), onSweep;
+ *   open: { nE, lo, hi: { m, zEnd, zWeb (m, the region's z), thWeb, thBlade, qFrac } }, onEdge(side, the edge strip's result).
+ * Returns { r2, state (per station: u, v, w, p, x, y, z, gd, mu, h, s, q), stations, sweeps, history, converged, ms2, ms3 };
+ *   open ends: also held, edges (each end's solveEdgeStrip), open: { lo, hi (the surface round each edge), r3 } -- or, if an
+ *   end does not hold the pressure, { error, held: false, edges }.
  */
 function solveCoaterWide(opts) {
   const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = stationZs(opts, NL);
-  const sub = Math.min(opts.sub ?? 4, nEz), ov = Math.min(opts.overlap ?? 2, sub - 1), step = sub - ov;
+  const sub = Math.min(opts.sub ?? 4, nEz), ov = Math.min(opts.overlap ?? 2, sub - 1);
+  const EO = opts.open || null, subs = wideSubs(nEz, sub, ov, EO ? EO.nE : 0);
+  // (open edges: each end first as an edge strip, the bead pressure raised in steps; the region only if both hold it)
+  let edges = null;
+  if (EO) {
+    edges = {};
+    for (const side of ['lo', 'hi']) {
+      const [l0, l1] = side === 'lo' ? subs[0] : subs[subs.length - 1], E = EO[side], zc = (zs[l0] + zs[l1]) / 2, sh = f => f && (z => f(z + zc));
+      const r = solveEdgeStrip({ ...opts, open: null, width: zs[l1] - zs[l0], nEz: (l1 - l0) / 2, zs: zs.slice(l0, l1 + 1).map(z => z - zc), dH: sh(opts.dH), contactAt: sh(opts.contactAt), hAt: sh(opts.hAt),
+        profileAt: sh(opts.profileAt), edge: { side, m: E.m, zEnd: E.zEnd - zc, zWeb: E.zWeb == null ? null : E.zWeb - zc, thWeb: E.thWeb, thBlade: E.thBlade, qFrac: E.qFrac } });
+      if (r.error) return { error: `the ${side === 'lo' ? 'first' : 'last'} edge strip: ${r.error}`, edges };
+      edges[side] = r;
+      opts.onEdge && opts.onEdge(side, r);
+    }
+    if (!edges.lo.held || !edges.hi.held) return { error: 'the ends do not hold the bead pressure', held: false, edges, subs };
+  }
   const S = coaterStations(opts, zs);
-  if (S.error) return { error: S.error, r2: S.r2 };
+  if (S.error) return { error: S.error, r2: S.r2, edges };
   const state = zs.map((_, l) => stationState(S, l)), open = !!opts.webW;
-  const subs = [];
-  for (let e0 = 0; ; e0 += step) { const e1 = Math.min(nEz, e0 + sub); subs.push([2 * Math.max(0, e1 - sub), 2 * e1]); if (e1 === nEz) break; }
+  // (an open end's strip: its edge block on its outer side, from its edge strip's solution at first, then from its own last)
+  const openOf = i => !EO ? null : i === 0 ? 'lo' : i === subs.length - 1 ? 'hi' : null, last = [];
+  const same = (a, b) => a.NC === b.NC && a.NR === b.NR && a.mode === b.mode && (a.k ?? null) === (b.k ?? null) && a.cCL === b.cCL;
   const t1 = Date.now(), history = [];
   let converged = false, sweeps = 0, err = null;
   const film = T => T.y ? T.y[(S.NC - 1) * S.NR + S.NR - 1] : null;
   for (; sweeps < (opts.maxSweeps ?? 15) && !converged && !err; sweeps++) {
     let change = 0;
     for (const colour of [0, 1]) for (let i = colour; i < subs.length; i += 2) {
-      const [l0, l1] = subs[i];
+      const [l0, l1] = subs[i], os = openOf(i);
       opts.onStage && opts.onStage(`sweep ${sweeps + 1}: strip ${i + 1} of ${subs.length} (${(zs[l0] * 1e3).toFixed(0)} to ${(zs[l1] * 1e3).toFixed(0)} mm)`);
-      const lo = l0 > 0 || open, hi = l1 < NL - 1 || open;   // (the web's edges: held at their own stations' flow when the web moves along the blade)
-      const r3 = coaterStrip3D(opts, S, l0, l1, state, lo, hi, { label: `strip ${i + 1}` });
+      const lo = (l0 > 0 || open) && os !== 'lo', hi = (l1 < NL - 1 || open) && os !== 'hi';   // (the web's edges: held at their own stations' flow when the web moves along the blade)
+      let extra = { label: `strip ${i + 1}` };
+      if (os) {
+        const E = EO[os], prev = last[i] || (same(edges[os].S, S) ? edges[os].r3 : null), zOff = last[i] ? 0 : (zs[l0] + zs[l1]) / 2;
+        extra = { ...extra, open: { [os]: { m: E.m, zEnd: E.zEnd, zWeb: E.zWeb, thWeb: E.thWeb, thBlade: E.thBlade, qFrac: E.qFrac, dTop: opts.dH || null } }, maxIter: opts.maxIter3 ?? 80,
+          ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s, zOff }, initNodal: null, h0: null, s0: null } : {}) };
+      }
+      const r3 = coaterStrip3D(opts, S, l0, l1, state, lo, hi, extra);
       if (!r3.converged) { err = `strip ${i + 1} (${(zs[l0] * 1e3).toFixed(0)} to ${(zs[l1] * 1e3).toFixed(0)} mm) did not converge in sweep ${sweeps + 1}`; break; }
+      if (os) { last[i] = r3; const Eo = r3.open[0]; if (Eo.climb.length || Eo.spill.length) { err = `the ${os === 'lo' ? 'first' : 'last'} end lets go in sweep ${sweeps + 1} (${Eo.climb.length ? 'the slurry climbs the blade\'s end face' : 'it spills over the web\'s edge'})`; break; } }
       for (let j = lo ? 1 : 0; j <= (hi ? l1 - l0 - 1 : l1 - l0); j++) {
         const T = stationFrom3D(r3, j), old = state[l0 + j];
         const f0 = film(old), f1 = film(T);
@@ -1258,7 +1284,24 @@ function solveCoaterWide(opts) {
   // (the web's edges held at their own stations' flow, the web moving along the blade: those stations are their 2D's)
   const top2 = l => S.r2[l].y[(S.NC - 1) * S.NR + S.NR - 1];
   const stations = zs.map((z, l) => ({ z, dH: opts.dH ? opts.dH(z) : 0, film: film(state[l]) ?? top2(l), q: state[l].q ?? S.r2[l].Q, s: S.climbed || S.k ? state[l].s : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed || S.k ? S.r2[l].surface.s : 0 }));
-  return { r2: S.r2, S, state, stations, subs, sweeps, history, converged: converged && !err, error: err || (converged ? undefined : `not converged after ${sweeps} sweeps (last change ${history[history.length - 1].toExponential(1)} of the gap)`), mode: S.mode, ms2: S.ms, ms3: Date.now() - t1 };
+  const openOut = EO ? { lo: last[0] && last[0].open[0], hi: last[subs.length - 1] && last[subs.length - 1].open[0], r3: { lo: last[0], hi: last[subs.length - 1] } } : null;
+  return { r2: S.r2, S, state, stations, subs, sweeps, history, converged: converged && !err, error: err || (converged ? undefined : `not converged after ${sweeps} sweeps (last change ${history[history.length - 1].toExponential(1)} of the gap)`), mode: S.mode, ms2: S.ms, ms3: Date.now() - t1,
+    ...(EO ? { held: true, edges, open: openOut } : {}) };
+}
+/**
+ * The overlapping strips across a region of nEz elements (each [l0, l1], station indices): sub elements each, overlapping by ov;
+ * with open ends (nE > 0), the first and the last nE elements each one strip (the edge strips), the others between them
+ * overlapping each by ov.
+ */
+function wideSubs(nEz, sub, ov, nE = 0) {
+  const out = [], step = sub - ov;
+  if (!nE) { for (let e0 = 0; ; e0 += step) { const e1 = Math.min(nEz, e0 + sub); out.push([2 * Math.max(0, e1 - sub), 2 * e1]); if (e1 === nEz) break; } return out; }
+  if (!(2 * nE + sub - 2 * ov <= nEz)) throw new Error(`open ends need at least ${2 * nE + sub - 2 * ov} elements across (${nEz})`);
+  out.push([0, 2 * nE]);
+  const a = nE - ov, b = nEz - nE + ov;
+  for (let e0 = a; ; e0 += step) { const e1 = Math.min(b, e0 + sub); out.push([2 * Math.max(a, e1 - sub), 2 * e1]); if (e1 === b) break; }
+  out.push([2 * (nEz - nE), 2 * nEz]);
+  return out;
 }
 
 /**
@@ -1281,10 +1324,10 @@ function solveEdgeStrip(opts) {
   const S = coaterStations(at0, zs);
   if (S.error) return { error: S.error, held: false, steps };
   const openOpt = { [E0.side]: { m: E0.m, zEnd: E0.zEnd, zWeb: E0.zWeb, thWeb: E0.thWeb, thBlade: E0.thBlade, qFrac: E0.qFrac, dTop: opts.dH || null } };
-  const solveAt = (P, prev) => coaterStrip3D({ ...opts, Pup: P }, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, {
-    label: `edge at ${P.toFixed(1)} Pa`, open: openOpt, maxIter: opts.maxIter3 ?? 80,
-    ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s, open: prev.state.open }, initNodal: null, h0: null, s0: null } : {}) });
-  // the edge's state: steady (converged, pins settled), the slurry below the blade and on the web (Gibbs)
+  const solveAt = (P, prev) => (opts.onStage && opts.onStage(`3D at the edge, bead pressure ${P.toFixed(1)} Pa`), coaterStrip3D({ ...opts, Pup: P }, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, {
+    label: `edge at ${P.toFixed(1)} Pa`, open: openOpt, maxIter: opts.maxIter3 ?? (prev ? 80 : 150),
+    ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s }, initNodal: null, h0: null, s0: null } : {}) }));
+  // the edge's state: steady (converged), the slurry below the blade and on the web (Gibbs)
   const judge = (P, r) => {
     const E = r.open ? r.open[0] : null, angle = E ? Math.max(...Array.from(E.angleTop).filter(Number.isFinite)) : NaN;
     const why = !r.converged ? 'steady' : E.climb.length ? 'climb' : E.spill.length ? 'spill' : null;
@@ -1324,5 +1367,5 @@ function f3Dense(A, b) {
 
 if (typeof module !== 'undefined' && module.exports) {
   if (typeof solveCoaterFEM === 'undefined') global.solveCoaterFEM = require('./cfd-fem.js').solveCoaterFEM;
-  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, solveEdgeStrip, stationZs, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, stationState, stationLateral, F3_QP, f3Shape };
+  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, wideSubs, solveEdgeStrip, stationZs, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, stationState, stationLateral, F3_QP, f3Shape };
 }

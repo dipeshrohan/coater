@@ -88,6 +88,26 @@ function prog3DStripFeed(P, pr) {
   return P;
 }
 
+/**
+ * The 3D at a web edge (one worker): the 2D at its NL stations, then its 3D solves, one for each step of the bead pressure from
+ * none up to Pset (while the edge holds it): the first solve's share, then the pressure held so far against the set one.
+ * Fed its progress messages (prog3DEdgeFeed) and each step's outcome (prog3DEdgeStep: { P, ok }).
+ */
+function prog3DEdge(NL, w2, w3, tol, Pset) { return { NL, w2, w3, tol, Pset, share: 0, n2: 0, at: '', station: null, solve3: null, pAt: 0, pOk: null, steps: 0 }; }
+function prog3DEdgeFeed(P, pr) {
+  const st = pr.stage || '', m = /^3D at the edge, bead pressure ([\d.]+) Pa/.exec(st);
+  if (/^2D at /.test(st) && st !== P.at) { P.at = st; P.n2++; P.station = progStation(P.tol, P.n2); }
+  if (m && st !== P.at) { P.at = st; P.pAt = +m[1]; P.solve3 = progSolve(P.tol, '3D'); P.station = null; }
+  // (each step its own Newton solve: its first residual its own, not the worker's first)
+  if (P.solve3) { const q = { ...pr }; delete q.r0; progSolveFeed(P.solve3, q); }
+  else if (P.station) progStationFeed(P.station, pr);
+  const s2 = P.solve3 || P.pOk != null ? 1 : Math.min(1, (Math.max(0, P.n2 - 1) + (P.station ? P.station.P.share : 0)) / P.NL);
+  const s3 = P.pOk == null ? (P.solve3 ? 0.5 * P.solve3.f : 0) : 0.5 + 0.5 * (P.Pset > 0 ? Math.min(1, P.pOk / P.Pset) : 1);
+  P.share = Math.max(P.share, Math.min(1, (P.w2 * s2 + P.w3 * s3) / (P.w2 + P.w3)));
+  return P;
+}
+function prog3DEdgeStep(P, s) { P.steps++; if (s.ok) P.pOk = Math.max(P.pOk ?? 0, s.P); return prog3DEdgeFeed(P, {}); }
+
 /** The full width's sweeps in all, expected: after two measured changes from how fast they fall (to tolSweep); before, PROG.sweeps. */
 function progSweeps(hist, done, tolSweep, maxSweeps) {
   const h = hist.filter(Number.isFinite);
@@ -116,4 +136,4 @@ function prog3DWideShare(P) {
   return P;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { PROG, progNewton, prog2D, prog2DFeed, progStation, progStationFeed, progSolve, progSolveFeed, prog3DStrip, prog3DStripFeed, progSweeps, prog3DWide, prog3DWideShare };
+if (typeof module !== 'undefined' && module.exports) module.exports = { PROG, progNewton, prog2D, prog2DFeed, progStation, progStationFeed, progSolve, progSolveFeed, prog3DStrip, prog3DStripFeed, prog3DEdge, prog3DEdgeFeed, prog3DEdgeStep, progSweeps, prog3DWide, prog3DWideShare };

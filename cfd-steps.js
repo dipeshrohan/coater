@@ -1002,20 +1002,24 @@ function stepStatus3D() {
   const G = c3dBuild(), S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey3(S), m = c3dMeshSize(), st = {};
   st.geometry = G.error ? { state: 'bad', note: 'cannot be built', title: G.error } : G.empty ? { state: 'warn', note: 'no blade file yet' }
     : G.open || G.multi ? { state: G.open ? 'bad' : 'warn', note: G.open ? 'blade misses the region' : 'blade overhangs' }
-      : { state: 'done', note: `${C3D.source === 'made' ? 'from the 2D setup' : 'from a file'} · ${C3D.region === 'strip' ? `${C3D.stripW} mm at L${C3D.loc + 1}` : 'full width'}` };
+      : { state: 'done', note: `${C3D.source === 'made' ? 'from the 2D setup' : 'from a file'} · ${C3D.region === 'strip' ? `${C3D.stripW} mm at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip ${C3D.edgeW} mm at the ${C3D.edgeEnd} end` : 'full width'}` };
   const q = R ? c3dHexQuality(R).worst : C3D_PV.stats && C3D_PV.key === c3dPreviewKey() ? C3D_PV.stats.worst : null;
   const hx = m.a0 === m.a1 ? c3dHexes(m.a0, m).toLocaleString() : `${c3dHexes(m.a0, m).toLocaleString()}–${c3dHexes(m.a1, m).toLocaleString()}`;
   st.mesh = { state: G.mesh || R ? (q != null && q < 0.2 ? 'warn' : 'done') : '', note: `${hx} hexahedra${q != null ? ` · worst ${q.toFixed(2)}` : ''}` };
   st.solve = C3D_RUN.status === 'running' ? { state: 'run', note: `solving ≈ ${Math.floor(100 * (c3dProgShare() || 0))} %` }
     : C3D_RUN.status === 'error' ? { state: 'bad', note: 'failed', title: C3D_RUN.error } : R ? { state: stale ? 'warn' : 'done', note: stale ? 'out of date' : `solved in ${c3dTime(S.ms / 1000)}` } : { state: '', note: 'not solved' };
-  st.results = !R ? { state: '', note: 'nothing yet' } : stale ? { state: 'warn', note: 'out of date' } : { state: 'done', note: 'flow, film, pressure' };
+  st.results = !R ? { state: '', note: 'nothing yet' } : stale ? { state: 'warn', note: 'out of date' } : R.region === 'edge' ? { state: R.held ? 'done' : 'warn', note: R.held ? 'the end holds' : R.valid ? `holds up to ${(+R.P).toFixed(1)} Pa` : 'the end does not hold' } : { state: 'done', note: 'flow, film, pressure' };
   return st;
 }
 /** The Mesh step's report on the 3D page. */
 /** The 3D Mesh step's zones: the 2D's (along the flow and up the gap, at every station) and across the web. */
 function c3dZonesHTML() {
   const z = c3dZones(), full = C3D.region === 'full', where = full ? 'web' : 'strip', rg = c3dRegion(), set = rg.nz, n = c3dNz();
-  const z2 = zonesText(full ? CFDS.zones : solverOf(C3D.loc).zones);
+  const z2 = zonesText(full || C3D.region === 'edge' ? CFDS.zones : solverOf(C3D.loc).zones);
+  // (an edge strip: its own elements across -- round the edge at their size, the rest evenly inward)
+  if (C3D.region === 'edge') return `<h4>${uiBadge('grading')}Refinement zones</h4>
+    <p class="side-note" style="margin-top:0">Along the flow and up the gap, at every station: the 2D's zones (${z2}). <button type="button" class="linkish" id="c3dZ2d">Set them on Flow › 2D, Mesh</button></p>
+    <p class="side-note">Across the edge strip: ${c3dEdgeElemsText()}, the other ${C3D.edgeNz - c3dEdgeElems().m} evenly inward (Inputs › 3D mesh).</p>`;
   const bands = z.bands.map((b, j) => `<div class="band-row"><b>Band ${j + 1}</b><span>z ${zoneNum(`c3zb_${j}_z0`, b.z0, ZONE_LIM.x, 0.5, `Band ${j + 1} across: from z, mm`)} to ${zoneNum(`c3zb_${j}_z1`, b.z1, ZONE_LIM.x, 0.5, `Band ${j + 1} across: to z, mm`)} mm</span>
     <span>elements ${zoneNum(`c3zb_${j}_size`, b.size, ZONE_LIM.size, 0.1, `Band ${j + 1} across: element size, mm`)} mm</span>
     <button type="button" class="icon-btn band-del" data-c3zdel="${j}" title="Remove band ${j + 1}" aria-label="Remove band ${j + 1} across">${uiIco('trash')}</button></div>`).join('');
@@ -1053,12 +1057,12 @@ function c3dMeshSideHTML() {
   const hx = m.a0 === m.a1 ? c3dHexes(m.a0, m).toLocaleString() : `${c3dHexes(m.a0, m).toLocaleString()} to ${c3dHexes(m.a1, m).toLocaleString()}`;
   const nd = m.a0 === m.a1 ? c3dNodes(m.a0, m).toLocaleString() : `${c3dNodes(m.a0, m).toLocaleString()} to ${c3dNodes(m.a1, m).toLocaleString()}`;
   const st = pv && pv.stats, nB = st ? st.nB : C3D.nxGap, nS = st ? st.nS : C3D.nxFilm;
-  return `${c3dZonesHTML()}${acc3HTML()}<h4>${uiBadge('mesh')}3D mesh, ${C3D.region === 'strip' ? `strip at L${C3D.loc + 1}` : 'full width'}${R ? '' : ' (before solving)'}</h4><table class="kv">
+  return `${c3dZonesHTML()}${C3D.region === 'edge' ? '' : acc3HTML()}<h4>${uiBadge('mesh')}3D mesh, ${C3D.region === 'strip' ? `strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip at the ${C3D.edgeEnd} end` : 'full width'}${R ? '' : ' (before solving)'}</h4><table class="kv">
     <tr><td>Along the flow</td><td>${m.solved ? `${m.nB} + ${m.face} + ${m.nS}` : `${nB} + 0–${m.a1 - m.a0} + ${nS}`}</td></tr>
     <tr><td>Up the gap × across</td><td>${m.ny} × ${m.nz}</td></tr>
     <tr><td>Hexahedra (27 nodes)</td><td>${hx}</td></tr><tr><td>Nodes</td><td>${nd}</td></tr>
     <tr><td>Unknowns</td><td>${R && R.size ? R.size.unknowns.toLocaleString() : `≈ ${Math.round(e.ND / 1000)} thousand`}</td></tr>
-    ${C3D.region === 'strip' ? `<tr><td>Memory, time (estimated)</td><td>${c3dMem(e.bytes)}, ${c3dTime(e.secs)}</td></tr>` : ''}
+    ${C3D.region === 'strip' ? `<tr><td>Memory, time (estimated)</td><td>${c3dMem(e.bytes)}, ${c3dTime(e.secs)}</td></tr>` : C3D.region === 'edge' ? `<tr><td>Memory, time per step (estimated)</td><td>${c3dMem(e.bytes)}, ${c3dTime(e.secs)}</td></tr>` : ''}
     <tr><td>Quality, worst</td><td>${q ? q.worst.toFixed(2) : '—'}</td></tr><tr><td>Quality, mean</td><td>${q ? q.mean.toFixed(2) : '—'}</td></tr></table>
     ${q ? `<div class="q-hist" aria-label="Quality histogram, 0 to 1">${q.hist.map((n, k) => `<i style="height:${Math.max(2, 46 * n / hmax)}px" title="${k / 10}–${(k + 1) / 10}: ${n}"></i>`).join('')}</div><div class="q-axis"><span>quality 0</span><span>1</span></div>` : ''}
     <p class="side-note">${R ? 'Quality of the solved hexahedra: each one\'s smallest over largest Jacobian of its triquadratic map (1 = undistorted).'
@@ -1069,13 +1073,17 @@ function c3dMeshSideHTML() {
 /** The Solve step on the 3D page: the boundary conditions (the 2D profile's drawing at the strip's location) and the sides. */
 function c3dSolveHTML() {
   const i = C3D.region === 'strip' ? C3D.loc : 0, skew = P.skew;
+  const g = C3D.region === 'edge' ? c3dEdgeGeom() : null;
   const sides = C3D.region === 'strip'
     ? `<li><i class="c-out"></i><span><b>Sides of the strip</b> (${C3D.stripW} mm): ${skew ? 'open: each held at its own station\'s flow along the skewed blade' : 'symmetry planes (no flow across, no shear)'}.</span></li>`
-    : `<li><i class="c-out"></i><span><b>The web's edges</b>: ${skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'} (the edge bead is not modelled).</span></li>`;
+    : g ? `<li><i class="c-out"></i><span><b>Outer side</b> (z ${+g.out.toFixed(2)} mm, at the ${Math.abs(g.out - g.bladeEnd) < 1e-9 ? 'blade\'s end' : 'web\'s edge'}): open, the slurry's surface solved round the edge; it meets the blade at ${cfdLocalContactDeg(g.out).toFixed(1)}°, held at the blade's end while the angle there allows (Gibbs), and the web at ${P.thw}° where it first touches it, the web carrying its contact line on from there${Math.abs(g.webEdge - g.bladeEnd) > 1e-9 ? '; held at the web\'s edge while the angle there allows' : ''}.</span></li>
+      <li><i class="c-out"></i><span><b>Inner side</b>: a symmetry plane (no flow across, no shear).</span></li>
+      <li><i class="c-out"></i><span><b>The bead pressure</b> (${P.Pup} kPa set): raised in steps from none while the end holds it${skew ? '. <b>A skewed blade with an open edge is not modelled</b>' : ''}.</span></li>`
+    : `<li><i class="c-out"></i><span><b>The web's edges</b>: ${skew ? 'open, each held at its own station\'s flow along the skewed blade' : C3D.webEdges === 'open' ? 'open (the edge bead): each end solved as an edge strip first' : 'symmetry planes'}${skew || C3D.webEdges === 'open' ? '' : ' (the edge bead is not modelled)'}.</span></li>`;
   return `<div class="step-view solve-view"><div class="step-draw" id="bcDraw3">${C3D.source === 'made' ? '' : '<p class="v3d-msg">The blade from the file: see Geometry. Its conditions are listed here.</p>'}</div>
     <aside class="step-side">${bcListHTML(i, sides, C3D.source === 'made' ? null : C3D.fileFace === 'file' ? `(from the file: each station's own section): no slip; the contact line as in 2D (the ${CFDG.clModel === 'simple' ? 'simple' : 'full'} contact-line model) at the contact angle ${cfdGeometry(i).contactDeg.toFixed(1)}°.` : 'straight')}
-      ${C3D.region === 'full' ? `<p class="side-note">Drawn: the profile at L1; the gap and contact angle vary across the web with the inputs under Variation across the web.</p>` : ''}
-      <h4>${uiBadge('tolerance')}Solve</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Region</td><td>${C3D.region === 'strip' ? `strip ${C3D.stripW} mm at L${C3D.loc + 1}` : 'full width'}</td></tr></table>
+      ${C3D.region !== 'strip' ? `<p class="side-note">Drawn: the profile at L1; the gap and contact angle vary across the web with the inputs under Variation across the web.</p>` : ''}
+      <h4>${uiBadge('tolerance')}Solve</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Region</td><td>${C3D.region === 'strip' ? `strip ${C3D.stripW} mm at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip ${C3D.edgeW} mm at the ${C3D.edgeEnd} end` : 'full width'}</td></tr></table>
       <p class="side-note">${c3dEstimateText()}</p></aside></div>`;
 }
 function drawSolve3D() {

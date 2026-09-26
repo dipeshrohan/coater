@@ -33,6 +33,7 @@ const CFG = [
   { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.02, u: 'kPa', d: 2, v: 0.72, h: 'set to give 1.45 mm at default' },
   { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed' },
   { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed' },
+  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed; where the slurry\'s side meets the bare web (3D, open edges)' },
   { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'assumed, measure on the blade' },
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },

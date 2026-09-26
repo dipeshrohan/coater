@@ -27,6 +27,9 @@
  *     (Laplace), held at the blade's end or at the web's edge, or meeting the blade or web at its contact angle; the arc to a
  *     few microns, closer on a finer mesh; Gibbs: held at the blade's end only while the angle there allows; the coating flow
  *     with its side open at the blade's end: Newton quadratic, flow in = out to the mesh's accuracy, the edge bead.
+ *  9. Open ends on a region solved strip by strip (each end first on its own, then the region's end strip): converges to
+ *     the whole region solved at once with both sides open; an edge solved from its 2D or from another pressure's solution
+ *     is the same solution.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -259,8 +262,8 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   // Gibbs: held at the blade's end the angle there would be under the blade's contact angle (88 deg): it lets go and draws in along the blade
   { const P0 = -10, R = gamma / 10, yc = H - R * Math.cos(88 * Math.PI / 180), zc = Wz + Math.sqrt(R * R - yc * yc), r = still(P0, { zEnd: Wz, zWeb: Wz, thBlade: 88 }, 6, 5), E = r.open[0];
     const zTop = zc - Math.sqrt(R * R - (H - yc) ** 2), e = offArc(r, zc, yc, R);
-    check('  held at both ends of a blade whose contact angle is 88 deg: it lets go of the blade\'s end (Gibbs) and meets the blade at 88 deg on the arc', r.converged && r.pinSettled && !E.pinTop[2] && Math.abs(E.angleTop[2] - 88) < 1e-6 && e < 1.5e-5 && Math.abs(E.top[2] - zTop) < 2e-5,
-      `the contact point ${(E.top[2] * 1e3).toFixed(4)} mm (the arc's ${(zTop * 1e3).toFixed(4)}), off the arc by ${(e * 1e6).toFixed(2)} um, ${r.pinRounds} re-solve`); }
+    check('  held at both ends of a blade whose contact angle is 88 deg: it lets go of the blade\'s end (Gibbs) and meets the blade at 88 deg on the arc', r.converged && !E.pinTop[2] && Math.abs(E.angleTop[2] - 88) < 1e-6 && e < 1.5e-5 && Math.abs(E.top[2] - zTop) < 2e-5,
+      `the contact point ${(E.top[2] * 1e3).toFixed(4)} mm (the arc's ${(zTop * 1e3).toFixed(4)}), off the arc by ${(e * 1e6).toFixed(2)} um; Newton ${r.history.map(h => h.residual.toExponential(0)).join(' ')}`); }
   // the coating flow on a strip whose side at the blade's end is open (web 0.1 m/s, 1 Pa s, no pool pressure): Newton quadratic,
   // what comes in goes out (to the mesh's accuracy), the slurry out past the blade's end on the web and a bead at the edge
   const rho = 1020, g = 9.81, W = 0.006;
@@ -277,6 +280,33 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
     `in vs out ${(m1 * 100).toFixed(3)} % (coarse), ${(m2 * 100).toFixed(3)} % (finer); Newton ${c2.history.map(h => h.residual.toExponential(0)).join(' ')}`);
   check('  the slurry out past the blade\'s end onto the web, the film thicker near the edge (a bead), the same on both meshes', Math.abs(c1.open[0].web - E2.web) < 0.05e-3 && E2.web > W / 2 + 1e-3 && bead > inner * 1.05,
     `contact line on the web ${(c1.open[0].web * 1e3).toFixed(3)} / ${(E2.web * 1e3).toFixed(3)} mm (the blade's end ${(W / 2 * 1e3).toFixed(1)}); bead ${(bead * 1e3).toFixed(3)} mm, film at the strip's middle ${(inner * 1e3).toFixed(3)} mm`);
+}
+
+// 9. the full width with open ends: strip by strip, each end strip open, against the whole region at once with both sides open;
+// the edge blocks laid out the same however a solve is started (a warm start from another pressure lands on the same solution)
+{
+  const { coaterStations, stationState, coaterStrip3D, stationZs } = require('./cfd-fem3d.js');
+  const H = 1.7e-3, gamma = 0.07, rho = 1020, g = 9.81, W = 0.02, nEz = 10;
+  const dH = z => 30e-6 * Math.sin(2 * Math.PI * z / 0.03), th = z => 35 + 2 * Math.cos(2 * Math.PI * z / 0.025);
+  const base = { hFn: () => H, xe: 5e-3, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 8e-3, nEb: 3, nEf: 2, nEs: 4, nEy: 2, fInfGuess: 0.5 * H, width: W, nEz, dH, contactAt: th };
+  const end = side => ({ m: 2, zEnd: side === 'hi' ? W / 2 : -W / 2, zWeb: null, thWeb: 35, thBlade: 60, dTop: dH });
+  const NL = 2 * nEz + 1, zs = stationZs(base, NL), S = coaterStations(base, zs);
+  const one = coaterStrip3D(base, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, { maxIter: 80, open: { lo: end('lo'), hi: end('hi') } });
+  const wide = solveCoaterWide({ ...base, sub: 2, overlap: 1, tolSweep: 1e-9, maxSweeps: 30, open: { nE: 4, lo: end('lo'), hi: end('hi') } });
+  const top = l => one.y[((one.NC - 1) * NL + l) * one.NR + one.NR - 1], Eo = side => one.open.find(E => E.side === side);
+  const dF = wide.converged ? Math.max(...wide.stations.map((st, l) => Math.abs(st.film - top(l)))) : Infinity;
+  let dY = 0; if (wide.converged) for (const side of ['lo', 'hi']) { const a = wide.open[side], b = Eo(side); for (let c = 0; c < one.NC; c++) for (let j = 0; j < a.y[c].length; j++) dY = Math.max(dY, Math.abs(a.y[c][j] - b.y[c][j]), Math.abs(a.z[c][j] - b.z[c][j])); }
+  const dW = wide.converged ? Math.max(Math.abs(wide.open.lo.web - Eo('lo').web), Math.abs(wide.open.hi.web - Eo('hi').web)) : Infinity;
+  check('open ends, strip by strip (each end first on its own, then as the end strip): converges to the whole region at once, both sides open', one.converged && wide.converged && wide.held && dF < 1e-9 && dY < 1e-9 && dW < 1e-9,
+    `${wide.sweeps} sweeps; film within ${(dF * 1e9).toFixed(3)} nm, the surface round the edges within ${(dY * 1e9).toFixed(3)} nm, the web's contact lines within ${(dW * 1e9).toFixed(3)} nm (at ${(Eo('lo').web * 1e3).toFixed(3)} and ${(Eo('hi').web * 1e3).toFixed(3)} mm, the blade's ends at -+${(W / 2 * 1e3).toFixed(0)})`);
+  // (one end strip: 0 Pa from the 2D, then 5 Pa from it, then 0 Pa again from the 5 Pa solution)
+  const Ws = 0.008, nS = 4, NS = 2 * nS + 1, zS = stationZs({ width: Ws }, NS), eb = { ...base, width: Ws, nEz: nS, dH: null, contactAt: null }, S2 = coaterStations(eb, zS);
+  const at = (P, prev) => coaterStrip3D({ ...eb, Pup: P }, S2, 0, NS - 1, zS.map((_, l) => stationState(S2, l)), false, false, { maxIter: 80, open: { hi: { m: 2, zEnd: Ws / 2, zWeb: null, thWeb: 35, thBlade: 60 } },
+    ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s }, initNodal: null, h0: null, s0: null } : {}) });
+  const a0 = at(0), a5 = at(5, a0), b0 = at(0, a5), E0 = a0.open[0], E1 = b0.open[0];
+  let dd = 0; for (let c = 0; c < a0.NC; c++) for (let j = 0; j < E0.y[c].length; j++) dd = Math.max(dd, Math.abs(E0.y[c][j] - E1.y[c][j]), Math.abs(E0.z[c][j] - E1.z[c][j]));
+  check('  an edge solved from its 2D, or from another pressure\'s solution: the same solution (the edge block laid out from the 2D either way)', a0.converged && a5.converged && b0.converged && dd < 1e-9 && Math.abs(E0.web - E1.web) < 1e-9,
+    `the surface round the edge within ${(dd * 1e9).toFixed(3)} nm, the web's contact line ${(E0.web * 1e3).toFixed(4)} / ${(E1.web * 1e3).toFixed(4)} mm (at 5 Pa ${(a5.open[0].web * 1e3).toFixed(4)})`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

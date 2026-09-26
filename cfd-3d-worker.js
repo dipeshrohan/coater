@@ -15,6 +15,9 @@
  *   bars: path, how far along its continuation the Newton solve is; r0, the 3D solve's first residual; add and solves,
  *   a station's 2D solves as cfd-worker.js sends them), then { id, ok: true, result } or { id, ok: false, error }.
  * A wide region (the full web width): messages with type 'wideInit' / 'wideSolve' (below).
+ * A web edge: type 'edge', { msg, strip, file, edge: { side, m, zEnd, zWeb, thWeb, thBlade } }: the strip with its outer side
+ *   open, the bead pressure raised in steps from none; messages { id, step } after each step; the result as a strip's (at the
+ *   highest pressure the edge held) with { region: 'edge', held, P, Pset, limit, steps, valid, open (the surface round the edge) }.
  */
 importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-fem3d.js');
 
@@ -116,6 +119,28 @@ function wide(e) {
     postMessage({ id, ok: true, result: { states, full2, mode: S.mode, k: S.k ?? null, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe, frac: S.r2[d.ref].meshDef.frac,
       film2: Object.fromEntries(d.stations.map(l => [l, S.r2[l].Q / opts.U])), s2: Object.fromEntries(d.stations.map(l => [l, S.climbed || S.k ? S.r2[l].surface.s : 0])),
       top2: Object.fromEntries(d.stations.map(l => [l, Array.from({ length: S.NC }, (_, c) => S.r2[l].p[c * S.NR + S.NR - 1])])) } });
+    return;
+  }
+  if (d.type === 'edge') {
+    // a web edge: the strip open on its outer side, the bead pressure raised in steps from none (cfd-fem3d.js's solveEdgeStrip)
+    const pp = progressPoster(id, 150);
+    const opts = { ...wideOpts(d.msg, d.strip, d.file), width: d.strip.width, nEz: d.strip.nEz, zs: d.strip.zs, edge: d.edge,
+      onStage: pp.stage, onIteration: pp.iter2, onSolveStart: pp.solve2, onIteration3: pp.iter3, onStep: s => postMessage({ id, step: s }) };
+    const r = solveEdgeStrip(opts);
+    if (r.error) { postMessage({ id, ok: false, error: r.error }); return; }
+    const valid = r.steps.some(s => s.ok), result = { region: 'edge', held: r.held, P: r.P, Pset: d.msg.Pup, limit: r.limit, steps: r.steps, valid };
+    const tr = [];
+    if (valid) {
+      const R = r.r3, S = r.S, NC = R.NC, NL = R.NL, NR = R.NR, inner = d.edge.side === 'hi' ? 0 : NL - 1, E = r.open, f32 = a => { const v = Float32Array.from(a); tr.push(v.buffer); return v; };
+      const top = { x: [], y: [], p3: [], p2: [] };
+      for (let c = 0; c < NC; c++) { const n = (c * NL + inner) * NR + NR - 1; top.x.push(R.x[n]); top.y.push(R.y[n]); top.p3.push(R.p[n]); top.p2.push(NaN); }
+      Object.assign(result, { mode: S.mode, k: S.k ?? null, converged: true, iterations: R.iterations, residual: R.residual, history: R.history.map(h => h.residual), size: R.size,
+        NC, NR, NL, cCorner: S.cCorner, cCL: S.cCL, xe: opts.xe, H: S.H, frac: S.r2[(NL - 1) >> 1].meshDef.frac, top, flow: R.flow,
+        stations: Array.from({ length: NL }, (_, l) => { const n = ((NC - 1) * NL + l) * NR + NR - 1; return { z: R.z[n], film: R.y[n], q: R.q[(NC - 1) * NL + l], s: S.climbed || S.k ? R.surface.s[l] : 0, film2: NaN, s2: NaN }; }),
+        open: { side: E.side, stations: E.stations, z: E.z, y: E.y, top: Array.from(E.top), web: E.web, angleTop: Array.from(E.angleTop), angleWeb: Array.from(E.angleWeb), pinTop: Array.from(E.pinTop), pinWeb: E.pinWeb },
+        x: f32(R.x), y: f32(R.y), z: f32(R.z), u: f32(R.u), v: f32(R.v), w: f32(R.w), p: f32(R.p), gd: f32(R.gd), mu: f32(R.mu) });
+    }
+    postMessage({ id, ok: true, result }, tr);
     return;
   }
   // wideSolve: one strip l0..l1; the states of its stations (the held sides among them)
