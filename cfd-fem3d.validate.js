@@ -23,6 +23,10 @@
  *     exactly the solver as before; on a strip with nothing varying across it the 3D is its stations'
  *     solution; with the gap and contact angle varying, the region strip by strip (its edges open) converges
  *     to the whole region solved at once.
+ *  8. Open sides (a web edge): a still slurry at pool pressure between the web and the blade -- its side is a circular arc
+ *     (Laplace), held at the blade's end or at the web's edge, or meeting the blade or web at its contact angle; the arc to a
+ *     few microns, closer on a finer mesh; Gibbs: held at the blade's end only while the angle there allows; the coating flow
+ *     with its side open at the blade's end: Newton quadratic, flow in = out to the mesh's accuracy, the edge bead.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -228,6 +232,51 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const shift = Math.max(...one.stations.map(st => Math.abs(st.film / st.film2 - 1)));
   check('  gap and contact angle varying: strip by strip (its edges open) converges to the whole region at once', one.r3.converged && wide.converged && dF < 1e-9 && dS < 1e-9,
     `${wide.sweeps} sweeps; film within ${(dF * 1e9).toFixed(2)} nm, contact line within ${(dS * 1e9).toFixed(2)} nm (the flow along the blade moves the film up to ${(shift * 100).toFixed(2)} % from the stations' 2D)`);
+}
+
+// 8. open sides (a web edge): the slurry's surface round the edge, its contact lines on the web and under the blade
+{
+  // a still slurry at pool pressure P0 between the web and the blade (no gravity): the side is a circular arc of radius gamma / |P0|
+  const H = 1.7e-3, gamma = 0.07, Wz = 6e-3, Lx = 4e-3;
+  const still = (P0, open, nEz, m) => solveFEM3D({
+    mesh: { nEx: 2, nEy: 4, nEz, spineFoot: c => Lx * c / 4, spineTop: c => [Lx * c / 4, H], z: l => Wz * l / (2 * nEz), kind: () => 'wall' },
+    U: 0, rho: 0, mu: () => 1, gamma, Hr: H, Ur: 1e-3, inlet: { type: 'traction', p: () => P0 }, outlet: { type: 'traction', p: () => P0 },
+    open: { hi: { m, thWeb: 60, thBlade: 60, ...open } }, homotopy: true, tol: 1e-10, maxIter: 100 });
+  // the arc's centre: (zc, yc), radius R; off it, the largest distance of the surface nodes beyond the blade (m)
+  const offArc = (r, zc, yc, R) => { const E = r.open[0], z = E.z[2], y = E.y[2]; let e = 0; for (let j = 2; j < z.length; j++) e = Math.max(e, Math.abs(Math.hypot(z[j] - zc, y[j] - yc) - R)); return e; };
+  const cases = [
+    ['held at the blade\'s end, 60 deg on the web, bulging (P0 +10 Pa)', 10, { zEnd: Wz }, R => { const yc = -R * 0.5; return [Wz - Math.sqrt(R * R - (H - yc) ** 2), yc]; }],
+    ['  drawn in (P0 -10 Pa)', -10, { zEnd: Wz }, R => { const yc = R * 0.5; return [Wz + Math.sqrt(R * R - (yc - H) ** 2), yc]; }],
+    ['the blade overhanging the web: held at the web\'s edge, 60 deg under the blade (P0 +10 Pa)', 10, { zWeb: Wz }, R => { const yc = H + R * 0.5; return [Wz - Math.sqrt(R * R - yc * yc), yc]; }],
+    ['held at both (P0 +10 Pa)', 10, { zEnd: Wz, zWeb: Wz }, R => [Wz - Math.sqrt(R * R - H * H / 4), H / 2]],
+  ];
+  for (const [name, P0, open, centre] of cases) {
+    const R = gamma / Math.abs(P0), [zc, yc] = centre(R), a = still(P0, open, 4, 3), b = still(P0, open, 6, 5), ea = offArc(a, zc, yc, R), eb = offArc(b, zc, yc, R);
+    const hs = b.history.map(h => h.residual).filter(v => v > 1e-13), rates = []; for (let i = 1; i < hs.length; i++) if (hs[i - 1] < 1e-2 && hs[i] > 1e-11) rates.push(Math.log(hs[i]) / Math.log(hs[i - 1]));
+    check(`open side, still slurry, ${name}: the side is the circular arc R = gamma / |P0|`, a.converged && b.converged && eb < ea && eb < 1e-5 && Math.min(...rates) > 1.6,
+      `off it by ${(ea * 1e6).toFixed(2)} um (3 elements round the edge), ${(eb * 1e6).toFixed(2)} um (5); Newton ${b.history.map(h => h.residual.toExponential(0)).join(' ')}`);
+  }
+  // Gibbs: held at the blade's end the angle there would be under the blade's contact angle (88 deg): it lets go and draws in along the blade
+  { const P0 = -10, R = gamma / 10, yc = H - R * Math.cos(88 * Math.PI / 180), zc = Wz + Math.sqrt(R * R - yc * yc), r = still(P0, { zEnd: Wz, zWeb: Wz, thBlade: 88 }, 6, 5), E = r.open[0];
+    const zTop = zc - Math.sqrt(R * R - (H - yc) ** 2), e = offArc(r, zc, yc, R);
+    check('  held at both ends of a blade whose contact angle is 88 deg: it lets go of the blade\'s end (Gibbs) and meets the blade at 88 deg on the arc', r.converged && r.pinSettled && !E.pinTop[2] && Math.abs(E.angleTop[2] - 88) < 1e-6 && e < 1.5e-5 && Math.abs(E.top[2] - zTop) < 2e-5,
+      `the contact point ${(E.top[2] * 1e3).toFixed(4)} mm (the arc's ${(zTop * 1e3).toFixed(4)}), off the arc by ${(e * 1e6).toFixed(2)} um, ${r.pinRounds} re-solve`); }
+  // the coating flow on a strip whose side at the blade's end is open (web 0.1 m/s, 1 Pa s, no pool pressure): Newton quadratic,
+  // what comes in goes out (to the mesh's accuracy), the slurry out past the blade's end on the web and a bead at the edge
+  const rho = 1020, g = 9.81, W = 0.006;
+  const edge = (nEb, nEf, nEs, nEy, nEz, m) => {
+    const base = { hFn: () => H, xe: 5e-3, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 8e-3, nEb, nEf, nEs, nEy, fInfGuess: 0.5 * H, width: W, nEz };
+    const { coaterStations, stationState, coaterStrip3D } = require('./cfd-fem3d.js'), NL = 2 * nEz + 1, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1));
+    const S = coaterStations(base, zs);
+    return coaterStrip3D(base, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, { maxIter: 60, open: { hi: { m, zEnd: W / 2, thWeb: 35, thBlade: 35 } } });
+  };
+  const c1 = edge(3, 2, 4, 2, 3, 2), c2 = edge(6, 3, 8, 3, 4, 3), m1 = Math.abs(c1.flow.outlet / c1.flow.inlet - 1), m2 = Math.abs(c2.flow.outlet / c2.flow.inlet - 1);
+  const hs = c2.history.map(h => h.residual).filter(v => v > 1e-13), rates = []; for (let i = 1; i < hs.length; i++) if (hs[i - 1] < 1e-2 && hs[i] > 1e-11) rates.push(Math.log(hs[i]) / Math.log(hs[i - 1]));
+  const E2 = c2.open[0], NC = c2.NC, yo = E2.y[NC - 1], bead = Math.max(...yo), inner = c2.y[((NC - 1) * c2.NL) * c2.NR + c2.NR - 1];
+  check('open side on the coating flow: Newton converges quadratically; flow in = flow out to the mesh\'s accuracy', c1.converged && c2.converged && Math.min(...rates) > 1.6 && m2 < m1 && m2 < 2e-3,
+    `in vs out ${(m1 * 100).toFixed(3)} % (coarse), ${(m2 * 100).toFixed(3)} % (finer); Newton ${c2.history.map(h => h.residual.toExponential(0)).join(' ')}`);
+  check('  the slurry out past the blade\'s end onto the web, the film thicker near the edge (a bead), the same on both meshes', Math.abs(c1.open[0].web - E2.web) < 0.05e-3 && E2.web > W / 2 + 1e-3 && bead > inner * 1.05,
+    `contact line on the web ${(c1.open[0].web * 1e3).toFixed(3)} / ${(E2.web * 1e3).toFixed(3)} mm (the blade's end ${(W / 2 * 1e3).toFixed(1)}); bead ${(bead * 1e3).toFixed(3)} mm, film at the strip's middle ${(inner * 1e3).toFixed(3)} mm`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

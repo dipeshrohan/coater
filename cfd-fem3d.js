@@ -56,12 +56,14 @@ function f3FaceRule(fix, val) {
     const s = F3_G[gs], t = F3_G[gt], S = f3q2(s), T = f3q2(t), dS = f3dq2(s), dT = f3dq2(t);
     const N2 = new Float64Array(9), Ns = new Float64Array(9), Nt = new Float64Array(9);
     for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) { N2[j * 3 + i] = S[i] * T[j]; Ns[j * 3 + i] = dS[i] * T[j]; Nt[j * 3 + i] = S[i] * dT[j]; }
-    const at = fix === 'eta' ? f3Shape(s, val, t) : f3Shape(val, s, t);
+    const at = fix === 'eta' ? f3Shape(s, val, t) : fix === 'zeta' ? f3Shape(s, t, val) : f3Shape(val, s, t);
     out.push({ w: F3_W[gs] * F3_W[gt], N2, Ns, Nt, el: at });
   }
   return out;
 }
 const F3_BOTTOM = f3FaceRule('eta', -1), F3_TOP = f3FaceRule('eta', 1), F3_INLET = f3FaceRule('xi', -1), F3_OUTLET = f3FaceRule('xi', 1);
+// (the faces across the web: s along the flow, t up; an open side's outer spine lies on the web)
+const F3_SIDE_LO = f3FaceRule('zeta', -1), F3_SIDE_HI = f3FaceRule('zeta', 1);
 
 /**
  * Solve. Options (as solveFEM's in cfd-fem.js, one dimension up):
@@ -85,7 +87,8 @@ function solveFEM3D(o) {
   const mesh = o.mesh, nEx = mesh.nEx, nEy = mesh.nEy, nEz = mesh.nEz;
   const NC = 2 * nEx + 1, NR = 2 * nEy + 1, NL = 2 * nEz + 1, NN = NC * NL * NR;
   const U = o.U || 0, rho = o.rho || 0, grav = o.g || 0, gamma = o.gamma || 0, Utop = o.topSpeed || 0;
-  const tol = o.tol ?? 1e-8, maxIter = o.maxIter ?? 60;
+  const tol = o.tol ?? 1e-8;
+  let maxIter = o.maxIter ?? 60;
   const nid = (c, l, k) => (c * NL + l) * NR + k, sid = (c, l) => c * NL + l;
   const kind = c => (mesh.kind ? mesh.kind(c) : 'wall');
   const free = new Uint8Array(NC); for (let c = 0; c < NC; c++) free[c] = kind(c) === 'free' ? 1 : 0;
@@ -93,6 +96,31 @@ function solveFEM3D(o) {
   const sideWall = o.sides === 'wall';
   // a side taken from a neighbouring strip's solution (a region solved strip by strip): velocity, surface heights, contact line there
   const sideOf = l => o.sideData ? (l === 0 ? o.sideData.lo : l === NL - 1 ? o.sideData.hi : null) : null;
+  // ---- open sides (a web edge: the edge bead) ----
+  // The outer 2m elements across the strip are an edge block. Its stations j = 0 (the inner station, fixed) .. J = 2m are
+  // spines in the cross-section fanning from the web: based along the web between the inner station and Q, from upright
+  // (j = 0) to lying on the web (j = J), so the slurry's whole outer surface -- its top, round the edge and down to the contact
+  // line on the web -- is the block's top row, one smooth grid line. Under the blade the spines up to jt end on the blade,
+  // between the inner station and the top contact point V (pinned at the blade's end, or where the slurry meets the blade at
+  // its contact angle), the rest on the meniscus below; downstream every spine ends on the free surface. The web carries the
+  // contact line: it runs straight along the flow from the inlet, where the side meets the web at its contact angle.
+  const OPEN = [], blockOf = new Array(NL).fill(null), jOf = new Int32Array(NL).fill(-1), tieS = new Int32Array(NL).fill(-1), menLayer = new Uint8Array(nEz), blockLayer = new Uint8Array(nEz);
+  if (o.open) for (const side of ['lo', 'hi']) {
+    const E = o.open[side];
+    if (!E) continue;
+    const m = E.m ?? 2, hi = side === 'hi', sgn = hi ? 1 : -1, lOut = hi ? NL - 1 : 0, lIn = lOut - sgn * 2 * m;
+    if (!(Number.isInteger(m) && m >= 2 && m <= nEz)) throw new Error(`an open side's edge block needs 2 to ${nEz} elements across (${m})`);
+    if (sideOf(lOut)) throw new Error('a side cannot be both open and held at a neighbour\'s solution');
+    if (!(E.thWeb > 0 && E.thWeb < 180) || !(E.thBlade > 0 && E.thBlade < 180)) throw new Error('an open side needs the contact angles on the web and on the blade');
+    const B = { side, hi, sgn, m, J: 2 * m, jt: 2, lOut, lIn, ez0: hi ? nEz - m : 0, ez1: hi ? nEz - 1 : m - 1, ezOut: hi ? nEz - 1 : 0, rule: hi ? F3_SIDE_HI : F3_SIDE_LO,
+      zEnd: E.zEnd ?? null, zWeb: E.zWeb ?? null, thWeb: E.thWeb, thBlade: E.thBlade, dTop: E.dTop || null, qFrac: E.qFrac ?? 0.3,
+      dV: new Int32Array(NC).fill(-1), dG: new Int32Array(NC * NL).fill(-1), pinTop: new Uint8Array(NC), pinWeb: 0, lj: j => lIn + sgn * j };
+    OPEN.push(B);
+    for (let j = 1; j <= B.J; j++) { const l = B.lj(j); if (blockOf[l]) throw new Error('the two open sides\' edge blocks overlap'); blockOf[l] = B; jOf[l] = j; if (j > B.jt) tieS[l] = B.lj(B.jt); }
+    for (let ez = B.ez0; ez <= B.ez1; ez++) { blockLayer[ez] = 1; if (Math.min(...[0, 1, 2].map(g => jOf[2 * ez + g])) >= B.jt) menLayer[ez] = 1; }
+  }
+  if (OPEN.length && (o.webW || 0) !== 0) throw new Error('open sides with the web moving along the blade (a skewed blade) are not modelled');
+  if (OPEN.length && (o.exactBC || o.sides === 'wall')) throw new Error('open sides are for the coating flow (not with exactBC or walls)');
 
   // ---- scales ----
   const Hr = o.Hr, Ur = o.Ur, gdRef = Ur / Hr, muR = o.mu(gdRef), Pr = muR * Ur / Hr;
@@ -115,7 +143,8 @@ function solveFEM3D(o) {
       dU[n] = nd++; dV[n] = nd++; dW[n] = nd++;
       if (c % 2 === 0 && l % 2 === 0 && k % 2 === 0) dP[n] = nd++;
     }
-    if (free[c]) for (let l = 0; l < NL; l++) dH[sid(c, l)] = nd++;
+    if (free[c]) for (let l = 0; l < NL; l++) if (!blockOf[l]) dH[sid(c, l)] = nd++;
+    for (const E of OPEN) { E.dV[c] = nd++; for (let j = 1; j <= E.J; j++) if (free[c] || j > E.jt) E.dG[c * NL + E.lj(j)] = nd++; }
   }
   const ND = nd, hasS = !!CL && !o.freeze;
 
@@ -127,11 +156,12 @@ function solveFEM3D(o) {
   const sStar = new Float64Array(NL);
   const stNow = () => {
     const h = new Float64Array(NC * NL);
-    for (let c = 0; c < NC; c++) if (free[c]) for (let l = 0; l < NL; l++) h[sid(c, l)] = sol[dH[sid(c, l)]] * Hr;
+    for (let c = 0; c < NC; c++) if (free[c]) for (let l = 0; l < NL; l++) if (dH[sid(c, l)] >= 0) h[sid(c, l)] = sol[dH[sid(c, l)]] * Hr;
     const s = new Float64Array(NL); for (let l = 0; l < NL; l++) s[l] = sStar[l] * Hr;
     return { h, s };
   };
   function placeSpine(c, l, st) {
+    if (blockOf[l]) { placeBlock(c, l, st); return; }
     const xb = mesh.spineFoot(c, l), [xt, yt] = mesh.spineTop(c, l, st), D = xt - xb;
     const T = mesh.spineSlope ? mesh.spineSlope(c, l, st) * yt : 2 * D;
     for (let k = 0; k < NR; k++) {
@@ -139,11 +169,42 @@ function solveFEM3D(o) {
       X[n] = (xb + D * e2 * (3 - 2 * e) + T * e2 * (e - 1)) / Hr; Y[n] = e * yt / Hr; Z[n] = zl[l];
     }
   }
+  /** An edge block's spine j at column c: from its base on the web to its top (on the blade, or on the surface r along its
+   *  direction); its lean along the flow: under the blade its own station's, downstream the inner station's at the start. */
+  function placeBlock(c, l, st) {
+    const E = blockOf[l], j = jOf[l], zi = zl[E.lIn], b = E.base[j], wall = !free[c];
+    let xb, xt, yt, T;
+    if (wall) { xb = mesh.spineFoot(c, l); [xt, yt] = mesh.spineTop(c, l, st); }
+    else ({ xb, xt, yt, T } = E.prof[c]);
+    let pz, py;
+    if (wall && j <= E.jt) {
+      pz = zi + j / E.jt * (sol[E.dV[c]] - zi);
+      if (E.dTop) yt += E.dTop(pz * Hr) - E.dTop(zl[l] * Hr);
+      py = yt / Hr;
+    } else {
+      const [dz, dy] = rayDir(E, c, j, sol[E.dV[c]]), r = sol[E.dG[c * NL + l]];
+      pz = b + r * dz; py = r * dy;
+    }
+    if (wall) T = mesh.spineSlope ? mesh.spineSlope(c, l, st) * yt : 2 * (xt - xb);
+    const D = xt - xb;
+    for (let k = 0; k < NR; k++) {
+      const n = nid(c, l, k), y = etaK[k] * py, e = yt > 0 ? y * Hr / yt : 0;
+      X[n] = (e <= 1 ? xb + D * e * e * (3 - 2 * e) + T * e * e * (e - 1) : xt + T * (e - 1)) / Hr; Y[n] = y; Z[n] = b + etaK[k] * (pz - b);
+    }
+  }
+  /** An edge block's surface spine j at column c (top contact point V): up to jt aimed at the points spread between the inner
+   *  station and V at the reference height; beyond, turning evenly from spine jt's direction to lying along the web. */
+  function rayDir(E, c, j, V) {
+    const zi = zl[E.lIn], aim = i => { const tz = zi + i / E.jt * (V - zi) - E.base[i], ty = E.yRef[c], L = Math.hypot(tz, ty); return [tz / L, ty / L]; };
+    if (j <= E.jt) return aim(j);
+    const a = aim(E.jt), f = (j - E.jt) / (E.J - E.jt), dz = (1 - f) * a[0] + f * E.sgn, dy = (1 - f) * a[1], L = Math.hypot(dz, dy);
+    return [dz / L, dy / L];
+  }
   const placeNodes = () => { const st = stNow(); for (let c = 0; c < NC; c++) for (let l = 0; l < NL; l++) placeSpine(c, l, st); };
 
   // ---- Dirichlet conditions ----
   const dirVal = new Float64Array(ND), isDir = new Uint8Array(ND);
-  const setDir = (d, v) => { isDir[d] = 1; dirVal[d] = v; };
+  const setDir = (d, v) => { isDir[d] = 1; dirVal[d] = v; }, clrDir = d => { isDir[d] = 0; dirVal[d] = 0; };
   const lamS = o.webSlip ? o.webSlip * Hr : 0;
   const onBoundary = (c, l, k) => c === 0 || c === NC - 1 || k === 0 || k === NR - 1 || l === 0 || l === NL - 1;
   if (o.exactBC) {
@@ -160,6 +221,16 @@ function solveFEM3D(o) {
       setDir(dV[b], 0);                                                        // web
       if (!free[c]) { setDir(dU[t], Uts); setDir(dV[t], 0); setDir(dW[t], 0); }  // blade / face / contact line
     }
+    for (const E of OPEN) for (let c = 0; c < NC; c++) {
+      // an edge block: under the blade, its meniscus beyond the top contact point is free; its outer spine lies on the web
+      if (!free[c]) for (let j = E.jt + 1; j < E.J; j++) { const n = nid(c, E.lj(j), NR - 1); clrDir(dU[n]); clrDir(dV[n]); clrDir(dW[n]); }
+      for (let k = 0; k < NR; k++) {
+        const n = nid(c, E.lOut, k);
+        setDir(dV[n], 0);
+        if (!lamS) { setDir(dU[n], Us); setDir(dW[n], 0); } else { clrDir(dU[n]); clrDir(dW[n]); }
+      }
+      setDir(dW[nid(c, E.lOut, NR - 1)], 0);                                     // (the contact line moves with the web)
+    }
     for (let l = 0; l < NL; l++) for (let k = 0; k < NR; k++) {
       const i = nid(0, l, k), e = nid(NC - 1, l, k);
       setDir(dV[i], 0); if (!Ws) setDir(dW[i], 0);                               // inlet: no cross-flow (the web moving along the blade: free)
@@ -169,6 +240,7 @@ function solveFEM3D(o) {
       else { setDir(dV[e], 0); setDir(dW[e], 0); }
     }
     for (const l of [0, NL - 1]) for (let c = 0; c < NC; c++) for (let k = 0; k < NR; k++) {
+      if (OPEN.some(E => E.lOut === l)) continue;                                // (an open side: the edge block's outer spine, on the web)
       const n = nid(c, l, k), sd = sideOf(l);
       if (sd) {
         // a neighbour's solution there -- the pressure too: its mass balance there would see only this strip's half of its elements
@@ -194,6 +266,55 @@ function solveFEM3D(o) {
     const q = o.initNodal;
     for (let n = 0; n < NN; n++) { sol[dU[n]] = q.u[n] / Ur; sol[dV[n]] = q.v[n] / Ur; sol[dW[n]] = (q.w ? q.w[n] : 0) / Ur; if (dP[n] >= 0) sol[dP[n]] = q.p[n] / Pr; }
   }
+  // the edge blocks: their fan (bases along the web to Q, the spines' directions beyond the top contact point), and the start:
+  // the side upright at the outer station (pinned at the blade's end or the web's edge where that is), the velocity in the
+  // block from the inner station's column at the same height
+  for (const E of OPEN) {
+    const zi = zl[E.lIn], zo = zl[E.lOut], q = E.qFrac * Math.abs(zo - zi);
+    E.base = Float64Array.from({ length: E.J + 1 }, (_, j) => zi + E.sgn * j / E.J * q);
+    E.Q = E.base[E.J];
+    const st0 = stNow();
+    E.prof = new Array(NC); E.yRef = new Float64Array(NC);
+    for (let c = 0; c < NC; c++) {
+      const xb = mesh.spineFoot(c, E.lIn), [xt, yt] = mesh.spineTop(c, E.lIn, st0), T = mesh.spineSlope ? mesh.spineSlope(c, E.lIn, st0) * yt : 2 * (xt - xb);
+      E.prof[c] = { xb, xt, yt, T }; E.yRef[c] = yt / Hr;
+    }
+    const I = o.init && o.init.open && o.init.open[E.side];
+    if (I) { E.pinTop.set(I.pinTop); E.pinWeb = I.pinWeb ? 1 : 0; }
+    else { for (let c = 0; c < NC; c++) E.pinTop[c] = !free[c] && E.zEnd != null && Math.abs(zo - E.zEnd / Hr) < 1e-9 ? 1 : 0; E.pinWeb = E.zWeb != null && Math.abs(zo - E.zWeb / Hr) < 1e-9 ? 1 : 0; }
+    if (!(o.init && o.init.sol && o.init.sol.length === ND)) for (let c = 0; c < NC; c++) {
+      const top = E.yRef[c];
+      sol[E.dV[c]] = zo;
+      for (let j = 1; j <= E.J; j++) {
+        const d = E.dG[c * NL + E.lj(j)], b = E.base[j];
+        if (d < 0) continue;
+        const [dz, dy] = rayDir(E, c, j, zo);
+        sol[d] = Math.min(dy > 1e-12 ? top / dy : Infinity, E.sgn * dz > 1e-12 ? (zo - b) / dz : Infinity);
+      }
+    }
+    if (o.initNodal) {
+      placeNodes();
+      for (let c = 0; c < NC; c++) for (let l = 0; l < NL; l++) if (blockOf[l] === E) for (let k = 0; k < NR; k++) {
+        const n = nid(c, l, k), y = Y[n], at = (step, get) => {
+          let k1 = step; while (k1 < NR - 1 && Y[nid(c, E.lIn, k1)] < y) k1 += step;
+          const a = nid(c, E.lIn, k1 - step), b = nid(c, E.lIn, k1), t = Math.max(0, Math.min(1, (y - Y[a]) / ((Y[b] - Y[a]) || 1)));
+          return get(a) + t * (get(b) - get(a));
+        };
+        sol[dU[n]] = at(1, a => sol[dU[a]]); sol[dV[n]] = at(1, a => sol[dV[a]]); sol[dW[n]] = 0;
+        if (dP[n] >= 0) sol[dP[n]] = at(2, a => sol[dP[a]]);
+      }
+    }
+  }
+  /** The pins as Dirichlet conditions: the top contact point at the blade's end, the web's contact line at the web's edge. */
+  function applyPins() {
+    for (const E of OPEN) for (let c = 0; c < NC; c++) {
+      if (!free[c]) { if (E.pinTop[c]) setDir(E.dV[c], E.zEnd / Hr); else clrDir(E.dV[c]); }
+      const dr = E.dG[c * NL + E.lOut];
+      if (E.pinWeb) setDir(dr, E.sgn * (E.zWeb / Hr - E.Q)); else clrDir(dr);
+      if (o.freeze) { setDir(E.dV[c], sol[E.dV[c]]); for (let l = 0; l < NL; l++) if (blockOf[l] === E && E.dG[c * NL + l] >= 0) setDir(E.dG[c * NL + l], sol[E.dG[c * NL + l]]); }
+    }
+  }
+  applyPins();
   const sFixed = new Array(NL).fill(null);
   for (const l of [0, NL - 1]) {
     const sd = sideOf(l);
@@ -340,6 +461,34 @@ function solveFEM3D(o) {
     }
   }
   const bottomNode = (ex, ez, j) => nid(2 * ex + (j % 3), 2 * ez + Math.floor(j / 3), 0);
+  /** The same slip on an edge block's outer spine, which lies on the web (the face of element (ex, ey) there; into slipOut). */
+  function slipSide(E, ex, ey) {
+    slipOut.fill(0);
+    gatherElement(ex, ey, E.ezOut);
+    const g0 = E.hi ? 2 : 0;
+    for (const f of E.rule) {
+      const q = f.el;
+      gradAt(q.Na, q.Nb, q.Ng);
+      let u = 0, w = 0, ux = 0, uy = 0, uz = 0, vx = 0, vy = 0, vz = 0, wx = 0, wy = 0, wz = 0;
+      let xs = 0, ys = 0, zs = 0, xt = 0, yt = 0, zt = 0;
+      for (let a = 0; a < 27; a++) {
+        u += ue[a] * q.N[a]; w += we[a] * q.N[a];
+        ux += ue[a] * Nx[a]; uy += ue[a] * Ny[a]; uz += ue[a] * Nz[a];
+        vx += ve[a] * Nx[a]; vy += ve[a] * Ny[a]; vz += ve[a] * Nz[a];
+        wx += we[a] * Nx[a]; wy += we[a] * Ny[a]; wz += we[a] * Nz[a];
+      }
+      for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+        const i = (g0 * 3 + b) * 3 + a, j = b * 3 + a;
+        xs += xe[i] * f.Ns[j]; ys += ye[i] * f.Ns[j]; zs += ze[i] * f.Ns[j]; xt += xe[i] * f.Nt[j]; yt += ye[i] * f.Nt[j]; zt += ze[i] * f.Nt[j];
+      }
+      const dA = Math.hypot(ys * zt - zs * yt, zs * xt - xs * zt, xs * yt - ys * xt);
+      const Dxy = 0.5 * (uy + vx), Dxz = 0.5 * (uz + wx), Dyz = 0.5 * (vz + wy);
+      const gd = Math.sqrt(2 * (ux * ux + vy * vy + wz * wz) + 4 * (Dxy * Dxy + Dxz * Dxz + Dyz * Dyz));
+      const m = muStar(gd) * lamS;
+      for (let j = 0; j < 9; j++) { slipOut[j] += f.w * m * (u - Us) * f.N2[j] * dA; slipOut[9 + j] += f.w * m * (w - Ws) * f.N2[j] * dA; }
+    }
+  }
+  const sideNode = (E, ex, ey, j) => nid(2 * ex + (j % 3), E.lOut, 2 * ey + Math.floor(j / 3));
   /** Inlet (c = 0) or outlet (c = NC-1) traction -p_b(y) n over the face of element (ey, ez); type 'stress' (checks): the full stress sigma(x, y, z) (nondimensional). */
   function tractionFace(R, side, ey, ez) {
     const c = side === 'in' ? 0 : NC - 1, bc = side === 'in' ? o.inlet : o.outlet, pf = bc.p, sgn = side === 'in' ? -1 : 1;
@@ -383,7 +532,7 @@ function solveFEM3D(o) {
       // kinematic: int u . n dA phi, n dA = X_t x X_s (up)
       const nx = yt * zs - zt * ys, ny = zt * xs - xt * zs, nz = xt * ys - yt * xs;
       for (let j = 0; j < 9; j++) {
-        const n = topNs[j], c = 2 * ex + (j % 3), l = 2 * ez + Math.floor(j / 3), d = dH[sid(c, l)];
+        const n = topNs[j], c = 2 * ex + (j % 3), l = 2 * ez + Math.floor(j / 3), d = kinRow(c, l);
         if (d < 0) continue;
         R[d] += f.w * (u * nx + v * ny + w * nz) * f.N2[j];
         if (addK) for (let m = 0; m < 9; m++) { const nm = topNs[m], s = f.w * f.N2[m] * f.N2[j]; addK(d, dU[nm], s * nx); addK(d, dV[nm], s * ny); addK(d, dW[nm], s * nz); }
@@ -391,10 +540,76 @@ function solveFEM3D(o) {
     }
   }
   const topFree = ex => free[2 * ex] || free[2 * ex + 1] || free[2 * ex + 2];
+  /** The row a top node's kinematic condition goes to: its spine's height, or in an edge block its spine's length (none on the
+   *  blade, at the contact line on the web, and at the inlet and outlet, where it runs along the flow: the block's rows). */
+  const kinRow = (c, l) => {
+    const E = blockOf[l];
+    if (!E) return dH[sid(c, l)];
+    const j = jOf[l];
+    return j === E.J || c === 0 || c === NC - 1 || (!free[c] && j <= E.jt) ? -1 : E.dG[c * NL + l];
+  };
+  /** An edge block's top face cut by an inlet or outlet with free velocities: the surface's own pull at the cut taken back
+   *  (- (1/Ca) int m . phi dl, m its outward direction in the surface across the edge; the surface goes on beyond). */
+  function cutFace(R, ex, ez) {
+    const cut = ex === 0 && o.inlet.type === 'traction' ? -1 : ex === nEx - 1 && o.outlet.type === 'traction' ? 1 : 0;
+    if (!cut || !invCa) return;
+    const aE = cut < 0 ? 0 : 2, dS = f3dq2(cut);
+    for (let gq = 0; gq < 3; gq++) {
+      const T = f3q2(F3_G[gq]), dT = f3dq2(F3_G[gq]);
+      let sx = 0, sy = 0, sz = 0, tx = 0, ty = 0, tz = 0;
+      for (let g = 0; g < 3; g++) {
+        for (let a = 0; a < 3; a++) { const n = nid(2 * ex + a, 2 * ez + g, NR - 1); sx += X[n] * dS[a] * T[g]; sy += Y[n] * dS[a] * T[g]; sz += Z[n] * dS[a] * T[g]; }
+        const n = nid(2 * ex + aE, 2 * ez + g, NR - 1); tx += X[n] * dT[g]; ty += Y[n] * dT[g]; tz += Z[n] * dT[g];
+      }
+      const lt = Math.hypot(tx, ty, tz), ux = tx / lt, uy = ty / lt, uz = tz / lt, sd = sx * ux + sy * uy + sz * uz;
+      let mx = sx - sd * ux, my = sy - sd * uy, mz = sz - sd * uz; const lm = cut / Math.hypot(mx, my, mz); mx *= lm; my *= lm; mz *= lm;
+      for (let g = 0; g < 3; g++) { const n = nid(2 * ex + aE, 2 * ez + g, NR - 1), w = F3_W[gq] * invCa * lt * T[g]; R[dU[n]] -= w * mx; R[dV[n]] -= w * my; R[dW[n]] -= w * mz; }
+    }
+  }
+  const dQm = f3dq2(-1), dQp = f3dq2(1);
+  /** The surface's outward unit normal at top node (c, l): up the block's top row from the element starting (first) or ending (last) there, along the flow from the neighbouring columns. */
+  function topNormal(c, l, first) {
+    const dq = first ? dQm : dQp, l0 = first ? l : l - 2, n0 = nid(Math.max(0, c - 1), l, NR - 1), n1 = nid(Math.min(NC - 1, c + 1), l, NR - 1);
+    const xs = X[n1] - X[n0], ys = Y[n1] - Y[n0], zs = Z[n1] - Z[n0];
+    let xt = 0, yt = 0, zt = 0;
+    for (let a = 0; a < 3; a++) { const n = nid(c, l0 + a, NR - 1); xt += X[n] * dq[a]; yt += Y[n] * dq[a]; zt += Z[n] * dq[a]; }
+    const nx = yt * zs - zt * ys, ny = zt * xs - xt * zs, nz = xt * ys - yt * xs, L = Math.hypot(nx, ny, nz);
+    return [nx / L, ny / L, nz / L];
+  }
+  /** The blade's normal (into it) at the top of wall column c at station l: along its underside or face, from the wall neighbours. */
+  function bladeNormal(c, l) {
+    const c0 = c > 0 && !free[c - 1] ? c - 1 : c, c1 = c + 1 < NC && !free[c + 1] ? c + 1 : c;
+    const n0 = nid(c0, l, NR - 1), n1 = nid(c1, l, NR - 1), tx = X[n1] - X[n0], ty = Y[n1] - Y[n0], L = Math.hypot(tx, ty);
+    return [-ty / L, tx / L, 0];
+  }
+  /** The angle (deg) through the slurry between its surface and the web at the contact line (web), or the blade at the top contact point, at column c. */
+  function edgeAngle(E, c, web) {
+    const l = web ? E.lOut : E.lj(E.jt), first = web ? !E.hi : E.hi, n = topNormal(c, l, first), w = web ? [0, -1, 0] : bladeNormal(c, l);
+    return Math.acos(Math.max(-1, Math.min(1, -(n[0] * w[0] + n[1] * w[1] + n[2] * w[2])))) * 180 / Math.PI;
+  }
+  /** An edge block's own rows at column c: the top contact point (its contact angle with the blade; downstream it runs on
+   *  unchanged), the web's contact line (its contact angle at the inlet, straight from there), and at the inlet and outlet the
+   *  surface along the flow. (Pinned: Dirichlet rows instead.) */
+  function blockRows(E, c, R) {
+    const dv = E.dV[c], dr = E.dG[c * NL + E.lOut];
+    if (!free[c]) { const n = topNormal(c, E.lj(E.jt), E.hi), w = bladeNormal(c, E.lj(E.jt)); R[dv] = n[0] * w[0] + n[1] * w[1] + n[2] * w[2] + Math.cos(E.thBlade * Math.PI / 180); }
+    else R[dv] = sol[dv] - sol[E.dV[c - 1]];
+    R[dr] = c === 0 ? topNormal(0, E.lOut, !E.hi)[1] - Math.cos(E.thWeb * Math.PI / 180) : sol[dr] - sol[E.dG[(c - 1) * NL + E.lOut]];
+    if (c === 0 || c === NC - 1) {
+      const dq = c === 0 ? dQm : dQp, c0 = c === 0 ? 0 : NC - 3;
+      for (let j = 1; j < E.J; j++) {
+        const l = E.lj(j), d = E.dG[c * NL + l];
+        if (d < 0) continue;
+        let v = 0; for (let a = 0; a < 3; a++) v += dq[a] * sol[E.dG[(c0 + a) * NL + l]];
+        R[d] = v;
+      }
+    }
+  }
   /** Contact-angle condition at station l: the surface leaves the contact line along the prescribed direction (in the x–y plane). */
   const dQ0 = f3dq2(-1);
   function contactResidual(l) {
     if (sFixed[l] != null) return sStar[l] - sFixed[l];     // (a side station held at its neighbour's contact line)
+    if (tieS[l] >= 0) return sStar[l] - sStar[tieS[l]];    // (an edge block's station beyond its top contact point: no face contact line of its own)
     const c = CL.spine;
     let xt = 0, yt = 0;
     for (let a = 0; a < 3; a++) { const n = nid(c + a, l, NR - 1); xt += X[n] * dQ0[a]; yt += Y[n] * dQ0[a]; }
@@ -413,8 +628,11 @@ function solveFEM3D(o) {
       if (lamS) { slipFace(ex, ez); for (let j = 0; j < 9; j++) { const n = bottomNode(ex, ez, j); R[dU[n]] += slipOut[j]; R[dW[n]] += slipOut[9 + j]; } }
       if (ex === 0 && (o.inlet.type === 'traction' || o.inlet.type === 'stress')) for (let ey = 0; ey < nEy; ey++) tractionFace(R, 'in', ey, ez);
       if (ex === nEx - 1 && (o.outlet.type === 'traction' || o.outlet.type === 'stress')) for (let ey = 0; ey < nEy; ey++) tractionFace(R, 'out', ey, ez);
-      if (topFree(ex)) surfaceFace(R, addK, ex, ez);
+      if (topFree(ex) || menLayer[ez]) surfaceFace(R, addK, ex, ez);
+      if (blockLayer[ez] && (topFree(ex) || menLayer[ez])) cutFace(R, ex, ez);
+      if (lamS) for (const E of OPEN) if (ez === E.ezOut) for (let ey = 0; ey < nEy; ey++) { slipSide(E, ex, ey); for (let j = 0; j < 9; j++) { const n = sideNode(E, ex, ey, j); R[dU[n]] += slipOut[j]; R[dW[n]] += slipOut[9 + j]; } }
     }
+    for (const E of OPEN) if (ez0 <= E.ez1 && E.ez0 <= ez1) for (let c = 2 * ex0; c <= 2 * ex1 + 2; c++) blockRows(E, c, R);
   }
 
   // ---- global residual ----
@@ -444,8 +662,16 @@ function solveFEM3D(o) {
       for (let a = 0; a < 27; a++) { const n = nodes[a]; lo = Math.min(lo, dU[n]); hi = Math.max(hi, dW[n]); }
       for (let i = 0; i < 8; i++) { lo = Math.min(lo, dP[pn[i]]); hi = Math.max(hi, dP[pn[i]]); }
       for (let a = 0; a < 3; a++) for (let g = 0; g < 3; g++) { const d = dH[sid(2 * ex + a, 2 * ez + g)]; if (d >= 0) { lo = Math.min(lo, d); hi = Math.max(hi, d); } }
+      for (const E of OPEN) for (let a = 0; a < 3; a++) { const c = 2 * ex + a; hi = Math.max(hi, E.dV[c]); for (let l = 0; l < NL; l++) if (E.dG[c * NL + l] >= 0) hi = Math.max(hi, E.dG[c * NL + l]); }
       kl = Math.max(kl, hi - lo);
     }
+  }
+  // (an edge block's rows couple a column's block with its neighbours': one more column each way)
+  if (OPEN.length) for (let c = 1; c < NC - 1; c++) {
+    let lo = Infinity, hi = -Infinity;
+    for (let l = 0; l < NL; l++) for (let k = 0; k < NR; k++) lo = Math.min(lo, dU[nid(c - 1, l, k)]);
+    for (const E of OPEN) { hi = Math.max(hi, E.dV[c + 1]); for (let l = 0; l < NL; l++) hi = Math.max(hi, E.dG[(c + 1) * NL + l]); }
+    kl = Math.max(kl, hi - lo);
   }
   const ku = kl, W = 2 * kl + ku + 1;
   const LU = new Float64Array(ND * W);
@@ -468,7 +694,7 @@ function solveFEM3D(o) {
     }
     // boundary terms (kinematic rows' flow part analytic)
     const scratch = new Float64Array(ND);
-    for (let ex = 0; ex < nEx; ex++) if (topFree(ex)) for (let ez = 0; ez < nEz; ez++) surfaceFace(scratch, addK, ex, ez);
+    for (let ex = 0; ex < nEx; ex++) for (let ez = 0; ez < nEz; ez++) if (topFree(ex) || menLayer[ez]) surfaceFace(scratch, addK, ex, ez);
     if (lamS) {
       // the slip term's Jacobian (with the wall viscosity's shear-rate dependence), by differences per element
       const b0 = new Float64Array(18), nodes = new Int32Array(27);
@@ -482,6 +708,16 @@ function solveFEM3D(o) {
           for (let j = 0; j < 9; j++) { const bn = bottomNode(ex, ez, j); addK(dU[bn], d, (slipOut[j] - b0[j]) / h); addK(dW[bn], d, (slipOut[9 + j] - b0[9 + j]) / h); }
         }
       }
+      for (const E of OPEN) for (let ex = 0; ex < nEx; ex++) for (let ey = 0; ey < nEy; ey++) {
+        slipSide(E, ex, ey); b0.set(slipOut);
+        elemNodes(ex, ey, E.ezOut, nodes);
+        for (const n of nodes) for (const d of [dU[n], dV[n], dW[n]]) {
+          if (isDir[d]) continue;
+          const keep = sol[d], h = 1e-7 * Math.max(1, Math.abs(keep));
+          sol[d] = keep + h; slipSide(E, ex, ey); sol[d] = keep;
+          for (let j = 0; j < 9; j++) { const sn = sideNode(E, ex, ey, j); addK(dU[sn], d, (slipOut[j] - b0[j]) / h); addK(dW[sn], d, (slipOut[9 + j] - b0[9 + j]) / h); }
+        }
+      }
     }
     for (let d = 0; d < ND; d++) if (isDir[d]) LU[d * W + kl] = 1;
     // geometry columns: a spine's height moves that spine's nodes only; s at station l moves the face spines there
@@ -489,7 +725,7 @@ function solveFEM3D(o) {
     const around = (i, n) => [Math.max(0, Math.ceil(i / 2) - 1), Math.min(n - 1, Math.floor(i / 2))];
     for (let c = 0; c < NC; c++) if (free[c]) for (let l = 0; l < NL; l++) {
       const d = dH[sid(c, l)];
-      if (isDir[d]) continue;
+      if (d < 0 || isDir[d]) continue;
       const keep = sol[d], dh = 1e-7 * Math.max(1, Math.abs(keep));
       const [ex0, ex1] = around(c, nEx), [ez0, ez1] = around(l, nEz);
       Rb.fill(0); Rp.fill(0);
@@ -505,6 +741,27 @@ function solveFEM3D(o) {
       }
       if (hasS && c <= CL.spine + 2) rowS[l][d] = (rsl - rs0[l]) / dh;
     }
+    // an edge block's top contact point and spine lengths at column c: they move that column's block spines
+    for (const E of OPEN) for (let c = 0; c < NC; c++) {
+      const [ex0, ex1] = around(c, nEx), touchS = hasS && c <= CL.spine + 2;
+      const placeCol = () => { const st = stNow(); for (let j = 1; j <= E.J; j++) placeSpine(c, E.lj(j), st); };
+      for (const d of [E.dV[c], ...Array.from({ length: E.J }, (_, i) => E.dG[c * NL + E.lj(i + 1)])]) {
+        if (d < 0 || isDir[d]) continue;
+        const keep = sol[d], dz = 1e-7 * Math.max(1, Math.abs(keep));
+        Rb.fill(0); Rp.fill(0);
+        partialResidual(ex0, ex1, E.ez0, E.ez1, Rb, null);
+        sol[d] = keep + dz; placeCol();
+        partialResidual(ex0, ex1, E.ez0, E.ez1, Rp, null);
+        const rsl = touchS ? Array.from({ length: NL }, (_, l) => blockOf[l] === E ? contactResidual(l) : 0) : null;
+        sol[d] = keep; placeCol();
+        for (let r = Math.max(0, d - kl), rEnd = Math.min(ND - 1, d + kl); r <= rEnd; r++) {
+          if (isDir[r]) continue;
+          const v = (Rp[r] - Rb[r]) / dz;
+          if (v !== 0) LU[r * W + d - r + kl] += v;
+        }
+        if (touchS) for (let l = 0; l < NL; l++) if (blockOf[l] === E) rowS[l][d] = (rsl[l] - rs0[l]) / dz;
+      }
+    }
     if (hasS) {
       colS = []; dss = Array.from({ length: NL }, () => new Float64Array(NL));
       const [ex0, ex1] = [Math.max(0, Math.ceil((CL.faceFrom ?? 0) / 2) - 1), Math.min(nEx - 1, Math.floor(CL.spine / 2))];
@@ -515,12 +772,13 @@ function solveFEM3D(o) {
         const placeStation = () => { const st = stNow(); for (let c = 0; c < NC; c++) placeSpine(c, l, st); };
         sStar[l] = keep + ds; placeStation();
         partialResidual(ex0, ex1, ez0, ez1, Rp, null);
-        const rsl = contactResidual(l);
+        const rsl = contactResidual(l), rsAll = OPEN.length ? Array.from({ length: NL }, (_, a) => contactResidual(a)) : null;
         sStar[l] = keep; placeStation();
         const col = new Float64Array(ND);
         for (let r = 0; r < ND; r++) if (!isDir[r]) col[r] = (Rp[r] - Rb[r]) / ds;
         colS.push(col);
         dss[l][l] = (rsl - rs0[l]) / ds;
+        if (rsAll) for (let a = 0; a < NL; a++) dss[a][l] = (rsAll[a] - rs0[a]) / ds;   // (an edge block's stations tied to its top contact point's)
       }
     }
     placeNodes();
@@ -552,6 +810,11 @@ function solveFEM3D(o) {
       // (an element turned inside out by the Jacobian's small geometry steps: this solve fails, instead of the whole run stopping)
       { const keep = Float64Array.from(sol), keepS = Float64Array.from(sStar); try { jacobian(true); } catch (e) { sol.set(keep); sStar.set(keepS); placeNodes(); return false; } }
       const t0 = Date.now();
+      if (o.debugJac) o.debugJac({ LU, W, kl, ND, isDir, sol, sStar, residual, placeNodes, rowS, colS, dss, label: d => {
+        for (let n = 0; n < NN; n++) { if (dU[n] === d) return 'u' + n; if (dV[n] === d) return 'v' + n; if (dW[n] === d) return 'w' + n; if (dP[n] === d) return 'p' + n; }
+        for (let i = 0; i < NC * NL; i++) if (dH[i] === d) return `h c${Math.floor(i / NL)} l${i % NL}`;
+        for (const E of OPEN) { for (let c = 0; c < NC; c++) if (E.dV[c] === d) return `V${E.side} c${c}`; for (let i = 0; i < NC * NL; i++) if (E.dG[i] === d) return `r${E.side} c${Math.floor(i / NL)} l${i % NL}`; }
+        return '?'; } });
       const fac = bandFactor(LU, ND, kl, ku); factorizations++; msFactor += Date.now() - t0;
       const y1 = Float64Array.from(res.R, v => -v);
       bandSolve(LU, fac, ND, kl, ku, y1);
@@ -622,6 +885,37 @@ function solveFEM3D(o) {
   }
   setPath(tEnd);
   if (o.homotopy) { res = residual(); if (converged && !(norms(res) < 10 * tol)) converged = false; }
+  // ---- open sides: where the top contact point is held at the blade's end and the web's contact line at the web's edge
+  // (Gibbs: held while the angle there lies between the contact angles on the edge's two faces, 90 degrees apart; reaching the
+  // end or edge, held) ----
+  // (a place that would be let go when held but pass the end when let go is held there: its angle at the contact angle, the two
+  // states' common edge -- after it has turned twice, it stays held)
+  let pinRounds = 0, pinSettled = true;
+  if (OPEN.length && converged) {
+    pinSettled = false;
+    for (const E of OPEN) { E.flips = new Uint8Array(NC); E.flipsWeb = 0; }
+    for (; pinRounds < 12; pinRounds++) {
+      let changed = 0;
+      for (const E of OPEN) {
+        if (E.zEnd != null) for (let c = 0; c < NC; c++) if (!free[c]) {
+          if (E.pinTop[c]) { if (E.flips[c] < 2 && edgeAngle(E, c, false) < E.thBlade - 1e-6) { E.pinTop[c] = 0; E.flips[c]++; changed++; } }
+          else if (E.sgn * (sol[E.dV[c]] * Hr - E.zEnd) > 1e-12) { E.pinTop[c] = 1; E.flips[c]++; changed++; }
+        }
+        if (E.zWeb != null) {
+          const zw = E.Q + E.sgn * sol[E.dG[E.lOut]], now = E.pinWeb ? E.flipsWeb >= 2 || edgeAngle(E, 0, true) >= E.thWeb - 1e-6 : E.sgn * (zw * Hr - E.zWeb) > 1e-12;
+          if (!!now !== !!E.pinWeb) { E.pinWeb = now ? 1 : 0; E.flipsWeb++; changed++; }
+        }
+      }
+      if (!changed) { pinSettled = true; break; }
+      applyPins();
+      for (let d = 0; d < ND; d++) if (isDir[d]) sol[d] = dirVal[d];
+      maxIter = it + (o.maxIter ?? 60);
+      converged = newton(tol, maxIter);
+      if (!converged) break;
+    }
+    if (!pinSettled) converged = false;
+    placeNodes();
+  }
   placeNodes();
 
   // ---- output (dimensional), node arrays in the solver's order n = (c*NL + l)*NR + k ----
@@ -680,12 +974,44 @@ function solveFEM3D(o) {
     for (let n = 0; n < NN; n++) { gdo[n] /= cnt[n] || 1; muo[n] = o.mu(Math.sqrt(gdo[n] * gdo[n] + epsDim * epsDim)); }
   }
   const st = stNow(), resid = res ? norms(res) : Infinity;
+  // (an edge block's surface heights: its top nodes')
+  for (let l = 0; l < NL; l++) if (blockOf[l]) for (let c = 0; c < NC; c++) st.h[sid(c, l)] = Y[nid(c, l, NR - 1)] * Hr;
+  // the volume flow in through the inlet and out through the outlet (m^3/s)
+  const faceFlow = c => {
+    let q = 0;
+    for (let ez = 0; ez < nEz; ez++) for (let ey = 0; ey < nEy; ey++) for (const f of c === 0 ? F3_INLET : F3_OUTLET) {
+      let xs = 0, ys = 0, zs = 0, xt = 0, yt = 0, zt = 0, u = 0, v = 0, w = 0;
+      for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) {
+        const n = nid(c, 2 * ez + g, 2 * ey + b), j = g * 3 + b;
+        xs += X[n] * f.Ns[j]; ys += Y[n] * f.Ns[j]; zs += Z[n] * f.Ns[j]; xt += X[n] * f.Nt[j]; yt += Y[n] * f.Nt[j]; zt += Z[n] * f.Nt[j];
+        u += sol[dU[n]] * f.N2[j]; v += sol[dV[n]] * f.N2[j]; w += sol[dW[n]] * f.N2[j];
+      }
+      q += f.w * (u * (ys * zt - zs * yt) + v * (zs * xt - xs * zt) + w * (xs * yt - ys * xt));
+    }
+    return q * Ur * Hr * Hr;
+  };
+  const flow = OPEN.length ? { inlet: faceFlow(0), outlet: faceFlow(NC - 1) } : null;
+  // the open sides: the surface round each edge (z, y per column along the block's top row, m), the top contact point, the
+  // web's contact line, the pins, the angles at the edges (and where they pass the Gibbs limits: climbing the blade's end, spilling over the web's edge)
+  const openOut = OPEN.map(E => {
+    const ls = Array.from({ length: E.J + 1 }, (_, j) => E.lj(j)), zS = [], yS = [];
+    for (let c = 0; c < NC; c++) { zS.push(ls.map(l => Z[nid(c, l, NR - 1)] * Hr)); yS.push(ls.map(l => Y[nid(c, l, NR - 1)] * Hr)); }
+    const aWeb = Float64Array.from({ length: NC }, (_, c) => edgeAngle(E, c, true)), aTop = Float64Array.from({ length: NC }, (_, c) => free[c] ? NaN : edgeAngle(E, c, false));
+    const climb = [], spill = [];
+    for (let c = 0; c < NC; c++) {
+      if (!free[c] && E.pinTop[c] && aTop[c] > E.thBlade + 90 + 1e-6) climb.push({ c, x: X[nid(c, E.lj(E.jt), NR - 1)] * Hr, angle: aTop[c] });
+      if (E.pinWeb && aWeb[c] > E.thWeb + 90 + 1e-6) spill.push({ c, x: X[nid(c, E.lOut, NR - 1)] * Hr, angle: aWeb[c] });
+    }
+    return { side: E.side, stations: ls, z: zS, y: yS, top: Float64Array.from({ length: NC }, (_, c) => sol[E.dV[c]] * Hr), web: (E.Q + E.sgn * sol[E.dG[E.lOut]]) * Hr,
+      pinTop: Uint8Array.from(E.pinTop), pinWeb: E.pinWeb, angleWeb: aWeb, angleTop: aTop, climb, spill };
+  });
   if (o.onSolveEnd) o.onSolveEnd({ converged, residual: resid, iterations: it });
   return {
     NC, NR, NL, nEx, nEy, nEz, x: xo, y: yo, z: zo, u: uo, v: vo, w: wo, p: po, gd: gdo, mu: muo, q, converged, iterations: it, factorizations, stages, history, solveId,
     residual: resid, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca: invCa ? 1 / invCa : Infinity },
     size: { unknowns: ND, band: kl, bytes: LU.byteLength, msFactor },
-    state: { sol: Float64Array.from(sol), h: st.h, s: st.s },
+    state: { sol: Float64Array.from(sol), h: st.h, s: st.s, ...(OPEN.length ? { open: Object.fromEntries(OPEN.map(E => [E.side, { pinTop: Uint8Array.from(E.pinTop), pinWeb: E.pinWeb }])) } : {}) },
+    ...(OPEN.length ? { flow, open: openOut, pinRounds, pinSettled } : {}),
   };
 }
 
@@ -935,6 +1261,54 @@ function solveCoaterWide(opts) {
   return { r2: S.r2, S, state, stations, subs, sweeps, history, converged: converged && !err, error: err || (converged ? undefined : `not converged after ${sweeps} sweeps (last change ${history[history.length - 1].toExponential(1)} of the gap)`), mode: S.mode, ms2: S.ms, ms3: Date.now() - t1 };
 }
 
+/**
+ * The coating flow at a web edge (Phase 4): a strip whose outer side is open -- the slurry's surface round the edge solved,
+ * out past the blade's end onto the web, or held at the blade's end or the web's edge -- and whose inner side is a symmetry
+ * plane. The bead pressure at the land's start acts right up to the open end, and the end may not hold it: solved first with
+ * none, then raised in steps to opts.Pup (a step that fails halved, down to pTol), each from the last. The end holds while a
+ * steady edge exists with the slurry below the blade and on the web: past the Gibbs limits it would wet and climb the blade's
+ * end face, or spill over the web's edge -- neither modelled, so the steps stop there.
+ * opts: solveCoater3D's (width, nEz, zs: the strip's stations, m, z across from its inner side) and edge: { side: 'hi' | 'lo',
+ *   m, zEnd, zWeb (m, in the strip's z), thWeb, thBlade (deg), qFrac }, pTol (Pa; default the larger of 0.5 and 5 % of the pressure held),
+ *   dP0 (the first step, Pa; default the smaller of 10 and Pup), onStep({ P, ok, held, web, angle, it }).
+ * Returns { held (at opts.Pup), P (the pressure of the result), limit ('climb' | 'spill' | 'steady' | null: what stops it),
+ *   r3, S, open (the side), stations, steps: [{ P, ok, why?, web, angle, it }], error? }.
+ */
+function solveEdgeStrip(opts) {
+  const nEz = opts.nEz, NL = 2 * nEz + 1, zs = stationZs(opts, NL), E0 = opts.edge, target = opts.Pup;
+  const pTol = P => opts.pTol ?? Math.max(0.5, 0.05 * P), steps = [];
+  const at0 = { ...opts, Pup: 0 };
+  const S = coaterStations(at0, zs);
+  if (S.error) return { error: S.error, held: false, steps };
+  const openOpt = { [E0.side]: { m: E0.m, zEnd: E0.zEnd, zWeb: E0.zWeb, thWeb: E0.thWeb, thBlade: E0.thBlade, qFrac: E0.qFrac, dTop: opts.dH || null } };
+  const solveAt = (P, prev) => coaterStrip3D({ ...opts, Pup: P }, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, {
+    label: `edge at ${P.toFixed(1)} Pa`, open: openOpt, maxIter: opts.maxIter3 ?? 80,
+    ...(prev ? { init: { sol: prev.state.sol, s: prev.state.s, open: prev.state.open }, initNodal: null, h0: null, s0: null } : {}) });
+  // the edge's state: steady (converged, pins settled), the slurry below the blade and on the web (Gibbs)
+  const judge = (P, r) => {
+    const E = r.open ? r.open[0] : null, angle = E ? Math.max(...Array.from(E.angleTop).filter(Number.isFinite)) : NaN;
+    const why = !r.converged ? 'steady' : E.climb.length ? 'climb' : E.spill.length ? 'spill' : null;
+    const st = { P, ok: !why, why, web: E ? E.web : NaN, angle, it: r.iterations };
+    steps.push(st); opts.onStep && opts.onStep(st);
+    return st;
+  };
+  let good = null, goodP = 0, last = null;
+  const r0 = solveAt(0, null), s0 = judge(0, r0);
+  if (!s0.ok) return { held: false, P: 0, limit: s0.why, r3: r0.converged ? r0 : null, S, open: r0.open ? r0.open[0] : null, stations: zs, steps };
+  good = r0;
+  let P = 0, dP = Math.min(opts.dP0 ?? 10, target);
+  while (goodP < target) {
+    const Pn = Math.min(target, goodP + dP), r = solveAt(Pn, good), st = judge(Pn, r);
+    if (st.ok) { good = r; goodP = Pn; if (r.iterations <= 6) dP *= 2; continue; }
+    last = st;
+    // (a step that does not converge: halve it; one that converges past a Gibbs limit: the limit is below it)
+    dP /= 2;
+    if (dP < pTol(goodP)) break;
+  }
+  P = goodP;
+  return { held: goodP >= target, P, limit: goodP >= target ? null : last && last.why, r3: good, S, open: good.open[0], stations: zs, steps };
+}
+
 /** Small dense solve (Gaussian elimination, partial pivoting). */
 function f3Dense(A, b) {
   const m = b.length, M = A.map(r => Float64Array.from(r)), x = Float64Array.from(b);
@@ -950,5 +1324,5 @@ function f3Dense(A, b) {
 
 if (typeof module !== 'undefined' && module.exports) {
   if (typeof solveCoaterFEM === 'undefined') global.solveCoaterFEM = require('./cfd-fem.js').solveCoaterFEM;
-  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, stationState, stationLateral, F3_QP, f3Shape };
+  module.exports = { solveFEM3D, solveCoater3D, solveCoaterWide, solveEdgeStrip, stationZs, coaterStations, coaterStrip3D, stationFrom2D, stationFrom3D, stationState, stationLateral, F3_QP, f3Shape };
 }
