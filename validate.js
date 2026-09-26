@@ -66,6 +66,10 @@ function checkGeometry(geo, i) {
   if (bladeUsesL(geo.shape) && !(geo.L > 0)) err('land', 'The land length must be above 0.', 'n_L');
   const prof = shapedB ? bladeProfileCached(geo.blade) : null;
   if (prof && prof.err) err('blade', `The blade shape is not possible: ${prof.err}.`, 'cfdShape');
+  // (the blade across the web may end inside the web: past its end no blade meters the film)
+  const sp = acrossSpanNow();
+  if (i != null && geo.z != null && (geo.z < sp[0] || geo.z > sp[1])) err('bladeEnd', `L${i + 1} at z ${geo.z} mm is past the blade's ${geo.z < sp[0] ? 'left' : 'right'} end (${geo.z < sp[0] ? sp[0] : sp[1]} mm): no blade meters the film there. Move the location, or the blade's end (Flow › 1D › Across the web).`, `locz_${i}`);
+  if (ACR.bow.on && ACR.bow.mode === 'computed' && acrossBowComputed().error) err('bow', `The bow could not be computed: ${acrossBowComputed().error}.`, null);
   const fs = fibreStructure();
   if (!(fs.eps > 0 && fs.eps < 1)) err('fibre', `The fibre data give a porosity of ${(fs.eps * 100).toFixed(0)} %: the basis weight, fibre density and thickness do not fit together.`, 'cfdGsm');
   // where the model is reliable

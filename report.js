@@ -114,6 +114,7 @@ async function repModule(m, statsTitle = 'Results') {
   if (m === 0) {
     html += '<h3>Scenario</h3>' + repRows(ANIM_UNDO.map(([k, l, f]) => [repEsc(l), repEsc(f(ANIM[k]))]), ['Setting', 'Value']);
   }
+  if (m === 11) html += acrossReportHTML();
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
   const figs = imageTargets().filter(t => t.id.startsWith('pane:'));

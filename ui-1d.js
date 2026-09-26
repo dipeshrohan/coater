@@ -23,11 +23,16 @@ function oneDGeoAt(z) {
 }
 const oneDRipple = () => ({ dHum: P.dH, vibUm: P.vib, lamMm: P.lam });
 
+/** The positions across the web the 1D solves (mm): evenly where both the web and the blade are (the blade may end inside). */
+function acrossPositions() {
+  const sp = acrossSpanNow(), a = Math.max(0, sp[0]), b = Math.min(ACROSS_W, sp[1]);
+  return Array.from({ length: ACROSS_N }, (_, k) => a === 0 && b === ACROSS_W ? ACROSS_W * k / (ACROSS_N - 1) : a + (b - a) * k / (ACROSS_N - 1));
+}
 /** Ask the worker for the 1D results these inputs need (the positions across the web only for that page). */
 function oneDRequest(needAcross) {
   const locs = CFD_LOCS.map((_, i) => oneDGeo(i)), ripple = oneDRipple();
   const key = JSON.stringify([locs, ripple]);
-  const across = needAcross ? Array.from({ length: ACROSS_N }, (_, k) => oneDGeoAt(ACROSS_W * k / (ACROSS_N - 1))) : null;
+  const across = needAcross ? acrossPositions().map(oneDGeoAt) : null;
   const aKey = across ? JSON.stringify([across, ripple]) : null;
   if (key === ONE_D.key && (!needAcross || aKey === ONE_D.acrossKey)) return;
   if (ONE_D.busy) { ONE_D.again = true; return; }
@@ -262,23 +267,26 @@ function view1DAcross() {
   const acc = cssVar('--accent'), bad = cssVar('--bad'), ink = cssVar('--ink');
   view.innerHTML = moduleFrame({
     cols: workbenchFits() ? 2 : 1,
+    top: `<div class="acr-top"><section class="acr-view"><h3>${uiBadge('wave')}The blade across the web, seen from the front <span class="acr-sub">the gap's change, each part and their sum; drag a handle</span></h3><div class="acr-front" id="acrFront"></div></section>
+      <aside class="acr-panel" aria-label="The blade across the web">${acrossPanelHTML('pg')}</aside></div>`,
     panes: [
       { id: 'a1', icon: 'film', title: 'Wet film across the web', aria: 'Wet film against position across the web', legend: oneDLegend([['1D at every position', cssVar('--accent')], ['2D at the four locations (if solved)', cssVar('--ink'), 'dot']]),
-        note: 'At each position the 1D gap flow with that position\'s gap (blade waviness and fibre thickness variation) and the shared inputs.' },
+        note: 'At each position the 1D gap flow with that position\'s gap (the blade across the web above, and the fibre thickness variation) and the shared inputs; where the blade ends inside the web, only up to its ends.' },
       { id: 'a2', icon: 1, title: 'Contact line across the web', aria: 'Contact line up the exit face against position across the web', legend: oneDLegend([['1D (static meniscus)', cssVar('--accent')], ['2D (if solved)', cssVar('--ink'), 'dot']]),
         note: 'Where the meniscus leaves the blade: the static meniscus from the 1D film up the exit face, with that position\'s contact angle. Past the notch corner (dashed) the slurry reaches the dry edge.' },
     ],
   });
+  drawAcrossFront(document.getElementById('acrFront'));
   const A = ONE_D.across;
   if (!A) { oneDWaiting(); return; }
   const z = A.map(r => r.z), films = A.map(r => r.film * 1000), s = A.map(r => r.men.pinned ? 0 : r.men.s * 1000);
-  const two = CFD_LOCS.map((l, i) => ({ l, t: twoDAt(i) })).filter(o => o.t && !o.t.stale);
+  const two = CFD_LOCS.map((l, i) => ({ l, t: twoDAt(i) })).filter(o => o.t && !o.t.stale), zA = z[0], zB = z[z.length - 1];
   const c1 = document.getElementById('a1'), fMin = Math.min(...films), fMax = Math.max(...films), pad = Math.max((fMax - fMin) * 0.3, 0.01);
-  plotChart(c1, fitAspect(c1, 0.5), { x0: 0, x1: ACROSS_W, y0: fMin - pad, y1: fMax + pad, yl: 'wet film (mm)', xl: 'position across the web (mm)', yd: 3,
+  plotChart(c1, fitAspect(c1, 0.5), { x0: Math.min(0, zA), x1: Math.max(ACROSS_W, zB), y0: fMin - pad, y1: fMax + pad, yl: 'wet film (mm)', xl: 'position across the web (mm)', yd: 3,
     s: [{ p: z.map((x, k) => [x, films[k]]), c: acc, w: 2.2 }, ...(two.length ? [{ p: two.map(o => [o.l.z, o.t.r.Q / o.t.geo.U * 1000]), c: ink, line: false, dots: true }] : [])] });
   const sMax = Math.max(...s, P.face);
   const c2 = document.getElementById('a2');
-  plotChart(c2, fitAspect(c2, 0.5), { x0: 0, x1: ACROSS_W, y0: 0, y1: sMax * 1.25, yl: 'contact line up the face (mm)', xl: 'position across the web (mm)',
+  plotChart(c2, fitAspect(c2, 0.5), { x0: Math.min(0, zA), x1: Math.max(ACROSS_W, zB), y0: 0, y1: sMax * 1.25, yl: 'contact line up the face (mm)', xl: 'position across the web (mm)',
     s: [{ p: z.map((x, k) => [x, s[k]]), c: acc, w: 2.2 }, ...(two.length ? [{ p: two.map(o => [o.l.z, o.t.r.mode === 'climbed' ? o.t.r.sCL * 1000 : 0]), c: ink, line: false, dots: true }] : [])],
     hl: [{ y: P.face, c: bad, t: 'notch corner: slurry reaches the dry edge' }] });
   const over = s.filter(v => v > P.face).length, sMn = Math.min(...s), sMx = Math.max(...s), qs = A.map(r => r.q * 1e6);
@@ -287,13 +295,15 @@ function view1DAcross() {
       : sMx === 0 ? ['Pinned at the sharp edge everywhere', 'ok'] : ['Contact line steady', 'ok'];
   document.getElementById('st').innerHTML = pill(...verdict) + pill(`Film ${fMin.toFixed(3)} to ${fMax.toFixed(3)} mm across the web`, '')
     + (A.every(r => r.converged) ? '' : pill('A position did not converge', 'bad'))
-    + (ONE_D.acrossKey === JSON.stringify([Array.from({ length: ACROSS_N }, (_, k) => oneDGeoAt(ACROSS_W * k / (ACROSS_N - 1))), oneDRipple()]) ? '' : pill('Solving for the inputs as they are…', 'warn'));
+    + (ONE_D.acrossKey === JSON.stringify([acrossPositions().map(oneDGeoAt), oneDRipple()]) ? '' : pill('Solving for the inputs as they are…', 'warn'))
+    + (ACR.bow.on && ACR.bow.mode === 'computed' && acrossBowComputed().error ? pill('Bow not computed: ' + acrossBowComputed().error, 'bad') : '');
   document.getElementById('ss').innerHTML = [
     ['Wet film range', `${fMin.toFixed(3)} to ${fMax.toFixed(3)} mm`],
     ['Film variation', ((fMax - fMin) / ((fMax + fMin) / 2) * 100).toFixed(1) + ' %'],
     ['Flow rate range', `${Math.min(...qs).toFixed(2)} to ${Math.max(...qs).toFixed(2)} mm²/s`],
     ['Contact line range', `${sMn.toFixed(1)} to ${sMx.toFixed(1)} mm`],
-    ['Positions solved', `${A.length} over ${ACROSS_W} mm`],
+    ['Gap range', (() => { const g = z.map(v => localGap(v)); return `${Math.min(...g).toFixed(3)} to ${Math.max(...g).toFixed(3)} mm`; })()],
+    ['Positions solved', `${A.length} over ${+(zB - zA).toFixed(1)} mm`],
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 

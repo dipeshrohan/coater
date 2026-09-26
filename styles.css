@@ -1503,3 +1503,58 @@ body:has(#pgScope) #scope { display: none; }
 /* (a drawing keeps a legible width: on a narrow screen its frame scrolls sideways) */
 .step-draw:has(> .blade-svg) { overflow-x: auto; overflow-y: hidden; }
 .nowrap-table td, .nowrap-table th { white-space: nowrap; }
+
+/* ---- the blade across the web (across-ui.js): the design above the Across the web page's charts, and its parts panel ---- */
+.mod-top { grid-column: 1 / -1; min-width: 0; }
+.acr-top { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: stretch; }
+.acr-view, .acr-panel { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 14px; box-shadow: var(--shadow-sm); min-width: 0; }
+.acr-view { padding: 10px 12px; display: flex; flex-direction: column; }
+.acr-view h3 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.acr-sub { font-weight: 400; color: var(--muted); font-size: 12px; }
+.acr-front { height: 270px; min-width: 0; }
+.acr-panel { padding: 8px 12px; max-height: 320px; overflow: auto; font-size: 12.5px; }
+.acr-grp { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 2px; }
+.acr-grp:first-child { margin-top: 2px; }
+.acr-part { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-weight: 600; }
+.acr-chk { display: inline-flex; align-items: center; gap: 6px; }
+.acr-sw { display: inline-block; width: 12px; height: 4px; border-radius: 2px; }
+.acr-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 3px 0 3px 18px; }
+.acr-row .acr-l { color: var(--muted); }
+.acr-row .acr-v { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.acr-row .u { color: var(--muted); font-size: 11.5px; }
+.acr-in { width: 64px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; text-align: right; }
+.acr-in::placeholder { color: var(--muted); font-size: 10.5px; text-align: left; }
+.acr-sine .acr-in { width: 52px; }
+.acr-sine-h .acr-v span { width: 52px; text-align: center; color: var(--muted); font-size: 10.5px; }
+.acr-sine-h .acr-v .acr-del-sp { width: 24px; }
+.acr-row .acr-l { white-space: nowrap; }
+.acr-seg button { padding: 2px 8px; font-size: 11.5px; }
+.acr-note { margin: 4px 0 2px 18px; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.acr-hint { color: var(--muted); font-size: 11.5px; }
+.acr-del { width: 24px; height: 24px; }
+.acr-svg { display: block; touch-action: none; }
+.acr-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted); padding-left: 58px; }
+.acr-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.acr-lg { display: inline-block; width: 16px; border-top: 2px dashed; }
+.acr-lg.acr-lg-sum { border-top: 3px solid var(--ink); }
+.acr-svg .acr-t { font: 11px Inter, system-ui, sans-serif; fill: var(--muted); }
+.acr-svg .acr-ht { font: 600 11.5px Inter, system-ui, sans-serif; }
+.acr-svg .acr-blade { fill: var(--blade); fill-opacity: .22; stroke: none; }
+.acr-svg .acr-web { fill: var(--fibre); }
+.acr-svg .acr-webline { stroke: #16a34a; stroke-width: 2; }
+.acr-svg .acr-zero { stroke: var(--muted); stroke-dasharray: 5 4; }
+.acr-svg .acr-grid { stroke: var(--line-soft); }
+.acr-svg .acr-loc { stroke: var(--line); stroke-dasharray: 2 4; }
+.acr-svg .acr-loct { font-size: 10.5px; }
+.acr-svg .acr-nob { fill: var(--bad); fill-opacity: .07; }
+.acr-svg .acr-part-line { fill: none; stroke-width: 1.6; stroke-dasharray: 6 3; }
+.acr-svg .acr-sum { fill: none; stroke: var(--ink); stroke-width: 2.6; }
+.acr-svg .acr-h { fill: var(--surface); stroke: var(--accent); stroke-width: 2.5; cursor: ns-resize; }
+.acr-svg .acr-h.acr-hx { cursor: ew-resize; }
+.acr-svg .acr-h:focus-visible, .acr-svg .acr-endh:focus-visible { outline: none; stroke: var(--ink); stroke-width: 3.5; }
+.acr-svg .acr-endh { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); cursor: ew-resize; }
+.acr-svg .acr-endl { stroke: var(--accent); stroke-opacity: .5; stroke-dasharray: 3 3; }
+.acr-side { margin: 6px 0 4px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.acr-side .acr-row { padding-left: 8px; }
+.acr-side .acr-note { margin-left: 8px; }
+@media (max-width: 1100px) { .acr-top { grid-template-columns: minmax(0, 1fr); } .acr-panel { max-height: none; } }

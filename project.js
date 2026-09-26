@@ -37,14 +37,14 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 
 // ---- the project as data, and back ----
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey()]);
+const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs } : null;
   return {
     app: PROJ_APP, format: PROJ_FORMAT, saved: new Date().toISOString(), name: PROJ.name,
     inputs: Object.fromEntries(CFG.map(c => [c.k, P[c.k]])),
-    cfdSetup: { ...CFDG }, solver: { ...CFDS },
+    cfdSetup: { ...CFDG }, solver: { ...CFDS }, across: JSON.parse(JSON.stringify(ACR)),
     locations: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes, cuts: cfdCuts, cases: readCases() || [],
     view: { module: tab, FV },
@@ -96,6 +96,7 @@ function applyProject(p) {
   for (const c of CFG) setInput(c.k, p.inputs && c.k in p.inputs ? p.inputs[c.k] : c.v);   // (an input the project predates: its default)
   Object.assign(CFDG, CFDG_DEFAULTS); for (const k of Object.keys(CFDG)) if (p.cfdSetup && k in p.cfdSetup) CFDG[k] = p.cfdSetup[k];
   Object.assign(CFDS, SOLVER_DEFAULTS, p.solver || {});
+  applyAcross(p.across);   // (a project from before: the blade across the web as it was, no new part)
   CFD_LOCS.forEach((l, i) => { const s = (p.locations || [])[i] || {}; l.z = s.z ?? LOC_Z_DEFAULTS[i]; l.over = { ...(s.over || {}) }; l.solver = { ...(s.solver || {}) }; });
   cfdProbes = Array.isArray(p.probes) ? p.probes.map(q => ({ ...q })) : []; saveProbes();
   cfdCuts = Array.isArray(p.cuts) ? p.cuts.map(q => ({ ...q })) : []; saveCuts();
@@ -136,6 +137,7 @@ async function newProject() {
   for (const c of CFG) setInput(c.k, c.v);
   Object.assign(CFDG, JSON.parse(JSON.stringify(CFDG_DEFAULTS)));
   Object.assign(CFDS, SOLVER_DEFAULTS);
+  applyAcross(null);
   CFD_LOCS.forEach((l, i) => { l.z = LOC_Z_DEFAULTS[i]; l.over = {}; l.solver = {}; });
   cfdProbes = []; saveProbes(); cfdCuts = []; saveCuts();
   Object.assign(FV, JSON.parse(JSON.stringify(FV_DEFAULTS)));
