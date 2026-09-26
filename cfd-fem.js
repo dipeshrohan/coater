@@ -1135,7 +1135,19 @@ function solveCoaterFEM(opts) {
       } else Ey = Ybase;
     }
     // nodes on the underside's corners and at its steep stretches' ends (at least two elements on each)
-    Xi = snapEnds(Xi, [...prof.underCorners.map(c => UX.xiOf(c.s)), ...UX.steep.flat().map(UX.xiOf)], UX.steep.map(([a, b]) => [UX.xiOf(a), UX.xiOf(b)]));
+    const must = [...prof.underCorners.map(c => UX.xiOf(c.s)), ...UX.steep.flat().map(UX.xiOf)];
+    Xi = snapEnds(Xi, must, UX.steep.map(([a, b]) => [UX.xiOf(a), UX.xiOf(b)]));
+    // (a count to keep -- the 3D's stations keep the reference's --: ends merged or split where it costs least)
+    if (FC && FC.b && Xi.length - 1 !== FC.b) {
+      const keep = new Set([Xi[0], Xi[Xi.length - 1], ...must]);
+      while (Xi.length - 1 > FC.b) {
+        let j = -1, best = Infinity;
+        for (let i = 1; i < Xi.length - 1; i++) if (!keep.has(Xi[i]) && Xi[i + 1] - Xi[i - 1] < best) { best = Xi[i + 1] - Xi[i - 1]; j = i; }
+        if (j < 0) break;
+        Xi.splice(j, 1);
+      }
+      while (Xi.length - 1 < FC.b) { let j = 0; for (let i = 1; i < Xi.length - 1; i++) if (Xi[i + 1] - Xi[i] > Xi[j + 1] - Xi[j]) j = i; Xi.splice(j + 1, 0, 0.5 * (Xi[j] + Xi[j + 1])); }
+    }
     const Tf = [...Tfix, ...Tmov];                        // arc lengths along the face (at the layout), M to the contact line
     const nEbM = Xi.length - 1, nF = Tf.length - 1, nEsM = Ss.length - 1, nEyM = Ey.length - 1;
     const nEx = nEbM + nF + nEsM, NC = 2 * nEx + 1;

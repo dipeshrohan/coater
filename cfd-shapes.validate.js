@@ -13,6 +13,8 @@
  *  5. Zones and adapted meshes on shaped blades: zones refine; an adapted mesh gives its element ends back.
  *  6. One adaptive step (cfd-accuracy.js) on shaped blades, the fixed part of the face split too: it solves,
  *     keeps its corners as element ends, and moves the film little.
+ *  7. 3D (cfd-fem3d.js): a strip with the same gap across gives each station's 2D answer; a gap varying across
+ *     converges, the contact line at the same corner or on the same stretch at every station.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -126,6 +128,25 @@ console.log('\n6. One adaptive step (mesh to an accuracy)');
     const d = b.r.Q / a.r.Q - 1;
     check(`${label}: ${ref.cols} columns and ${ref.rows} rows split; solves, its ends kept (corners too), film moves ${(d * 100).toFixed(3)} %`, !b.r.error && b.r.converged && b.r.NC > a.r.NC && kept && cornersKept && Math.abs(d) < 5e-3 && b.r.meniscus.k === a.r.meniscus.k,
       `${a.r.NC}x${a.r.NR} -> ${b.r.NC}x${b.r.NR}`);
+  }
+}
+
+// 7. 3D
+console.log('\n7. 3D strips on shaped blades');
+{
+  const FEM = require('./cfd-fem.js'); Object.assign(global, FEM);
+  const { solveCoater3D } = require('./cfd-fem3d.js');
+  for (const [label, spec, contact] of [['on a 45° bevel', bevel(1e-3, 45), 70], ['pinned at a bevel\'s top', bevel(0.3e-3, 45, 150), 35], ['two-step', { shape: 'twostep', land1: 3e-3, stepH: 0.5e-3, riserDeg: 90, L: 3e-3, exitDeg: 90 }, 35]]) {
+    const spec0 = { H, faceLen: 8e-3, ...spec }, prof = B.bladeProfile(spec0);
+    const base = { hFn: prof.hUnder, xe: prof.xe, faceDeg: spec.exitDeg, contactDeg: contact, U: 0.1, Pup: 0, rho, g, gamma, mu: () => 1, Ld: 12e-3, nEb: 10, nEf: 3, nEs: 12, nEy: 3, fInfGuess: 0.5 * H, profile: prof };
+    const r2 = N.solveCoaterFEM(base);
+    const run = dHmax => { const dH = z => dHmax * z / 0.002; return solveCoater3D({ ...base, width: 0.004, nEz: 2, dH, profileAt: z => B.bladeProfile({ ...spec0, H: H + dH(z) }) }); };
+    const u = run(0), v = run(20e-6);
+    const mid = r => r.stations[(r.stations.length - 1) >> 1];
+    const uOk = !u.error && u.r3.converged && u.stations.every(t => Math.abs(t.film / (r2.Q / 0.1) - 1) < 1e-6 && Math.abs(t.s - r2.surface.s) < 1e-9);
+    const vOk = !v.error && v.r3.converged && v.k === r2.meniscus.k && v.mode === r2.meniscus.mode && v.stations[0].film < v.stations[v.stations.length - 1].film;
+    check(`${label}: a uniform strip = its 2D; a gap rising 40 µm across converges, the film rising with it`, uOk && vOk,
+      `2D film ${(r2.Q / 0.1 * 1e3).toFixed(6)} mm; uniform ${(mid(u).film * 1e3).toFixed(6)}; varying ${v.stations.map(t => (t.film * 1e3).toFixed(4)).join(', ')} mm (${v.mode}${v.k ? `, corner ${v.k}` : ''})`);
   }
 }
 
