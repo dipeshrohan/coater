@@ -688,7 +688,7 @@ function view3D() {
     if (G.error) st += pill('The geometry could not be built: ' + G.error, 'bad');
     else if (G.empty) st += pill('Import an STL or STEP file of the blade (in the inputs, 3D geometry)', 'warn');
     else st += pill(G.open ? `The blade does not cover the region at ${G.open} of ${G.rays} points` : G.multi ? `The blade overhangs at ${G.multi} of ${G.rays} points: its underside is not a single height there` : C3D.region === 'full' ? 'Geometry ready; the full-width solve is being built' : 'Geometry ready: Solve 3D', G.open ? 'bad' : G.multi ? 'warn' : 'ok')
-      + pill(`Blade ${G.label}`, '') + (C3D.source === 'file' && G.mesh ? pill(`Exit face angle from the 2D setup (${cfdGeometry(C3D.loc).exitAngle}°)`, '') : '');
+      + pill(`Blade ${G.label}`, '') + (C3D.source === 'file' && G.mesh ? pill(C3D.fileFace === 'file' ? 'Exit face from the file (each station\'s section)' : `Exit face angle from the 2D setup (${cfdGeometry(C3D.loc).exitAngle}°)`, '') : '');
   }
   document.getElementById('st').innerHTML = st;
   c3dBusy();

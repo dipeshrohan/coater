@@ -12,7 +12,7 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
-### Phase 3 (design): more blade shapes and a custom profile (in progress)
+### Phase 3: more blade shapes and a custom profile (built)
 
 User (with mock-ups): shapes bevel, edge radius, wedge, two-step, custom; custom from CSV / text points,
 DXF polyline, placed points, a section of an STL/STEP blade (the 3D page's file or one loaded in the 2D
@@ -34,6 +34,55 @@ land 2 = L; every shape keeps the exit face angle and the notch face.
   the direction); the solve walks from the metering edge up: pinned, climbs its piece (today's strategy
   on that piece), passes its top corner, pinned there or climbs the next. The wetted pieces below the
   contact line are fixed wall in the mesh with nodes on their corners. Simple model: the same from C.
+
+Build notes (as built):
+- cfd-blade.js (new; main thread and the three workers): pieces (lines, arcs; length, point and tangent at
+  s, cut, reverse), paths by arc length, bladeProfile per shape, customProfile (points with bulges, DXF arcs
+  kept; placed points: centripetal Catmull-Rom sampled 64 per span, broken at corners; corners by the turning
+  angle, default 10 deg, or per point; other vertices rounded by tangent arcs), openProfile (a closed
+  section to inlet / M / face), parseDXF (LWPOLYLINE, POLYLINE, LINE, ARC; $INSUNITS), parsePointsCSV.
+  M: the downstream end of the lowest run (tolerance 1e-6 of the height); C: the highest corner on the face
+  (or the handle's). The underside's steep parts (over 60 deg) are meshed by fans between the bisectors.
+- cfd-fem.js: solveCoaterFEM takes a profile (opts.profile, clModel). The mesh (buildMeshP): the underside
+  in xi (x where gentle, arc length where steep) with element ends on its corners; the face's wetted part
+  fixed wall with nodes on its corners, the moving part above it. The contact line walks from the metering
+  edge (or C) up: pinned at corner k while Gibbs holds, else free on the stretch above it; a new corner or
+  stretch, or a jump over 0.25 H, restarts from the static meniscus (staticMeniscusFace: a bracketed
+  Illinois root find). contactResidual takes the contact angle as a number or a function of s. Round entry
+  and flat land: the old code path, node for node and bit for bit (preview, zones, full solves, no-flow).
+- cfd-fem3d.js: stations each take their own profile (profileAt(z)); every station must share (mode, k);
+  the face's fixed part from cBase. cfd-1d.js: the shaped underside, stations at its corners, and the
+  meniscus on the face path (meniscus1DPath). cfd-accuracy.js: adapted meshes keep the face's fixed ends.
+- 3D files: with Exit face "From the file" each station takes the file's side section there (sectionTris,
+  openProfile), cut at the domain's inlet or extended level to it; "Straight": the old underside-only path.
+  Placement fixed on the way: a land's downstream end is the metering edge (the first of the equally low
+  points was taken, which for a flat land could be its upstream end; checked failing on main).
+- Climb fixed on the way: a face that turns up from the level (a land running into a large radius) can only be
+  entered where the surface can first leave it (below, no mesh); the trial places' fail-fast iteration count
+  stopped there. When the trial places fail, that place is held with the full count, then the contact-angle
+  continuation (results that solved before are unchanged; cfd-shapes.validate.js 8, failing on the old code).
+- UI: seven shape tabs, their inputs (sidebar and drawing chips / handles), the contact-line switch (shaped
+  faces only), the custom editor (table, CSV, DXF, place points, From STL/STEP with a z cut, flips, M and C
+  handles, corner toggles by double click); the Mesh step note, the Solve step's face drawn along the profile
+  and its condition in words; 1D, 3D, DOE factors, report, undo, help and the model tree follow. The round
+  entry and flat land's keys, texts and results are unchanged.
+- Checks: cfd-blade.validate.js; cfd-shapes.validate.js (profiles, static menisci against exact ones: on a
+  bevel 0.015 %, on an arc 0.016 %, above a bevel 0.023 %, pinned at C -18.562 vs -18.566 deg; every flow
+  state; mass to 7e-5; a collinear bevel = flat within 0.0002 %; mesh convergence; zones and adapted meshes;
+  3D uniform strip = 2D); cfd-3d-geom.validate.js 7 (extruded shapes' undersides and sections round trip)
+  and 4 (flat-land placement).
+- Browser (http): bevel 2D at four locations, 1D, 3D strip; the editor (CSV, DXF with an arc, STL section,
+  flips, table edits, undo / redo, placed points, project round trip). A uniform web: an STL bevel and an STL
+  two-step with their faces from the file = the same blades made here (films to 5e-8, the STL's float
+  precision; same corner k); a straight face instead differs by 0.69 % and 0.58 %; the 3D strip vs the 2D
+  0.25 % and 0.45 % (the 3D's own counts). Full width, bevel, defaults: 61 stations, 6 sweeps, 261 s,
+  film 1.436-1.516 mm, contact line on the face above corner 1 at every station. Solved mesh quality in the
+  range of the old shapes: 2D worst 0.43-0.68 (flat 0.51, round 0.59), 3D strip 0.32-0.51 (flat 0.50,
+  round 0.37); full width 0.28 (round 0.34, 433 s).
+- STEP (the reader's rounded cube, up = -z: a 5 mm land into a 5 mm radius, 84 triangles): 3D strip with its
+  face from the file, film 1.80748 mm, contact line 5.300 mm up the arc; the same section in the 2D custom
+  editor: 1.80607 mm, 5.315 mm (0.08 %); coarse / medium / fine presets 1.80748 / 1.80607 / 1.80755 mm. Not
+  solved: a custom mesh twice the medium (24 + 12 + 48 by 12): its held solves creep to the iteration limit.
 
 ### Phase 2 (meshing): refinement zones and mesh to an accuracy (built)
 
