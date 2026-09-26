@@ -1447,8 +1447,7 @@ function solveCoaterFEM(opts) {
       }
       // continuation in the contact angle: held a little up, the surface leaves at some angle -- the free solution
       // for the contact angle that gives that; step the contact angle from there to its own
-      {
-        let cur = solveAt('climbed', sStart, false, fInf, { ...pin, s: sB }, aK, undefined, null, ctx);
+      const contFrom = cur => {
         if (!cur.error) {
           let c = cur.leave - thDeg(cur.s) + 180, dc = Math.sign(contactDeg - c) * Math.min(Math.abs(contactDeg - c), 10);
           cur = { ...cur, sNow: cur.s };
@@ -1472,61 +1471,76 @@ function solveCoaterFEM(opts) {
             } else dc *= 0.5;
           }
         }
-      }
-      // held at trial places and bracketed: F = leave - the contact angle's direction there falls as it goes up
-      const F = o => o.leave - aAt(o.s), solved = [{ ...pin, s: sB }];
-      const near = sv => solved.reduce((a, b) => Math.abs(b.s - sv) < Math.abs(a.s - sv) ? b : a);
-      const held = sv => {
-        for (let tries = 0; tries < 5; tries++) {
-          const from = near(sv), o = solveAt('climbed', sv, false, fInf, from, aK, undefined, null, ctx);
-          if (!o.error) { solved.push(o); log(`held ${(o.s * 1e3).toFixed(3)} mm along the face: surface leaves at ${o.leave.toFixed(2)} deg`); return o; }
-          const mid = 0.5 * (from.s + sv), om = solveAt('climbed', mid, false, fInf, from, aK, undefined, null, ctx);
-          if (om.error) { sv = mid; continue; }
-          solved.push(om);
-        }
-        return { error: 'the contact line could not be moved along the face' };
+        return null;
       };
-      let A = solved[0], B = null;
-      while (!B) {
-        const P = solved.length > 1 ? solved[solved.length - 2] : null;
-        let sv = A.s + 0.1 * H;
-        if (P && F(P) !== F(A)) sv = Math.min(A.s + 0.25 * H, Math.max(A.s + 0.02 * H, A.s - F(A) * (A.s - P.s) / (F(A) - F(P))));
-        if (sv > sCap) {
-          // (the top of the stretch: held there, the surface still flatter than the contact angle asks: past it)
-          if (A.s >= sCap - 1e-6 * H) return last && sCap < sTop ? { error: 'the contact line would climb more than 8 gap heights up the face', o: A } : { beyond: true, o: A.r ? A : null };
-          sv = sCap;
-        }
-        const o = held(sv);
-        if (o.error) return { error: o.error, o };
-        if (F(o) <= 0) B = o; else A = o;
-        if (!B && F(o) < 20) {
-          const fr = solveAt('climbed', o.s, true, fInf, o, aK, undefined, null, ctx);
-          if (!fr.error && fr.r.surface.s > sB) {
-            log(`contact line free on the face: settled ${(fr.r.surface.s * 1e3).toFixed(3)} mm along it`);
-            if (past(fr)) return { beyond: true, o: fr };
-            const rm = remeshed(fr);
-            return past(rm) ? { beyond: true, o: rm } : { o: rm };
+      {
+        const d = contFrom(solveAt('climbed', sStart, false, fInf, { ...pin, s: sB }, aK, undefined, null, ctx));
+        if (d) return d;
+      }
+      const br = bracketed();
+      if (!br.error) return br;
+      // (only where that failed: held where the surface can first leave the face with the full iteration count, not the
+      // trial places' fail-fast one, then the continuation from there -- on a face that turns up from the level, as an
+      // edge radius does, the place below it cannot be held (no mesh) and it is the only way onto the face)
+      log(`held ${(sStart * 1e3).toFixed(3)} mm along the face, where the surface can first leave it: solved to the end`);
+      return contFrom(solveAt('climbed', sStart, false, fInf, { ...pin, s: sB }, aK, 200, null, ctx)) || br;
+
+      /** Held at trial places and bracketed: F = leave - the contact angle's direction there falls as it goes up. */
+      function bracketed() {
+        const F = o => o.leave - aAt(o.s), solved = [{ ...pin, s: sB }];
+        const near = sv => solved.reduce((a, b) => Math.abs(b.s - sv) < Math.abs(a.s - sv) ? b : a);
+        const held = sv => {
+          for (let tries = 0; tries < 5; tries++) {
+            const from = near(sv), o = solveAt('climbed', sv, false, fInf, from, aK, undefined, null, ctx);
+            if (!o.error) { solved.push(o); log(`held ${(o.s * 1e3).toFixed(3)} mm along the face: surface leaves at ${o.leave.toFixed(2)} deg`); return o; }
+            const mid = 0.5 * (from.s + sv), om = solveAt('climbed', mid, false, fInf, from, aK, undefined, null, ctx);
+            if (om.error) { sv = mid; continue; }
+            solved.push(om);
+          }
+          return { error: 'the contact line could not be moved along the face' };
+        };
+        let A = solved[0], B = null;
+        while (!B) {
+          const P = solved.length > 1 ? solved[solved.length - 2] : null;
+          let sv = A.s + 0.1 * H;
+          if (P && F(P) !== F(A)) sv = Math.min(A.s + 0.25 * H, Math.max(A.s + 0.02 * H, A.s - F(A) * (A.s - P.s) / (F(A) - F(P))));
+          if (sv > sCap) {
+            // (the top of the stretch: held there, the surface still flatter than the contact angle asks: past it)
+            if (A.s >= sCap - 1e-6 * H) return last && sCap < sTop ? { error: 'the contact line would climb more than 8 gap heights up the face', o: A } : { beyond: true, o: A.r ? A : null };
+            sv = sCap;
+          }
+          const o = held(sv);
+          if (o.error) return { error: o.error, o };
+          if (F(o) <= 0) B = o; else A = o;
+          if (!B && F(o) < 20) {
+            const fr = solveAt('climbed', o.s, true, fInf, o, aK, undefined, null, ctx);
+            if (!fr.error && fr.r.surface.s > sB) {
+              log(`contact line free on the face: settled ${(fr.r.surface.s * 1e3).toFixed(3)} mm along it`);
+              if (past(fr)) return { beyond: true, o: fr };
+              const rm = remeshed(fr);
+              return past(rm) ? { beyond: true, o: rm } : { o: rm };
+            }
           }
         }
+        let Fa = F(A), Fb = F(B), best = Math.abs(Fa) < Math.abs(Fb) ? A : B;
+        for (let it = 0; it < 8 && Math.abs(F(best)) > 0.5; it++) {
+          const o = held(B.s - Fb * (B.s - A.s) / (Fb - Fa));
+          if (o.error) return { error: o.error, o };
+          const Fc = F(o);
+          if (Fc * Fb < 0) { A = B; Fa = Fb; } else Fa *= 0.5;
+          B = o; Fb = Fc;
+          if (Math.abs(Fc) < Math.abs(F(best))) best = o;
+        }
+        if (best.s <= sB) return { pinned: true };
+        best = remeshed(best, true);
+        log('contact line free on the face: final solve');
+        const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cBase, alphaDeg: aK }, s0: best.s,
+          homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
+        r.meshInfo = { mode: 'climbed', k, cCL: best.m.cCL, cCorner: best.m.cCorner, cBase: best.m.cBase, nFixK: best.m.nFixK, nEy: best.m.mesh.nEy, quality: best.m.quality, frac: best.m.frac };
+        const o = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL), alpha: aK, ctx } : { ...best, error: undefined, heldOnly: true };
+        if (r.converged && past(o)) return { beyond: true, o };
+        return { o, extra: r.converged ? {} : { note: 'contact-angle solve did not converge; result held at the bracketed place' } };
       }
-      let Fa = F(A), Fb = F(B), best = Math.abs(Fa) < Math.abs(Fb) ? A : B;
-      for (let it = 0; it < 8 && Math.abs(F(best)) > 0.5; it++) {
-        const o = held(B.s - Fb * (B.s - A.s) / (Fb - Fa));
-        if (o.error) return { error: o.error, o };
-        const Fc = F(o);
-        if (Fc * Fb < 0) { A = B; Fa = Fb; } else Fa *= 0.5;
-        B = o; Fb = Fc;
-        if (Math.abs(Fc) < Math.abs(F(best))) best = o;
-      }
-      if (best.s <= sB) return { pinned: true };
-      best = remeshed(best, true);
-      log('contact line free on the face: final solve');
-      const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cBase, alphaDeg: aK }, s0: best.s,
-        homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
-      r.meshInfo = { mode: 'climbed', k, cCL: best.m.cCL, cCorner: best.m.cCorner, cBase: best.m.cBase, nFixK: best.m.nFixK, nEy: best.m.mesh.nEy, quality: best.m.quality, frac: best.m.frac };
-      const o = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL), alpha: aK, ctx } : { ...best, error: undefined, heldOnly: true };
-      if (r.converged && past(o)) return { beyond: true, o };
-      return { o, extra: r.converged ? {} : { note: 'contact-angle solve did not converge; result held at the bracketed place' } };
     }
 
     // with flow: from the first corner up

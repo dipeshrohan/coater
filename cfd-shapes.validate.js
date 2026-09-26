@@ -15,6 +15,8 @@
  *     keeps its corners as element ends, and moves the film little.
  *  7. 3D (cfd-fem3d.js): a strip with the same gap across gives each station's 2D answer; a gap varying across
  *     converges, the contact line at the same corner or on the same stretch at every station.
+ *  8. A land running level into a large radius (a custom profile, the app's slurry): the surface can only leave the
+ *     face far up the arc, so the contact line is held there first; it settles on the arc at the contact angle.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -147,6 +149,23 @@ console.log('\n7. 3D strips on shaped blades');
     const vOk = !v.error && v.r3.converged && v.k === r2.meniscus.k && v.mode === r2.meniscus.mode && v.stations[0].film < v.stations[v.stations.length - 1].film;
     check(`${label}: a uniform strip = its 2D; a gap rising 40 µm across converges, the film rising with it`, uOk && vOk,
       `2D film ${(r2.Q / 0.1 * 1e3).toFixed(6)} mm; uniform ${(mid(u).film * 1e3).toFixed(6)}; varying ${v.stations.map(t => (t.film * 1e3).toFixed(4)).join(', ')} mm (${v.mode}${v.k ? `, corner ${v.k}` : ''})`);
+  }
+}
+
+// 8. onto a face that turns up from the level: no place below where the surface can leave it can be held
+console.log('\n8. A land running level into a 5 mm radius: held where the surface can first leave the face');
+{
+  const { muEffLocal } = require('./cfd-solver.js');
+  const prof = B.customProfile({ verts: [{ x: 0, y: 0 }, { x: 5e-3, y: 0, bulge: Math.tan(Math.PI / 8) }, { x: 10e-3, y: 5e-3 }, { x: 10e-3, y: 10e-3 }], join: 'straight', cornerDeg: 10 }, H);
+  const U = 0.28 / 60, contact = 35;
+  // (the app's slurry: Herschel-Bulkley 10.5 Pa s at 2.7 1/s, yield stress 5 Pa; bead pressure 0.72 kPa; slip over the fibre; its medium mesh)
+  const r = N.solveCoaterFEM({ hFn: prof.hUnder, xe: prof.xe, faceDeg: 90, contactDeg: contact, U, Pup: 720, rho, g, gamma, mu: gd => muEffLocal(gd, 10.5, 5, 1), gdMin: 1e-3 * U / H,
+    webSlip: 1 / 2.96e-6, Ld: 13.6e-3, nEb: 12, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, fInfGuess: 1.45e-3, profile: prof, clModel: 'full' });
+  if (r.error) check('it solves', false, r.error);
+  else {
+    const gr = N.coaterGrid(r, { xe: prof.xe, H, faceDeg: 90, contactDeg: contact, U }), s = r.surface.s, want = contact + prof.face.th(s) * D - 180;
+    check('the contact line settles on the arc at the contact angle, mass conserved', r.meniscus.mode === 'climbed' && r.meniscus.k === 0 && s > 5.0e-3 && s < 7.85e-3 && Math.abs(r.meniscus.leaveDeg - want) < 0.5 && gr.massError < 1e-4,
+      `${(s * 1e3).toFixed(3)} mm along the face (the arc: its first 7.85 mm), leaves at ${r.meniscus.leaveDeg.toFixed(2)} deg (the contact angle asks ${want.toFixed(2)}), film ${(r.Q / U * 1e3).toFixed(5)} mm, mass ${gr.massError.toExponential(1)}`);
   }
 }
 
