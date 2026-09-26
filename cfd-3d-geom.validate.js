@@ -69,6 +69,15 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const p = G.placeBlade(t, { H: 1.7e-3, xUp: 0.04, zc: 0.0375 });
   const b = G.trisBox(p.tris);
   check('placement: lowest point at the gap, at the metering edge, centred on the location', Math.abs(b.min[1] - 1.7e-3) < 1e-9 && Math.abs(p.edgeX - 0.04) < 1e-12 && Math.abs((b.min[2] + b.max[2]) / 2 - 0.0375) < 1e-6);
+  // a flat land (a run of lowest points, in any order): its downstream end at the metering edge
+  const pf = G.bladeSideOutline({ shape: 'flat', H: 5e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 });
+  for (const rev of [false, true]) {
+    let tf = G.extrudeProfile(pf.pts.map(([x, y]) => [x + 0.3, y + 0.2]), -0.5, 0.5, 4);
+    if (rev) { const r = new Float32Array(tf.length); for (let f = 0; f < tf.length; f += 9) r.set(tf.subarray(tf.length - 9 - f, tf.length - f), f); tf = r; }
+    const q = G.placeBlade(tf, { H: 1.7e-3, xUp: 0.01, zc: 0 }), bq = G.trisBox(q.tris);
+    let xLow = -Infinity; for (let v = 1; v < q.tris.length; v += 3) if (q.tris[v] < bq.min[1] + 1e-9) xLow = Math.max(xLow, q.tris[v - 1]);
+    check(`placement of a flat land${rev ? ' (triangles reversed)' : ''}: the land's downstream end at the metering edge, the land upstream of it`, Math.abs(xLow - 0.01) < 1e-8 && Math.abs(bq.min[0] - 0) < 1e-8 && Math.abs(bq.min[1] - 1.7e-3) < 1e-9, `lowest points to x ${xLow}, blade from x ${bq.min[0]}`);
+  }
 }
 // 5. overhang: a blade whose exit face leans back over the gap, and one with a pocket
 {

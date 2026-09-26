@@ -112,13 +112,16 @@ function trisBox(t) {
 
 /**
  * Place an imported blade over the web: its lowest point at height H (the gap at the metering edge)
- * and at x = xUp (so the inlet, xUp upstream of it, is x = 0), centred across the web on zc.
+ * and at x = xUp (so the inlet, xUp upstream of it, is x = 0), centred across the web on zc. A land (a run
+ * of lowest points): its downstream end is the metering edge.
  * Returns the moved triangles and where the lowest point was found.
  */
 function placeBlade(t, { H, xUp, zc }) {
+  // (a land: many points equally low; the metering edge is its downstream end, the lowest points' largest x)
+  const b = trisBox(t), tol = Math.max(1e-9, 1e-6 * (b.max[1] - b.min[1]));
   let k0 = 1;
-  for (let v = 1; v < t.length; v += 3) if (t[v] < t[k0]) k0 = v;
-  const b = trisBox(t), dx = xUp - t[k0 - 1], dy = H - t[k0], dz = zc - (b.min[2] + b.max[2]) / 2;
+  for (let v = 1; v < t.length; v += 3) if (t[v] <= b.min[1] + tol && (t[k0] > b.min[1] + tol || t[v - 1] > t[k0 - 1])) k0 = v;
+  const dx = xUp - t[k0 - 1], dy = H - b.min[1], dz = zc - (b.min[2] + b.max[2]) / 2;
   const out = new Float32Array(t.length);
   for (let v = 0; v < t.length; v += 3) { out[v] = t[v] + dx; out[v + 1] = t[v + 1] + dy; out[v + 2] = t[v + 2] + dz; }
   return { tris: out, edgeX: xUp, edgeZ: t[k0 + 1] + dz };
