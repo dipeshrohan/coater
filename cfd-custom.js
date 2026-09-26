@@ -86,17 +86,17 @@ function wireCustomEditor(host) {
   if (cd) cd.onchange = () => guardNumber(cd, { label: 'Corner above', lo: 1, hi: 90, unit: '°' }, v => edit(cc => { cc.cornerDeg = v; }, `corners above ${v}°`));
   const auto = g('custAuto');
   if (auto) auto.onclick = () => edit(cc => { cc.verts.forEach(v => { delete v.corner; }); cc.M = null; cc.C = null; }, 'corners, M and C automatic');
-  const flip = (ax, what) => {
-    const cc = c(), vs = cc.verts.map(v => ({ ...v, x: ax === 'x' ? -v.x : v.x, y: ax === 'y' ? -v.y : v.y, ...(v.bulge ? { bulge: -v.bulge } : {}) }));
-    custFromOutline(vs, false, 1, cc.name ? `${cc.name}, ${what}` : what, cc.join);
-  };
+  // (a mirror of the points as they are, arcs turning the other way: twice gives them back)
+  const flip = (ax, what) => edit(cc => { cc.verts = cc.verts.map(v => ({ ...v, x: ax === 'x' ? -v.x : v.x, y: ax === 'y' ? -v.y : v.y, ...(v.bulge ? { bulge: -v.bulge } : {}) })); }, what);
   const fx = g('custFlipX'), fy = g('custFlipY');
   if (fx) fx.onclick = () => flip('x', 'flipped left-right');
   if (fy) fy.onclick = () => flip('y', 'flipped up-down');
   const place = g('custPlace');
   if (place) place.onclick = () => {
     if (!CUST_PLACE) {
-      // (a new profile: the points clicked, in order, joined by a spline)
+      // (a new profile: the points clicked, in order, joined by a spline; the drawing keeps its frame meanwhile)
+      const hd = document.getElementById('geoDraw'), sv = hd && hd.querySelector('svg');
+      CUST_FRAME = hd && hd._frame && sv ? { ...hd._frame, w: sv.viewBox.baseVal.width, h: sv.viewBox.baseVal.height } : null;
       CUST_PLACE = true;
       undoHint('Custom profile: placing points');
       CFDG.custom = { verts: [], join: 'spline', cornerDeg: c().cornerDeg ?? 10, M: null, C: null, name: 'placed points' };

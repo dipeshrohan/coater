@@ -235,10 +235,12 @@ function bladeSVG(i, w, h, { dims = true, bc = null, frame = null } = {}) {
   const handle = (x, y, k, title) => `<circle class="dim-h" data-h="${k}" cx="${f(x)}" cy="${f(y)}" r="6.5" tabindex="-1"><title>${title}</title></circle>`;
   const g = [];
   g.push(`<defs><pattern id="bladeHatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" class="hatch"/></pattern></defs>`);
-  g.push(`<path class="slurry" d="${slurry}"/>`);
+  if (!(b.prof && b.err && !b.prof.placed)) g.push(`<path class="slurry" d="${slurry}"/>`);
   g.push(`<rect class="fibre" x="${f(X(F.x0))}" y="${f(Y(0))}" width="${f(X(F.x1) - X(F.x0))}" height="${f(Y(-b.tf) - Y(0))}"/>`);
   g.push(`<line class="web" x1="${f(X(F.x0))}" y1="${f(Y(0))}" x2="${f(X(F.x1))}" y2="${f(Y(0))}"/>`);
-  g.push(`<path class="blade" d="${body}"/>`);
+  // (a custom profile not yet possible -- while its points are placed --: no blade drawn, only its points)
+  const noBody = b.prof && b.err && !b.prof.placed;
+  if (!noBody) g.push(`<path class="blade" d="${body}"/>`);
   // the film region the 2D domain follows (dashed), then the 1D film to the oven
   g.push(`<line class="domain-end" x1="${f(X(b.Ld))}" y1="${f(Y(0))}" x2="${f(X(b.Ld))}" y2="${f(Y(Math.min(b.H * 1.6, F.y1)))}"/>`);
   const scale = [1, 2, 5, 10, 20, 50].find(s => s * F.k > 70) || 50;
