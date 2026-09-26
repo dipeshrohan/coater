@@ -161,8 +161,11 @@ async function rep3D() {
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };
   const own = BLADE_DIMS.filter(d => d.shapes.includes(CFDG.shape)).map(d => d.k);
-  const keys = ['shape', ...(CFDG.shape === 'round' ? ['R', 'pool'] : own), ...(CFDG.shape === 'custom' ? ['custom'] : ['exitAngle']), ...(bladeShapedFace() ? ['clModel'] : []), 'model', 'fibre', 'gsm', 'rhoF', 'dFrom', ...(CFDG.dFrom === 'yarn' ? ['den', 'nf'] : []), 'airPerm', 'airDP', 'kozeny', 'airFrac', 'airU', 'airT', 'plenum'];
+  const keys = ['shape', ...(CFDG.shape === 'round' ? ['R', 'pool'] : own), ...(CFDG.shape === 'custom' ? ['custom'] : ['exitAngle']), ...(bladeShapedFace() ? ['clModel'] : []), 'model', 'fibre', 'gsm', 'rhoF', 'dFrom', ...(CFDG.dFrom === 'yarn' ? ['den', 'nf'] : []), 'airPerm', 'airDP', 'kozeny', 'airFrac'];
   const rows = keys.map(g);
+  // (the oven's zones, each with its drying air; the slurry's density, from its card)
+  OVEN.zones.forEach((z, i) => rows.push([`Oven zone ${i + 1}`, repEsc(OVEN_ZONE_FIELDS.map(([k, l, u, , , , d]) => `${l.toLowerCase()} ${repNum(z[k], d)}${u ? ' ' + u : ''}`).join(', '))]));
+  rows.push(['Slurry density', repEsc(`${repNum(slurryRho(), 0)} kg/m³ (${repNum(MAT.slurry.phi.v, 1)} vol% solids of ${repNum(MAT.slurry.rhoS.v, 2)} g/cm³ in a liquid of ${repNum(MAT.slurry.rhoL.v, 0)} kg/m³)`)]);
   if (bladeUsesL()) rows.splice(1, 0, [CFDG.shape === 'wedge' ? 'Length' : 'Land length', `${P.L} mm <small>(sidebar)</small>`]);
   const s = CFDS;
   let counts = null;

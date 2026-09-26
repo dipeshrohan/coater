@@ -1571,3 +1571,12 @@ body:has(#pgScope) #scope { display: none; }
 .acr-crown .acr-note { margin-left: 0; }
 .acr-crow { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 2px 6px; align-items: center; padding: 4px 0; }
 .acr-crow .acr-cbtn { grid-column: 2; display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ---- the oven's zones (sidebar) ---- */
+.ovz { margin: 2px 0 6px; }
+.ovz + .ovz { border-top: 1px solid var(--line-soft); padding-top: 4px; }
+.ovz-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 16px 2px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.ovz-h small { font-weight: 400; color: var(--muted); }
+.ovz-h .linkish { font-size: 12px; }
+.ovz-tag { font-size: 11px; font-weight: 600; color: var(--muted); }
+.ovz-line + .ovz-line { margin-top: 4px; }

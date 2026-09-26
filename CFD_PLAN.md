@@ -332,6 +332,21 @@ Every phase: the chain view, DOE over the new outputs, report sections,
 help and guide, project files, undo, file:// in Edge (workers from text),
 census, suites, screenshots light / dark / phone.
 
+GO-0 decisions (user, with mock-ups and a picture of the line):
+- One process, not two: the line is the app's line -- the slurry coated onto the PET fibre web, dried in the
+  oven by the air blown up through the web, then peeled off as the free-standing film. So no "Fibre web |
+  GO film" switch: the fibre web is the carrier, the flow models stay as they are. (Supersedes "a second
+  process, picked at the top" above.)
+- Q20: two new tabs, Process (the chain and its answers) and Materials (the cards): Results | Process |
+  Materials | Flow | DOE | Measured data.
+- The slurry: the answer given before -- water-based, over 40 vol% solids, 2-8 um particles; Q27: the
+  particles are GO, 1.9 g/cm3 (assumed). C/O, flake thickness and the dry film's packing: inputs, assumed.
+- Q28: the slurry's density from the solids, rho = phi rho_GO + (1 - phi) rho_water (1360 kg/m3 at 40 vol%),
+  used everywhere (it replaces the fixed 1020 kg/m3; results change a little: gravity and inertia).
+- Q23/Q26/Q29: the oven has several zones (3 by default, 2 m each, assumed); today's single oven air setting
+  (air up through the fibre: 1 m/s, 100 C, plenum 100 mm) becomes the zones: each zone its own length, air
+  speed, air temperature, plenum and humidity, zone 1 today's values, the others the same (assumed).
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

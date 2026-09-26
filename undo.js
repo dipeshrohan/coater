@@ -32,8 +32,24 @@ const CFDG_UNDO = {
   clModel: ['Contact line model', v => v === 'simple' ? 'simple' : 'full'], custom: ['Custom profile', v => v ? `${v.verts.length} points${v.name ? `, ${v.name}` : ''}` : 'none'], model: ['Rheology model', v => (RHEO_MODELS[v] || {}).l || v], fibre: ['Fibre test report', v => (FIBRES[v] || {}).l || v],
   gsm: ['Basis weight', null, 'g/m²'], rhoF: ['Fibre density', null, 'kg/m³'], dFrom: ['Filament diameter from', v => v === 'yarn' ? 'yarn' : 'air permeability'],
   den: ['Yarn', null, 'denier'], nf: ['Filaments per yarn'], airPerm: ['Air permeability', null, '×10⁻³ m³/m²·s'], airDP: ['Air test pressure', null, 'Pa'],
-  kozeny: ['Kozeny constant'], airFrac: ['Air fraction, top surface'], airU: ['Air speed up into the fibre', null, 'm/s'], airT: ['Air temperature', null, '°C'], plenum: ['Plenum length', null, 'mm'],
+  kozeny: ['Kozeny constant'], airFrac: ['Air fraction, top surface'],
 };
+/** A change to the oven's zones: a zone added or removed, or one zone's value. */
+function ovenUndoLabel(a, b) {
+  a = a || []; b = b || [];
+  if (b.length > a.length) return `Add oven zone ${b.length}`;
+  if (b.length < a.length) { const i = a.findIndex((z, j) => JSON.stringify(z) !== JSON.stringify(b[j])); return `Remove oven zone ${(i < 0 ? a.length - 1 : i) + 1}`; }
+  for (let i = 0; i < b.length; i++) for (const [k, l, u, , , , d] of OVEN_ZONE_FIELDS)
+    if (a[i][k] !== b[i][k]) return undoChange(`Oven zone ${i + 1} ${l.toLowerCase()}`, a[i][k], b[i][k], v => undoNum(v, d), u);
+  return 'Oven zones';
+}
+/** A change to a slurry card value: its number, flag or source. */
+function matUndoLabel(k, a, b) {
+  const [, l, u, , , , d] = MAT_SLURRY.find(q => q[0] === k);
+  if (a && b && a.v !== b.v) return undoChange(l, a.v, b.v, v => undoNum(v, d), u);
+  if (a && b && a.flag !== b.flag) return `${l}: ${(MAT_FLAGS.find(f => f[0] === b.flag) || [0, b.flag])[1].toLowerCase()}`;
+  return `${l}: source`;
+}
 const scalarName = v => v === 'none' ? 'none' : (SCALARS[v] || {}).label || v;
 const FV_UNDO = {
   view: ['Location shown', v => v === 'compare' ? 'Compare' : v === 'diff' ? 'Difference' : `L${v + 1}`], profileLoc: ['Profiles of', v => `L${v + 1}`],
@@ -127,6 +143,9 @@ const UNDO_UNITS = (() => {
     const [l, f] = C3D_UNDO[k];
     u.push({ id: 'c3d.' + k, get: () => C3D[k], set: v => { C3D[k] = v; }, label: (a, b) => undoChange(l, a, b, f) });
   }
+  // (the oven's zones, one unit; the slurry's card, a unit per value)
+  u.push({ id: 'oven', get: () => OVEN.zones, set: v => { OVEN.zones = JSON.parse(JSON.stringify(v || ovenDefaults().zones)); }, label: ovenUndoLabel });
+  for (const [k] of MAT_SLURRY) u.push({ id: 'mat.' + k, get: () => MAT.slurry[k], set: v => { MAT.slurry[k] = v ? { ...v } : matDefaults().slurry[k]; }, label: (a, b) => matUndoLabel(k, a, b) });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });
   u.push({ id: 'c3d.file', get: () => C3D_FILE ? C3D_FILE.id : null, set: v => { C3D_FILE = v != null && C3D_FILES.get(v) || null; C3D_GEO = null; },

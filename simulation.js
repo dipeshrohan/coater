@@ -12,7 +12,7 @@
  * deliberate — the state below (SIM, the particle systems, the live
  * geometry) is only ever safe to read through the ANIM API.
  *
- * Depends on physics.js (P, RHO, GRAVITY, SIN45, muEff, contactLine,
+ * Depends on physics.js (P, GRAVITY, SIN45, muEff, contactLine,
  * gapHeight, spatialNoise) and draw.js (cssVar), both of which must be
  * loaded first.
  */
@@ -211,7 +211,7 @@ const ANIM = (function () {
 
     const h = SIM.h.subarray(k0), N = h.length - 1;
     const mu = Math.max(muEff(Math.max(UN / GAP, 1e-3)), 0.05);
-    const gam = P.g, rg = RHO * GRAVITY;
+    const gam = P.g, rg = slurryRho() * GRAVITY;
 
     // Banded (5-wide) linear system for the implicit update of h[1..N-1].
     // A[j] holds coefficients for columns j-2..j+2 (index 2 = diagonal).

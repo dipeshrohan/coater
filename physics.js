@@ -56,7 +56,7 @@ CFG.forEach(c => { P[c.k] = c.v; });
 // ---------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------
-const RHO = 1020;              // slurry density, kg/m³ (assumed, typical for an aqueous coating slurry)
+// (the slurry's density: materials.js's slurryRho, from its solids)
 const GRAVITY = 9.81;          // m/s²
 const SIN45 = Math.SQRT1_2;    // sin(45°) = cos(45°) — the blade's notch face is drawn at 45° to the land
 
@@ -103,7 +103,7 @@ function filmThickness(Hmm) {
 }
 
 /** Capillary length sqrt(gamma / (rho*g)), in mm — the natural length scale for capillary effects. */
-const capillaryLength = () => Math.sqrt(P.g / (RHO * GRAVITY)) * 1000;
+const capillaryLength = () => Math.sqrt(P.g / (slurryRho() * GRAVITY)) * 1000;
 
 /**
  * Static meniscus / contact-line position on the blade's notch face, from
@@ -208,8 +208,8 @@ function rippleLevelling() {
   const a0 = (Math.abs(dhdH) * P.dH + P.vib) / 1e6;                          // starting ripple amplitude, m
   const k = 2 * Math.PI / (P.lam / 1000);                                    // ripple wavenumber, 1/m
   const mu = muEff(0.5);                                                     // slow, surface-tension-driven levelling
-  const tau = 3 * mu / (h * h * h * (P.g * k ** 4 + RHO * GRAVITY * k * k)); // levelling time constant, s
-  const residual = P.ty / (h * (P.g * k ** 3 + RHO * GRAVITY * k));
+  const tau = 3 * mu / (h * h * h * (P.g * k ** 4 + slurryRho() * GRAVITY * k * k)); // levelling time constant, s
+  const residual = P.ty / (h * (P.g * k ** 3 + slurryRho() * GRAVITY * k));
   const asymptote = Math.min(a0, residual);
   const tRes = P.oven / (P.U / 60);                                          // residence time to the oven, s
   return { h, dhdH, a0, tau, residual, asymptote, tRes, at: t => asymptote + (a0 - asymptote) * Math.exp(-t / tau) };
@@ -236,7 +236,7 @@ function modelScope() {
   const U = P.U / 60;
   const mu = muEff(U / H);
   const h = contactLine(gapHeight(), P.th).h / 1000;
-  const Re = RHO * U * H / mu;          // inertia vs viscous forces
+  const Re = slurryRho() * U * H / mu;          // inertia vs viscous forces
   const Ca = mu * U / P.g;              // viscous vs capillary forces
   const aspect = H / (P.L / 1000);      // gap / land length
 

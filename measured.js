@@ -433,7 +433,7 @@ function measPreview(text, fileName) {
   const parsed = measParseCsv(text);
   const cols = parsed.header.map(h => ({ h, ...measGuessRole(h) }));
   let kind = measGuessKind(cols.map(c => c.k));
-  const cw = { dry: false, rho: RHO, solids: 50 };
+  const cw = { dry: false, rho: +slurryRho().toFixed(0), solids: +(slurrySolidsMass() * 100).toFixed(1) };   // (from the slurry's card)
   let dlg = document.getElementById('measDlg');
   if (!dlg) { dlg = document.createElement('dialog'); dlg.id = 'measDlg'; dlg.className = 'img-dlg meas-dlg'; dlg.setAttribute('aria-labelledby', 'measDlgH'); document.body.appendChild(dlg); }
   const name0 = fileName.replace(/\.[^.]+$/, '');

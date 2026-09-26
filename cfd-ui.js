@@ -11,7 +11,7 @@
  * solve; every display control (field, streamlines, seeds, vectors,
  * location, comparison) re-draws from what's already stored.
  *
- * Depends on physics.js (P, RHO, GRAVITY, gapHeight, muEff, spatialNoise,
+ * Depends on physics.js (P, GRAVITY, gapHeight, muEff, spatialNoise,
  * filmThickness), draw.js (plotChart, cssVar, pill), cfd-flowviz.js and
  * cfd-plot.js, all loaded first.
  */
@@ -37,10 +37,9 @@
 //    pressure not stated). Its pores are dry (air): the slurry rests on the
 //    top filaments and slips over the air between them; airFrac is the air
 //    fraction of that top surface.
-//  Drying air in the oven, blown up into the fibre from a plenum below: airU
-//    its superficial speed (m/s), airT its temperature (C), plenum its length
-//    in the machine direction (mm). The wet film seals the fibre's top, so the
-//    air can only leave along the fibre: the pressure that speed needs follows.
+//  (the drying air in the oven, blown up into the fibre from a plenum below, is
+//    each oven zone's: OVEN in materials.js. The wet film seals the fibre's top,
+//    so the air can only leave along the fibre: the pressure that speed needs follows.)
 //  model: the slurry's rheology model for the CFD runs (which of the sidebar's
 //    rheology inputs apply): Newtonian, power law, or Herschel-Bulkley.
 // The fibres' test reports. tf thickness (mm, sets the sidebar's), tUse / tMom continuous / momentary use temperature (C).
@@ -65,7 +64,7 @@ const FIBRES = {
 //  indices; null: automatic), name (where they came from) }. clModel: the contact line on a shaped face, 'full'
 //  (pinned at any corner or free on any stretch) or 'simple' (the face up to C always wetted).
 const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, bevelDeg: 45, bevelLen: 0.5, edgeR: 0.5, inletGap: 3, land1: 10, stepH: 0.5, riserDeg: 90, clModel: 'full', custom: null,
-  model: 'hb', fibre: 'thin', ...FIBRES.thin.set, airU: 1, airT: 100, plenum: 100 };
+  model: 'hb', fibre: 'thin', ...FIBRES.thin.set };
 const BLADE_SHAPES = [['round', 'Round entry'], ['flat', 'Flat land'], ['bevel', 'Bevel'], ['radius', 'Edge radius'], ['wedge', 'Wedge'], ['twostep', 'Two-step'], ['custom', 'Custom']];
 /** The shaped blades' own sizes: key, label, unit, range, step, the shapes that use it. */
 const BLADE_DIMS = [
@@ -191,7 +190,7 @@ function fibreSlip() {
   return { period, along, across, b: (along + across) / 2 };
 }
 /**
- * Drying air blown up into the fibre at speed ua over a plenum of length Lp, the wet film
+ * Drying air blown up into the fibre at speed ua over a plenum of length Lp (an oven zone's), the wet film
  * sealing the top: it can only flow along the fibre (thickness t) to the plenum's edges.
  * Taking it out right at those edges (the shortest path it could have; ambient pressure
  * p0 there), Darcy along the thin layer with the air's density rising with pressure
@@ -200,8 +199,8 @@ function fibreSlip() {
  * Also the speed along the fibre where it leaves, ua Lp / (2 t), and its pore Reynolds
  * number there (well above 1: inertial losses add to Darcy's, so the pressure is a least value).
  */
-function ovenAir() {
-  const st = fibreStructure(), k = fibrePermeability(), air = airProps(CFDG.airT), ua = CFDG.airU, Lp = CFDG.plenum / 1000, p0 = 101325;
+function ovenAir(z = OVEN.zones[0]) {
+  const st = fibreStructure(), k = fibrePermeability(), air = airProps(z.airT), ua = z.airU, Lp = z.plenum / 1000, p0 = 101325;
   const dpInc = air.mu * ua * Lp * Lp / (8 * k * st.t), pc = Math.sqrt(p0 * p0 + 2 * p0 * dpInc);
   const uEdge = ua * Lp / (2 * st.t);
   return { air, dpInc, dp: pc - p0, uEdge, ReEdge: air.rho * (uEdge / st.eps) * st.d / air.mu };
@@ -210,6 +209,34 @@ function ovenAir() {
 function airProps(Tc) {
   const T = Tc + 273.15;
   return { mu: 1.716e-5 * Math.pow(T / 273.15, 1.5) * (273.15 + 110.4) / (T + 110.4), rho: 101325 / (287.05 * T) };
+}
+/** An oven zone's input id (zone 1's drying air keeps the ids the single oven setting had). */
+const ovenZoneId = (i, k) => i === 0 && OVEN_ZONE_LEGACY_ID[k] ? OVEN_ZONE_LEGACY_ID[k] : `ovz${i + 1}_${k}`;
+const OVEN_ZONE_LEGACY_ID = { airU: 'cfdAirU', airT: 'cfdAirT', plenum: 'cfdPlenum' };
+/** The oven under the zones: its length and the time the film spends in it at the web speed. */
+function ovenNote() {
+  const o = ovenTime(P.U / 60), n = OVEN.zones.length;
+  return `Assumed values. The oven: ${n} zone${n === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m; the film is in it for ${Number.isFinite(o.t) ? `${fmtNum(o.t / 60)} min` : '—'} at the web speed.`;
+}
+/** The oven zones whose air is above a temperature limit, as a warning after it ('' when none is). */
+function ovenHotText(limit) {
+  const hot = OVEN.zones.map((z, i) => [z, i]).filter(([z]) => z.airT > limit);
+  if (!hot.length) return '';
+  const one = OVEN.zones.length === 1;
+  return ` <span class="warn-text">oven air ${hot.map(([z, i]) => `${one ? '' : `zone ${i + 1}: `}${z.airT} °C`).join(', ')} ${hot.length > 1 ? 'are' : 'is'} above the continuous limit</span>`;
+}
+/** Zones with the same drying air, together: [{ label ('Zone 1', 'Zones 1–3', 'Zones 1, 3'), zone }]. */
+function ovenAirGroups() {
+  const out = [];
+  OVEN.zones.forEach((z, i) => {
+    const g = out.find(q => q.zone.airU === z.airU && q.zone.airT === z.airT && q.zone.plenum === z.plenum);
+    if (g) g.idx.push(i); else out.push({ zone: z, idx: [i] });
+  });
+  for (const g of out) {
+    const run = g.idx.every((v, j) => !j || v === g.idx[j - 1] + 1);
+    g.label = g.idx.length === 1 ? `Zone ${g.idx[0] + 1}` : `Zones ${run && g.idx.length > 2 ? `${g.idx[0] + 1}–${g.idx[g.idx.length - 1] + 1}` : g.idx.map(v => v + 1).join(', ')}`;
+  }
+  return out;
 }
 const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab already uses
 // Each location reads its own inputs (over) first, falling back to the shared values: the
@@ -418,7 +445,7 @@ function cfdGeometry(i) {
     Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
     muRep: muLaw(U / H, v('mu'), ty, n),    // at the representative shear rate U/H: one-viscosity estimates only
-    model: CFDG.model, ty, n, rho: RHO, gamma: v('g'), g: GRAVITY, ovenDistance: P.oven * Math.cos(skewRad()),   // (across the blade)
+    model: CFDG.model, ty, n, rho: slurryRho(), gamma: v('g'), g: GRAVITY, ovenDistance: P.oven * Math.cos(skewRad()),   // (across the blade)
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
     solver: cfdSolverFor(i, H), solverOwn: Object.keys(CFD_LOCS[i].solver),
   };
@@ -434,7 +461,7 @@ function solverFromSettings(s, H) {
     ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}) };
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
-  ...(geo.blade ? [geo.blade, geo.clModel] : [])]);   // (a shaped blade's profile and contact-line model; the round entry and flat land's keys as they were)
+  ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
 /** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
 const cfdWorkerMessage = (geo, solver = geo.solver) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
@@ -656,10 +683,12 @@ function viewCFD() {
       ${prop('Air fraction, top surface', 'cfdAirFrac', `min="0.05" max="0.95" step="0.01" value="${CFDG.airFrac}"`, '')}
       <p class="prop-note" id="cfdFibreNote">${fibreNote()}</p>`)}
     ${tree('air', 'Drying air (oven)', `
-      ${prop('Air speed up into the fibre', 'cfdAirU', `min="0" max="50" step="0.1" value="${CFDG.airU}"`, 'm/s')}
-      ${prop('Air temperature', 'cfdAirT', `min="0" max="400" step="5" value="${CFDG.airT}"`, '°C')}
-      ${prop('Plenum length', 'cfdPlenum', `min="1" max="5000" step="10" value="${CFDG.plenum}"`, 'mm')}
-      <p class="prop-note">Assumed values.</p>`)}
+      ${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
+        <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
+        ${OVEN_ZONE_FIELDS.map(([k, l, u, lo, hi, step]) => prop(l, ovenZoneId(i, k), `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
+      </div>`).join('')}
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="ovzAdd"${OVEN.zones.length >= OVEN_MAX_ZONES ? ' disabled' : ''}>${uiIco('plus')}Add zone</button></div>
+      <p class="prop-note" id="ovzNote">${ovenNote()}</p>`)}
     ${tree('solver', 'Solver and mesh', `
       ${propSel('Mesh', 'cfdMesh', sharedMeshPresets().map(([k, m]) => opt(k, m.l + (k === 'medium' ? ' (default)' : ''), CFDS.mesh)).join(''))}
       ${SOLVER_INPUTS.filter(q => q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k] ?? ''}"${q.k === 'nEb' ? ' placeholder="auto"' : ''}`, q.u, CFDS.mesh !== 'custom')).join('')}
@@ -841,7 +870,18 @@ function viewCFD() {
   geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAirFrac', 'airFrac', 0.05, 0.95); geoNum('cfdAirPerm', 'airPerm', 0.1, 5000); geoNum('cfdAirDP', 'airDP', 0, 2000);
   document.getElementById('cfdFibreSel').addEventListener('change', e => { selectFibre(e.target.value); viewCFD(); });
   document.getElementById('cfdDFrom').addEventListener('change', e => { CFDG.dFrom = e.target.value; viewCFD(); });
-  geoNum('cfdAirU', 'airU', 0, 50); geoNum('cfdAirT', 'airT', 0, 400); geoNum('cfdPlenum', 'plenum', 1, 5000);
+  // (the oven's zones: each zone's drying air; a new zone starts as the last one)
+  document.querySelectorAll('#setupExtra input[data-ovk]').forEach(el => {
+    const i = +el.dataset.ovz, k = el.dataset.ovk, [, l, u, lo, hi] = OVEN_ZONE_FIELDS.find(f => f[0] === k);
+    el.addEventListener('change', () => {
+      guardNumber(el, { label: `Oven zone ${i + 1}: ${l.toLowerCase()}`, lo, hi, unit: u }, v => { OVEN.zones[i][k] = v; });
+      el.value = OVEN.zones[i][k];
+      const note = document.getElementById('ovzNote'); if (note) note.innerHTML = ovenNote();
+      renderCFD();
+    });
+  });
+  document.getElementById('ovzAdd').onclick = () => { if (OVEN.zones.length < OVEN_MAX_ZONES) { OVEN.zones.push({ ...OVEN.zones[OVEN.zones.length - 1] }); viewCFD(); } };
+  document.querySelectorAll('#setupExtra [data-ovz-del]').forEach(b => { b.onclick = () => { if (OVEN.zones.length > 1) { OVEN.zones.splice(+b.dataset.ovzDel, 1); viewCFD(); } }; });
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdMesh').addEventListener('change', e => {
     const was = CFDS.mesh; CFDS.mesh = e.target.value;
@@ -1340,6 +1380,7 @@ function saveCase() {
     CFDG: { ...CFDG },
     CFDS: { ...CFDS },
     across: JSON.parse(JSON.stringify(ACR)),
+    materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
     locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes.map(q => ({ ...q })),
     cuts: cfdCuts.map(q => ({ ...q })),
@@ -1366,6 +1407,9 @@ function loadCase(name) {
   for (const k of Object.keys(CFDG)) if (c.CFDG && k in c.CFDG) CFDG[k] = c.CFDG[k];   // (older cases: fields since renamed are skipped)
   Object.assign(CFDS, SOLVER_DEFAULTS, c.CFDS || {});   // (older cases: the default solver settings)
   applyAcross(c.across);   // (older cases: the blade across the web with no new part, as it was then)
+  if (c.materials) applyMaterials(c.materials);   // (older cases: the slurry's card as it is now)
+  if (c.oven) applyOven(c.oven);
+  else for (const z of OVEN.zones) for (const k of ['airU', 'airT', 'plenum']) if (c.CFDG && Number.isFinite(c.CFDG[k])) z[k] = c.CFDG[k];   // (older cases: their single drying-air setting in every zone)
   c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; CFD_LOCS[i].solver = { ...(l.solver || {}) }; } });
   if (Array.isArray(c.probes)) { cfdProbes = c.probes.map(q => ({ ...q })); saveProbes(); }
   if (Array.isArray(c.cuts)) { cfdCuts = c.cuts.map(q => ({ ...q })); saveCuts(); }
@@ -2362,8 +2406,8 @@ function renderMetrics() {
     ['Unyielded fluid, stress below yield', '% of area', r => r.geo.ty > 0 ? (unyieldedPct(r) > 0 ? unyieldedPct(r).toFixed(1) : 'none <small>stress above yield everywhere</small>') : 'none <small>no yield stress</small>'],
     ['Residence time, inlet to the metering edge', 's (fastest · flux-weighted mean · slowest)', r => { const t = cfdFieldNumbers(r).res; return t.n ? `${fmtNum(t.min)} · ${fmtNum(t.mean)} · ${fmtNum(t.max)} <small>${t.n} equal-flux lines${t.turned ? `; ${t.turned} turned back` : ''}</small>` : '—'; }],
     ['Viscous dissipation', 'mW per m of width (under the blade)', r => { const q = cfdFieldNumbers(r); return `${fmtNum(q.dissTot * 1e3)} <small>${fmtNum(q.dissBlade * 1e3)}</small>`; }],
-    ['Reynolds number ρUH/μ(U/H)', 'viscosity at the shear rate U/H', r => (RHO * r.geo.U * r.geo.H / r.geo.muRep).toExponential(2)],
-    ['Reynolds number from the field, ρQ/μ̄', 'μ̄ = area mean of the yielded fluid under the blade', r => { const q = cfdFieldNumbers(r); return `${(RHO * r.result.Q / q.muBar).toExponential(2)} <small>μ̄ ${fmtNum(q.muBar)} Pa·s</small>`; }],
+    ['Reynolds number ρUH/μ(U/H)', 'viscosity at the shear rate U/H', r => (r.geo.rho * r.geo.U * r.geo.H / r.geo.muRep).toExponential(2)],
+    ['Reynolds number from the field, ρQ/μ̄', 'μ̄ = area mean of the yielded fluid under the blade', r => { const q = cfdFieldNumbers(r); return `${(r.geo.rho * r.result.Q / q.muBar).toExponential(2)} <small>μ̄ ${fmtNum(q.muBar)} Pa·s</small>`; }],
     ['Capillary number μ(U/H)U/γ', 'viscosity at the shear rate U/H', r => (r.geo.muRep * r.geo.U / r.geo.gamma).toExponential(2)],
     ['Capillary number at the meniscus, μ_s U/γ', 'μ_s = mean along the yielded free surface within 5 gaps of the contact line', r => { const q = cfdFieldNumbers(r); return q.muS == null ? 'surface unyielded there <small>no viscous stress scale: the yield stress holds it</small>' : `${(q.muS * r.geo.U / r.geo.gamma).toExponential(2)} <small>μ_s ${fmtNum(q.muS)} Pa·s${q.surfUnyielded ? `; ${q.surfUnyielded} of ${q.surfUnyielded + q.surfYielded} surface nodes unyielded, left out` : ''}</small>`; }],
     ['Streamline check: ψ drift along lines', '% of ψ range', r => { const sl = FV.streamlines ? streamlinesFor(r) : null; return sl && sl.psiDev != null ? (sl.psiDev * 100).toFixed(3) : '—'; }],
@@ -2381,7 +2425,10 @@ function renderFibre() {
   const host = document.getElementById('cfdFibre');
   if (!host) return;
   const compare = multiView(), idx = viewLocs();
-  const st = fibreStructure(), k = fibrePermeability(), sl = fibreSlip(), oa = ovenAir(), air = oa.air;
+  const st = fibreStructure(), k = fibrePermeability(), sl = fibreSlip();
+  // (the drying air: each oven zone's; zones with the same air together)
+  const groups = ovenAirGroups().map(g => ({ ...g, oa: ovenAir(g.zone) })), one = groups.length === 1;
+  const perZone = fn => one ? fn(groups[0].zone, groups[0].oa) : groups.map(g => `<div class="ovz-line"><span class="ovz-tag">${g.label}</span> ${fn(g.zone, g.oa)}</div>`).join('');
   // the report's air permeability as a check on k: Darcy across the thickness, air at 20 C, for the two standard test pressures (ISO 9237)
   const note = document.getElementById('cfdFibreNote');
   if (note) note.innerHTML = fibreNote();
@@ -2410,11 +2457,11 @@ function renderFibre() {
     ${row('Top surface: filament spacing', `filament + air gap, air fraction ${CFDG.airFrac}`, `${um(sl.period)} µm`)}
     ${row('Slip length b over the air between filaments', 'µm: along / across the filaments; used (plain weave: mean)', `${um(sl.along)} / ${um(sl.across)}; <b>${um(sl.b)}</b>`)}
     ${locRows}
-    ${row('Fibre use temperature', `${fib.l}: continuous${fib.tMom ? ' / momentary' : ''}`, `${fib.tUse}${fib.tMom ? ' / ' + fib.tMom : ''} °C${CFDG.airT > fib.tUse ? ` <span class="warn-text">oven air ${CFDG.airT} °C is above the continuous limit</span>` : ''}`)}
-    ${row('Drying air: viscosity, density', `at ${CFDG.airT} °C`, `${(air.mu * 1e6).toFixed(2)} µPa·s, ${air.rho.toFixed(3)} kg/m³`)}
-    ${row('Drying air: pressure the plenum needs for this speed', `at the plenum's centre, gauge; ${CFDG.airU} m/s up into the fibre over ${CFDG.plenum} mm, out along the ${P.tf} mm fibre`, st.ok ? `at least <b>${fmtNum(oa.dp / 1e6)} MPa</b> <small>${fmtNum(oa.dpInc / 1e6)} MPa if the air did not compress</small>` : '—')}
-    ${row('Drying air: speed along the fibre where it leaves', "at the plenum's edges", st.ok ? `${fmtNum(oa.uEdge)} m/s` : '—')}
-    ${row('Drying air: pore Reynolds number there, ρ(u/ε)d/μ', '', st.ok ? `${fmtNum(oa.ReEdge)} <small>${oa.ReEdge < 1 ? "Darcy's law holds (below 1)" : "above 1: inertial losses add to Darcy's, so the pressure above is a least value"}</small>` : '—')}
+    ${row('Fibre use temperature', `${fib.l}: continuous${fib.tMom ? ' / momentary' : ''}`, `${fib.tUse}${fib.tMom ? ' / ' + fib.tMom : ''} °C${ovenHotText(fib.tUse)}`)}
+    ${row('Drying air: viscosity, density', one ? `at ${groups[0].zone.airT} °C` : 'each oven zone, at its air temperature', perZone((z, oa) => `${one ? '' : `${z.airT} °C: `}${(oa.air.mu * 1e6).toFixed(2)} µPa·s, ${oa.air.rho.toFixed(3)} kg/m³`))}
+    ${row('Drying air: pressure the plenum needs for this speed', `at the plenum's centre, gauge; ${one ? `${groups[0].zone.airU} m/s up into the fibre over ${groups[0].zone.plenum} mm` : "each zone's speed up into the fibre over its plenum"}, out along the ${P.tf} mm fibre`, st.ok ? perZone((z, oa) => `${one ? '' : `${z.airU} m/s, ${z.plenum} mm: `}at least <b>${fmtNum(oa.dp / 1e6)} MPa</b> <small>${fmtNum(oa.dpInc / 1e6)} MPa if the air did not compress</small>`) : '—')}
+    ${row('Drying air: speed along the fibre where it leaves', "at the plenum's edges", st.ok ? perZone((z, oa) => `${fmtNum(oa.uEdge)} m/s`) : '—')}
+    ${row('Drying air: pore Reynolds number there, ρ(u/ε)d/μ', '', st.ok ? perZone((z, oa) => `${fmtNum(oa.ReEdge)} <small>${oa.ReEdge < 1 ? "Darcy's law holds (below 1)" : "above 1: inertial losses add to Darcy's, so the pressure above is a least value"}</small>`) : '—')}
   </tbody></table></div>
     <p class="fv-note">The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface (at over 40 vol% solids the gaps between the slurry's own 2–8 µm particles are finer than the fibre's pores, so capillarity keeps the liquid in the slurry). Over the air between the filaments the slurry slips: filaments as no-slip stripes, air as shear-free ones (Philip 1972). The drying air comes up into the fibre from a plenum below, but the wet film seals the fibre's top, so it can only leave along the fibre's ${P.tf} mm to the plenum's edges (taken as its exit: the shortest path it could have). The pressure above is what the set speed needs for that (Darcy along the fibre, the air compressing as the pressure rises); a plenum at a realistic pressure moves the air in the fibre far slower, so under the film it is nearly still.</p>`;
 }
