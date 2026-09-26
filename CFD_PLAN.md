@@ -347,6 +347,24 @@ GO-0 decisions (user, with mock-ups and a picture of the line):
   (air up through the fibre: 1 m/s, 100 C, plenum 100 mm) becomes the zones: each zone its own length, air
   speed, air temperature, plenum and humidity, zone 1 today's values, the others the same (assumed).
 
+GO-0 built:
+- materials.js: the slurry card (MAT: each value with v, flag given / assumed / measured, source), slurryRho,
+  slurrySolidsMass, massBalance(h, U, W) (dry film, coat weight dry and wet, water per m2 and per second), the
+  oven's zones (OVEN, up to 8) and ovenTime. The density replaces RHO in physics.js, simulation.js, the 2D, 1D
+  and 3D geometry (now in the 2D's inputs key, so a new card marks results stale) and the measured coat-weight
+  import's default. materials.validate.js: density, mass balance exact, oven, cards.
+- The oven: the 2D setup's "Drying air (oven)" group is a zone editor (zone 1 keeps cfdAirU / cfdAirT /
+  cfdPlenum); the fibre results give each zone's air (zones with the same air together) and warn per zone above
+  the fibre's use temperature. Projects and cases save MAT and OVEN; older ones put their single air setting in
+  every zone. Undo units 'oven' and 'mat.<key>'.
+- Process tab (view 12): the chain of six stages with their status and links; the mass balance on the web's
+  mean wet film (the 1D across the web, integrated over the width the blade covers) and per location (3D, else
+  2D, else 1D, whichever is solved for the inputs as they are); the wet and dry film across the web; the oven's
+  zones in the inputs bar. Materials tab (view 13): the slurry card edited in place, what follows from it,
+  warnings (packing below the solids, sizes out of order); the rheology and fibre web cards as set elsewhere.
+- Report sections Process and Materials; help cards (oven.*, mat.*); guide entries; census against main:
+  nothing lost (only help keys renamed and the Summary's links by section key).
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

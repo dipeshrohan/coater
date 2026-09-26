@@ -13,7 +13,7 @@
 
 const REPORT_KEY = 'bladeCoatDefectLab.report.v1';
 const REP = (() => {
-  const d = { author: '', sections: ['inputs', 'm0', 'm1', 'm2', 'm3', 'm1d', 'cfd', 'mesh', 'm3d', 'doe', 'meas'] };
+  const d = { author: '', sections: ['inputs', 'proc', 'mat', 'm0', 'm1', 'm2', 'm3', 'm1d', 'cfd', 'mesh', 'm3d', 'doe', 'meas'] };
   try { return { ...d, ...JSON.parse(localStorage.getItem(REPORT_KEY) || '{}') }; } catch (e) { return d; }
 })();
 const saveRepPrefs = () => { try { localStorage.setItem(REPORT_KEY, JSON.stringify(REP)); } catch (e) { /* not remembered */ } };
@@ -30,6 +30,8 @@ function reportSections() {
   const solved = cfdRuns.filter(r => r.field).length, stale = CFD_LOCS.filter((_, i) => cfdIsStale(i)).length;
   return [
     { k: 'inputs', l: 'Inputs', note: 'the sidebar inputs every module uses' },
+    { k: 'proc', l: TABS[12], note: `the chain, the mass balance, the oven's ${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}` },
+    { k: 'mat', l: TABS[13], note: 'the slurry card, how it flows, the fibre web' },
     { k: 'm0', l: TABS[0], note: 'scenario, results, plots, checks' },
     { k: 'm1', l: TABS[1], note: 'results, plots, checks' },
     { k: 'm2', l: TABS[2], note: 'results, plots, checks' },
@@ -123,6 +125,32 @@ async function repModule(m, statsTitle = 'Results') {
   const scope = cleanText(document.getElementById('scope'));
   html += `<h3>Checks</h3>${pills.length ? `<ul class="checks">${pills.join('')}</ul>` : ''}${scope ? `<p class="scope">${repEsc(scope)}</p>` : ''}`;
   return html;
+}
+/** Process: the chain and where each stage stands, the answers, the plot, the mass balance at each location, the oven's zones. */
+async function repProcess() {
+  await oneDWait(true);   // (the wet film across the web: the 1D, for the inputs as they are)
+  let html = await repModule(12);
+  const chain = [...document.querySelectorAll('.chain li')].map(li => [repEsc(cleanText(li.querySelector('.ch-t'))), repEsc(cleanText(li.querySelector('.ch-st'))), repEsc(cleanText(li.querySelector('.ch-s')))]);
+  const t = document.querySelector('.proc-mb'), note = document.querySelector('#procTable .fv-note');
+  const zones = OVEN.zones.map((z, i) => [`Zone ${i + 1}`, ...OVEN_ZONE_FIELDS.map(([k, , u, , , , d]) => repEsc(repUnit(repNum(z[k], d), u)))]);
+  const o = ovenTime(P.U / 60);
+  return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
+    + (t ? '<h3>The mass balance at each location</h3>' + repTable(t) + (note ? `<p class="lede">${repEsc(cleanText(note))}</p>` : '') : '')
+    + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1]))]) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min. Assumed values.`)}</p>`;
+}
+/** Materials: the slurry card (each value, where it is from and its source), what follows from it, and the other two cards as they are. */
+async function repMaterials() {
+  tab = 13; render(); await repFrame();
+  const c = MAT.slurry, flag = f => (MAT_FLAGS.find(q => q[0] === f) || [0, f])[1];
+  const card = MAT_SLURRY.map(([k, l, u, , , , d]) => [repEsc(l), repEsc(repUnit(repNum(c[k].v, d), u)), repEsc(flag(c[k].flag)), repEsc(c[k].src)]);
+  const derived = [...document.querySelectorAll('#matDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))]);
+  const ro = rows => rows.map(([l, v, u, f, s]) => [repEsc(l), repEsc(repUnit(v, u)), f === 'calc' ? 'Worked out' : repEsc(flag(f)), repEsc(s)]);
+  const head = ['', 'Value', 'From', 'Source'];
+  const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
+  return '<h3>Slurry: GO in water</h3>' + repRows([...card, ...derived], head)
+    + '<h3>Slurry: how it flows</h3>' + repRows(ro(matRheoRows()), head)
+    + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
+    + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
 }
 /** Flow › 3D: its setup, then the page (the 3D view drawn once three.js is in). */
 async function rep3D() {
@@ -350,6 +378,8 @@ async function buildReport(o) {
       try {
         const want = new Set(o.sections);
         if (want.has('inputs')) out.push({ id: 'inputs', title: 'Inputs', html: repInputs() });
+        if (want.has('proc')) out.push({ id: 'proc', title: TABS[12], html: await repProcess() });
+        if (want.has('mat')) out.push({ id: 'mat', title: TABS[13], html: await repMaterials() });
         for (let m = 0; m < 4; m++) if (want.has('m' + m)) out.push({ id: 'm' + m, title: TABS[m], html: await repModule(m) });
         if (want.has('m1d')) {
           await oneDWait(true);   // (the 1D solves in its worker: its results for the inputs as they are)
