@@ -20,8 +20,9 @@ const DOE_FACTORS = [
   { k: 'th', l: 'Contact angle', u: '°', kind: 'loc', g: 'Process and slurry', d: 1, lo: 5, hi: 175 },
   { k: 'R', l: 'Entry radius', u: 'mm', kind: 'geo', g: 'Blade geometry', d: 0, lo: 10, hi: 500, shape: 'round' },
   { k: 'pool', l: 'Pool edge upstream', u: 'mm', kind: 'geo', g: 'Blade geometry', d: 0, lo: 5, hi: 150, shape: 'round' },
-  { k: 'exitAngle', l: 'Exit face to the web', u: '°', kind: 'geo', g: 'Blade geometry', d: 0, lo: 30, hi: 150 },
-  { k: 'L', l: 'Land length', u: 'mm', kind: 'land', g: 'Blade geometry', d: 1, lo: 1, hi: 100, shape: 'flat' },
+  { k: 'exitAngle', l: 'Exit face to the web', u: '°', kind: 'geo', g: 'Blade geometry', d: 0, lo: 30, hi: 150, shape: ['round', 'flat', 'bevel', 'radius', 'wedge', 'twostep'] },
+  { k: 'L', l: 'Land length', u: 'mm', kind: 'land', g: 'Blade geometry', d: 1, lo: 1, hi: 100, shape: ['flat', 'bevel', 'radius', 'wedge', 'twostep'] },
+  ...BLADE_DIMS.map(b => ({ k: b.k, l: b.l, u: b.u, kind: 'geo', g: 'Blade geometry', d: b.step < 0.1 ? 2 : b.step < 1 ? 1 : 0, lo: b.lo, hi: b.hi, shape: b.shapes })),
   { k: 'mesh', l: 'Mesh', u: '', kind: 'solver', g: 'Mesh and solver', cat: ['coarse', 'medium', 'fine'], cl: v => MESH_PRESETS[v].l },
   { k: 'tol', l: 'Newton tolerance', u: '', kind: 'solver', g: 'Mesh and solver', cat: SOLVER_TOLS, cl: v => fmtTol(v) },
 ];
@@ -48,7 +49,7 @@ const DOE = {
 };
 const doeFactor = k => DOE_FACTORS.find(f => f.k === k);
 /** A factor can be varied with the current model and blade shape. */
-const doeAvailable = f => (!f.shape || f.shape === CFDG.shape) && (!f.uses || RHEO_MODELS[CFDG.model].uses.includes(f.uses));
+const doeAvailable = f => (!f.shape || (Array.isArray(f.shape) ? f.shape.includes(CFDG.shape) : f.shape === CFDG.shape)) && (!f.uses || RHEO_MODELS[CFDG.model].uses.includes(f.uses));
 /** A factor's value in the base case at location i. */
 function doeBase(f, i) {
   if (f.kind === 'loc') return locInput(i, f.k);
@@ -93,7 +94,7 @@ function doeOutputs(r, geo) {
   const res = residenceTimes(f, r.xe);
   return {
     film: r.Q / geo.U * 1000, Q: r.Q * 1e6, hEnd: r.hEnd * 1000,
-    cl: r.mode === 'climbed' ? r.sCL * 1000 : 0, leave: r.leaveDeg,
+    cl: r.mode === 'climbed' || (r.shaped && r.shaped.k) ? r.sCL * 1000 : 0, leave: r.leaveDeg,
     pMax: r.pMax, dpdx: -(r.pWeb[i + 1] - r.pWeb[i - 1]) / (r.xWeb[i + 1] - r.xWeb[i - 1]) / 1000, shear: gd,
     rev: m.reverseFraction * 100, recirc: m.recircArea * 1e6, stag: m.stagnation.length, tres: res.n ? res.mean : NaN,
   };
@@ -184,7 +185,7 @@ function viewDOE() {
       ${row('Location', `L${i + 1} · z ${CFD_LOCS[i].z} mm`)}
       ${row('Gap at the edge', `${locInput(i, 'gap').toFixed(3)} mm`)}
       ${row('Contact angle', `${locInput(i, 'th').toFixed(1)}°`)}
-      ${row('Blade', CFDG.shape === 'round' ? `round entry R ${CFDG.R} mm, pool ${CFDG.pool} mm` : `flat land ${P.L} mm`)}
+      ${row('Blade', CFDG.shape === 'round' ? `round entry R ${CFDG.R} mm, pool ${CFDG.pool} mm` : bladeText())}
       ${row('Exit face', `${CFDG.exitAngle}°`)}
       ${row('Rheology', RHEO_MODELS[CFDG.model].l)}
       ${row('Fibre', FIBRES[CFDG.fibre].l)}

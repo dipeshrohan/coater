@@ -13,7 +13,7 @@ const ACROSS_N = 61, ACROSS_W = 300;   // positions across the web (mm) for Acro
 function oneDGeo(i) {
   const g = cfdGeometry(i);
   return { z: g.z, shape: g.shape, U: g.U, H: g.H, L: g.L, R: g.R, Xup: g.Xup, exitAngle: g.exitAngle, contactDeg: g.contactDeg, webSlip: g.webSlip,
-    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance };
+    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}) };
 }
 /** At z (mm) across the web: the shared inputs with that position's gap and contact angle (no location's own values). */
 function oneDGeoAt(z) {
@@ -66,8 +66,8 @@ function oneDSetupTree() {
   document.getElementById('setupExtra').innerHTML = `
     <div class="tree-sep">1D setup</div>
     <details class="grp cfd-grp" open><summary>From the 2D setup</summary>
-      ${row('Blade', CFDG.shape === 'round' ? `round entry R ${CFDG.R} mm, pool ${CFDG.pool} mm` : `flat land ${P.L} mm`)}
-      ${row('Exit face', `${CFDG.exitAngle}°`)}
+      ${row('Blade', CFDG.shape === 'round' ? `round entry R ${CFDG.R} mm, pool ${CFDG.pool} mm` : bladeText())}
+      ${CFDG.shape === 'custom' ? '' : row('Exit face', `${CFDG.exitAngle}°`)}
       ${row('Rheology', RHEO_MODELS[CFDG.model].l)}
       ${row('Fibre (web slip)', FIBRES[CFDG.fibre].l)}
       ${row('Location shown', `L${i + 1} · z ${CFD_LOCS[i].z} mm`)}

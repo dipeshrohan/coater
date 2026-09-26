@@ -56,7 +56,90 @@ const FIBRES = {
     note: 'report 2026-03-20: polypropylene, heat set, 0.90 mm, 600 g/m², 55 / 19.5 threads/cm, air flow 1 L/s through 80 cm² at 127 Pa (= 125 ×10⁻³ m³/m²·s), 90 °C continuous, 110 °C momentary. Filament size not in the report: inferred from the air permeability. PP density (905, literature 900–910) and the top-surface air fraction (= porosity) assumed.',
   },
 };
-const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, model: 'hb', fibre: 'thin', ...FIBRES.thin.set, airU: 1, airT: 100, plenum: 100 };
+// Shaped blades (cfd-blade.js; the land is the sidebar's land length L where a shape has one):
+//  'bevel': the land, a chamfer at bevelDeg (degrees from the web) of length bevelLen (mm, along it), the exit face;
+//  'radius': the land, its edge rounded with radius edgeR (mm) into the exit face; 'wedge': a straight underside
+//  from inletGap (mm, absolute) down to the gap over L; 'twostep': land 1 (land1 mm) at the gap + stepH (mm), a
+//  riser at riserDeg (to 90), then the land L; 'custom': custom = { verts: [{ x, y, corner, bulge }] (mm, in order
+//  from the inlet round the metering point and up the face), join ('straight' | 'spline'), cornerDeg, M, C (vertex
+//  indices; null: automatic), name (where they came from) }. clModel: the contact line on a shaped face, 'full'
+//  (pinned at any corner or free on any stretch) or 'simple' (the face up to C always wetted).
+const CFDG = { shape: 'round', R: 100, pool: 40, exitAngle: 90, bevelDeg: 45, bevelLen: 0.5, edgeR: 0.5, inletGap: 3, land1: 10, stepH: 0.5, riserDeg: 90, clModel: 'full', custom: null,
+  model: 'hb', fibre: 'thin', ...FIBRES.thin.set, airU: 1, airT: 100, plenum: 100 };
+const BLADE_SHAPES = [['round', 'Round entry'], ['flat', 'Flat land'], ['bevel', 'Bevel'], ['radius', 'Edge radius'], ['wedge', 'Wedge'], ['twostep', 'Two-step'], ['custom', 'Custom']];
+/** The shaped blades' own sizes: key, label, unit, range, step, the shapes that use it. */
+const BLADE_DIMS = [
+  { k: 'bevelDeg', l: 'Bevel angle to the web', u: '°', lo: 5, hi: 85, step: 5, shapes: ['bevel'] },
+  { k: 'bevelLen', l: 'Bevel length', u: 'mm', lo: 0.05, hi: 5, step: 0.05, shapes: ['bevel'] },
+  { k: 'edgeR', l: 'Edge radius', u: 'mm', lo: 0.05, hi: 5, step: 0.05, shapes: ['radius'] },
+  { k: 'inletGap', l: 'Inlet gap', u: 'mm', lo: 0.5, hi: 20, step: 0.1, shapes: ['wedge'] },
+  { k: 'land1', l: 'Land 1 length', u: 'mm', lo: 1, hi: 50, step: 0.5, shapes: ['twostep'] },
+  { k: 'stepH', l: 'Step height', u: 'mm', lo: 0.05, hi: 5, step: 0.05, shapes: ['twostep'] },
+  { k: 'riserDeg', l: 'Riser angle to the web', u: '°', lo: 10, hi: 90, step: 5, shapes: ['twostep'] },
+];
+/** The shapes the solvers have always had (their old code paths); the others are shaped blades. */
+const bladeLegacy = (sh = CFDG.shape) => sh === 'round' || sh === 'flat';
+/** Shapes whose face is shaped (a bevel, an edge radius, a custom face): the contact-line model matters. */
+const bladeShapedFace = (sh = CFDG.shape) => sh === 'bevel' || sh === 'radius' || sh === 'custom';
+/** The shape's land is the sidebar's land length. */
+const bladeUsesL = (sh = CFDG.shape) => sh !== 'round' && sh !== 'custom';
+/** A shaped blade's spec for cfd-blade.js's bladeProfile (SI) at gap H (m). */
+function bladeSpec(H, G = CFDG, face = P.face, L = P.L) {
+  const mm = v => v / 1000, o = { shape: G.shape, H, exitDeg: G.exitAngle, faceLen: mm(face) };
+  if (G.shape === 'round') Object.assign(o, { R: mm(G.R), Xup: Math.min(G.pool, 0.8 * G.R) / 1000 });
+  else if (G.shape === 'flat') o.L = mm(L);
+  else if (G.shape === 'bevel') Object.assign(o, { L: mm(L), bevelDeg: G.bevelDeg, bevelLen: mm(G.bevelLen) });
+  else if (G.shape === 'radius') Object.assign(o, { L: mm(L), r: mm(G.edgeR) });
+  else if (G.shape === 'wedge') Object.assign(o, { L: mm(L), inletGap: mm(G.inletGap) });
+  else if (G.shape === 'twostep') Object.assign(o, { land1: mm(G.land1), stepH: mm(G.stepH), riserDeg: G.riserDeg, L: mm(L) });
+  else if (G.shape === 'custom') {
+    const c = G.custom || customDefault();
+    o.custom = { verts: c.verts.map(v => ({ x: mm(v.x), y: mm(v.y), bulge: v.bulge || 0, ...(v.corner === true || v.corner === false ? { corner: v.corner } : {}) })), join: c.join, cornerDeg: c.cornerDeg ?? 10, M: c.M ?? null, C: c.C ?? null };
+  }
+  return o;
+}
+/** A profile (cfd-blade.js) from its spec, cached (the drawings and checks ask for it often). */
+const bladeProfCache = new Map();
+function bladeProfileCached(spec) {
+  const key = JSON.stringify(spec);
+  let p = bladeProfCache.get(key);
+  if (!p) { p = bladeProfile(spec); if (bladeProfCache.size > 40) bladeProfCache.clear(); bladeProfCache.set(key, p); }
+  return p;
+}
+/** The profile at gap Hmm (mm). */
+const bladeProfAt = (Hmm, G = CFDG) => bladeProfileCached(bladeSpec(Hmm / 1000, G));
+/** The distance from the inlet to the metering point (m): the domain under the blade. */
+const bladeXe = (Hmm = locInput(0, 'gap')) => CFDG.shape === 'round' ? Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000 : CFDG.shape === 'flat' ? P.L / 1000 : bladeProfAt(Hmm).xe;
+/** A custom profile to start from: the flat land and exit face as points (mm). */
+function customDefault() {
+  const th = CFDG.exitAngle * Math.PI / 180, L = P.L, F = P.face;
+  return { verts: [{ x: 0, y: 0 }, { x: L / 2, y: 0 }, { x: L, y: 0 }, { x: L + F / 2 * Math.cos(th), y: F / 2 * Math.sin(th) }, { x: L + F * Math.cos(th), y: F * Math.sin(th) }], join: 'straight', cornerDeg: 10, M: null, C: null, name: 'from the flat land' };
+}
+/**
+ * Where a 2D result's contact line is, in words: up the exit face or pinned at the edge (the round entry and flat
+ * land); a shaped blade's: pinned at the edge or at a corner of the face, or so far along the face (from the metering
+ * point). short: no height above the web.
+ */
+function clWhere(r, short = false) {
+  const s = (r.sCL * 1000).toFixed(3), k = r.shaped ? r.shaped.k : null, y = short || r.clY == null ? '' : ` <small>${(r.clY * 1000).toFixed(3)} mm above the web</small>`;
+  if (!r.shaped) return r.mode === 'climbed' ? `${s} mm up the exit face${y}` : 'pinned at the metering edge';
+  if (r.mode !== 'climbed') return k ? `pinned at corner ${k} of the face, ${s} mm along it${y}` : 'pinned at the metering edge';
+  return `${s} mm along the face${k ? ` (above corner ${k})` : ''}${y}`;
+}
+/** The blade in words (tables, reports): its shape and main sizes. */
+function bladeText(G = CFDG, L = P.L) {
+  const f = v => +(+v).toFixed(2);
+  switch (G.shape) {
+    case 'round': return `round entry R ${G.R} mm`;
+    case 'flat': return `flat land ${f(L)} mm`;
+    case 'bevel': return `land ${f(L)} mm, bevel ${f(G.bevelDeg)}° × ${f(G.bevelLen)} mm`;
+    case 'radius': return `land ${f(L)} mm, edge radius ${f(G.edgeR)} mm`;
+    case 'wedge': return `wedge ${f(L)} mm from a ${f(G.inletGap)} mm inlet gap`;
+    case 'twostep': return `two-step: land 1 ${f(G.land1)} mm, step ${f(G.stepH)} mm at ${f(G.riserDeg)}°, land ${f(L)} mm`;
+    case 'custom': { const c = G.custom; return `custom profile (${c ? `${c.verts.length} points` : 'not set'}${c && c.name ? `, ${c.name}` : ''})`; }
+    default: return String(G.shape);
+  }
+}
 const RHEO_MODELS = {
   newtonian: { l: 'Newtonian', uses: [], law: 'μ = the viscosity at 2.7 1/s; n and yield stress not used' },
   power: { l: 'Power law', uses: ['n'], law: 'μ = μ(2.7 1/s) · (γ̇ / 2.7)^(n−1); yield stress not used' },
@@ -330,6 +413,7 @@ function cfdGeometry(i) {
   const ty = uses.includes('ty') ? v('ty') : 0, n = uses.includes('n') ? v('n') : 1; // the model's parameters
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
+    ...(bladeLegacy() ? {} : { blade: bladeSpec(H), clModel: CFDG.clModel }),   // (a shaped blade: its profile's spec, and the contact-line model)
     contactDeg: v('th'), webSlip: 1 / fibreSlip().b,
     Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
@@ -343,18 +427,20 @@ function cfdGeometry(i) {
 function cfdSolverFor(i, H) { return solverFromSettings(solverOf(i), H); }
 /** Solver settings (a location's, or a trial one's) as sent to the solver. */
 function solverFromSettings(s, H) {
-  const xe = CFDG.shape === 'round' ? Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000 : P.L / 1000;
+  const xe = bladeXe(H * 1000);
   const adapted = s.mesh === 'adapted' && s.frac;
   const zones = adapted ? null : zonesForSolver(s.zones);   // (refinement zones: only when one is on, so a mesh without them is sent as before)
   return { mesh: s.mesh, ...meshCounts(s, xe, H), gradeB: s.gradeB, gradeS: s.gradeS, gradeY: s.gradeY, tol: s.tol, maxIter: s.maxIter, ldGaps: s.ldGaps,
     ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}) };
 }
-const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver]);
+const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
+  ...(geo.blade ? [geo.blade, geo.clModel] : [])]);   // (a shaped blade's profile and contact-line model; the round entry and flat land's keys as they were)
 /** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
 const cfdWorkerMessage = (geo, solver = geo.solver) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
   U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
   gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
+  ...(geo.blade ? { blade: geo.blade, clModel: geo.clModel } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
@@ -390,7 +476,7 @@ function runLocation(i) {
   run.live = { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol };
   run.prog = prog2D(geo.solver.tol || TOL_DEFAULT);
   let lastStage = null;
-  logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : 'flat land'}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
+  logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : geo.shape === 'flat' ? 'flat land' : bladeText()}${geo.clModel === 'simple' ? ' (simple contact-line model)' : ''}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
     if (e.data.progress) {
@@ -415,7 +501,7 @@ function runLocation(i) {
     }
     if (run.status === 'done') {
       const tr = r.trace;
-      logCFD(i, `solved in ${(ms / 1000).toFixed(1)} s: wet film ${(r.Q / geo.U * 1000).toFixed(3)} mm, contact line ${r.mode === 'climbed' ? `${(r.sCL * 1000).toFixed(3)} mm up the exit face` : 'pinned at the edge'}, residual ${r.residual.toExponential(1)}${tr ? `, ${tr.solves.length} solves / ${tr.r.length} Newton iterates` : ''}${r.converged ? '' : ' (partly converged)'}`, r.converged ? 'ok' : 'warn');
+      logCFD(i, `solved in ${(ms / 1000).toFixed(1)} s: wet film ${(r.Q / geo.U * 1000).toFixed(3)} mm, contact line ${clWhere(r, true)}${r.shaped && r.shaped.note ? ` (${r.shaped.note})` : ''}, residual ${r.residual.toExponential(1)}${tr ? `, ${tr.solves.length} solves / ${tr.r.length} Newton iterates` : ''}${r.converged ? '' : ' (partly converged)'}`, r.converged ? 'ok' : 'warn');
     } else logCFD(i, `failed: ${run.error}`, 'bad');
     renderRunChips();
     renderCFD();
@@ -542,13 +628,17 @@ function viewCFD() {
   document.getElementById('setupExtra').innerHTML = `
     <div class="tree-sep">CFD setup</div>
     ${tree('geo', 'Blade geometry', `
-      <div class="prop prop-seg"><span class="prop-l">Entry</span><div class="seg" role="tablist" aria-label="Blade shape" id="cfdShape">
-        <button type="button" role="tab" data-shape="round" aria-selected="${CFDG.shape === 'round'}">Round entry</button>
-        <button type="button" role="tab" data-shape="flat" aria-selected="${CFDG.shape === 'flat'}">Flat land</button>
+      <div class="prop prop-seg"><span class="prop-l">Shape</span><div class="seg seg-wrap" role="tablist" aria-label="Blade shape" id="cfdShape">
+        ${BLADE_SHAPES.map(([k, l]) => `<button type="button" role="tab" data-shape="${k}" aria-selected="${CFDG.shape === k}">${l}</button>`).join('')}
       </div></div>
       ${prop('Radius', 'cfdR', `min="10" max="500" step="5" value="${CFDG.R}"`, 'mm', CFDG.shape !== 'round')}
       ${prop('Pool edge upstream', 'cfdPool', `min="5" max="150" step="5" value="${CFDG.pool}"`, 'mm', CFDG.shape !== 'round')}
-      ${prop('Exit face to the web', 'cfdExit', `min="30" max="150" step="5" value="${CFDG.exitAngle}"`, '°')}
+      ${BLADE_DIMS.map(d => prop(d.l, 'cfd_' + d.k, `min="${d.lo}" max="${d.hi}" step="${d.step}" value="${CFDG[d.k]}"`, d.u, !d.shapes.includes(CFDG.shape))).join('')}
+      ${prop('Exit face to the web', 'cfdExit', `min="30" max="150" step="5" value="${CFDG.exitAngle}"`, '°', CFDG.shape === 'custom')}
+      ${bladeShapedFace() ? `<div class="prop prop-seg"><span class="prop-l">Contact line</span><div class="seg" role="tablist" aria-label="Contact line model" id="cfdClModel">
+        <button type="button" role="tab" data-cl="full" aria-selected="${CFDG.clModel !== 'simple'}" title="The contact line can be pinned at any corner of the face or sit anywhere on it">Full</button>
+        <button type="button" role="tab" data-cl="simple" aria-selected="${CFDG.clModel === 'simple'}" title="The face up to C always wetted; the contact line pinned at C or climbing the exit face above it">Simple</button></div></div>` : ''}
+      ${CFDG.shape === 'custom' ? `<div class="prop"><span class="prop-l">Points</span><span class="prop-v"><button class="btn btn-secondary btn-sm" type="button" id="cfdEditCustom">Edit in Geometry</button></span></div>` : ''}
       <p class="prop-note" id="cfdGeoNote"></p>`)}
     ${tree('rheo', 'Rheology model', `
       ${propSel('Model', 'cfdModel', Object.entries(RHEO_MODELS).map(([k, m]) => opt(k, m.l, CFDG.model)).join(''))}
@@ -737,13 +827,16 @@ function viewCFD() {
 
   const runBtn = document.getElementById('cfdRunAll'); if (runBtn) runBtn.onclick = runAllLocations;
   wireStepTools2D();
-  document.querySelectorAll('#cfdShape button').forEach(b => { b.onclick = () => { CFDG.shape = b.dataset.shape; viewCFD(); }; });
+  document.querySelectorAll('#cfdShape button').forEach(b => { b.onclick = () => setBladeShape(b.dataset.shape); });
+  document.querySelectorAll('#cfdClModel button').forEach(b => { b.onclick = () => { if (CFDG.clModel !== b.dataset.cl) { CFDG.clModel = b.dataset.cl; viewCFD(); } }; });
+  { const ec = document.getElementById('cfdEditCustom'); if (ec) ec.onclick = () => { FV.step = 'geometry'; if (tab === 4) viewCFD(); else { tab = 4; render(); } }; }
   const geoNum = (id, key, lo, hi) => {
     const el = document.getElementById(id), row = el.closest('.prop');
     const label = row ? firstText(row.querySelector('.prop-l')) : key, unit = row ? cleanText(row.querySelector('.prop-u')) : '';
     el.addEventListener('change', () => { guardNumber(el, { label, lo, hi, unit }, v => { CFDG[key] = v; }); el.value = CFDG[key]; renderCFD(); });
   };
   geoNum('cfdR', 'R', 10, 500); geoNum('cfdPool', 'pool', 5, 150); geoNum('cfdExit', 'exitAngle', 30, 150);
+  for (const d of BLADE_DIMS) geoNum('cfd_' + d.k, d.k, d.lo, d.hi);
   geoNum('cfdGsm', 'gsm', 10, 3000); geoNum('cfdRhoF', 'rhoF', 800, 3000); geoNum('cfdDen', 'den', 5, 3000); geoNum('cfdNf', 'nf', 1, 1000);
   geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAirFrac', 'airFrac', 0.05, 0.95); geoNum('cfdAirPerm', 'airPerm', 0.1, 5000); geoNum('cfdAirDP', 'airDP', 0, 2000);
   document.getElementById('cfdFibreSel').addEventListener('change', e => { selectFibre(e.target.value); viewCFD(); });
@@ -1188,7 +1281,7 @@ function renderMeshStudy() {
     ['Through-flow Q', 'mm²/s per mm width', r => r.r.Q * 1e6, 4],
     ['Peak pressure', 'Pa, gauge', r => r.r.pMax, 2],
     ['−dp/dx along the web under the edge', 'kPa/m', r => gradAt(r.r), 3],
-    ['Contact line up the exit face', 'mm', r => r.r.mode === 'climbed' ? r.r.sCL * 1000 : 'pinned', 4],
+    [bladeLegacy() ? 'Contact line up the exit face' : 'Contact line along the face', 'mm', r => r.r.mode === 'climbed' || (r.r.shaped && r.r.shaped.k) ? r.r.sCL * 1000 : 'pinned', 4],
     ['Surface leaves the contact line at', '°', r => r.r.leaveDeg, 2],
     ['Film at the end of the 2D domain', 'mm', r => r.r.hEnd * 1000, 4],
     ['Max |V|', 'mm/s', r => r.metrics.vmax * 1000, 3],
@@ -1299,7 +1392,7 @@ function renderCases() {
     const g = c.CFDG || {}, films = (c.summary || []).map(x => x ? x.film.toFixed(3) : '—').join(' · ');
     const own = (c.locs || []).filter(l => Object.keys(l.over || {}).length).length;
     return `<tr><th scope="row">${esc(c.name)}<small>${new Date(c.saved).toLocaleString()}</small></th>
-      <td>${g.shape === 'flat' ? 'flat land' : `round entry R ${g.R} mm`}, face ${g.exitAngle}°<small>${RHEO_MODELS[g.model || 'hb'].l}${own ? ` · ${own} location${own > 1 ? 's' : ''} with own inputs` : ''}</small></td>
+      <td>${g.shape === 'flat' ? 'flat land' : g.shape === 'round' || !g.shape ? `round entry R ${g.R} mm` : bladeText(g, (c.P || {}).L ?? P.L)}${g.shape === 'custom' ? '' : `, face ${g.exitAngle}°`}<small>${RHEO_MODELS[g.model || 'hb'].l}${own ? ` · ${own} location${own > 1 ? 's' : ''} with own inputs` : ''}</small></td>
       <td>${films}</td>
       <td class="case-act"><button class="btn btn-secondary btn-sm" type="button" data-load="${k}">Load</button> <button class="btn btn-secondary btn-sm" type="button" data-del="${k}" aria-label="Delete case ${esc(c.name)}">Delete</button></td></tr>`;
   }).join('')}</tbody></table></div>`;
@@ -1314,9 +1407,19 @@ function renderGeoNote() {
     const g = cfdGeometry(0), hPool = g.H + g.R - Math.sqrt(g.R * g.R - g.Xup * g.Xup);
     const clipped = CFDG.pool > 0.8 * CFDG.R ? ` (limited to 0.8 × radius)` : '';
     el.textContent = `Domain: ${(g.Xup * 1000).toFixed(0)} mm from the pool edge${clipped}, where the gap is ${(hPool * 1000).toFixed(1)} mm, to the metering edge.`;
-  } else {
+  } else if (CFDG.shape === 'flat') {
     el.textContent = `Domain: the ${P.L} mm land (sidebar), bead pressure at its upstream end.`;
+  } else {
+    const p = bladeProfAt(locInput(0, 'gap'));
+    el.textContent = p.err ? `This blade is not possible: ${p.err}.` : `Domain: ${(p.xe * 1000).toFixed(2)} mm from the inlet to the metering point${bladeUsesL() ? ` (the land: ${P.L} mm, sidebar)` : ''}, bead pressure at the inlet.`;
   }
+}
+/** Pick a blade shape (Custom starts from the flat land's points the first time). */
+function setBladeShape(sh) {
+  if (CFDG.shape === sh) return;
+  if (sh === 'custom' && !CFDG.custom) CFDG.custom = customDefault();
+  CFDG.shape = sh;
+  viewCFD();
 }
 
 /** The CFD runs in the status bar, one chip per location (shown in every module: runs carry on in the background). */
@@ -1759,7 +1862,8 @@ function paintPlot(el, fast) {
   const cv = el.querySelector('.fv-main');
   const map = drawFlowPlot(cv, {
     f, webSpeed: run.geo.U, yMax: ctx.yMax, yScale: FV.yScale, compact: compare, maxH: ctx.maxH, title: compare ? locationTitle(i) + (cfdIsStale(i) ? ' (out of date)' : '') : '',
-    exitAngle: run.geo.exitAngle, bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : 'blade land (fixed)',
+    exitAngle: run.geo.exitAngle, faceAbove: f.shaped ? f.shaped.faceAbove : null,
+    bladeLabel: run.geo.shape === 'round' ? `blade, round entry R ${(run.geo.R * 1000).toFixed(0)} mm` : run.geo.shape === 'flat' ? 'blade land (fixed)' : `blade, ${(BLADE_SHAPES.find(q => q[0] === run.geo.shape) || [0, run.geo.shape])[1].toLowerCase()}`,
     scalar: mo ? null : ds ? { ...ranges.base, key: `${ranges.base.key}|${fieldId(ds.fb)}` } : scalarFor(ranges.base, f), lineScalar: mo ? null : scalarFor(ranges.line, f),
     streamlines: sl ? sl.lines : null, lineWidth: LINE_W[FV.lineWidth] * (compare ? 0.8 : 1), arrows: FV.arrows,
     vectorSample: FV.vectors && !ds && !mo ? (nc, nr, win) => sampleVectors(f, nc, nr, win) : null,
@@ -2241,9 +2345,7 @@ function renderMetrics() {
     ['Area-mean |V|', 'mm/s', r => fmtNum(r.metrics.meanSpeed * 1000)],
     ['Min |V| inside the fluid', 'mm/s', r => `${fmtNum(r.metrics.vminInterior * 1000)} ${where(r.field, r.metrics.vminLoc)}`],
     ['Max shear rate', '1/s', r => { const [x, y] = r.metrics.gdMaxLoc; return `${fmtNum(r.metrics.gdMax)} ${Math.hypot(x - r.result.xe, y - r.result.H) < 0.3 * r.result.H ? '<small>next to the metering edge corner, where it is singular: this value depends on the mesh</small>' : where(r.field, r.metrics.gdMaxLoc)}`; }],
-    ['Meniscus: contact line', 'on the blade', r => r.result.mode === 'climbed'
-      ? `${(r.result.sCL * 1000).toFixed(3)} mm up the exit face <small>${(r.result.clY * 1000).toFixed(3)} mm above the web</small>`
-      : 'pinned at the metering edge'],
+    ['Meniscus: contact line', 'on the blade', r => clWhere(r.result) + (r.result.shaped && r.result.shaped.note ? ` <small>${r.result.shaped.note}</small>` : '')],
     ['Surface leaves the contact line at', '° from the web, machine direction', r => `${r.result.leaveDeg.toFixed(1)} <small>${r.result.mode === 'climbed' ? `= contact angle ${r.geo.contactDeg.toFixed(1)}° off the face` : `pinned: at most ${r.result.alphaMaxDeg.toFixed(1)} (Gibbs)`}</small>`],
     ['Film at the end of the 2D domain', 'mm, ' + 'x from the edge', r => `${(r.result.hEnd * 1000).toFixed(3)} <small>at ${((r.result.xEnd - r.result.xe) * 1000).toFixed(1)} mm</small>`],
     ['Peak pressure', 'Pa, gauge', r => `${fmtNum(r.result.pMax)} ${pAt(r, 'pMaxLoc')}`],

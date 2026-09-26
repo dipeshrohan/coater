@@ -147,9 +147,10 @@ async function rep3D() {
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };
-  const keys = ['shape', ...(CFDG.shape === 'round' ? ['R', 'pool'] : []), 'exitAngle', 'model', 'fibre', 'gsm', 'rhoF', 'dFrom', ...(CFDG.dFrom === 'yarn' ? ['den', 'nf'] : []), 'airPerm', 'airDP', 'kozeny', 'airFrac', 'airU', 'airT', 'plenum'];
+  const own = BLADE_DIMS.filter(d => d.shapes.includes(CFDG.shape)).map(d => d.k);
+  const keys = ['shape', ...(CFDG.shape === 'round' ? ['R', 'pool'] : own), ...(CFDG.shape === 'custom' ? ['custom'] : ['exitAngle']), ...(bladeShapedFace() ? ['clModel'] : []), 'model', 'fibre', 'gsm', 'rhoF', 'dFrom', ...(CFDG.dFrom === 'yarn' ? ['den', 'nf'] : []), 'airPerm', 'airDP', 'kozeny', 'airFrac', 'airU', 'airT', 'plenum'];
   const rows = keys.map(g);
-  if (CFDG.shape !== 'round') rows.splice(1, 0, ['Land length', `${P.L} mm <small>(sidebar)</small>`]);
+  if (bladeUsesL()) rows.splice(1, 0, [CFDG.shape === 'wedge' ? 'Length' : 'Land length', `${P.L} mm <small>(sidebar)</small>`]);
   const s = CFDS;
   let counts = null;
   try { counts = cfdGeometry(0).solver; } catch (e) { /* (no counts) */ }
@@ -174,7 +175,7 @@ function repCfdStatus() {
       : r.status === 'error' ? `<span class="bad">failed: ${repEsc(r.error)}</span>` : r.status === 'blocked' ? `<span class="bad">not solved: ${repEsc(r.error)}</span>` : 'not solved';
     if (!r.field) return [`L${i + 1}`, status, '—', '—', '—', '—'];
     const q = r.result;
-    return [`L${i + 1}`, status, `${(q.Q / r.geo.U * 1000).toFixed(4)} mm`, q.mode === 'climbed' ? `${(q.sCL * 1000).toFixed(3)} mm up the face` : 'pinned at the edge',
+    return [`L${i + 1}`, status, `${(q.Q / r.geo.U * 1000).toFixed(4)} mm`, clWhere(q, true),
       `${q.converged ? 'converged' : 'partly converged'}, ${q.iterations} steps, residual ${q.residual.toExponential(1)}`, `${(r.elapsedMs / 1000).toFixed(1)} s`];
   });
   return repRows(rows, ['Location', 'Status', 'Wet film', 'Contact line', 'Convergence', 'Solve time']);

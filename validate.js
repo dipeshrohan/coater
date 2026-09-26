@@ -54,13 +54,18 @@ function checkGeometry(geo, i) {
   // what the solver can do
   if (!(geo.U > 0)) err('speed', `Web speed ${Umin.toFixed(2)} m/min: it must be above 0.`, field('U', 'n_U'));
   if (!(geo.H > 0)) err('gap', `The gap at the metering edge is ${Hmm.toFixed(3)} mm: the scraper must sit above the fibre.`, field('gap', 'n_Hm'));
-  const sum = geo.exitAngle + geo.contactDeg;
-  if (!(sum > 94 && sum < 175)) err('angles', `Exit face ${geo.exitAngle}° + contact angle ${geo.contactDeg.toFixed(1)}° = ${sum.toFixed(1)}°: the free-surface solver needs between 94° and 175°.`, field('th', 'cfdExit'));
+  // (a shaped blade: the contact line can stay pinned below a flat exit face; a face too steep for the contact angle holds none;
+  // a custom face has no one exit angle -- the solver says where the contact line can go)
+  const shapedB = !!geo.blade, sum = geo.exitAngle + geo.contactDeg;
+  if (shapedB && geo.shape !== 'custom' && !(sum > 94)) err('angles', `Exit face ${geo.exitAngle}° + contact angle ${geo.contactDeg.toFixed(1)}° = ${sum.toFixed(1)}°: the surface would leave the exit face overhanging (needs above 94°).`, field('th', 'cfdExit'));
+  if (!shapedB && !(sum > 94 && sum < 175)) err('angles', `Exit face ${geo.exitAngle}° + contact angle ${geo.contactDeg.toFixed(1)}° = ${sum.toFixed(1)}°: the free-surface solver needs between 94° and 175°.`, field('th', 'cfdExit'));
   if (!(geo.muRef > 0)) err('visc', 'The viscosity must be above 0.', field('mu', 'n_mu'));
   if (RHEO_MODELS[geo.model].uses.includes('n') && !(geo.n > 0.05 && geo.n <= 2)) err('nrange', `Shear-thinning index ${geo.n}: the solver needs 0.05 to 2.`, field('n', 'n_n'));
   if (geo.ty < 0) err('yneg', 'The yield stress cannot be negative.', field('ty', 'n_ty'));
   if (!(geo.gamma > 0)) err('gamma', 'The surface tension must be above 0.', field('g', 'n_g'));
-  if (geo.shape === 'flat' && !(geo.L > 0)) err('land', 'The land length must be above 0.', 'n_L');
+  if (bladeUsesL(geo.shape) && !(geo.L > 0)) err('land', 'The land length must be above 0.', 'n_L');
+  const prof = shapedB ? bladeProfileCached(geo.blade) : null;
+  if (prof && prof.err) err('blade', `The blade shape is not possible: ${prof.err}.`, 'cfdShape');
   const fs = fibreStructure();
   if (!(fs.eps > 0 && fs.eps < 1)) err('fibre', `The fibre data give a porosity of ${(fs.eps * 100).toFixed(0)} %: the basis weight, fibre density and thickness do not fit together.`, 'cfdGsm');
   // where the model is reliable
@@ -70,7 +75,7 @@ function checkGeometry(geo, i) {
   if (RHEO_MODELS[geo.model].uses.includes('n') && (geo.n < 0.2 || geo.n > 1.2)) warn('nusual', `Shear-thinning index ${geo.n}: outside the usual range for slurries (0.2 to 1.2).`, field('n', 'n_n'));
   if (geo.ty > 0) {
     // the driving stresses without the yield stress: the viscous part of the law at U/H (as muLaw) and the bead pressure over the blade
-    const Lb = geo.shape === 'round' ? geo.Xup : geo.L, gd = geo.U / geo.H, n = RHEO_MODELS[geo.model].uses.includes('n') ? geo.n : 1;
+    const Lb = geo.shape === 'round' ? geo.Xup : prof ? prof.xe : geo.L, gd = geo.U / geo.H, n = RHEO_MODELS[geo.model].uses.includes('n') ? geo.n : 1;
     const base = Math.max(geo.muRef - geo.ty / 2.7, 0.05 * geo.muRef);
     const drive = Math.max(base * Math.pow(gd / 2.7, n - 1) * gd, geo.Pup * geo.H / (2 * Lb));
     if (geo.ty > drive) warn('yield', `Yield stress ${geo.ty} Pa is above the stresses driving the flow (about ${drive.toFixed(1)} Pa): much of the slurry will not yield, and the solver may converge slowly or not at all.`, field('ty', 'n_ty'));

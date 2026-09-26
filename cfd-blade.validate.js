@@ -37,13 +37,13 @@ console.log('\n1. Paths');
   check('an arc from a point: starts there, in the given direction', Math.hypot(a0[0] - 1, a0[1] - 2) < 1e-15 && near(a0[2], 30 * deg, 1e-14) && Math.hypot(b0[0] - 1, b0[1] - 2) < 1e-15 && near(b0[2], 30 * deg, 1e-14));
   check('  and turns by the sweep (left and right)', near(a1[2], 80 * deg, 1e-14) && near(b1[2], -20 * deg, 1e-14), `${(a1[2] / deg).toFixed(9)}°, ${(b1[2] / deg).toFixed(9)}°`);
   check('  its length r x sweep; its end on the circle', near(B.pieceLen(a), 0.5 * 50 * deg, 1e-15) && near(Math.hypot(a1[0] - a.cx, a1[1] - a.cy), 0.5, 1e-15));
-  const p = B.bladePath([B.bladeLine(0, 0, 1, 0), B.bladeArcFrom(1, 0, 0, Math.PI / 2, 0.2), B.bladeLine(1.2, 0.2, 1.2, 1), B.bladeLine(1.2, 1, 1.5, 1.3)]);
+  const p = B.makeBladePath([B.bladeLine(0, 0, 1, 0), B.bladeArcFrom(1, 0, 0, Math.PI / 2, 0.2), B.bladeLine(1.2, 0.2, 1.2, 1), B.bladeLine(1.2, 1, 1.5, 1.3)]);
   const c = pathChecks(p);
   check('a path: pieces end to end, smooth joins with no jump', c.gap < 1e-15 && c.jump < 1e-9, `gap ${c.gap.toExponential(1)}`);
   check('  length and the direction along it', near(p.len, 1 + 0.1 * Math.PI + 0.8 + 0.3 * Math.SQRT2, 1e-14) && near(p.th(1 + 0.05 * Math.PI), Math.PI / 4, 1e-14) && near(p.th(p.len), Math.PI / 4, 1e-14));
   const corners = p.joins.filter(j => Math.abs(j.turn) > 1e-5);
   check('  one corner (the last join), turning -45°', corners.length === 1 && near(corners[0].turn, -Math.PI / 4, 1e-14) && near(corners[0].thm, Math.PI / 2, 1e-14));
-  const [u, v] = B.pathSplit(p, 1.5), pu = B.bladePath(u), pv = B.bladePath(v);
+  const [u, v] = B.pathSplit(p, 1.5), pu = B.makeBladePath(u), pv = B.makeBladePath(v);
   check('  split: the two parts add up, meeting at the point', near(pu.len + pv.len, p.len, 1e-14) && Math.hypot(pu.end[0] - pv.start[0], pu.end[1] - pv.start[1]) < 1e-15 && Math.hypot(pu.end[0] - p.P(1.5)[0], pu.end[1] - p.P(1.5)[1]) < 1e-15);
 }
 
@@ -129,7 +129,7 @@ console.log('\n5. Custom profiles, spline');
   const H = 1.7e-3, pts = [[0, 4e-3], [3e-3, 2.6e-3], [7e-3, 2.1e-3], [10e-3, 2e-3], [11e-3, 2.4e-3], [11.4e-3, 4e-3], [11.5e-3, 8e-3]];
   const p = B.customProfile({ verts: pts.map(([x, y]) => ({ x, y })), join: 'spline', cornerDeg: 60 }, H);
   let worst = 0;
-  const all = B.bladePath([...p.under.pieces, ...p.face.pieces]), sM = p.under.len;
+  const all = B.makeBladePath([...p.under.pieces, ...p.face.pieces]), sM = p.under.len;
   p.verts.forEach((v, i) => { const q = all.P(p.vs[i] + sM); worst = Math.max(worst, Math.hypot(q[0] - v.x, q[1] - v.y)); });
   check('through its points (within 0.1 µm: the rounding of the samples)', worst < 1e-7 && !p.err, `worst ${(worst * 1e6).toFixed(3)} µm`);
   check('  smooth along both paths', pathChecks(p.under).jump < 1e-6 && pathChecks(p.face).jump < 1e-6 && p.faceCorners.length === 1 && Math.abs(p.faceCorners[0].turn) < 1e-6);

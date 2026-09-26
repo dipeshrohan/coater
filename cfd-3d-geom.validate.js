@@ -7,6 +7,9 @@
  *  4. Placement: the lowest point at the gap height, at the metering edge, centred across the web.
  *  5. An overhanging blade is detected (more than one layer over the web).
  *  6. The mesh: node and cell counts, the top on the underside, the layers evenly spread.
+ *  7. Shaped blades (cfd-blade.js): extruded, their underside by rays is the profile's; a side section of the
+ *     triangles, opened (inlet, metering point, face), gives the profile back -- a bevel, an edge radius, a
+ *     two-step with a vertical riser.
  */
 const G = require('./cfd-3d-geom.js');
 const { bladeShape } = require('./cfd-1d.js');
@@ -17,7 +20,7 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
 // 1. the blade made from the 2D setup (round entry R 100 mm, pool edge 40 mm, gap 1.725 mm, exit face 90°)
 {
   const o = { shape: 'round', H: 1.725e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 };
-  const pr = G.bladeProfile(o);
+  const pr = G.bladeSideOutline(o);
   const dy = z => 30e-6 * Math.sin(2 * Math.PI * z / 0.12);      // a waviness of the gap across the web
   const tris = G.extrudeProfile(pr.pts, 0.0275, 0.0475, 20, dy);
   const xs = G.gradedStations(0, pr.xe * 0.999, 40, 1.4), zs = Array.from({ length: 21 }, (_, k) => 0.0276 + 0.0198 * k / 20);
@@ -33,7 +36,7 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   check('made from the 2D setup: underside = the 2D blade shape + the shift across the web', worst < 5e-6 && miss === 0, `worst ${(worst * 1e6).toFixed(2)} µm over ${xs.length * zs.length} rays, ${miss} missed`);
   check('  a single layer over the gap (2 hits per ray)', single);
   check('  metering edge at xe with the gap H', Math.abs(pr.xe - o.Xup) < 1e-12 && Math.abs(shape.h(pr.xe) - o.H) < 1e-12);
-  const flat = G.bladeProfile({ ...o, shape: 'flat' });
+  const flat = G.bladeSideOutline({ ...o, shape: 'flat' });
   const ft = G.extrudeProfile(flat.pts, 0, 0.01, 4), ff = G.undersideField(ft, G.gradedStations(0, 0.0099, 10), [0.001, 0.005, 0.009]);
   check('flat land: underside at the gap everywhere', [...ff.low].every(v => Math.abs(v - o.H) < 1e-7));
 }
@@ -61,7 +64,7 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
 }
 // 4. placement
 {
-  const pr = G.bladeProfile({ shape: 'round', H: 5e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 });
+  const pr = G.bladeSideOutline({ shape: 'round', H: 5e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 });
   const t = G.extrudeProfile(pr.pts.map(([x, y]) => [x + 0.3, y + 0.2]), -0.5, 0.5, 4);
   const p = G.placeBlade(t, { H: 1.7e-3, xUp: 0.04, zc: 0.0375 });
   const b = G.trisBox(p.tris);
@@ -69,7 +72,7 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
 }
 // 5. overhang: a blade whose exit face leans back over the gap, and one with a pocket
 {
-  const pr = G.bladeProfile({ shape: 'flat', H: 1.7e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 });
+  const pr = G.bladeSideOutline({ shape: 'flat', H: 1.7e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 });
   // a C-shaped profile: a lip below a pocket
   const cpts = [[0, 1.7e-3], [0.01, 1.7e-3], [0.01, 4e-3], [0.004, 4e-3], [0.004, 6e-3], [0.012, 6e-3], [0.012, 0.02], [0, 0.02]];
   const t = G.extrudeProfile(cpts, 0, 0.01, 2), f = G.undersideField(t, G.gradedStations(0.001, 0.0115, 20), [0.005]);
@@ -93,5 +96,24 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   check('  layers evenly spread from the web up', evenOk);
   check('  the drawn outer-face edges index real nodes', m.lines.every(v => v < m.nodes) && m.lines.length > 0);
 }
+// 7. shaped blades: extruded, rays, and a section back
+{
+  const Bl = require('./cfd-blade.js');
+  for (const [label, spec] of [['bevel', { shape: 'bevel', L: 0.01, bevelDeg: 45, bevelLen: 0.5e-3 }], ['edge radius', { shape: 'radius', L: 0.01, r: 0.4e-3 }], ['two-step', { shape: 'twostep', land1: 0.008, stepH: 0.5e-3, riserDeg: 90, L: 0.005 }]]) {
+    const p = Bl.bladeProfile({ H: 1.7e-3, exitDeg: 90, faceLen: 8e-3, ...spec });
+    const pr = G.bladeSideOutline({ faceLen: 8e-3, top: 0.02, shaped: { under: Bl.pathPoints(p.under), face: Bl.pathPoints(p.face) } });
+    const tris = G.extrudeProfile(pr.pts, 0, 0.01, 4);
+    const xs = G.gradedStations(0, p.xe * 0.999, 60, 1.2).map((x, i) => i ? x : 1e-7), f = G.undersideField(tris, xs, [0.005]);
+    let worst = 0; xs.forEach((x, i) => { if (Math.abs(x - 0.008) > 1e-5) worst = Math.max(worst, Math.abs(f.low[i] - p.hUnder(x))); });
+    check(`${label}: extruded, its underside by rays is the profile's`, worst < 2e-6, `worst ${(worst * 1e6).toFixed(2)} µm`);
+    const sec = G.sectionTris(tris, 0.005), open = Bl.openProfile(sec[0].verts, sec[0].closed);
+    const q = Bl.customProfile({ verts: open, join: 'straight', cornerDeg: 10 }, 1.7e-3);
+    let dU = 0; for (let k = 0; k <= 200; k++) { const x = q.xe * k / 200; if (Math.abs(x - 0.008) > 1e-5) dU = Math.max(dU, Math.abs(q.hUnder(x) - p.hUnder(x))); }
+    const nC = q.faceCorners.length, nP = p.faceCorners.length;
+    check(`${label}: its section, opened, gives the profile back`, !q.err && Math.abs(q.xe - p.xe) < 2e-6 && dU < 5e-6 && Math.abs(q.face.len - p.face.len) < 0.02 * p.face.len && (label === 'edge radius' ? nC === 1 : nC === nP),
+      `metering point ${(q.xe * 1e3).toFixed(4)} vs ${(p.xe * 1e3).toFixed(4)} mm, underside within ${(dU * 1e6).toFixed(2)} µm, face ${(q.face.len * 1e3).toFixed(3)} vs ${(p.face.len * 1e3).toFixed(3)} mm, corners on the face ${nC} vs ${nP}`);
+  }
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

@@ -12,9 +12,20 @@
  * The blade's side profile as a closed polygon [[x, y], ...] (counter-clockwise), from the 2D setup:
  * the underside (round entry from the pool edge, or the flat land) to the metering edge E, the exit
  * face (faceDeg from the web, toward +x at 90° less) up to the notch corner V, down to the dry edge D
- * (as the Contact line tab draws it), then the blade's top back over the inlet.
+ * (as the Contact line tab draws it), then the blade's top back over the inlet. shaped: a shaped blade's
+ * { under, face } points instead (cfd-blade.js's pathPoints, m).
  */
-function bladeProfile({ shape, H, R, Xup, L, faceDeg, faceLen, top }) {
+function bladeSideOutline({ shape, H, R, Xup, L, faceDeg, faceLen, top, shaped = null }) {
+  if (shaped) {
+    // a shaped blade (cfd-blade.js): its underside and face as points (m, from the inlet), M between them; the notch
+    // corner V at the face's end, the dry edge below it as the round entry and flat land have it
+    const pts = shaped.under.map(q => q.slice()), face = shaped.face.slice(1), V = face[face.length - 1], fl = faceLen ?? 8e-3;
+    pts.push(...face.slice(0, -1).map(q => q.slice()));
+    const D = [V[0] + 0.55 * fl * Math.SQRT1_2, V[1] - 0.55 * fl * Math.SQRT1_2];
+    const yTop = Math.max(top, V[1] + 2e-3, ...shaped.under.map(q => q[1] + 2e-3));
+    pts.push(V, D, [D[0], yTop], [shaped.under[0][0], yTop]);
+    return { pts, xe: shaped.under[shaped.under.length - 1][0], V, D, yTop };
+  }
   const pts = [];
   const xe = shape === 'round' ? Xup : L;
   const under = shape === 'round' ? (x => H + R - Math.sqrt(R * R - (Xup - x) ** 2)) : (() => H);
@@ -176,4 +187,60 @@ function mesh3D({ xsGap, xsFilm, zs, under, film, ny }) {
 /** Stations from a to b, n intervals, crowded toward b by grade (1 = even). */
 const gradedStations = (a, b, n, grade = 1) => Array.from({ length: n + 1 }, (_, i) => a + (b - a) * (1 - Math.pow(1 - i / n, grade)));
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { bladeProfile, extrudeProfile, parseSTL, writeSTL, orientTris, trisBox, placeBlade, undersideField, mesh3D, gradedStations };
+/**
+ * The blade's side section at z = z0 (across the web, in the triangles' own frame after orientTris): every triangle
+ * crossing the plane gives a segment; joined end to end (within 1e-7 of the part's size) they make loops (closed) or
+ * chains. Points where the section runs straight on are dropped. Returns [{ verts: [{ x, y }], closed }], the one
+ * with the lowest point first.
+ */
+function sectionTris(t, z0) {
+  const b = trisBox(t), size = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2], 1e-9), eps = 1e-9 * size;
+  // (the plane nudged off any corner of a triangle lying on it)
+  let zz = z0;
+  for (let tries = 0; tries < 8; tries++) { let on = false; for (let v = 2; v < t.length && !on; v += 3) on = Math.abs(t[v] - zz) < eps; if (!on) break; zz += 7.3 * eps; }
+  const segs = [];
+  for (let f = 0; f < t.length; f += 9) {
+    const pts = [];
+    for (const [a, c] of [[0, 1], [1, 2], [2, 0]]) {
+      const A = f + 3 * a, C = f + 3 * c, za = t[A + 2] - zz, zc = t[C + 2] - zz;
+      if ((za < 0) !== (zc < 0)) { const s = za / (za - zc); pts.push([t[A] + s * (t[C] - t[A]), t[A + 1] + s * (t[C + 1] - t[A + 1])]); }
+    }
+    if (pts.length === 2 && Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) > eps) segs.push(pts);
+  }
+  // join the segments at their ends (a grid of the tolerance, its neighbours too)
+  const tol = 1e-7 * size, key = p => `${Math.round(p[0] / tol)},${Math.round(p[1] / tol)}`, grid = new Map();
+  const near = p => { const out = [], i = Math.round(p[0] / tol), j = Math.round(p[1] / tol); for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const e of grid.get(`${i + di},${j + dj}`) || []) out.push(e); return out; };
+  segs.forEach((sg, n) => { for (const e of [0, 1]) { const k = key(sg[e]); if (!grid.has(k)) grid.set(k, []); grid.get(k).push([n, e]); } });
+  const used = new Uint8Array(segs.length), out = [];
+  const same = (p, q) => Math.abs(p[0] - q[0]) <= 2 * tol && Math.abs(p[1] - q[1]) <= 2 * tol;
+  for (let n0 = 0; n0 < segs.length; n0++) {
+    if (used[n0]) continue;
+    used[n0] = 1;
+    const chain = [segs[n0][0], segs[n0][1]];
+    for (const end of ['tail', 'head']) {
+      for (;;) {
+        const tip = end === 'tail' ? chain[chain.length - 1] : chain[0];
+        const nx = near(tip).find(([m, e]) => !used[m] && same(segs[m][e], tip));
+        if (!nx) break;
+        const [m, e] = nx; used[m] = 1;
+        const other = segs[m][1 - e];
+        if (end === 'tail') chain.push(other); else chain.unshift(other);
+      }
+    }
+    const closed = chain.length > 3 && same(chain[0], chain[chain.length - 1]);
+    if (closed) chain.pop();
+    // (points where it runs straight on dropped)
+    const v = [];
+    for (let k = 0; k < chain.length; k++) {
+      const a = chain[(k - 1 + chain.length) % chain.length], p = chain[k], c = chain[(k + 1) % chain.length];
+      const ends = !closed && (k === 0 || k === chain.length - 1);
+      const cross = (p[0] - a[0]) * (c[1] - p[1]) - (p[1] - a[1]) * (c[0] - p[0]), l = Math.hypot(p[0] - a[0], p[1] - a[1]) * Math.hypot(c[0] - p[0], c[1] - p[1]);
+      if (ends || Math.abs(cross) > 1e-9 * l) v.push({ x: p[0], y: p[1] });
+    }
+    out.push({ verts: v, closed });
+  }
+  const low = c => Math.min(...c.verts.map(q => q.y));
+  return out.filter(c => c.verts.length >= 2).sort((a, b) => low(a) - low(b));
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { bladeSideOutline, extrudeProfile, sectionTris, parseSTL, writeSTL, orientTris, trisBox, placeBlade, undersideField, mesh3D, gradedStations };

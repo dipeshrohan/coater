@@ -26,8 +26,10 @@ const ANIM_UNDO = [
   ['Lp', 'Pool length upstream', v => `${v} mm`, true], ['z', 'Position across web', v => `${v} mm`], ['rate', 'Playback speed', v => `${(+v).toFixed(2)}×`],
 ];
 const CFDG_UNDO = {
-  shape: ['Blade entry', v => v === 'round' ? 'round' : 'flat land'], R: ['Entry radius', null, 'mm'], pool: ['Pool edge upstream', null, 'mm'],
-  exitAngle: ['Exit face to the web', null, '°'], model: ['Rheology model', v => (RHEO_MODELS[v] || {}).l || v], fibre: ['Fibre test report', v => (FIBRES[v] || {}).l || v],
+  shape: ['Blade shape', v => ({ round: 'round', flat: 'flat land' }[v] || ((BLADE_SHAPES.find(q => q[0] === v) || [0, v])[1]).toLowerCase())], R: ['Entry radius', null, 'mm'], pool: ['Pool edge upstream', null, 'mm'],
+  exitAngle: ['Exit face to the web', null, '°'], bevelDeg: ['Bevel angle to the web', null, '°'], bevelLen: ['Bevel length', null, 'mm'], edgeR: ['Edge radius', null, 'mm'],
+  inletGap: ['Inlet gap', null, 'mm'], land1: ['Land 1 length', null, 'mm'], stepH: ['Step height', null, 'mm'], riserDeg: ['Riser angle to the web', null, '°'],
+  clModel: ['Contact line model', v => v === 'simple' ? 'simple' : 'full'], custom: ['Custom profile', v => v ? `${v.verts.length} points${v.name ? `, ${v.name}` : ''}` : 'none'], model: ['Rheology model', v => (RHEO_MODELS[v] || {}).l || v], fibre: ['Fibre test report', v => (FIBRES[v] || {}).l || v],
   gsm: ['Basis weight', null, 'g/m²'], rhoF: ['Fibre density', null, 'kg/m³'], dFrom: ['Filament diameter from', v => v === 'yarn' ? 'yarn' : 'air permeability'],
   den: ['Yarn', null, 'denier'], nf: ['Filaments per yarn'], airPerm: ['Air permeability', null, '×10⁻³ m³/m²·s'], airDP: ['Air test pressure', null, 'Pa'],
   kozeny: ['Kozeny constant'], airFrac: ['Air fraction, top surface'], airU: ['Air speed up into the fibre', null, 'm/s'], airT: ['Air temperature', null, '°C'], plenum: ['Plenum length', null, 'mm'],

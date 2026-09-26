@@ -98,13 +98,13 @@ const USES = [
 ];
 const cfdUses = () => {
   const uses = RHEO_MODELS[CFDG.model].uses;
-  return ['U', 'Hm', 'tf', 'oven', 'mu', 'g', 'Pup', 'th', 'dH', 'lw', 'tilt', 'skew', 'dt', 'dth', ...(uses.includes('n') ? ['n'] : []), ...(uses.includes('ty') ? ['ty'] : []), ...(CFDG.shape === 'round' ? [] : ['L'])];
+  return ['U', 'Hm', 'tf', 'oven', 'mu', 'g', 'Pup', 'th', 'dH', 'lw', 'tilt', 'skew', 'dt', 'dth', ...(uses.includes('n') ? ['n'] : []), ...(uses.includes('ty') ? ['ty'] : []), ...(bladeUsesL() ? ['L'] : [])];
 };
 /** Why a tab does not use an input (its hover note). */
 function unusedWhy(k) {
   if (tab === 4 || tab === 5 || tab >= 8) {
     if (k === 'n' || k === 'ty') return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
-    if (k === 'L') return 'not used with a round blade entry (only by the flat land)';
+    if (k === 'L') return CFDG.shape === 'custom' ? 'not used with a custom blade profile (its points set the land)' : 'not used with a round blade entry (by the flat land and the shaped blades)';
     return tab === 9 ? 'not used by the 3D geometry' : tab >= 8 ? 'not used by this 1D page' : 'not used by the CFD';
   }
   return `not used in ${TABS[tab]}`;

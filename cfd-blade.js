@@ -58,7 +58,7 @@ const pieceReverse = p => p.kind === 'line' ? bladeLine(p.x1, p.y1, p.x0, p.y0) 
  * along the path but for the turns at its joins; joins: [{ s, thm, thp, turn }] (the directions either
  * side: the end of the piece before and the start of the one after; turn = thp - thm, > 0 to the left).
  */
-function bladePath(pieces) {
+function makeBladePath(pieces) {
   const s0 = [0];
   for (const p of pieces) s0.push(s0[s0.length - 1] + pieceLen(p));
   const n = pieces.length, len = s0[n], off = new Float64Array(n), joins = [];
@@ -258,7 +258,7 @@ function bladeProfile(spec) {
 
 /** The profile's parts from its two paths' pieces (see bladeProfile). */
 function finishProfile(shape, H, underPieces, facePieces, C, err, extra = {}) {
-  const under = bladePath(underPieces), face = bladePath(facePieces), xe = under.end[0];
+  const under = makeBladePath(underPieces), face = makeBladePath(facePieces), xe = under.end[0];
   const tol = 1e-9;
   // the underside's height at x: its pieces run with x never falling (checked below); a vertical piece gives none
   const spans = under.pieces.map((p, i) => { const a = pieceAt(p, 0), b = pieceAt(p, under.s0[i + 1] - under.s0[i]); return [a[0], b[0]]; });
@@ -318,7 +318,7 @@ function finishProfile(shape, H, underPieces, facePieces, C, err, extra = {}) {
  * spline through them, broken at the corners), cornerDeg (a vertex turning more than this is a corner,
  * default 10), M, C (a vertex index each: the metering point, the simple model's wetted end; absent:
  * automatic) }.
- * M automatic: the downstream end of the lowest part (within 1e-4 of the profile's height); C automatic:
+ * M automatic: the downstream end of the lowest part (within 1e-6 of the profile's height); C automatic:
  * the highest corner on the face (none: M). Returns bladeProfile's result with auto { M, C, corners }
  * (the vertex indices found), vs (each vertex's arc length along under then face: s < 0 on the underside,
  * measured back from M) and verts (as placed: x from 0, y with the gap H at M).
@@ -334,7 +334,7 @@ function customProfile(c, H) {
   // M: the downstream end of the lowest run of vertices
   let ymin = Infinity, ymax = -Infinity, lowest = 0;
   for (let i = 0; i < n; i++) { ymin = Math.min(ymin, v0[i].y); ymax = Math.max(ymax, v0[i].y); if (v0[i].y < v0[lowest].y) lowest = i; }
-  const tolY = Math.max(1e-9, 1e-4 * (ymax - ymin));
+  const tolY = Math.max(1e-12, 1e-6 * (ymax - ymin));
   let Mi = lowest;
   while (Mi + 1 < n - 1 && v0[Mi + 1].y <= ymin + tolY) Mi++;
   const M = Number.isInteger(c.M) && c.M > 0 && c.M < n - 1 ? c.M : Mi;
@@ -358,7 +358,7 @@ function customProfile(c, H) {
       s += rp.pieces.reduce((a, p) => a + pieceLen(p), 0);
     }
   } else ({ pieces, vs } = roundedPieces(v, isCorner));
-  const all = bladePath(pieces), sM = vs[M], yM = all.at(sM)[1];
+  const all = makeBladePath(pieces), sM = vs[M], yM = all.at(sM)[1];
   // (up so the path's point at M -- the middle of its rounding when it is rounded -- is H above the web)
   const [up, fp] = pathSplit(all, sM).map(ps => ps.map(p => pieceShift(p, 0, H - yM)));
   // C: the given vertex (at M or on the face), else the highest corner on the face
@@ -371,6 +371,7 @@ function customProfile(c, H) {
   prof.Mi = M; prof.Ci = Ci;
   prof.vs = Array.from(vs, q => q - sM);
   prof.verts = v.map(p => ({ ...p, y: p.y + H - yM }));
+  prof.placed = true;                       // (verts as placed: x from the first, the gap H at M)
   return prof;
 }
 
@@ -383,7 +384,7 @@ function customProfile(c, H) {
  * vertex (the downstream end of the lowest run); from there upstream while x does not grow (a step's
  * riser is kept; a steep rise at the upstream end -- the blade's back -- is not) and downstream while y
  * does not fall (a level part at the top end -- the blade's top -- is not kept). Returns the vertices in
- * that order (bulges carried with their segments), or null.
+ * that order (bulges carried with their segments, corner flags with their points), or null.
  */
 function openProfile(verts, closed) {
   const n = verts.length;
@@ -391,7 +392,7 @@ function openProfile(verts, closed) {
   const idx = k => closed ? ((k % n) + n) % n : k;
   const ok = k => closed || (k >= 0 && k < n);
   let ymin = Infinity, ymax = -Infinity; for (const p of verts) { ymin = Math.min(ymin, p.y); ymax = Math.max(ymax, p.y); }
-  const tol = Math.max(1e-9, 1e-4 * (ymax - ymin)), xtol = 1e-9 * Math.max(1, ymax - ymin);
+  const tol = Math.max(1e-12, 1e-6 * (ymax - ymin)), xtol = 1e-9 * Math.max(1, ymax - ymin);
   let lowest = 0; for (let i = 0; i < n; i++) if (verts[i].y < verts[lowest].y) lowest = i;
   // which way along the loop is downstream: the lowest run's neighbours; the direction whose x grows
   const dir = (() => {
@@ -423,7 +424,7 @@ function openProfile(verts, closed) {
   const order = [...upI.slice().reverse(), ...downI.slice(1)];
   if (order.length < 3) return null;
   // bulges: a segment from a to b in the loop's direction keeps its bulge; run backwards, negated
-  const out = order.map(k => ({ x: verts[idx(k)].x, y: verts[idx(k)].y, bulge: 0 }));
+  const out = order.map(k => { const v = verts[idx(k)]; return { x: v.x, y: v.y, bulge: 0, ...(v.corner === true || v.corner === false ? { corner: v.corner } : {}) }; });
   for (let t = 0; t < order.length - 1; t++) {
     const a = order[t], b = order[t + 1];
     // the loop segment from idx(a) to idx(b): forward when b = a + 1 in the loop's own order
@@ -550,6 +551,6 @@ function parsePointsCSV(text) {
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
-  BLADE_STEEP, bladeLine, bladeArc, bladeArcFrom, pieceLen, pieceAt, pieceCut, pieceReverse, bladePath, pathPoints, pathSplit,
+  BLADE_STEEP, bladeLine, bladeArc, bladeArcFrom, pieceLen, pieceAt, pieceCut, pieceReverse, makeBladePath, pathPoints, pathSplit,
   bulgeArc, catmullRom, roundedPieces, pieceShift, turnAt, deBoor, bladeProfile, finishProfile, customProfile, openProfile, parseDXF, parsePointsCSV,
 };

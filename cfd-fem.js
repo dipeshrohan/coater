@@ -1704,7 +1704,7 @@ function coaterGrid(r, geo) {
     ...g, Q: r.Q, Qin, Qout, massError: (Qout - Qin) / Qin,
     converged: r.converged, residual: r.residual, iterations: r.iterations, history: r.history, solveId: r.solveId, error: r.error,
     xe: geo.xe, H: geo.H, faceDeg: geo.faceDeg, contactDeg: geo.contactDeg,
-    iCorner, iCL, mode: r.meniscus.mode, sCL: r.meniscus.mode === 'climbed' ? r.surface.s : 0,
+    iCorner, iCL, mode: r.meniscus.mode, sCL: r.meniscus.mode === 'climbed' || r.meniscus.k ? r.surface.s : 0,   // (a shaped blade pinned at a corner above M: there)
     clX: g.gx[top(iCL)], clY: g.gy[top(iCL)], leaveDeg: r.meniscus.leaveDeg, alphaMaxDeg: r.meniscus.alphaMaxDeg,
     xEnd: g.gx[top(nx - 1)], hEnd: g.gy[top(nx - 1)],
     xWeb, pWeb, uWeb: Array.from({ length: nx }, (_, i) => g.u[i]), xTop, yTop, pTop, pMax, pMaxLoc: [g.gx[kMax], g.gy[kMax]], pMin, pMinLoc: [g.gx[kMin], g.gy[kMin]],

@@ -372,17 +372,18 @@ function accSolve(st, settings) {
 /** A mesh solved: its outputs and their change from the previous mesh; then stop (met, or as many meshes as allowed) or refine. */
 function accCycleDone(st, c) {
   const r = c.r, U = st.geo.U;
-  const cyc = { elements: r.mesh.nEx * r.mesh.nEy, nEx: r.mesh.nEx, nEy: r.mesh.nEy, film: r.Q / U, sCL: r.mode === 'climbed' ? r.sCL : 0, mode: r.mode, ms: c.ms, reused: !!c.reused, r, settings: c.settings };
+  // (a shaped blade: the corner its contact line is at or above too -- a different one is a different answer)
+  const cyc = { elements: r.mesh.nEx * r.mesh.nEy, nEx: r.mesh.nEx, nEy: r.mesh.nEy, film: r.Q / U, sCL: r.mode === 'climbed' ? r.sCL : 0, mode: r.mode, k: r.shaped ? r.shaped.k : null, ms: c.ms, reused: !!c.reused, r, settings: c.settings };
   const prev = st.cycles[st.cycles.length - 1];
   if (prev) {
     cyc.dFilm = (cyc.film - prev.film) / Math.abs(cyc.film);
     // (the contact line's change relative to its height, at least 5 % of the gap: a line near the edge is not divided by nearly nothing)
-    cyc.dCL = cyc.mode !== prev.mode ? Infinity : (cyc.sCL - prev.sCL) / Math.max(Math.abs(cyc.sCL), 0.05 * st.H);
+    cyc.dCL = cyc.mode !== prev.mode || cyc.k !== prev.k ? Infinity : (cyc.sCL - prev.sCL) / Math.max(Math.abs(cyc.sCL), 0.05 * st.H);
   }
   st.cycles.push(cyc);
   if (st.method === 'everywhere' && st.cycles.length >= 3) {
     const [a, b, d] = st.cycles.slice(-3), rC = Math.sqrt(b.elements / a.elements), rF = Math.sqrt(d.elements / b.elements);
-    st.rich = { film: accRichardson(a.film, b.film, d.film, rC, rF), cl: d.mode === 'climbed' && a.mode === d.mode && b.mode === d.mode ? accRichardson(a.sCL, b.sCL, d.sCL, rC, rF) : null };
+    st.rich = { film: accRichardson(a.film, b.film, d.film, rC, rF), cl: d.mode === 'climbed' && a.mode === d.mode && b.mode === d.mode && a.k === d.k && b.k === d.k ? accRichardson(a.sCL, b.sCL, d.sCL, rC, rF) : null };
   }
   const met = prev && (!st.outs.film || Math.abs(cyc.dFilm) < st.target) && (!st.outs.cl || Math.abs(cyc.dCL) < st.target);
   logCFD(st.i, `mesh to an accuracy, mesh ${st.cycles.length}: ${cyc.nEx} × ${cyc.nEy} elements, wet film ${(cyc.film * 1000).toFixed(5)} mm${prev ? ` (${accPct(cyc.dFilm)})` : ''}, contact line ${cyc.mode === 'climbed' ? `${(cyc.sCL * 1000).toFixed(4)} mm` : 'pinned'}${prev && Number.isFinite(cyc.dCL) ? ` (${accPct(cyc.dCL)})` : ''}`);

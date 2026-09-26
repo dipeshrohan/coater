@@ -10,7 +10,7 @@
  *
  * Loaded before undo.js (its settings are undo steps) and project.js (they and the result are saved in the project).
  */
-const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40,
+const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40, fileFace: 'file',
   nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 2, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true,
   stream: false, streamDensity: 'medium', step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1 };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
@@ -23,7 +23,7 @@ let C3D_OCCT = null;  // the STEP reader (occt-import-js), started on first use
 const C3D_UNDO = {
   source: ['3D geometry', v => v === 'made' ? 'made from the 2D setup' : 'from a file'], region: ['3D region', v => v === 'strip' ? 'strip at a location' : 'full web width'],
   loc: ['3D strip location', v => `L${v + 1}`], stripW: ['3D strip width', v => v + ' mm'], units: ['File units', v => v], machine: ['File machine direction', v => v], up: ['File up axis', v => v],
-  inlet: ['Inlet upstream of the edge', v => v + ' mm'], nxGap: ['3D mesh along the blade', v => v], nxFace: ['3D mesh up the exit face', v => v], nxFilm: ['3D mesh along the free surface', v => v],
+  inlet: ['Inlet upstream of the edge', v => v + ' mm'], fileFace: ['Exit face of the file blade', v => v === 'file' ? 'from the file' : 'straight at the 2D\'s angle'], nxGap: ['3D mesh along the blade', v => v], nxFace: ['3D mesh up the exit face', v => v], nxFilm: ['3D mesh along the free surface', v => v],
   ny: ['3D mesh across the gap', v => v], nzStrip: ['3D mesh across the strip', v => v], nzFull: ['3D mesh across the web', v => v], vscale: ['3D vertical scale', v => '×' + v],
   field: ['3D field shown', v => (C3D_FIELDS[v] || { l: v }).l],
   blade: ['3D view: blade', v => v ? 'on' : 'off'], slurry: ['3D view: slurry', v => v ? 'on' : 'off'], web: ['3D view: web', v => v ? 'on' : 'off'], mesh: ['3D view: mesh', v => v ? 'on' : 'off'],
@@ -145,16 +145,18 @@ function c3dFilm(d) {
 function c3dBuild() {
   const rg = c3dRegion(), g = cfdGeometry(C3D.region === 'strip' ? C3D.loc : 0), H = c3dGapAt(rg.zc);
   const key = JSON.stringify([C3D.source, C3D.region, C3D.loc, C3D.stripW, C3D.units, C3D.machine, C3D.up, C3D.inlet, C3D.nxGap, C3D.nxFilm, C3D.ny, rg, H, C3D.zZones, C3D.frac3, C3D.zFrac,
-    g.shape, g.R, g.Xup, g.L, g.exitAngle, P.face, P.dH, P.lw, P.tilt, P.dt, C3D_FILE && C3D_FILE.id, ONE_D.key]);
+    g.shape, g.R, g.Xup, g.L, g.exitAngle, P.face, P.dH, P.lw, P.tilt, P.dt, C3D_FILE && C3D_FILE.id, ONE_D.key, g.blade || null, C3D.fileFace]);
   if (C3D_GEO && C3D_GEO.key === key) return C3D_GEO;
   const out = { key, H, rg };
   try {
     let tris, xe;
     if (C3D.source === 'made') {
-      const pr = bladeProfile({ shape: g.shape, H, R: g.R, Xup: g.Xup, L: g.L, faceDeg: g.exitAngle, faceLen: P.face / 1000, top: 0.02 });
+      // (a shaped blade: its profile at this gap, cfd-blade.js)
+      const sp = g.blade ? bladeProfileCached({ ...g.blade, H }) : null;
+      const pr = bladeSideOutline({ shape: g.shape, H, R: g.R, Xup: g.Xup, L: g.L, faceDeg: g.exitAngle, faceLen: P.face / 1000, top: 0.02, shaped: sp ? { under: pathPoints(sp.under), face: pathPoints(sp.face) } : null });
       const pad = (rg.z1 - rg.z0) * 0.02 + 1e-4;
       tris = extrudeProfile(pr.pts, rg.z0 - pad, rg.z1 + pad, Math.max(4, rg.nz), z => c3dGapAt(z) - H);
-      xe = pr.xe; out.label = `made from the 2D setup (${g.shape === 'round' ? `round entry R ${CFDG.R} mm` : `flat land ${P.L} mm`}, exit face ${g.exitAngle}°)`;
+      xe = pr.xe; out.label = `made from the 2D setup (${g.shape === 'round' ? `round entry R ${CFDG.R} mm` : bladeText()}${g.shape === 'custom' ? '' : `, exit face ${g.exitAngle}°`})`;
     } else if (C3D_FILE) {
       const scale = C3D_FILE.kind === 'step' ? 1e-3 : { mm: 1e-3, cm: 1e-2, m: 1, in: 0.0254 }[C3D.units];
       xe = C3D.inlet / 1000;
@@ -205,7 +207,9 @@ function c3dSetupTree() {
         ${sel('Machine direction', 'machine', axes.replace(`value="${C3D.machine}"`, `value="${C3D.machine}" selected`))}
         ${sel('Up', 'up', axes.replace(`value="${C3D.up}"`, `value="${C3D.up}" selected`))}
         ${num('Inlet upstream of the edge', 'inlet', 'mm')}
-        <p class="prop-note">The blade's lowest point is put at the gap over the web, at the metering edge; the inlet is this far upstream of it.</p>`}
+        <p class="prop-note">The blade's lowest point is put at the gap over the web, at the metering edge; the inlet is this far upstream of it.</p>
+        ${seg('Exit face', 'fileFace', [['file', 'From the file'], ['straight', 'Straight']])}
+        <p class="prop-note">${C3D.fileFace === 'file' ? 'Each station across the web takes the blade\'s side section there: its underside and its own exit face (a bevel, a radius, corners), the contact line on it as in 2D (the 2D setup\'s contact-line model).' : 'The file gives the underside only; the exit face is straight at the 2D setup\'s angle.'}</p>`}
     </details>
     <details class="grp cfd-grp" data-c3dgrp="region"${C3D_OPEN.region ? ' open' : ''}><summary>3D region</summary>
       ${seg('Across the web', 'region', [['strip', 'Strip'], ['full', 'Full width']])}
@@ -256,29 +260,40 @@ async function c3dOcct() {
   delete self.OCCT_WASM;   // (the text is not needed once decoded)
   return occtimportjs({ wasmBinary });
 }
-/** Read an STL or STEP file of the blade. */
+/** The triangles of an STL or STEP file (a Float32Array, 9 numbers per triangle, the file's units; STEP in mm). */
+async function c3dReadBladeFile(file) {
+  const buf = await file.arrayBuffer(), step = /\.(step|stp)$/i.test(file.name);
+  let tris;
+  if (step) {
+    imgToast('Reading the STEP file…');
+    if (typeof occtimportjs === 'undefined') await loadScript('lib/occt-import-js.js');
+    if (!C3D_OCCT) C3D_OCCT = c3dOcct();
+    const occt = await C3D_OCCT;
+    const r = occt.ReadStepFile(new Uint8Array(buf), { linearUnit: 'millimeter' });
+    if (!r || !r.success || !r.meshes.length) throw new Error('the STEP file could not be read');
+    const out = [];
+    for (const m of r.meshes) { const p = m.attributes.position.array, idx = m.index.array; for (const i of idx) out.push(p[3 * i], p[3 * i + 1], p[3 * i + 2]); }
+    tris = new Float32Array(out);
+  } else tris = parseSTL(buf);
+  if (!tris.length) throw new Error('no triangles in the file');
+  return { tris, kind: step ? 'step' : 'stl' };
+}
+/** Read an STL or STEP file of the blade (the 3D page's blade from then on). */
 async function c3dImportFile(file) {
   try {
-    const buf = await file.arrayBuffer(), step = /\.(step|stp)$/i.test(file.name);
-    let tris;
-    if (step) {
-      imgToast('Reading the STEP file…');
-      if (typeof occtimportjs === 'undefined') await loadScript('lib/occt-import-js.js');
-      if (!C3D_OCCT) C3D_OCCT = c3dOcct();
-      const occt = await C3D_OCCT;
-      const r = occt.ReadStepFile(new Uint8Array(buf), { linearUnit: 'millimeter' });
-      if (!r || !r.success || !r.meshes.length) throw new Error('the STEP file could not be read');
-      const out = [];
-      for (const m of r.meshes) { const p = m.attributes.position.array, idx = m.index.array; for (const i of idx) out.push(p[3 * i], p[3 * i + 1], p[3 * i + 2]); }
-      tris = new Float32Array(out);
-    } else tris = parseSTL(buf);
-    if (!tris.length) throw new Error('no triangles in the file');
+    const { tris, kind } = await c3dReadBladeFile(file);
     undoHint(`Import 3D blade ${file.name}`);
-    c3dFileIn({ name: file.name, kind: step ? 'step' : 'stl', tris, id: String(Date.now()) });
+    c3dFileIn({ name: file.name, kind, tris, id: String(Date.now()) });
     C3D.source = 'file';
     imgToast(`${file.name}: ${(tris.length / 9).toLocaleString()} triangles read.`);
     render();
   } catch (e) { imgToast(`Could not import ${file.name}: ${e.message}`, 'error'); }
+}
+/** The 3D page's blade file oriented as its settings say (m: machine direction x, up y, across z), or null. */
+function c3dOrientedFile() {
+  if (!C3D_FILE) return null;
+  const scale = C3D_FILE.kind === 'step' ? 1e-3 : { mm: 1e-3, cm: 1e-2, m: 1, in: 0.0254 }[C3D.units];
+  return orientTris(C3D_FILE.tris, { scale, machine: C3D.machine, up: C3D.up });
 }
 const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('could not load ' + src)); document.head.appendChild(s); });
 
@@ -356,7 +371,7 @@ function c3dSolveMessage(withFile = true) {
   }
   let file = null;
   if (C3D.source === 'file') {
-    const fileKey = [C3D_FILE && C3D_FILE.id, C3D.units, C3D.machine, C3D.up, C3D.inlet];
+    const fileKey = [C3D_FILE && C3D_FILE.id, C3D.units, C3D.machine, C3D.up, C3D.inlet, ...(C3D.fileFace === 'file' ? [] : ['straight face'])];
     if (!withFile) return { msg, strip, file: fileKey };
     // the file's underside at the solve's stations across the region and closely along the flow
     const G = c3dBuild(), xe = G.xe, NL = 2 * strip.nEz + 1;
@@ -365,8 +380,26 @@ function c3dSolveMessage(withFile = true) {
     const zs = strip.zs ? [...new Set([...even, ...strip.zs].map(v => +v.toFixed(12)))].sort((a, b) => a - b) : even;
     const f = undersideField(G.tris, xs.map((x, k) => k === 0 ? x + 1e-7 : k === xs.length - 1 ? x - 1e-7 : x), zs.map(z => z + zc));
     file = { xs, zs, low: Array.from(f.low) };
+    // (its exit face from the file: its side section at each station, opened, from the inlet at x = 0)
+    if (C3D.fileFace === 'file') file.sections = c3dSections(G.tris, strip.zs || Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1)), zc);
   }
   return { msg, strip, file };
+}
+/**
+ * The file blade's side sections at the stations z (m, from the region's centre zc): each opened (inlet, metering
+ * point, face; cfd-blade.js's openProfile), cut at the domain's inlet x = 0 (or extended level to it), and the gap
+ * at its metering point H. Throws when a station has no blade outline.
+ */
+function c3dSections(tris, zs, zc) {
+  return zs.map(z => {
+    const loops = sectionTris(tris, z + zc), o = loops.length ? openProfile(loops[0].verts, loops[0].closed) : null;
+    if (!o || o.length < 3) throw new Error(`no blade outline in the file's section at z ${((z + zc) * 1000).toFixed(1)} mm`);
+    let v = o.map(q => ({ x: q.x, y: q.y, bulge: q.bulge || 0 }));
+    const k = v.findIndex(q => q.x > 0);
+    if (k > 0) { const a = v[k - 1], b = v[k], t = (0 - a.x) / (b.x - a.x); v = [{ x: 0, y: a.y + t * (b.y - a.y), bulge: 0 }, ...v.slice(k)]; }
+    else if (k === 0 && v[0].x > 1e-9) v = [{ x: 0, y: v[0].y, bulge: 0 }, ...v];
+    return { z, verts: v, H: Math.min(...v.map(q => q.y)) };
+  });
 }
 const c3dSolveKey = () => JSON.stringify([C3D.region, C3D.region === 'full' ? null : C3D.loc, C3D.source, c3dSolveMessage(false)]);
 /** The current key for a result's own region and location (a result shown in the table while the page is set to another region). */
@@ -526,7 +559,7 @@ async function c3dRunWide(m, key) {
     if (!alive()) return;
     if (!converged) throw new Error(`the strips did not agree after ${sweeps} sweeps (last change ${(history[history.length - 1] * meta.H * 1e6).toFixed(3)} µm)`);
     // the result, as a strip's: node arrays over every station, the stations, the middle's pressure along the top
-    const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', skew: msg.skew || 0, mode: meta.mode, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H, frac: meta.frac,
+    const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', skew: msg.skew || 0, mode: meta.mode, k: meta.k ?? null, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H, frac: meta.frac,
       zOff: ACROSS_W / 2000, size: { unknowns, strips: subs.length, workers: P } };
     for (const f of ['x', 'y', 'z', 'u', 'v', 'w', 'p', 'gd', 'mu']) R[f] = new Float32Array(N);
     for (let l = 0; l < NL; l++) if (!state[l].x) state[l] = { ...state[l], ...full2[l] };   // (a web edge held at its own station's flow)
@@ -534,7 +567,7 @@ async function c3dRunWide(m, key) {
       const n3 = (c * NL + l) * NR + k, n2 = c * NR + k;
       for (const f of ['x', 'y', 'z', 'u', 'v', 'w', 'p', 'gd', 'mu']) R[f][n3] = state[l][f][n2];
     }
-    R.stations = zs.map((z, l) => ({ z, dH: 0, film: filmOf(state[l]), q: state[l].q, s: meta.climbed ? state[l].s : 0, film2: film2[l], s2: s2[l] }));
+    R.stations = zs.map((z, l) => ({ z, dH: 0, film: filmOf(state[l]), q: state[l].q, s: meta.climbed || meta.k ? state[l].s : 0, film2: film2[l], s2: s2[l] }));
     const T = state[mid];
     R.top = { x: [], y: [], p3: [], p2: [] };
     for (let c = 0; c < NC; c++) { const n2 = c * NR + NR - 1; R.top.x.push(T.x[n2]); R.top.y.push(T.y[n2]); R.top.p3.push(T.p[n2]); R.top.p2.push(top2 ? top2[c] : NaN); }
@@ -645,7 +678,7 @@ function view3D() {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid], films = R.stations.map(s => s.film * 1000), cls = R.stations.map(s => s.s * 1000);
     st = pill(`3D solved: wet film ${Math.min(...films).toFixed(3)} to ${Math.max(...films).toFixed(3)} mm across the ${R.region === 'full' ? 'web' : 'strip'}`, stale ? 'warn' : 'ok')
       + (stale ? pill('Out of date: the inputs changed since (Solve 3D again)', 'warn') : '')
-      + pill(R.mode === 'climbed' ? `Contact line ${Math.min(...cls).toFixed(2)} to ${Math.max(...cls).toFixed(2)} mm up the exit face` : 'Contact line pinned at the edge', '')
+      + pill(R.mode === 'climbed' ? `Contact line ${Math.min(...cls).toFixed(2)} to ${Math.max(...cls).toFixed(2)} mm ${R.k != null ? 'along the face' : 'up the exit face'}` : R.k ? `Contact line pinned at corner ${R.k} of the face` : 'Contact line pinned at the edge', '')
       + pill(R.region === 'full' ? `${c3dTime(S.ms / 1000)}: ${R.size.strips} strips, ${R.sweeps} sweeps until they agreed` : `${(S.ms / 1000).toFixed(0)} s, ${R.iterations} Newton steps`, '')
       + (R.region === 'full' ? pill(R.skew ? 'The web\'s edges: open, each held at its own station\'s flow along the skewed blade (the edge bead is not modelled)' : 'The web\'s edges: symmetry planes (the edge bead is not modelled)', '') : '');
     void sm;
@@ -680,7 +713,7 @@ function view3D() {
     document.getElementById('ss').innerHTML = [
       full ? ['Wet film, mean, mm', (films.reduce((a, b) => a + b, 0) / films.length).toFixed(3)] : ['Wet film at L' + (C3D.loc + 1) + ', mm', (sm.film * 1000).toFixed(3)],
       ['3D vs 2D film, largest', dev.toFixed(2) + ' %'],
-      full ? ['Film range across the web', ((Math.max(...films) - Math.min(...films)) * 1000).toFixed(1) + ' µm'] : ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : 'pinned'],
+      full ? ['Film range across the web', ((Math.max(...films) - Math.min(...films)) * 1000).toFixed(1) + ' µm'] : ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : R.k ? `pinned at corner ${R.k}` : 'pinned'],
       ['Flow across the web, max', (wMax * 1000).toFixed(3) + ' mm/s'],
       full ? ['Unknowns per strip', `${R.size.unknowns.toLocaleString()} × ${R.size.strips}`] : ['Unknowns', R.size.unknowns.toLocaleString()],
       ['Solve time', full ? c3dTime(S.ms / 1000) : `${(S.ms / 1000).toFixed(0)} s`],
@@ -726,7 +759,7 @@ function c3dCharts(R) {
       s: [{ p: zs.map((z, k) => [z, b[k]]), c: mut, w: 1.6, dash: [5, 4], dots: !full }, { p: zs.map((z, k) => [z, a[k]]), c: acc, w: 2.2, dots: !full }] });
   };
   line('c3dFilm', R.stations.map(s => s.film * 1000), R.stations.map(s => s.film2 * 1000), 'wet film (mm)', 4);
-  if (R.mode === 'climbed') line('c3dCL', R.stations.map(s => s.s * 1000), R.stations.map(s => s.s2 * 1000), 'contact line up the face (mm)', 3);
+  if (R.mode === 'climbed') line('c3dCL', R.stations.map(s => s.s * 1000), R.stations.map(s => s.s2 * 1000), R.k != null ? 'contact line along the face (mm)' : 'contact line up the face (mm)', 3);
   else { const cv = document.getElementById('c3dCL'); if (cv) { const { c, w, h } = setupCanvas(cv, 0.3); c.fillStyle = mut; c.font = '13px ' + cssVar('--sans'); c.textAlign = 'center'; c.fillText('Pinned at the metering edge at every station', w / 2, h / 2); } }
   c3dPressureMap(R);
   // pressure along the blade and face at the middle station: 3D and its station's 2D (up to the contact line)
