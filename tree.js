@@ -75,6 +75,7 @@ const LABEL_ICON = [[/^Location/, 'location'], [/^Gap/, 'height'], [/^Contact an
 const GROUPS = {
   'Process': ['process', 'process'], 'Slurry': ['slurry', 'drop'], 'Blade and bead': ['blade', 'shape'], 'Variation across the web': ['variation', 'wave'], 'Web edge and film': ['edge', 'ripple'],
   geo: ['blade', 'shape'], rheo: ['slurry', 'model'], fibre: ['process', 'fibre'], air: ['edge', 'air'], solver: ['neutral', 'mesh'], locs: ['variation', 'location'],
+  oven: ['edge', 'oven'], matro: ['slurry', 'drop'],
   anim: ['neutral', 'playback'], doe: ['neutral', 'doe'], meas: ['neutral', 'data'],
   c3d_geo: ['blade', 'shape'], c3d_region: ['variation', 'location'], c3d_mesh: ['neutral', 'mesh'],
 };
@@ -105,6 +106,8 @@ const cfdUses = () => {
 };
 /** Why a tab does not use an input (its hover note). */
 function unusedWhy(k) {
+  if (tab === 12) return 'not used by the process chain (it starts from the wet film)';
+  if (tab === 13) return 'not on a material card';
   if (tab === 4 || tab === 5 || tab >= 8) {
     if (k === 'n' || k === 'ty') return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
     if (k === 'L') return CFDG.shape === 'custom' ? 'not used with a custom blade profile (its points set the land)' : 'not used with a round blade entry (by the flat land and the shaped blades)';
@@ -114,7 +117,8 @@ function unusedWhy(k) {
 }
 // (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web and the 3D blade the notch face)
 // (the 3D also the contact angle on the web: its open edges)
-const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : tab === 9 ? [...cfdUses(), 'face', 'thw'] : USES[tab]; return !u || u.includes(k); };
+// (the Process tab: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
+const inputUsed = k => { const u = tab === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : tab === 4 || tab === 5 || tab === 8 || tab === 12 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : tab === 9 ? [...cfdUses(), 'face', 'thw'] : USES[tab]; return !u || u.includes(k); };
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {

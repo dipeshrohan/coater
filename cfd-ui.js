@@ -213,6 +213,31 @@ function airProps(Tc) {
 /** An oven zone's input id (zone 1's drying air keeps the ids the single oven setting had). */
 const ovenZoneId = (i, k) => i === 0 && OVEN_ZONE_LEGACY_ID[k] ? OVEN_ZONE_LEGACY_ID[k] : `ovz${i + 1}_${k}`;
 const OVEN_ZONE_LEGACY_ID = { airU: 'cfdAirU', airT: 'cfdAirT', plenum: 'cfdPlenum' };
+/** The oven's zones in the inputs bar (the 2D setup's and the Process tab's): each zone's inputs, Add zone, the note. */
+function ovenZonesTree() {
+  const prop = (label, id, attrs, unit) => `<div class="prop"><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><input type="number" id="${id}" ${attrs}><span class="prop-u">${unit}</span></span></div>`;
+  return `${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
+      <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
+      ${OVEN_ZONE_FIELDS.map(([k, l, u, lo, hi, step]) => prop(l, ovenZoneId(i, k), `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
+    </div>`).join('')}
+    <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="ovzAdd"${OVEN.zones.length >= OVEN_MAX_ZONES ? ' disabled' : ''}>${uiIco('plus')}Add zone</button></div>
+    <p class="prop-note" id="ovzNote">${ovenNote()}</p>`;
+}
+/** Wire the zones' inputs: after a value, `changed` (the page's own redraw); after a zone added or removed, `redraw` (the page and the bar). A new zone starts as the last one. */
+function wireOvenZones(changed, redraw) {
+  document.querySelectorAll('#setupExtra input[data-ovk]').forEach(el => {
+    const i = +el.dataset.ovz, k = el.dataset.ovk, [, l, u, lo, hi] = OVEN_ZONE_FIELDS.find(f => f[0] === k);
+    el.addEventListener('change', () => {
+      guardNumber(el, { label: `Oven zone ${i + 1}: ${l.toLowerCase()}`, lo, hi, unit: u }, v => { OVEN.zones[i][k] = v; });
+      el.value = OVEN.zones[i][k];
+      const note = document.getElementById('ovzNote'); if (note) note.innerHTML = ovenNote();
+      changed();
+    });
+  });
+  const add = document.getElementById('ovzAdd');
+  if (add) add.onclick = () => { if (OVEN.zones.length < OVEN_MAX_ZONES) { OVEN.zones.push({ ...OVEN.zones[OVEN.zones.length - 1] }); redraw(); } };
+  document.querySelectorAll('#setupExtra [data-ovz-del]').forEach(b => { b.onclick = () => { if (OVEN.zones.length > 1) { OVEN.zones.splice(+b.dataset.ovzDel, 1); redraw(); } }; });
+}
 /** The oven under the zones: its length and the time the film spends in it at the web speed. */
 function ovenNote() {
   const o = ovenTime(P.U / 60), n = OVEN.zones.length;
@@ -373,7 +398,7 @@ const FV = {
   manualSeeds: [],        // [x, y] in metres, shared by all locations so comparisons are like for like
   across: 'film',         // quantity plotted against position across the web
   convOpen: false,        // convergence: solve-sequence table expanded
-  tree: { geo: true, rheo: true, fibre: false, air: false, solver: false, locs: true },   // model tree: CFD groups open
+  tree: { geo: true, rheo: true, fibre: false, air: false, solver: false, locs: true, oven: true, matro: true },   // model tree: CFD groups open (and the Process tab's)
   dock: 'metrics',        // results panel shown
   cutFields: ['speed', 'pressure'],   // fields charted along the cut lines
   cutSel: 0,              // Compare view: the cut line charted (its four locations overlaid)
@@ -682,13 +707,7 @@ function viewCFD() {
       ${prop('Kozeny constant', 'cfdKoz', `min="1" max="20" step="0.5" value="${CFDG.kozeny}"`, '')}
       ${prop('Air fraction, top surface', 'cfdAirFrac', `min="0.05" max="0.95" step="0.01" value="${CFDG.airFrac}"`, '')}
       <p class="prop-note" id="cfdFibreNote">${fibreNote()}</p>`)}
-    ${tree('air', 'Drying air (oven)', `
-      ${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
-        <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
-        ${OVEN_ZONE_FIELDS.map(([k, l, u, lo, hi, step]) => prop(l, ovenZoneId(i, k), `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
-      </div>`).join('')}
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="ovzAdd"${OVEN.zones.length >= OVEN_MAX_ZONES ? ' disabled' : ''}>${uiIco('plus')}Add zone</button></div>
-      <p class="prop-note" id="ovzNote">${ovenNote()}</p>`)}
+    ${tree('air', 'Drying air (oven)', ovenZonesTree())}
     ${tree('solver', 'Solver and mesh', `
       ${propSel('Mesh', 'cfdMesh', sharedMeshPresets().map(([k, m]) => opt(k, m.l + (k === 'medium' ? ' (default)' : ''), CFDS.mesh)).join(''))}
       ${SOLVER_INPUTS.filter(q => q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k] ?? ''}"${q.k === 'nEb' ? ' placeholder="auto"' : ''}`, q.u, CFDS.mesh !== 'custom')).join('')}
@@ -870,18 +889,7 @@ function viewCFD() {
   geoNum('cfdKoz', 'kozeny', 1, 20); geoNum('cfdAirFrac', 'airFrac', 0.05, 0.95); geoNum('cfdAirPerm', 'airPerm', 0.1, 5000); geoNum('cfdAirDP', 'airDP', 0, 2000);
   document.getElementById('cfdFibreSel').addEventListener('change', e => { selectFibre(e.target.value); viewCFD(); });
   document.getElementById('cfdDFrom').addEventListener('change', e => { CFDG.dFrom = e.target.value; viewCFD(); });
-  // (the oven's zones: each zone's drying air; a new zone starts as the last one)
-  document.querySelectorAll('#setupExtra input[data-ovk]').forEach(el => {
-    const i = +el.dataset.ovz, k = el.dataset.ovk, [, l, u, lo, hi] = OVEN_ZONE_FIELDS.find(f => f[0] === k);
-    el.addEventListener('change', () => {
-      guardNumber(el, { label: `Oven zone ${i + 1}: ${l.toLowerCase()}`, lo, hi, unit: u }, v => { OVEN.zones[i][k] = v; });
-      el.value = OVEN.zones[i][k];
-      const note = document.getElementById('ovzNote'); if (note) note.innerHTML = ovenNote();
-      renderCFD();
-    });
-  });
-  document.getElementById('ovzAdd').onclick = () => { if (OVEN.zones.length < OVEN_MAX_ZONES) { OVEN.zones.push({ ...OVEN.zones[OVEN.zones.length - 1] }); viewCFD(); } };
-  document.querySelectorAll('#setupExtra [data-ovz-del]').forEach(b => { b.onclick = () => { if (OVEN.zones.length > 1) { OVEN.zones.splice(+b.dataset.ovzDel, 1); viewCFD(); } }; });
+  wireOvenZones(renderCFD, viewCFD);
   document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdMesh').addEventListener('change', e => {
     const was = CFDS.mesh; CFDS.mesh = e.target.value;
