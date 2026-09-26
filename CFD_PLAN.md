@@ -50,8 +50,15 @@ of 1 / size (cfd-fem.js zonedEnds); with no zone on, the old code path runs: nod
   refine where asked (neighbours within x1.23); an adapted mesh gives its ends back; cfd-accuracy.validate.js
   (zero estimate on flows the elements hold, effectivity near 1 in 2D and approaching 1 in 3D, rate h^3.7,
   marking and splitting, Richardson orders exact, one adaptive step in 2D and in 3D on the coater).
-- Measured: a very fine contact-line zone (0.03 mm) with layers at the web takes the 2D solve from about
-  5 s to many minutes (the free contact line no longer converges directly; it is walked up in held steps).
+- Measured (app defaults, L1): no zones 4.5 s; edge + contact line 0.1 mm 8 s; with 3 layers at the web from
+  0.05 mm 28 s (the defaults); a contact line at 0.03 mm alone 133 s; layers from 0.02 mm alone 63 s; both
+  with an edge zone and a band: over 26 min, not finished (the free contact line no longer converges directly
+  and is walked up in held steps).
+- Browser runs: 2D adaptive, 3 meshes (67x6, 89x12, 109x13): film changed +0.015 %, +0.004 %, contact
+  line -0.48 %, +1.02 % (0.2 % not met); kept, re-solved bit for bit. 2D everywhere (67x6, 83x8, 103x9): film
+  +0.008 %, +0.002 %, Richardson 1.697545 mm (index 0.0014 %); contact line +2.2 %, +0.46 %. 3D strip adaptive
+  (45x4x2, 67x8x3): middle film -0.08 %, contact line +10 %. The contact line depends on the mesh far more
+  than the film does (as found in D1).
 
 ### Plan: graphene oxide film, from dispersion to graphene film (approved: "Ok continue")
 
