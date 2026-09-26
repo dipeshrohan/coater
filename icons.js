@@ -56,7 +56,7 @@ const GROUP_ICON = { '1d': 8, '2d': 4, '3d': 9 };
 /** The results panels' tabs (2D, DOE, Measured data, the modules' history). */
 const DOCK_ICON = {
   metrics: 'table', probes: 'probe', cut: 'cut', cuts: 'cut', across: 11, profiles: 'profile', fibre: 'fibre', conv: 'conv', problems: 'warn', msgs: 'msg',
-  mesh: 'grading', cases: 'cases', history: 'history', method: 'method', design: 'doe', runs: 'runs', compare: 6, fit: 'tune', dims: 'length', meshlocs: 'mesh',
+  mesh: 'grading', cases: 'cases', history: 'history', method: 'method', design: 'doe', runs: 'runs', compare: 6, fit: 'tune', dims: 'length', meshlocs: 'mesh', accuracy: 'tolerance',
 };
 /** A number tile's icon, from its label (first match). */
 const TILE_ICON = [

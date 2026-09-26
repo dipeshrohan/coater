@@ -63,6 +63,7 @@ onmessage = e => {
       U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H, webSlip: o.webSlip || 0,
       Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb, nEf: sv.nEf ?? 6, nEs: sv.nEs ?? 24, nEy: sv.nEy ?? 6, fInfGuess: qLub / o.U,
       gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY, tol: sv.tol, maxIter: sv.maxIter,
+      meshZones: sv.zones || null, meshFrac: sv.frac || null,     // (refinement zones; an adapted mesh)
     };
     if (o.preview) {
       // the mesh the solve starts on (not solved): as the post-processing grid, with no flow on it

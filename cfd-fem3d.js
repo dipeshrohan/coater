@@ -773,11 +773,13 @@ function coaterStations(opts, zs, ref = (zs.length - 1) >> 1, only = null) {
   const r0 = r2[ref];
   if (r0.error || !r0.meshDef || !r0.converged) return { error: `2D at ${(zs[ref] * 1e3).toFixed(1)} mm: ` + (r0.error || 'did not converge'), r2 };
   const mode = r0.meniscus.mode, climbed = mode === 'climbed', m0 = r0.meshDef, nF = (m0.cCL - m0.cCorner) / 2;
+  // refinement zones: every station keeps the reference station's element counts (its sizes then follow the zones)
+  const fr = m0.frac, counts = opts.meshZones && fr ? { b: fr.b.length - 1, f: nF, s: fr.s.length - 1, y: fr.y.length - 1 } : null;
   for (let l = 0; l < NL; l++) {
     if (l === ref || (only && !only.has(l))) continue;
     if (!opts.hAt && dHl[l] === dHl[ref] && thl[l] === thl[ref]) { r2[l] = r0; continue; }
     log(`2D at ${(zs[l] * 1e3).toFixed(1)} mm${opts.hAt ? '' : ` (gap ${dHl[l] >= 0 ? '+' : ''}${(dHl[l] * 1e6).toFixed(1)} µm)`}`);
-    const r = solve2(l, climbed ? { nFaceFixed: nF } : {});
+    const r = solve2(l, { ...(climbed ? { nFaceFixed: nF } : {}), ...(counts ? { meshCounts: counts } : {}) });
     if (r.error || !r.converged || !r.meshDef) return { error: `2D at ${(zs[l] * 1e3).toFixed(1)} mm: ${r.error || 'did not converge'}`, r2 };
     if (r.meniscus.mode !== mode || r.meshDef.NC !== m0.NC || r.meshDef.cCL !== m0.cCL)
       return { error: `the meniscus is ${mode} at ${(zs[ref] * 1e3).toFixed(1)} mm but ${r.meniscus.mode} at ${(zs[l] * 1e3).toFixed(1)} mm: a region where it changes is not modelled`, r2 };
@@ -836,6 +838,13 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
   });
 }
 
+/** The stations across a region (m, from its middle): opts.zs (refinement zones across the web; NL of them, ends and middles), else evenly spaced. */
+function stationZs(opts, NL) {
+  const W = opts.width;
+  if (opts.zs && opts.zs.length === NL) return Array.from(opts.zs);
+  return Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1));
+}
+
 /**
  * The coating flow on a strip across the web: each station first in 2D at its own gap and contact angle
  * (coaterStations), then the stations coupled in 3D (flow across the web, the surface's curvature across it).
@@ -844,11 +853,12 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
  *   m, from the middle's; z from -width/2 to width/2), contactAt(z) (the contact angle there, deg; default
  *   contactDeg everywhere), hAt(z) (instead of hFn and dH: the blade's underside at z, a function of x --
  *   a blade read from a file), webW (the web's speed along the blade: a blade skewed across the web, whose frame this
- *   is; U then the web's speed across it), maxIter3, onStage, onIteration3.
+ *   is; U then the web's speed across it), maxIter3, onStage, onIteration3, zs (the stations, 2 nEz + 1 of them from
+ *   -width/2 to width/2, element ends and middles: refinement zones across the web; default evenly spaced).
  * Returns { r2 (the 2D results per station), r3 (solveFEM3D's), stations: [{ z, dH, film, q, s, film2, s2 }], error? }.
  */
 function solveCoater3D(opts) {
-  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1));
+  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = stationZs(opts, NL);
   const S = coaterStations(opts, zs);
   if (S.error) return { error: S.error, r2: S.r2 };
   opts.onStage && opts.onStage(`3D: ${S.NC * NL * S.NR} nodes`);
@@ -874,7 +884,7 @@ function solveCoater3D(opts) {
  * Returns { r2, state (per station: u, v, w, p, x, y, z, gd, mu, h, s, q), stations, sweeps, history, converged, ms2, ms3 }.
  */
 function solveCoaterWide(opts) {
-  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1));
+  const nEz = opts.nEz, NL = 2 * nEz + 1, W = opts.width, zs = stationZs(opts, NL);
   const sub = Math.min(opts.sub ?? 4, nEz), ov = Math.min(opts.overlap ?? 2, sub - 1), step = sub - ov;
   const S = coaterStations(opts, zs);
   if (S.error) return { error: S.error, r2: S.r2 };

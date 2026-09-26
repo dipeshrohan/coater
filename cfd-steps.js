@@ -43,7 +43,7 @@ const step2D = () => FV.step || (cfdRuns.some(r => r.field) ? 'results' : 'geome
 /** The bottom tabs of each step (Results: every tab it had before the steps). */
 const STEP_DOCK_2D = {
   geometry: ['dims', 'problems', 'msgs', 'history'],
-  mesh: ['meshlocs', 'mesh', 'problems', 'msgs', 'history'],
+  mesh: ['meshlocs', 'mesh', 'accuracy', 'problems', 'msgs', 'history'],
   solve: ['conv', 'problems', 'msgs', 'history'],
   results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method'],
 };
@@ -133,10 +133,11 @@ function stepToolsHTML2D(k) {
       ${sep}<label class="fv-chk"><input type="checkbox" id="stepDims"${FV.stepDims ? ' checked' : ''}> Dimensions</label>`;
   if (k === 'mesh') {
     const solved = cfdRuns[i].field && !cfdIsStale(i);
-    return `${locSegHTML(i)}${sep}<label class="vp-ctl">Mesh <select id="stepMeshPreset" aria-label="Mesh">${Object.entries(MESH_PRESETS).map(([m, p]) => opt(m, p.l + (m === 'medium' ? ' (default)' : ''), CFDS.mesh)).join('')}</select></label>
+    return `${locSegHTML(i)}${sep}<label class="vp-ctl">Mesh <select id="stepMeshPreset" aria-label="Mesh">${sharedMeshPresets().map(([m, p]) => opt(m, p.l + (m === 'medium' ? ' (default)' : ''), CFDS.mesh)).join('')}</select></label>
       <div class="seg" role="tablist" aria-label="Which mesh"><button type="button" role="tab" data-meshshow="start" aria-selected="${meshShowOf2D(i) === 'start'}">Starting</button><button type="button" role="tab" data-meshshow="solved" aria-selected="${meshShowOf2D(i) === 'solved'}"${solved ? '' : ' disabled title="Solve first (or the solve is out of date)"'}>Solved</button></div>
       <label class="fv-chk"><input type="checkbox" id="stepMeshShade"${FV.meshShade ? ' checked' : ''}> Shade by quality</label>
-      <button class="tool-btn" type="button" id="stepMeshStudy" title="Solve this location on a coarser and a finer mesh as well, and compare">${uiIco('grading')}Mesh study…</button>`;
+      <button class="tool-btn" type="button" id="stepMeshStudy" title="Solve this location on a coarser and a finer mesh as well, and compare">${uiIco('grading')}Mesh study…</button>
+      <button class="tool-btn" type="button" id="stepMeshAcc" title="Refine the mesh until the wet film and contact line stop changing">${uiIco('tolerance')}Mesh to an accuracy…</button>`;
   }
   if (k === 'solve') return `<button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)">${uiIco('play')}Run<span class="hide-mid"> all 4</span></button>
       <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden>${uiIco('stop')}Stop</button>${sep}${locSegHTML(i)}${sep}
@@ -153,6 +154,7 @@ function wireStepTools2D() {
   document.querySelectorAll('[data-meshshow]').forEach(b => { b.onclick = () => { FV.meshShow = b.dataset.meshshow; viewCFD(); }; });
   const sh = document.getElementById('stepMeshShade'); if (sh) sh.onchange = () => { FV.meshShade = sh.checked; renderStepView2D(); };
   const ms = document.getElementById('stepMeshStudy'); if (ms) ms.onclick = () => { FV.dock = 'mesh'; viewCFD(); };
+  const ma = document.getElementById('stepMeshAcc'); if (ma) ma.onclick = () => { FV.dock = 'accuracy'; ACC.loc = stepLoc2D(); viewCFD(); };
   const tol = document.getElementById('stepTol'); if (tol) tol.onchange = () => { CFDS.tol = +tol.value; viewCFD(); };
   const it = document.getElementById('stepIter'); if (it) it.onchange = () => {
     const q = SOLVER_INPUTS.find(x => x.k === 'maxIter');
@@ -439,15 +441,19 @@ const zoomCtlHTML = (i, withImg = true) => `<div class="zoom-ctl" role="toolbar"
     ${withImg ? `<button type="button" class="zb" data-z="img" title="Save the plot as an image" aria-label="Save as image">${CAMERA_SVG}</button>` : ''}
   </div>`;
 function renderMeshStep2D(host) {
-  const i = stepLoc2D(), m = meshShown2D(i), l = CFD_LOCS[i];
+  const i = stepLoc2D(), l = CFD_LOCS[i];
+  let m = meshShown2D(i);
+  // (while a changed mesh is laid out again, the last one stays up, marked)
+  const last = MESH_PV.byLoc[i];
+  if (!m && last && !last.error && meshShowOf2D(i) !== 'solved') { m = { run: last.run, stats: last.stats, solved: false, stale: true }; requestMeshPreviews(); }
   if (!m) { host.innerHTML = `<div class="step-view"><p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Laying out the mesh at L${i + 1}…</p></div>`; requestMeshPreviews(); return; }
   if (m.error) { host.innerHTML = `<div class="step-view">${emptyHint(`No mesh at L${i + 1}`, `The mesher could not lay out this geometry: ${escAttr(m.error)}. See Problems, or change the geometry.`)}</div>`; return; }
   const s = m.stats, hmax = Math.max(...s.hist, 1);
   host.innerHTML = `<div class="step-view mesh-view"><div class="step-draw" id="cfdMeshPlot">
-      <div class="fv-caption">L${i + 1} · z = ${l.z} mm · ${m.solved ? 'solved mesh' : 'starting mesh (not solved)'}: ${s.nEx} × ${s.nEy} elements · <span class="fv-ex"></span></div>
+      <div class="fv-caption">L${i + 1} · z = ${l.z} mm · ${m.solved ? 'solved mesh' : m.stale ? '<i class="spin" aria-hidden="true"></i>laying the mesh out again' : 'starting mesh (not solved)'}: ${s.nEx} × ${s.nEy} elements · <span class="fv-ex"></span></div>
       <div class="fv-plot" data-i="${i}" data-zk="m${i}"><canvas class="fv-main" role="img" aria-label="Mesh at location ${i + 1}"></canvas><canvas class="fv-over" aria-hidden="true"></canvas>${zoomCtlHTML(i, false)}<div class="fv-tip" hidden></div></div>
     </div>
-    <aside class="step-side"><h4>${uiBadge('mesh')}Mesh at L${i + 1}${m.solved ? '' : ' (before solving)'}</h4><table class="kv">
+    <aside class="step-side">${zonesPanelHTML(s, i)}<h4>${uiBadge('mesh')}Mesh at L${i + 1}${m.solved ? '' : ' (before solving)'}</h4><table class="kv">
       <tr><td>Elements</td><td>${s.nEx} × ${s.nEy} = ${s.elements}</td></tr>
       <tr><td>Along blade + face + surface</td><td>${s.nB} + ${s.nF} + ${s.nS}</td></tr>
       <tr><td>Nodes, velocity / pressure</td><td>${s.nodesV.toLocaleString()} / ${s.nodesP.toLocaleString()}</td></tr>
@@ -457,18 +463,182 @@ function renderMeshStep2D(host) {
       <div class="q-axis"><span>quality 0</span><span>1</span></div>
       <p class="side-note">${s.below ? `<span class="warn-text">${s.below} element${s.below > 1 ? 's' : ''} below 0.5.</span> ` : ''}Worst ${s.worstWhere} <button type="button" class="linkish" id="meshShowWorst">show</button></p>
       <p class="side-note">Quality: each element's smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 = degenerate).${m.solved ? '' : ' The surface starts on the static meniscus with the contact line at the edge; as it is solved the surface moves, and if the contact line climbs the face, elements are added there.'}</p>
-      <p class="side-note">Element counts and grading: Inputs › Solver and mesh; this location's own: its inputs button.</p></aside></div>`;
+      <p class="side-note">Element counts and grading: Inputs › Solver and mesh; this location's own: its inputs button. Refinement zones apply at every location.</p></aside></div>`;
   const el = host.querySelector('.fv-plot'), plot = host.querySelector('#cfdMeshPlot'), cap = plot.querySelector('.fv-caption');
   const maxH = plot.clientHeight - cap.offsetHeight - 8;
-  el._ctx = { compare: false, list: [i], maxH: maxH > 150 ? maxH : null, fields: [m.run.field], runs: { [i]: m.run }, meshOnly: true, quality: FV.meshShade, shared: { base: null, line: null, speed: null }, yMax: m.run.field.Ly, vmax: 0 };
+  el._ctx = { compare: false, list: [i], maxH: maxH > 150 ? maxH : null, fields: [m.run.field], runs: { [i]: m.run }, meshOnly: true, quality: FV.meshShade, shared: { base: null, line: null, speed: null }, yMax: m.run.field.Ly, vmax: 0,
+    onPainted: (e, map) => drawZoneLayer(e, map, i) };
   paintPlot(el, false);
   wirePlotZoom(el);
+  wireZonesPanel(host.querySelector('.step-side'), i);
   document.getElementById('meshShowWorst').onclick = () => {
     const bx = elementBox(m.run.field, s.worstAt, s.nEx), cx = (bx.x0 + bx.x1) / 2, cy = (bx.y0 + bx.y1) / 2, r = Math.max(bx.x1 - bx.x0, bx.y1 - bx.y0) * 4;
     FV.zoom['m' + i] = { x0: cx - r, x1: cx + r, y0: Math.max(0, cy - r / 2), y1: cy + r / 2 };
     paintPlot(el, false);
   };
 }
+// ---- refinement zones: element sizes at the flow's features, bands along the flow, layers at the walls ----
+/**
+ * The zones (in the shared solver settings, mm): the metering edge, the contact line, the exit face and the film
+ * each with an element size; layers at the web and at the blade / face / surface (how many, the first one's
+ * thickness at the edge, their growth); bands along the flow (x from the inlet) with an element size; how fast
+ * the size grows away from a zone. The mesh is structured, so a band covers the gap's full height and a layer
+ * runs the full length. Nothing on: the mesh the counts and grading lay out, unchanged.
+ */
+const ZONE_DEFAULTS = { edge: { on: false, size: 0.05 }, cl: { on: false, size: 0.05 }, face: { on: false, size: 0.1 }, film: { on: false, size: 0.5 },
+  web: { on: false, n: 3, first: 0.02, growth: 1.3 }, top: { on: false, n: 3, first: 0.02, growth: 1.3 }, bands: [], growth: 1.2 };
+const ZONE_FEATURES = [['edge', 'Metering edge', 'around the edge corner'], ['cl', 'Contact line', 'around the contact line'],
+  ['face', 'Exit face', 'along the exit face, when the contact line climbs it'], ['film', 'Film', 'along the free surface']];
+const ZONE_LAYERS = [['web', 'Layers at the web', 'the web'], ['top', 'Layers at the blade and surface', 'the blade, the exit face and the free surface']];
+const ZONE_LIM = { size: [0.002, 5, 'mm'], n: [1, 12, ''], first: [0.001, 0.5, 'mm'], growth: [1.05, 2, ''], x: [0, 500, 'mm'] };
+/** The zones with every setting filled in (a copy). */
+function zonesOf(z = CFDS.zones) {
+  const d = JSON.parse(JSON.stringify(ZONE_DEFAULTS));
+  if (!z) return d;
+  for (const k of Object.keys(d)) if (z[k] != null) d[k] = k === 'bands' ? z.bands.map(b => ({ ...b })) : typeof d[k] === 'object' ? { ...d[k], ...z[k] } : z[k];
+  return d;
+}
+const zonesActive = z => !!z && ([...ZONE_FEATURES, ...ZONE_LAYERS].some(([k]) => z[k] && z[k].on) || (z.bands || []).length > 0);
+/** The zones as the solver takes them (m), or null when none is on. */
+function zonesForSolver(zs) {
+  const z = zonesOf(zs);
+  if (!zonesActive(z)) return null;
+  const mm = v => v / 1000, o = { growth: z.growth };
+  for (const [k] of ZONE_FEATURES) if (z[k].on) o[k] = mm(z[k].size);
+  for (const [k] of ZONE_LAYERS) if (z[k].on) o[k] = { n: z[k].n, first: mm(z[k].first), growth: z[k].growth };
+  if (z.bands.length) o.bands = z.bands.map(b => ({ x0: mm(Math.min(b.x0, b.x1)), x1: mm(Math.max(b.x0, b.x1)), size: mm(b.size) }));
+  return o;
+}
+/** Solver zones (m) for a mesh f times finer: sizes and first layers over f (a mesh study, refining everywhere). */
+function scaleZones(zm, f) {
+  if (!zm) return zm;
+  const o = { ...zm };
+  for (const [k] of ZONE_FEATURES) if (o[k] != null) o[k] = o[k] / f;
+  for (const [k] of ZONE_LAYERS) if (o[k]) o[k] = { ...o[k], first: o[k].first / f };
+  if (o.bands) o.bands = o.bands.map(b => ({ ...b, size: b.size / f }));
+  return o;
+}
+/** The zones in a few words (undo, the report, the model tree). */
+function zonesText(zs) {
+  const z = zonesOf(zs), f = v => String(+(+v).toFixed(3));
+  if (!zonesActive(z)) return 'none';
+  return [...ZONE_FEATURES.filter(([k]) => z[k].on).map(([k, l]) => `${l.toLowerCase()} ${f(z[k].size)} mm`),
+    ...ZONE_LAYERS.filter(([k]) => z[k].on).map(([k, l]) => `${l.toLowerCase().replace('layers', `${z[k].n} layers`)} from ${f(z[k].first)} mm ×${f(z[k].growth)}`),
+    ...z.bands.map((b, n) => `band ${n + 1}: x ${f(Math.min(b.x0, b.x1))}–${f(Math.max(b.x0, b.x1))} mm at ${f(b.size)} mm`)].join('; ');
+}
+/** Change the zones (one undo step), then lay the meshes out again. */
+function setZones(z, hint) {
+  undoHint(hint);
+  CFDS.zones = z;
+  if (tab === 4) viewCFD(); else render();
+}
+const zoneNum = (id, v, lim, step, label) => `<input type="number" class="zone-in" id="${id}" value="${+(+v).toFixed(4)}" min="${lim[0]}" max="${lim[1]}" step="${step}" aria-label="${label}">`;
+/** The zones panel (the Mesh step's side). */
+function zonesPanelHTML(stats, i) {
+  const z = zonesOf(), on = zonesActive(z);
+  // (the solve's time grows with the columns and about the cube of the rows: the banded solve's cost)
+  let slower = 0;
+  if (on && stats) {
+    const c = cfdGeometry(i).solver, nx0 = c.nEb + (stats.nF ? c.nEf : 0) + c.nEs;
+    slower = (stats.nEx / nx0) * Math.pow((2 * stats.nEy + 1) / (2 * c.nEy + 1), 3);
+  }
+  const feat = ZONE_FEATURES.map(([k, l, where]) => `<tr${z[k].on ? ' class="on"' : ''}><td><label class="zone-chk"><input type="checkbox" data-zone-on="${k}"${z[k].on ? ' checked' : ''}><span title="Elements of about this size ${where}">${l}</span></label></td>
+    <td>${zoneNum('zn_' + k, z[k].size, ZONE_LIM.size, 0.01, `${l}: element size, mm`)}<span class="u">mm</span></td></tr>`).join('');
+  const lay = ZONE_LAYERS.map(([k, l, where]) => `<tr${z[k].on ? ' class="on"' : ''}><td colspan="2"><label class="zone-chk"><input type="checkbox" data-zone-on="${k}"${z[k].on ? ' checked' : ''}><span title="Thin rows along ${where}">${l}</span></label>
+    <div class="zone-sub">${zoneNum(`zn_${k}_n`, z[k].n, ZONE_LIM.n, 1, `${l}: how many`)} · first ${zoneNum(`zn_${k}_first`, z[k].first, ZONE_LIM.first, 0.005, `${l}: first layer at the edge, mm`)} mm · ×${zoneNum(`zn_${k}_growth`, z[k].growth, ZONE_LIM.growth, 0.05, `${l}: growth from layer to layer`)}</div></td></tr>`).join('');
+  const bands = z.bands.map((b, n) => `<div class="band-row" data-band="${n}"><b>Band ${n + 1}</b><span>x ${zoneNum(`zb_${n}_x0`, b.x0, ZONE_LIM.x, 0.5, `Band ${n + 1}: from x, mm`)} to ${zoneNum(`zb_${n}_x1`, b.x1, ZONE_LIM.x, 0.5, `Band ${n + 1}: to x, mm`)} mm</span>
+    <span>elements ${zoneNum(`zb_${n}_size`, b.size, ZONE_LIM.size, 0.01, `Band ${n + 1}: element size, mm`)} mm</span>
+    <button type="button" class="icon-btn band-del" data-band-del="${n}" title="Remove band ${n + 1}" aria-label="Remove band ${n + 1}">${uiIco('trash')}</button></div>`).join('');
+  return `<h4>${uiBadge('grading')}Refinement zones</h4>
+    <table class="kv zone-table">${feat}${lay}</table>
+    <div class="band-list">${bands}<button type="button" class="btn btn-secondary btn-sm" id="zoneAddBand">${uiIco('plus')}Band</button><span class="side-note-i">Drag a band's ends on the drawing.</span></div>
+    <p class="side-note"><label>Growth away from a zone ×${zoneNum('zn_growth', z.growth, ZONE_LIM.growth, 0.05, 'Element size growth away from a zone')}</label></p>
+    <p class="side-note">${on ? `Mesh with the zones: <b>${stats ? `${stats.nB} + ${stats.nF} + ${stats.nS} by ${stats.nEy}` : '…'}</b> elements.${slower >= 1.5 ? ` <span class="${slower >= 8 ? 'warn-text' : ''}">A solve takes about ${slower >= 10 ? Math.round(slower) : slower.toFixed(1)} times as long as without zones${slower >= 8 ? ' (rows across the gap cost the most)' : ''}.</span>` : ''}` : 'No zone on: the mesh is the one the element counts and grading lay out.'} A zone only makes elements smaller; the mesh stays structured, so a band covers the gap's full height and a layer runs the full length.</p>`;
+}
+/** The zones panel's controls: tick a zone, type its size, add or remove a band. */
+function wireZonesPanel(host, i) {
+  const z = () => zonesOf();
+  host.querySelectorAll('[data-zone-on]').forEach(cb => cb.onchange = () => {
+    const k = cb.dataset.zoneOn, n = z(), l = [...ZONE_FEATURES, ...ZONE_LAYERS].find(q => q[0] === k)[1];
+    n[k].on = cb.checked; setZones(n, `${l} zone ${cb.checked ? 'on' : 'off'}`);
+  });
+  const num = (id, lim, label, apply) => {
+    const el = host.querySelector('#' + id);
+    if (el) el.onchange = () => guardNumber(el, { label, lo: lim[0], hi: lim[1], unit: lim[2] }, v => apply(v));
+  };
+  for (const [k, l] of ZONE_FEATURES) num('zn_' + k, ZONE_LIM.size, `${l} zone: element size`, v => { const n = z(); n[k].size = v; n[k].on = true; setZones(n, `${l} zone: ${v} mm`); });
+  for (const [k, l] of ZONE_LAYERS) {
+    num(`zn_${k}_n`, ZONE_LIM.n, `${l}: how many`, v => { const n = z(); n[k].n = Math.round(v); n[k].on = true; setZones(n, `${l}: ${Math.round(v)}`); });
+    num(`zn_${k}_first`, ZONE_LIM.first, `${l}: first layer`, v => { const n = z(); n[k].first = v; n[k].on = true; setZones(n, `${l}: first ${v} mm`); });
+    num(`zn_${k}_growth`, ZONE_LIM.growth, `${l}: growth`, v => { const n = z(); n[k].growth = v; n[k].on = true; setZones(n, `${l}: growth ×${v}`); });
+  }
+  num('zn_growth', ZONE_LIM.growth, 'Growth away from a zone', v => { const n = z(); n.growth = v; setZones(n, `Zone growth ×${v}`); });
+  z().bands.forEach((b, j) => {
+    for (const e of ['x0', 'x1']) num(`zb_${j}_${e}`, ZONE_LIM.x, `Band ${j + 1}: ${e === 'x0' ? 'from' : 'to'} x`, v => { const n = z(); n.bands[j][e] = v; setZones(n, `Band ${j + 1}: ${e === 'x0' ? 'from' : 'to'} x ${v} mm`); });
+    num(`zb_${j}_size`, ZONE_LIM.size, `Band ${j + 1}: element size`, v => { const n = z(); n.bands[j].size = v; setZones(n, `Band ${j + 1}: ${v} mm`); });
+  });
+  host.querySelectorAll('[data-band-del]').forEach(b => b.onclick = () => { const n = z(), j = +b.dataset.bandDel; n.bands.splice(j, 1); setZones(n, `Remove band ${j + 1}`); });
+  const add = host.querySelector('#zoneAddBand');
+  if (add) add.onclick = () => {
+    // (a new band: the middle of the view shown, else the last 4 mm up to the edge)
+    const el = document.querySelector('#cfdMeshPlot .fv-plot'), v = el && el._map && FV.zoom['m' + i] ? el._map.view : null, f = el && el._ctx ? el._ctx.fields[0] : null;
+    const xe = f && f.iCorner != null ? f.gx[(f.ny - 1) * f.nx + f.iCorner] * 1000 : 40;
+    const [a, b] = v ? [(v.x0 + 0.35 * (v.x1 - v.x0)) * 1000, (v.x0 + 0.65 * (v.x1 - v.x0)) * 1000] : [xe - 4, xe];
+    const n = z(); n.bands.push({ x0: +a.toFixed(2), x1: +b.toFixed(2), size: 0.1 });
+    setZones(n, `Add band ${n.bands.length}`);
+  };
+}
+/** The zones drawn on the mesh (the Mesh step's plot): bands with their ends to drag, the feature zones and layers marked. */
+function drawZoneLayer(el, map, i) {
+  let svg = el.querySelector('svg.zone-layer');
+  if (!svg) { svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'zone-layer'); el.appendChild(svg); }
+  const cv = el.querySelector('.fv-main'), W = cv.clientWidth, H = cv.clientHeight, p = map.plot, f = el._ctx.fields[0], z = el._zonesDrag || zonesOf();
+  svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = xm => map.toScreen(xm / 1000, 0)[0], top = k => [f.gx[(f.ny - 1) * f.nx + k], f.gy[(f.ny - 1) * f.nx + k]];
+  const clip = `<clipPath id="zoneClip${i}"><rect x="${p.l}" y="${p.t}" width="${p.r - p.l}" height="${p.b - p.t}"/></clipPath>`;
+  let g = '';
+  // layers: a strip along the web / along the top boundary
+  if (z.web.on) g += `<line class="zl-layer" x1="${p.l}" x2="${p.r}" y1="${map.toScreen(0, 0)[1]}" y2="${map.toScreen(0, 0)[1]}"/>`;
+  if (z.top.on) { let d = ''; for (let k = 0; k < f.nx; k++) { const [x, y] = map.toScreen(...top(k)); d += (k ? 'L' : 'M') + x.toFixed(1) + ',' + y.toFixed(1); } g += `<path class="zl-layer" d="${d}"/>`; }
+  // feature zones
+  const dot = (k, cls) => { const [x, y] = map.toScreen(...top(k)); return `<circle class="zl-feat ${cls}" cx="${x}" cy="${y}" r="16"/>`; };
+  if (z.edge.on && f.iCorner != null) g += dot(f.iCorner, 'zl-edge');
+  if (z.cl.on && f.iCL != null) g += dot(f.iCL, 'zl-cl');
+  if (z.face.on && f.iCL > f.iCorner) { const [x0, y0] = map.toScreen(...top(f.iCorner)), [x1, y1] = map.toScreen(...top(f.iCL)); g += `<line class="zl-face" x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}"/>`; }
+  if (z.film.on && f.iCL != null) { let d = ''; for (let k = f.iCL; k < f.nx; k++) { const [x, y] = map.toScreen(...top(k)); d += (k > f.iCL ? 'L' : 'M') + x.toFixed(1) + ',' + y.toFixed(1); } g += `<path class="zl-film" d="${d}"/>`; }
+  // bands, with their ends to drag
+  const mid = (p.t + p.b) / 2;
+  z.bands.forEach((b, j) => {
+    const a = X(Math.min(b.x0, b.x1)), c = X(Math.max(b.x0, b.x1));
+    g += `<rect class="zl-band" x="${a}" y="${p.t}" width="${Math.max(1, c - a)}" height="${p.b - p.t}"/><text class="zl-t" x="${a + 4}" y="${mid - 14}">Band ${j + 1} · ${+(+b.size).toFixed(3)} mm</text>`;
+    for (const e of ['x0', 'x1']) g += `<circle class="zl-h" cx="${X(b[e])}" cy="${mid}" r="7" data-band="${j}" data-end="${e}" tabindex="0" role="slider" aria-label="Band ${j + 1}: ${e === 'x0' ? 'from' : 'to'} x" aria-valuenow="${b[e]}"><title>Band ${j + 1}: drag to set where it ${e === 'x0' ? 'starts' : 'ends'} (x ${b[e]} mm)</title></circle>`;
+  });
+  svg.innerHTML = `<defs>${clip}</defs><g clip-path="url(#zoneClip${i})">${g}</g>`;
+  // dragging a band's end: the drawing follows; the value is set (one undo step) when it is let go
+  svg.querySelectorAll('.zl-h').forEach(h => h.onpointerdown = e => {
+    e.preventDefault(); e.stopPropagation();
+    const j = +h.dataset.band, end = h.dataset.end, pid = e.pointerId, zz = zonesOf(), r = cv.getBoundingClientRect();
+    el._zonesDrag = zz;
+    const move = ev => { if (ev.pointerId !== pid) return; const xm = map.toPhysAny(ev.clientX - r.left, ev.clientY - r.top)[0] * 1000; zz.bands[j][end] = +Math.max(0, xm).toFixed(2); drawZoneLayer(el, map, i); };
+    const up = ev => {
+      if (ev.pointerId !== pid) return;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+      el._zonesDrag = null;
+      setZones(zz, `Band ${j + 1}: ${end === 'x0' ? 'from' : 'to'} x ${zz.bands[j][end]} mm`);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  });
+  // (arrow keys move a focused end by 0.5 mm, shift by 5 mm)
+  svg.querySelectorAll('.zl-h').forEach(h => h.onkeydown = e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const j = +h.dataset.band, end = h.dataset.end, zz = zonesOf(), d = (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 5 : 0.5);
+    zz.bands[j][end] = +Math.max(0, zz.bands[j][end] + d).toFixed(2);
+    setZones(zz, `Band ${j + 1}: ${end === 'x0' ? 'from' : 'to'} x ${zz.bands[j][end]} mm`);
+    const again = document.querySelector(`#cfdMeshPlot .zl-h[data-band="${j}"][data-end="${end}"]`); if (again) again.focus();
+  });
+}
+
 /** The Mesh tab of the four locations. */
 function renderMeshLocs2D() {
   const host = document.getElementById('cfdMeshLocs');
@@ -557,7 +727,7 @@ function renderSolveStep2D(host) {
       <tr><td>Rheology</td><td>${m.l}</td></tr><tr><td>Viscosity at 2.7 1/s</td><td>${locInput(i, 'mu').toFixed(1)} Pa·s</td></tr>
       ${law.includes('n') ? `<tr><td>Shear-thinning n</td><td>${locInput(i, 'n').toFixed(2)}</td></tr>` : ''}${law.includes('ty') ? `<tr><td>Yield stress</td><td>${locInput(i, 'ty').toFixed(1)} Pa</td></tr>` : ''}
       <tr><td>Density</td><td>${geo.rho.toFixed(0)} kg/m³</td></tr></table>
-      <h4>${uiBadge('tolerance')}Solver</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Iterations, at most</td><td>${CFDS.maxIter}</td></tr><tr><td>Mesh</td><td>${MESH_PRESETS[CFDS.mesh].l}</td></tr></table>
+      <h4>${uiBadge('tolerance')}Solver</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Iterations, at most</td><td>${CFDS.maxIter}</td></tr><tr><td>Mesh</td><td>${MESH_PRESETS[CFDS.mesh].l}${zonesActive(zonesOf()) ? ' + zones' : ''}</td></tr></table>
       <h4>${uiBadge('location')}Locations</h4><table class="kv">${cfdRuns.map((r, k) => `<tr${k === i ? ' class="on"' : ''}><td>L${k + 1}</td><td>${st(r, k)}${r.status === 'done' && r.elapsedMs ? ` · ${(r.elapsedMs / 1000).toFixed(1)} s` : ''}</td></tr>`).join('')}</table>
       <p class="side-note">Click a blue value on the drawing to change it (a location's own value when it has one, else the shared input).</p></aside></div>`;
   const d = document.getElementById('bcDraw'), w = Math.max(760, d.clientWidth), h = Math.max(240, d.clientHeight);
@@ -612,9 +782,24 @@ function stepAfterRun3D() {
 }
 /** The 3D mesh's size: elements along the flow (blade + exit face + film), up the gap, across; solved, or as set. */
 function c3dMeshSize() {
-  const S = c3dShown(), R = S && S.result, nz = C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull;
-  if (R) { const a = (R.NC - 1) / 2, y = (R.NR - 1) / 2, z = (R.NL - 1) / 2; return { solved: true, a0: a, a1: a, ny: y, nz: z, face: a - C3D.nxGap - C3D.nxFilm }; }
-  return { solved: false, a0: C3D.nxGap + C3D.nxFilm, a1: C3D.nxGap + C3D.nxFace + C3D.nxFilm, ny: C3D.ny, nz, face: null };
+  const S = c3dShown(), R = S && S.result;
+  if (R) {
+    const a = (R.NC - 1) / 2, y = (R.NR - 1) / 2, z = (R.NL - 1) / 2, nB = R.cCorner != null ? R.cCorner / 2 : C3D.nxGap, face = R.cCL != null ? (R.cCL - R.cCorner) / 2 : a - C3D.nxGap - C3D.nxFilm;
+    return { solved: true, a0: a, a1: a, ny: y, nz: z, face, nB, nS: a - nB - face };
+  }
+  return { solved: false, ...c3dCounts(), face: null };
+}
+/**
+ * The mesh a 3D solve would have: along the flow (without and with the exit face's elements) and across the gap
+ * as its stations' 2D lays them out (with the 2D's refinement zones: from the laid-out starting mesh, once there),
+ * across the region as its zones leave it.
+ */
+function c3dCounts() {
+  const F = C3D.frac3;
+  if (F) { const a0 = F.b.length - 1 + F.s.length - 1; return { a0, a1: a0 + (F.f.length > 1 ? F.f.length - 1 : C3D.nxFace), ny: F.y.length - 1, nz: c3dNz() }; }
+  const pv = C3D_PV.key === c3dPreviewKey() && C3D_PV.stats;
+  const a0 = pv ? pv.nB + pv.nS : C3D.nxGap + C3D.nxFilm, face = pv && pv.nF ? pv.nF : C3D.nxFace;
+  return { a0, a1: a0 + face, ny: pv ? pv.nEy : C3D.ny, nz: c3dNz() };
 }
 const c3dHexes = (a, m) => a * m.ny * m.nz, c3dNodes = (a, m) => (2 * a + 1) * (2 * m.ny + 1) * (2 * m.nz + 1);
 /** Shape quality of the solved 3D mesh's 27-node hexahedra: min / max Jacobian over each element's 27 nodes. */
@@ -671,13 +856,49 @@ function stepStatus3D() {
   return st;
 }
 /** The Mesh step's report on the 3D page. */
+/** The 3D Mesh step's zones: the 2D's (along the flow and up the gap, at every station) and across the web. */
+function c3dZonesHTML() {
+  const z = c3dZones(), full = C3D.region === 'full', where = full ? 'web' : 'strip', rg = c3dRegion(), set = rg.nz, n = c3dNz();
+  const z2 = zonesText(full ? CFDS.zones : solverOf(C3D.loc).zones);
+  const bands = z.bands.map((b, j) => `<div class="band-row"><b>Band ${j + 1}</b><span>z ${zoneNum(`c3zb_${j}_z0`, b.z0, ZONE_LIM.x, 0.5, `Band ${j + 1} across: from z, mm`)} to ${zoneNum(`c3zb_${j}_z1`, b.z1, ZONE_LIM.x, 0.5, `Band ${j + 1} across: to z, mm`)} mm</span>
+    <span>elements ${zoneNum(`c3zb_${j}_size`, b.size, ZONE_LIM.size, 0.1, `Band ${j + 1} across: element size, mm`)} mm</span>
+    <button type="button" class="icon-btn band-del" data-c3zdel="${j}" title="Remove band ${j + 1}" aria-label="Remove band ${j + 1} across">${uiIco('trash')}</button></div>`).join('');
+  return `<h4>${uiBadge('grading')}Refinement zones</h4>
+    <p class="side-note" style="margin-top:0">Along the flow and up the gap, at every station: the 2D's zones (${z2}). <button type="button" class="linkish" id="c3dZ2d">Set them on Flow › 2D, Mesh</button></p>
+    <table class="kv zone-table"><tr${z.edges.on ? ' class="on"' : ''}><td><label class="zone-chk"><input type="checkbox" id="c3zEdges"${z.edges.on ? ' checked' : ''}><span>The ${where}'s ends</span></label></td>
+      <td>${zoneNum('c3zEdgeSize', c3dEdgeSize(z), ZONE_LIM.size, 0.1, `The ${where}'s ends: element size, mm`)}<span class="u">mm</span></td></tr></table>
+    <div class="band-list">${bands}<button type="button" class="btn btn-secondary btn-sm" id="c3zAdd">${uiIco('plus')}Band across</button><span class="side-note-i">z across the web, mm (L${C3D.loc + 1} at ${CFD_LOCS[C3D.loc].z}).</span></div>
+    <p class="side-note"><label>Growth away from a zone ×${zoneNum('c3zGrowth', z.growth, ZONE_LIM.growth, 0.05, 'Growth away from a zone across the web')}</label> · elements across: <b>${n}</b>${n !== set ? ` (set: ${set})` : ''}</p>`;
+}
+function wireC3dZones(host) {
+  if (!host) return;
+  const set = (z, hint) => { undoHint(hint); C3D.zZones = z; render(); };
+  const num = (id, lim, label, apply) => { const el = host.querySelector('#' + id); if (el) el.onchange = () => guardNumber(el, { label, lo: lim[0], hi: lim[1], unit: lim[2] }, apply); };
+  const g = id => host.querySelector('#' + id);
+  if (g('c3dZ2d')) g('c3dZ2d').onclick = () => { tab = 4; FV.step = 'mesh'; render(); };
+  if (g('c3zEdges')) g('c3zEdges').onchange = e => { const z = c3dZones(); z.edges.on = e.target.checked; set(z, `3D zone at the region's ends ${e.target.checked ? 'on' : 'off'}`); };
+  num('c3zEdgeSize', ZONE_LIM.size, '3D zone at the region\'s ends: element size', v => { const z = c3dZones(); z.edges.size = v; z.edges.on = true; set(z, `3D zone at the region's ends: ${v} mm`); });
+  num('c3zGrowth', ZONE_LIM.growth, '3D zones: growth', v => { const z = c3dZones(); z.growth = v; set(z, `3D zones: growth ×${v}`); });
+  c3dZones().bands.forEach((b, j) => {
+    for (const e of ['z0', 'z1']) num(`c3zb_${j}_${e}`, ZONE_LIM.x, `3D band ${j + 1}: ${e === 'z0' ? 'from' : 'to'} z`, v => { const z = c3dZones(); z.bands[j][e] = v; set(z, `3D band ${j + 1}: ${e === 'z0' ? 'from' : 'to'} z ${v} mm`); });
+    num(`c3zb_${j}_size`, ZONE_LIM.size, `3D band ${j + 1}: element size`, v => { const z = c3dZones(); z.bands[j].size = v; set(z, `3D band ${j + 1}: ${v} mm`); });
+  });
+  host.querySelectorAll('[data-c3zdel]').forEach(b => { b.onclick = () => { const z = c3dZones(), j = +b.dataset.c3zdel; z.bands.splice(j, 1); set(z, `Remove 3D band ${j + 1}`); }; });
+  if (g('c3zAdd')) g('c3zAdd').onclick = () => {
+    // (a new band: the middle fifth of the region)
+    const rg = c3dRegion(), a = rg.z0 * 1000, w = (rg.z1 - rg.z0) * 1000, z = c3dZones();
+    z.bands.push({ z0: +(a + 0.4 * w).toFixed(2), z1: +(a + 0.6 * w).toFixed(2), size: +Math.max(0.1, c3dEvenSize() / 2).toFixed(2) });
+    set(z, `Add 3D band ${z.bands.length}`);
+  };
+}
 function c3dMeshSideHTML() {
   const S = c3dShown(), R = S && S.result, m = c3dMeshSize(), e = c3dEstimate(), hq = R ? c3dHexQuality(R) : null, pv = !R && C3D_PV.key === c3dPreviewKey() ? C3D_PV : null;
   const q = hq || (pv && pv.stats), hmax = q ? Math.max(...q.hist, 1) : 1;
   const hx = m.a0 === m.a1 ? c3dHexes(m.a0, m).toLocaleString() : `${c3dHexes(m.a0, m).toLocaleString()} to ${c3dHexes(m.a1, m).toLocaleString()}`;
   const nd = m.a0 === m.a1 ? c3dNodes(m.a0, m).toLocaleString() : `${c3dNodes(m.a0, m).toLocaleString()} to ${c3dNodes(m.a1, m).toLocaleString()}`;
-  return `<h4>${uiBadge('mesh')}3D mesh, ${C3D.region === 'strip' ? `strip at L${C3D.loc + 1}` : 'full width'}${R ? '' : ' (before solving)'}</h4><table class="kv">
-    <tr><td>Along the flow</td><td>${C3D.nxGap} + ${m.solved ? m.face : `0–${C3D.nxFace}`} + ${C3D.nxFilm}</td></tr>
+  const st = pv && pv.stats, nB = st ? st.nB : C3D.nxGap, nS = st ? st.nS : C3D.nxFilm;
+  return `${c3dZonesHTML()}${acc3HTML()}<h4>${uiBadge('mesh')}3D mesh, ${C3D.region === 'strip' ? `strip at L${C3D.loc + 1}` : 'full width'}${R ? '' : ' (before solving)'}</h4><table class="kv">
+    <tr><td>Along the flow</td><td>${m.solved ? `${m.nB} + ${m.face} + ${m.nS}` : `${nB} + 0–${m.a1 - m.a0} + ${nS}`}</td></tr>
     <tr><td>Up the gap × across</td><td>${m.ny} × ${m.nz}</td></tr>
     <tr><td>Hexahedra (27 nodes)</td><td>${hx}</td></tr><tr><td>Nodes</td><td>${nd}</td></tr>
     <tr><td>Unknowns</td><td>${R && R.size ? R.size.unknowns.toLocaleString() : `≈ ${Math.round(e.ND / 1000)} thousand`}</td></tr>

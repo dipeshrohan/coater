@@ -157,8 +157,10 @@ const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
 // A mesh preset scales the default element counts (along the blade about 0.6 gap per element, 12..40;
 // up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
 // the counts given (along the blade empty = from the blade's length, as Medium).
-const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8 };
-const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' } };
+const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null };
+const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' }, adapted: { l: 'Adapted' } };
+/** The presets a shared setting can pick ("Adapted" is a location's own, from meshing to an accuracy). */
+const sharedMeshPresets = () => Object.entries(MESH_PRESETS).filter(([k]) => k !== 'adapted');
 const SOLVER_INPUTS = [
   { k: 'nEb', l: 'Elements along the blade', u: '', lo: 6, hi: 120, step: 1, d: 0, custom: true },
   { k: 'nEf', l: 'Elements up the exit face', u: '', lo: 1, hi: 30, step: 1, d: 0, custom: true },
@@ -178,6 +180,8 @@ const solverOf = i => ({ ...CFDS, ...CFD_LOCS[i].solver });
 function meshCounts(s, xe, H) {
   const auto = Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
   if (s.mesh === 'custom') return { nEb: s.nEb ?? auto, nEf: s.nEf, nEs: s.nEs, nEy: s.nEy };
+  // (an adapted mesh: its element ends set the counts; up the exit face as the shared setting until the contact line has climbed)
+  if (s.mesh === 'adapted' && s.frac) return { nEb: s.frac.b.length - 1, nEf: s.frac.f.length > 1 ? s.frac.f.length - 1 : s.nEf, nEs: s.frac.s.length - 1, nEy: s.frac.y.length - 1 };
   return scaleCounts({ nEb: auto, nEf: 6, nEs: 24, nEy: 6 }, (MESH_PRESETS[s.mesh] || MESH_PRESETS.medium).f);
 }
 const scaleCounts = (c, f) => ({ nEb: Math.max(6, Math.round(c.nEb * f)), nEf: Math.max(1, Math.round(c.nEf * f)), nEs: Math.max(6, Math.round(c.nEs * f)), nEy: Math.max(2, Math.round(c.nEy * f)) });
@@ -336,9 +340,14 @@ function cfdGeometry(i) {
   };
 }
 /** The settings sent to the solver for a location: its mesh as element counts, grading, convergence, film length. */
-function cfdSolverFor(i, H) {
-  const s = solverOf(i), xe = CFDG.shape === 'round' ? Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000 : P.L / 1000;
-  return { mesh: s.mesh, ...meshCounts(s, xe, H), gradeB: s.gradeB, gradeS: s.gradeS, gradeY: s.gradeY, tol: s.tol, maxIter: s.maxIter, ldGaps: s.ldGaps };
+function cfdSolverFor(i, H) { return solverFromSettings(solverOf(i), H); }
+/** Solver settings (a location's, or a trial one's) as sent to the solver. */
+function solverFromSettings(s, H) {
+  const xe = CFDG.shape === 'round' ? Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000 : P.L / 1000;
+  const adapted = s.mesh === 'adapted' && s.frac;
+  const zones = adapted ? null : zonesForSolver(s.zones);   // (refinement zones: only when one is on, so a mesh without them is sent as before)
+  return { mesh: s.mesh, ...meshCounts(s, xe, H), gradeB: s.gradeB, gradeS: s.gradeS, gradeY: s.gradeY, tol: s.tol, maxIter: s.maxIter, ldGaps: s.ldGaps,
+    ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}) };
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver]);
 /** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
@@ -562,12 +571,13 @@ function viewCFD() {
       ${prop('Plenum length', 'cfdPlenum', `min="1" max="5000" step="10" value="${CFDG.plenum}"`, 'mm')}
       <p class="prop-note">Assumed values.</p>`)}
     ${tree('solver', 'Solver and mesh', `
-      ${propSel('Mesh', 'cfdMesh', Object.entries(MESH_PRESETS).map(([k, m]) => opt(k, m.l + (k === 'medium' ? ' (default)' : ''), CFDS.mesh)).join(''))}
+      ${propSel('Mesh', 'cfdMesh', sharedMeshPresets().map(([k, m]) => opt(k, m.l + (k === 'medium' ? ' (default)' : ''), CFDS.mesh)).join(''))}
       ${SOLVER_INPUTS.filter(q => q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k] ?? ''}"${q.k === 'nEb' ? ' placeholder="auto"' : ''}`, q.u, CFDS.mesh !== 'custom')).join('')}
       <p class="prop-note" id="cfdMeshNote"></p>
       ${SOLVER_INPUTS.filter(q => !q.custom).map(q => prop(q.l, 'cfdS_' + q.k, `min="${q.lo}" max="${q.hi}" step="${q.step}" value="${CFDS[q.k]}"`, q.u)).join('')}
       ${propSel('Newton tolerance', 'cfdTol', SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join(''))}
       <p class="prop-note">Grading: 1 = evenly spaced, higher crowds the elements toward the metering edge, the contact line, or the blade and free surface. The free film solved in 2D is at least 12 mm long; beyond it the 1D film model takes over. A location can set its own (its inputs button).</p>
+      <p class="prop-note">Refinement zones: <b>${zonesText(CFDS.zones)}</b>. <button type="button" class="linkish" id="cfdZonesOpen">Set them on the Mesh step</button></p>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="cfdSolverReset">${uiIco('restart')}Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="cfdStudyOpen">${uiIco('grading')}Mesh study…</button></div>`)}
     ${tree('locs', 'Locations across the web', `
       <div class="loc-list" id="cfdLocs"></div>
@@ -665,7 +675,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
+          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
           ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'])}
         </div>
         <div class="dock-body">
@@ -688,6 +698,7 @@ function viewCFD() {
           ${panel('fibre', '<div id="cfdFibre"></div>')}
           ${panel('conv', '<div id="cfdConv"></div>')}
           ${panel('mesh', '<div id="cfdMeshStudy"></div>')}
+          ${panel('accuracy', '<div id="cfdAccuracy"></div>')}
           ${panel('problems', '<div class="problems-host"></div>')}
           ${panel('cases', `<div class="fv-bar">
               <label class="fv-ctl">Name <input type="text" id="cfdCaseName" maxlength="60" placeholder="e.g. 90° face, 35° contact" aria-label="Case name"></label>
@@ -759,7 +770,9 @@ function viewCFD() {
   }
   document.getElementById('cfdTol').addEventListener('change', e => { CFDS.tol = +e.target.value; renderCFD(); });
   document.getElementById('cfdSolverReset').onclick = () => { undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
-  document.getElementById('cfdStudyOpen').onclick = () => { FV.dock = 'mesh'; viewCFD(); };
+  // (the mesh study's tab is on the Mesh and Results steps: from another step, the Mesh step)
+  document.getElementById('cfdStudyOpen').onclick = () => { if (!STEP_DOCK_2D[step2D()].includes('mesh')) goStep2D('mesh'); FV.dock = 'mesh'; viewCFD(); };
+  document.getElementById('cfdZonesOpen').onclick = () => goStep2D('mesh');
   const stopBtn = document.getElementById('cfdCancel'); if (stopBtn) stopBtn.onclick = cancelAllLocations;
   document.getElementById('cfdCaseSave').onclick = saveCase;
   document.getElementById('xlMetric').addEventListener('change', e => { FV.across = e.target.value; renderAcross(); });
@@ -895,6 +908,7 @@ function renderCFD() {
   renderProfiles();
   renderConvergence();
   renderSolverNote();
+  if (typeof renderAccuracy === 'function') renderAccuracy();
   renderMeshStudy();
   renderProblems();
   renderHistory();
@@ -1103,7 +1117,7 @@ const STUDY_STEPS = [['Coarse', 1 / 1.5], ['Medium', 1], ['Fine', 1.5]];
 function runMeshStudy(i) {
   if (meshStudy && meshStudy.status === 'running') return;
   const geo = cfdGeometry(i), base = geo.solver, key = cfdInputsKey(geo), run0 = cfdRuns[i];
-  meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : scaleCounts(base, f)) }, status: 'running', progress: null, live: { r: [], solves: [], t0: performance.now(), tol: base.tol } })) };
+  meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : { ...scaleCounts(base, f), ...(base.zones ? { zones: scaleZones(base.zones, f) } : {}) }) }, status: 'running', progress: null, live: { r: [], solves: [], t0: performance.now(), tol: base.tol } })) };
   logCFD(i, `mesh study started: ${meshStudy.runs.map(r => `${r.name.toLowerCase()} ${r.solver.nEb} + ${r.solver.nEf} + ${r.solver.nEs} by ${r.solver.nEy}`).join(', ')}`);
   const study = meshStudy;
   for (const run of study.runs) {
@@ -1479,7 +1493,7 @@ function renderLocCards() {
     const sOpt = (v, t, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${t}</option>`;
     const solverGrid = `<div class="loc-edit-head"><b>Solver and mesh</b><span class="fv-why">empty = shared</span></div>
       <div class="loc-in-grid">
-        <label><span>Mesh</span><select data-ls="${i}" data-k="mesh" aria-label="Location ${loc.id}: mesh">${sOpt('', `Shared (${MESH_PRESETS[CFDS.mesh].l})`, loc.solver.mesh ?? '')}${Object.entries(MESH_PRESETS).map(([k, m]) => sOpt(k, m.l, loc.solver.mesh ?? '')).join('')}</select></label>
+        <label><span>Mesh</span><select data-ls="${i}" data-k="mesh" aria-label="Location ${loc.id}: mesh">${sOpt('', `Shared (${MESH_PRESETS[CFDS.mesh].l})`, loc.solver.mesh ?? '')}${Object.entries(MESH_PRESETS).filter(([k]) => k !== 'adapted' || loc.solver.frac).map(([k, m]) => sOpt(k, m.l + (k === 'adapted' ? ' (from mesh to an accuracy)' : ''), loc.solver.mesh ?? '')).join('')}</select></label>
         ${SOLVER_INPUTS.filter(q => !q.custom || sv.mesh === 'custom').map(q => `<label><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-ls="${i}" data-k="${q.k}" id="ls_${i}_${q.k}" value="${loc.solver[q.k] ?? ''}" placeholder="${CFDS[q.k] ?? 'auto'}" aria-label="Location ${loc.id}: ${q.l} (empty = shared value)"></label>`).join('')}
         <label><span>Newton tolerance</span><select data-ls="${i}" data-k="tol" aria-label="Location ${loc.id}: Newton tolerance">${sOpt('', `Shared (${fmtTol(CFDS.tol)})`, loc.solver.tol ?? '')}${SOLVER_TOLS.map(t => sOpt(t, fmtTol(t), loc.solver.tol ?? '')).join('')}</select></label>
       </div>`;
@@ -1776,6 +1790,7 @@ function paintPlot(el, fast) {
     ex.parentElement.title = ex.parentElement.textContent;   // (the caption line may be cut short)
     if (ds) ex.textContent += ranges.base.capped ? ' · colours clamped at the ends of the range' : '';
   }
+  if (ctx.onPainted) ctx.onPainted(el, map);   // (drawings over the plot: the Mesh step's refinement zones)
   return map;
 }
 
