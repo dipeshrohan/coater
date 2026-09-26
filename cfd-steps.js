@@ -606,7 +606,7 @@ function renderMeshStep2D(host) {
       <div class="q-hist" aria-label="Quality histogram, 0 to 1">${s.hist.map((n, k) => `<i style="height:${Math.max(2, 46 * n / hmax)}px" title="${k / 10}–${(k + 1) / 10}: ${n} element${n === 1 ? '' : 's'}"></i>`).join('')}</div>
       <div class="q-axis"><span>quality 0</span><span>1</span></div>
       <p class="side-note">${s.below ? `<span class="warn-text">${s.below} element${s.below > 1 ? 's' : ''} below 0.5.</span> ` : ''}Worst ${s.worstWhere} <button type="button" class="linkish" id="meshShowWorst">show</button></p>
-      <p class="side-note">Quality: each element's smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 = degenerate).${m.solved ? '' : ' The surface starts on the static meniscus with the contact line at the edge; as it is solved the surface moves, and if the contact line climbs the face, elements are added there.'}</p>
+      <p class="side-note">Quality: each element's smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 = degenerate).${m.solved ? '' : bladeLegacy() ? ' The surface starts on the static meniscus with the contact line at the edge; as it is solved the surface moves, and if the contact line climbs the face, elements are added there.' : ` The surface starts on the static meniscus, the contact line where it holds (${bladeShapedFace() && CFDG.clModel === 'simple' ? 'at C or above it' : 'at the metering edge, a corner of the face or on it'}); as it is solved the surface moves, and if the contact line climbs the face, elements are added there.`}</p>
       <p class="side-note">Element counts and grading: Inputs › Solver and mesh; this location's own: its inputs button. Refinement zones apply at every location.</p></aside></div>`;
   const el = host.querySelector('.fv-plot'), plot = host.querySelector('#cfdMeshPlot'), cap = plot.querySelector('.fv-caption');
   const maxH = plot.clientHeight - cap.offsetHeight - 8;
@@ -835,12 +835,14 @@ function bcCallouts(i) {
     line('bc-web', X(F.x0), Y(0), X(F.x1), Y(0));
     text(X(-b.X * 0.5), Y(-b.tf) + 22, 'middle', 'c-web', ['Web', `${val('U', v => `${v.toFixed(2)} m/min`)} →<tspan class="bc-sub"> · slip b ${(sl.b * 1e6).toFixed(1)} µm</tspan>`]);
     // exit face, free surface, outlet (right of the domain, each with a leader)
-    const faceMid = [(0 + b.notch[0]) / 2, (b.H + b.notch[1]) / 2];
-    line('bc-face', xs, Y(b.H), X(b.notch[0]), Y(b.notch[1]));
+    // (a shaped blade: its face as drawn, from the metering point; the free surface from C in the simple model)
+    const fp = b.prof ? b.facePts : [[0, b.H], b.notch], e0 = b.prof ? b.exitStart : [0, b.H], faceMid = [(e0[0] + b.notch[0]) / 2, (e0[1] + b.notch[1]) / 2];
+    out.push(`<path class="bc-line bc-face" d="${fp.map((q, n) => `${n ? 'L' : 'M'}${f(X(q[0]))} ${f(Y(q[1]))}`).join(' ')}"/>`);
     const yFace = Y(faceMid[1]);
     lead(X(faceMid[0]) + 4, yFace, xr - 4, yFace);
     text(xr, yFace + 4, 'start', 'c-face', ['Exit face', `θ ${val('th', v => `${v.toFixed(1)}°`)}`]);
-    out.push(`<path class="bc-line bc-free" d="M${f(xs)} ${f(Y(b.H))} C ${f(xs + (xo - xs) * 0.12)} ${f(Y(b.H * 0.94))}, ${f(xs + (xo - xs) * 0.3)} ${f(Y(fh))}, ${f(xo)} ${f(Y(fh))}"/>`);
+    const c0 = b.prof && bladeShapedFace() && CFDG.clModel === 'simple' ? [X(b.C[0]), Y(b.C[1])] : [xs, Y(b.H)];
+    out.push(`<path class="bc-line bc-free" d="M${f(c0[0])} ${f(c0[1])} C ${f(c0[0] + (xo - c0[0]) * 0.12)} ${f(Y(b.H * 0.94))}, ${f(c0[0] + (xo - c0[0]) * 0.3)} ${f(Y(fh))}, ${f(xo)} ${f(Y(fh))}"/>`);
     const ySurf = Math.min(Y(fh) - 4, yFace + 30), xSurf = xs + (xo - xs) * 0.6;
     lead(xSurf, Y(fh) - 2, xr - 4, ySurf);
     text(xr, ySurf + 4, 'start', 'c-free', ['Free surface', `γ ${val('g', v => `${v.toFixed(3)} N/m`)}`]);
@@ -854,13 +856,19 @@ function bcCallouts(i) {
   };
 }
 /** The boundary conditions at location i, each in words (extra: more list items, the 3D's sides). */
-function bcListHTML(i, extra = '') {
-  const geo = cfdGeometry(i);
+function bcListHTML(i, extra = '', face = null) {
+  const geo = cfdGeometry(i), th = geo.contactDeg.toFixed(1), f = v => +(+v).toFixed(2);
+  // (the exit face: the round entry and flat land's as it was; a shaped blade's face in words, and where its contact line can be)
+  const faceLi = face && face !== 'straight' ? face : (face === 'straight' || bladeLegacy(geo.shape) || !bladeShapedFace(geo.shape)
+    ? `(${CFDG.exitAngle}°): no slip; the contact line stays pinned at the metering edge, or climbs the face where the surface leaves it at the contact angle ${th}°.`
+    : `(${geo.shape === 'bevel' ? `bevel ${f(CFDG.bevelDeg)}° × ${f(CFDG.bevelLen)} mm, then ${CFDG.exitAngle}°` : geo.shape === 'radius' ? `edge radius ${f(CFDG.edgeR)} mm, then ${CFDG.exitAngle}°` : 'the custom profile\'s face'}): no slip; ${CFDG.clModel === 'simple'
+      ? `the face up to C always wetted (simple model); the contact line pinned at C, or climbing the face above it where the surface leaves it at the contact angle ${th}°.`
+      : `the contact line pinned at the metering edge or a corner of the face while the surface's angle lies between the contact angles either side (Gibbs), or on the face where the surface leaves it at the contact angle ${th}°.`}`);
   return `<h4>${uiBadge('flow')}Boundary conditions at L${i + 1}</h4><ul class="bc-list">
       <li><i class="c-in"></i><span><b>Inlet</b> (pool edge): the bead pressure ${locInput(i, 'Pup').toFixed(2)} kPa, plus the hydrostatic pressure with depth; no flow across.</span></li>
       <li><i class="c-blade"></i><span><b>Blade</b> underside: no slip, fixed.</span></li>
       <li><i class="c-web"></i><span><b>Web</b>: moving at ${(geo.U * 60).toFixed(2)} m/min${P.skew ? ` (the web's ${locInput(i, 'U').toFixed(2)} m/min × cos ${P.skew}° skew)` : ''}; the slurry slips over the air between the fibre's top filaments (slip length ${(fibreSlip().b * 1e6).toFixed(1)} µm); nothing enters the fibre.</span></li>
-      <li><i class="c-face"></i><span><b>Exit face</b> (${CFDG.exitAngle}°): no slip; the contact line stays pinned at the metering edge, or climbs the face where the surface leaves it at the contact angle ${geo.contactDeg.toFixed(1)}°.</span></li>
+      <li><i class="c-face"></i><span><b>Exit face</b> ${faceLi}</span></li>
       <li><i class="c-free"></i><span><b>Free surface</b>: surface tension ${locInput(i, 'g').toFixed(3)} N/m against air at ambient pressure; its shape is solved.</span></li>
       <li><i class="c-out"></i><span><b>Outlet</b> (${+bladeMM(i).Ld.toFixed(1)} mm after the edge): the film moves with the web; beyond it the 1D film to the oven (${(P.oven * 1000).toFixed(0)} mm).</span></li>
       <li><i class="c-g"></i><span><b>Gravity</b> down, 9.81 m/s².</span></li>${extra}</ul>`;
@@ -1065,7 +1073,7 @@ function c3dSolveHTML() {
     ? `<li><i class="c-out"></i><span><b>Sides of the strip</b> (${C3D.stripW} mm): ${skew ? 'open: each held at its own station\'s flow along the skewed blade' : 'symmetry planes (no flow across, no shear)'}.</span></li>`
     : `<li><i class="c-out"></i><span><b>The web's edges</b>: ${skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'} (the edge bead is not modelled).</span></li>`;
   return `<div class="step-view solve-view"><div class="step-draw" id="bcDraw3">${C3D.source === 'made' ? '' : '<p class="v3d-msg">The blade from the file: see Geometry. Its conditions are listed here.</p>'}</div>
-    <aside class="step-side">${bcListHTML(i, sides)}
+    <aside class="step-side">${bcListHTML(i, sides, C3D.source === 'made' ? null : C3D.fileFace === 'file' ? `(from the file: each station's own section): no slip; the contact line as in 2D (the ${CFDG.clModel === 'simple' ? 'simple' : 'full'} contact-line model) at the contact angle ${cfdGeometry(i).contactDeg.toFixed(1)}°.` : 'straight')}
       ${C3D.region === 'full' ? `<p class="side-note">Drawn: the profile at L1; the gap and contact angle vary across the web with the inputs under Variation across the web.</p>` : ''}
       <h4>${uiBadge('tolerance')}Solve</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Region</td><td>${C3D.region === 'strip' ? `strip ${C3D.stripW} mm at L${C3D.loc + 1}` : 'full width'}</td></tr></table>
       <p class="side-note">${c3dEstimateText()}</p></aside></div>`;
