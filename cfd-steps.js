@@ -485,8 +485,11 @@ function renderMeshStep2D(host) {
  * the size grows away from a zone. The mesh is structured, so a band covers the gap's full height and a layer
  * runs the full length. Nothing on: the mesh the counts and grading lay out, unchanged.
  */
-const ZONE_DEFAULTS = { edge: { on: false, size: 0.05 }, cl: { on: false, size: 0.05 }, face: { on: false, size: 0.1 }, film: { on: false, size: 0.5 },
-  web: { on: false, n: 3, first: 0.02, growth: 1.3 }, top: { on: false, n: 3, first: 0.02, growth: 1.3 }, bands: [], growth: 1.2 };
+// (defaults measured at the app's defaults: the edge and contact line at 0.1 mm solve in about 8 s, with layers
+// from 0.05 mm at the web about 28 s; much finer -- a contact line at 0.03 mm with layers from 0.02 mm -- can take
+// many minutes, the contact line no longer settling directly)
+const ZONE_DEFAULTS = { edge: { on: false, size: 0.1 }, cl: { on: false, size: 0.1 }, face: { on: false, size: 0.1 }, film: { on: false, size: 0.5 },
+  web: { on: false, n: 3, first: 0.05, growth: 1.3 }, top: { on: false, n: 3, first: 0.05, growth: 1.3 }, bands: [], growth: 1.2 };
 const ZONE_FEATURES = [['edge', 'Metering edge', 'around the edge corner'], ['cl', 'Contact line', 'around the contact line'],
   ['face', 'Exit face', 'along the exit face, when the contact line climbs it'], ['film', 'Film', 'along the free surface']];
 const ZONE_LAYERS = [['web', 'Layers at the web', 'the web'], ['top', 'Layers at the blade and surface', 'the blade, the exit face and the free surface']];

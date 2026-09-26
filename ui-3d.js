@@ -351,8 +351,8 @@ function c3dSolveMessage(withFile = true) {
     W = C3D.stripW / 1000; zc = CFD_LOCS[i].z / 1000;
     const smp = c3dStripSamples(i, W);
     strip = { width: W, nEz: C3D.nzStrip, gap: smp.gap, th: smp.th };
-    // (zones across the strip: its stations, unevenly spaced)
-    if (c3dZActive(c3dZones())) { const zs = c3dStations(); strip.nEz = (zs.length - 1) / 2; strip.zs = zs; }
+    // (zones across the strip, or its adapted mesh across: its stations, unevenly spaced)
+    if (c3dZActive(c3dZones()) || c3dZAdapted()) { const zs = c3dStations(); strip.nEz = (zs.length - 1) / 2; strip.zs = zs; }
   }
   let file = null;
   if (C3D.source === 'file') {
