@@ -77,7 +77,7 @@ function stepAfterRuns2D() {
   FV.stepAuto = false;
   if (tab === 4 && step2D() === 'solve' && cfdRuns.some(r => r.status === 'done')) goStep2D('results');
 }
-const GEO_CODES = ['gap', 'angles', 'land'];
+const GEO_CODES = ['gap', 'angles', 'land', 'blade'];
 /** Where each step stands, for the bar. */
 function stepStatus2D() {
   const locs = CFD_LOCS.map((_, i) => i), probs = locs.map(i => checkLocation(i).filter(p => p.level === 'error'));
@@ -85,7 +85,7 @@ function stepStatus2D() {
   const gaps = locs.map(i => locInput(i, 'gap')), gTxt = Math.min(...gaps) === Math.max(...gaps) ? gaps[0].toFixed(3) : `${Math.min(...gaps).toFixed(3)}–${Math.max(...gaps).toFixed(3)}`;
   const st = {};
   st.geometry = geoErr.length ? { state: 'bad', note: `${geoErr.length} problem${geoErr.length > 1 ? 's' : ''}`, title: geoErr.map(p => p.text).join(' ') }
-    : { state: 'done', note: `${CFDG.shape === 'round' ? `round R ${CFDG.R}` : `flat land ${P.L}`} mm · gap ${gTxt}`, title: 'The blade and the gap at each location' };
+    : { state: 'done', note: `${CFDG.shape === 'round' ? `round R ${CFDG.R} mm` : CFDG.shape === 'flat' ? `flat land ${P.L} mm` : BLADE_SHAPES.find(q => q[0] === CFDG.shape)[1].toLowerCase()} · gap ${gTxt}`, title: 'The blade and the gap at each location' };
   const ms = locs.map(i => meshShown2D(i)).filter(Boolean), pend = locs.some(i => !MESH_PV.byLoc[i] || MESH_PV.byLoc[i].key !== meshPvKey(i));
   if (ms.some(m => m.error)) st.mesh = { state: 'bad', note: 'no valid mesh', title: ms.find(m => m.error).error };
   else if (ms.length && ms.every(m => m.stats)) {
@@ -128,8 +128,10 @@ const locSegHTML = cur => `<div class="seg" role="tablist" aria-label="Location"
 function stepToolsHTML2D(k) {
   const i = stepLoc2D(), opt = (v, t, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${t}</option>`;
   const sep = '<span class="vp-sep" aria-hidden="true"></span>';
-  if (k === 'geometry') return `${locSegHTML(i)}${sep}<span class="vp-ctl">Blade</span><div class="seg" role="tablist" aria-label="Blade entry">
-      <button type="button" role="tab" data-stepshape="round" aria-selected="${CFDG.shape === 'round'}">Round entry</button><button type="button" role="tab" data-stepshape="flat" aria-selected="${CFDG.shape === 'flat'}">Flat land</button></div>
+  if (k === 'geometry') return `${locSegHTML(i)}${sep}<span class="vp-ctl">Blade</span><div class="seg" role="tablist" aria-label="Blade shape">
+      ${BLADE_SHAPES.map(([v, l]) => `<button type="button" role="tab" data-stepshape="${v}" aria-selected="${CFDG.shape === v}">${l}</button>`).join('')}</div>
+      ${bladeShapedFace() ? `${sep}<span class="vp-ctl">Contact line</span><div class="seg" role="tablist" aria-label="Contact line model">
+      <button type="button" role="tab" data-stepcl="full" aria-selected="${CFDG.clModel !== 'simple'}" title="The contact line can be pinned at any corner of the face or sit anywhere on it">Full</button><button type="button" role="tab" data-stepcl="simple" aria-selected="${CFDG.clModel === 'simple'}" title="The face up to C always wetted; the contact line pinned at C or climbing the exit face above it">Simple</button></div>` : ''}
       ${sep}<label class="fv-chk"><input type="checkbox" id="stepDims"${FV.stepDims ? ' checked' : ''}> Dimensions</label>`;
   if (k === 'mesh') {
     const solved = cfdRuns[i].field && !cfdIsStale(i);
@@ -148,7 +150,8 @@ function stepToolsHTML2D(k) {
 /** Wire the step toolbar (after viewCFD draws it). */
 function wireStepTools2D() {
   document.querySelectorAll('[data-steploc]').forEach(b => { b.onclick = () => { FV.stepLoc = +b.dataset.steploc; viewCFD(); }; });
-  document.querySelectorAll('[data-stepshape]').forEach(b => { b.onclick = () => { if (CFDG.shape !== b.dataset.stepshape) { CFDG.shape = b.dataset.stepshape; viewCFD(); } }; });
+  document.querySelectorAll('[data-stepshape]').forEach(b => { b.onclick = () => setBladeShape(b.dataset.stepshape); });
+  document.querySelectorAll('[data-stepcl]').forEach(b => { b.onclick = () => { if (CFDG.clModel !== b.dataset.stepcl) { CFDG.clModel = b.dataset.stepcl; viewCFD(); } }; });
   const dims = document.getElementById('stepDims'); if (dims) dims.onchange = () => { FV.stepDims = dims.checked; renderStepView2D(); };
   const mp = document.getElementById('stepMeshPreset'); if (mp) mp.onchange = () => { const s = document.getElementById('cfdMesh'); s.value = mp.value; s.dispatchEvent(new Event('change')); };
   document.querySelectorAll('[data-meshshow]').forEach(b => { b.onclick = () => { FV.meshShow = b.dataset.meshshow; viewCFD(); }; });
@@ -180,7 +183,15 @@ function bladeMM(i) {
   const g = cfdGeometry(i), round = g.shape === 'round', H = g.H * 1000, R = g.R * 1000, X = round ? g.Xup * 1000 : g.L * 1000;
   const fa = g.exitAngle * Math.PI / 180, face = P.face;
   const h = u => round ? H + R - Math.sqrt(Math.max(0, R * R - u * u)) : H;    // u: distance upstream of the edge
-  return { g, round, H, R, X, fa, face, h, hIn: h(X), notch: [face * Math.cos(fa), H + face * Math.sin(fa)], th: locInput(i, 'th'), Ld: Math.max(12, (solverOf(i).ldGaps ?? 8) * H), tf: P.tf };
+  const base = { g, round, H, R, X, fa, face, h, hIn: h(X), notch: [face * Math.cos(fa), H + face * Math.sin(fa)], th: locInput(i, 'th'), Ld: Math.max(12, (solverOf(i).ldGaps ?? 8) * H), tf: P.tf };
+  if (bladeLegacy(g.shape)) return base;
+  // a shaped blade: its profile (cfd-blade.js), in mm with the metering point M at x = 0
+  const p = bladeProfAt(H), xe = p.xe * 1000, rel = q => [q[0] * 1000 - xe, q[1] * 1000];
+  const under = pathPoints(p.under).map(rel), faceP = pathPoints(p.face).map(rel), F = p.face;
+  const exitStart = rel(F.P(F.s0[F.pieces.length - 1]));      // (the exit face: the face's last piece)
+  return { ...base, prof: p, err: p.err || null, X: xe, h: u => p.hUnder((xe - u) / 1000) * 1000, hIn: under[0][1], underPts: under, facePts: faceP,
+    notch: faceP[faceP.length - 1], exitStart, C: rel(F.P(p.C)), corners: p.faceCorners.map(c => rel(F.P(c.s))), underCorners: p.underCorners.map(c => rel(p.under.P(c.s))),
+    yMax: Math.max(...under.map(q => q[1]), ...faceP.map(q => q[1])) };
 }
 /** The dimensions a drawing can change: their setting, range and step (a drag rounds to the step). */
 const DIMS = {
@@ -189,8 +200,9 @@ const DIMS = {
   exitAngle: { l: 'Exit face to the web', u: '°', lo: 30, hi: 150, step: 5, get: () => CFDG.exitAngle, set: v => { CFDG.exitAngle = v; } },
   face: { l: 'Notch face length to corner', u: 'mm', lo: 2, hi: 12, step: 0.5, get: () => P.face, set: v => { P.face = v; }, input: 'face' },
   L: { l: 'Land length', u: 'mm', lo: 3, hi: 25, step: 0.5, get: () => P.L, set: v => { P.L = v; }, input: 'L' },
+  ...Object.fromEntries(BLADE_DIMS.map(d => [d.k, { l: d.l, u: d.u, lo: d.lo, hi: d.hi, step: d.step, get: () => CFDG[d.k], set: v => { CFDG[d.k] = v; } }])),
 };
-const dimFmt = (k, v) => k === 'exitAngle' ? `${+v.toFixed(1)}°` : `${+v.toFixed(2)} mm`;
+const dimFmt = (k, v) => DIMS[k] && DIMS[k].u === '°' ? `${+v.toFixed(1)}°` : `${+v.toFixed(2)} mm`;
 /** Commit a dimension (from a drag's end or a typed value): an undo step, the whole page drawn again. */
 function setDim(k, v) {
   const d = DIMS[k];
@@ -200,7 +212,7 @@ function setDim(k, v) {
 }
 /** The drawing's frame: physical box (mm) to the screen (px), true scale, fitted into w x h. */
 function drawFrame(b, w, h, pad = { l: 40, r: 30, t: 44, b: 70 }) {
-  const x0 = -b.X - 3, x1 = Math.max(b.notch[0], 0) + Math.min(b.Ld, 14), y0 = -b.tf, y1 = Math.max(b.hIn, b.notch[1]) + 2.5;
+  const x0 = -b.X - 3, x1 = Math.max(b.notch[0], 0) + Math.min(b.Ld, 14), y0 = -b.tf, y1 = Math.max(b.hIn, b.notch[1], b.yMax || 0) + 2.5;
   const k = Math.min((w - pad.l - pad.r) / (x1 - x0), (h - pad.t - pad.b) / (y1 - y0));
   const ox = pad.l + ((w - pad.l - pad.r) - k * (x1 - x0)) / 2 - k * x0, oy = pad.t + k * y1;
   return { k, x0, x1, y0, y1, X: x => ox + k * x, Y: y => oy - k * y, ux: px => (px - ox) / k, uy: py => (oy - py) / k };
@@ -210,9 +222,11 @@ function bladeSVG(i, w, h, { dims = true, bc = null, frame = null } = {}) {
   const b = bladeMM(i), F = frame || drawFrame(b, w, h, bc ? { l: 150, r: 240, t: 52, b: 70 } : undefined), X = F.X, Y = F.Y, f = n => n.toFixed(1);
   let under = '';
   const N = 64;
-  for (let n = 0; n <= N; n++) { const u = b.X * (1 - n / N); under += `${n ? 'L' : 'M'}${f(X(-u))} ${f(Y(b.h(u)))} `; }
+  if (b.prof) under = b.underPts.map((q, n) => `${n ? 'L' : 'M'}${f(X(q[0]))} ${f(Y(q[1]))} `).join('');
+  else for (let n = 0; n <= N; n++) { const u = b.X * (1 - n / N); under += `${n ? 'L' : 'M'}${f(X(-u))} ${f(Y(b.h(u)))} `; }
   const top = F.y1 - 0.6, nx = b.notch[0], ny = b.notch[1];
-  const body = `${under}L${f(X(nx))} ${f(Y(ny))} L${f(X(Math.max(nx, 0) + 2))} ${f(Y(ny))} L${f(X(Math.max(nx, 0) + 2))} ${f(Y(top))} L${f(X(-b.X))} ${f(Y(top))} Z`;
+  const faceD = b.prof ? b.facePts.slice(1, -1).map(q => `L${f(X(q[0]))} ${f(Y(q[1]))} `).join('') : '';
+  const body = `${under}${faceD}L${f(X(nx))} ${f(Y(ny))} L${f(X(Math.max(nx, 0) + 2))} ${f(Y(ny))} L${f(X(Math.max(nx, 0) + 2))} ${f(Y(top))} L${f(X(-b.X))} ${f(Y(top))} Z`;
   const slurry = `${under}L${f(X(0))} ${f(Y(0))} L${f(X(-b.X))} ${f(Y(0))} Z`;
   const chip = (x, y, lab, val, { anchor = 'start', edit = null, muted = false, cls = '' } = {}) => {
     const wd = 12 + 6.4 * (lab.length + 1) + 7.4 * val.length, xx = anchor === 'end' ? x - wd : anchor === 'middle' ? x - wd / 2 : x;
@@ -221,15 +235,18 @@ function bladeSVG(i, w, h, { dims = true, bc = null, frame = null } = {}) {
   const handle = (x, y, k, title) => `<circle class="dim-h" data-h="${k}" cx="${f(x)}" cy="${f(y)}" r="6.5" tabindex="-1"><title>${title}</title></circle>`;
   const g = [];
   g.push(`<defs><pattern id="bladeHatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" class="hatch"/></pattern></defs>`);
-  g.push(`<path class="slurry" d="${slurry}"/>`);
+  if (!(b.prof && b.err && !b.prof.placed)) g.push(`<path class="slurry" d="${slurry}"/>`);
   g.push(`<rect class="fibre" x="${f(X(F.x0))}" y="${f(Y(0))}" width="${f(X(F.x1) - X(F.x0))}" height="${f(Y(-b.tf) - Y(0))}"/>`);
   g.push(`<line class="web" x1="${f(X(F.x0))}" y1="${f(Y(0))}" x2="${f(X(F.x1))}" y2="${f(Y(0))}"/>`);
-  g.push(`<path class="blade" d="${body}"/>`);
+  // (a custom profile not yet possible -- while its points are placed --: no blade drawn, only its points)
+  const noBody = b.prof && b.err && !b.prof.placed;
+  if (!noBody) g.push(`<path class="blade" d="${body}"/>`);
   // the film region the 2D domain follows (dashed), then the 1D film to the oven
   g.push(`<line class="domain-end" x1="${f(X(b.Ld))}" y1="${f(Y(0))}" x2="${f(X(b.Ld))}" y2="${f(Y(Math.min(b.H * 1.6, F.y1)))}"/>`);
   const scale = [1, 2, 5, 10, 20, 50].find(s => s * F.k > 70) || 50;
   g.push(`<g class="scale-bar"><line x1="${f(X(F.x0) + 4)}" y1="${f(h - 18)}" x2="${f(X(F.x0) + 4 + scale * F.k)}" y2="${f(h - 18)}"/><text x="${f(X(F.x0) + 4)}" y="${f(h - 24)}">${scale} mm · true scale</text></g>`);
-  if (dims) {
+  if (dims && b.prof) g.push(shapedDims(i, b, F, chip, handle));
+  else if (dims) {
     const uR = b.X * 0.5, pR = [X(-uR), Y(b.h(uR))];
     if (b.round) {
       g.push(`<line class="leader" x1="${f(pR[0])}" y1="${f(pR[1])}" x2="${f(pR[0] - 20)}" y2="${f(pR[1] - 52)}"/>`);
@@ -256,18 +273,95 @@ function bladeSVG(i, w, h, { dims = true, bc = null, frame = null } = {}) {
   if (bc) g.push(bc(b, F));
   return { svg: `<svg class="blade-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="min-width:${w}px" role="img" aria-label="Blade profile at location ${i + 1}, to scale">${g.join('')}</svg>`, b, F };
 }
+/**
+ * A shaped blade's dimensions on its drawing: the gap at M, each shape's own sizes (click to type), the exit face's
+ * angle and length, the corners where the contact line can pin (the simple model's C marked), and drag handles; a
+ * custom profile: its points (drag them; double-click: corner or not), M and C.
+ */
+function shapedDims(i, b, F, chip, handle) {
+  const X = F.X, Y = F.Y, f = n => n.toFixed(1), sh = CFDG.shape, g = [], yd = Y(0) + 40;
+  const dimline = (xa, xb, y) => `<g class="dimline"><line x1="${f(X(xa))}" y1="${f(y)}" x2="${f(X(xb))}" y2="${f(y)}"/><line x1="${f(X(xa))}" y1="${f(y - 8)}" x2="${f(X(xa))}" y2="${f(y + 8)}"/><line x1="${f(X(xb))}" y1="${f(y - 8)}" x2="${f(X(xb))}" y2="${f(y + 8)}"/></g>`;
+  g.push(`<line class="gapline" x1="${f(X(0) - 16)}" y1="${f(Y(0))}" x2="${f(X(0) - 16)}" y2="${f(Y(b.H))}"/>`);
+  g.push(chip(X(0) - 24, Y(b.H / 2) + 4, `Gap at L${i + 1}`, `${b.H.toFixed(3)} mm`, { anchor: 'end', muted: true, cls: 'dim-info' }));
+  if (b.err) g.push(`<text class="note dim-err" x="${f(X(-b.X) + 10)}" y="${f(Y(b.yMax) - 10)}">Not possible: ${escAttr(b.err)}</text>`);
+  // the corners (the contact line can pin there) and, with the simple model, C
+  for (const q of b.corners) g.push(`<circle class="corner-mark" cx="${f(X(q[0]))}" cy="${f(Y(q[1]))}" r="3.5"><title>A corner: the contact line can be pinned here</title></circle>`);
+  if (bladeShapedFace() && CFDG.clModel === 'simple') g.push(`<circle class="c-mark" cx="${f(X(b.C[0]))}" cy="${f(Y(b.C[1]))}" r="8"/><text class="note c-note" x="${f(X(b.C[0]) + 12)}" y="${f(Y(b.C[1]) - 8)}">C: wetted up to here (simple model)</text>`);
+  if (sh !== 'custom') {
+    // the exit face: its angle at its start, its length to the notch corner
+    const [ex, ey] = b.exitStart, ar = 26;
+    g.push(`<path class="leader" d="M${f(X(ex) + ar)} ${f(Y(ey))} A ${ar} ${ar} 0 0 0 ${f(X(ex) + ar * Math.cos(b.fa))} ${f(Y(ey) - ar * Math.sin(b.fa))}"/>`);
+    g.push(chip(X(ex) + ar + 10, Y(ey) + 22, 'Exit face', dimFmt('exitAngle', CFDG.exitAngle), { edit: 'exitAngle' }));
+    g.push(chip(X((ex + b.notch[0]) / 2) + 16, Y((ey + b.notch[1]) / 2) + 4, 'Notch face', dimFmt('face', P.face), { edit: 'face' }));
+    g.push(handle(X(b.notch[0]), Y(b.notch[1]), 'notchS', 'Drag: the notch face length and the exit face angle'));
+    if (sh !== 'wedge') g.push(chip(X(-b.X) + 10, Y(b.hIn) - 16, 'Inlet height', `${b.hIn.toFixed(2)} mm`, { muted: true }));
+  }
+  if (sh === 'bevel' || sh === 'radius' || sh === 'wedge') {
+    g.push(dimline(-b.X, 0, yd));
+    g.push(chip(X(-b.X / 2), yd + 6, sh === 'wedge' ? 'Length' : 'Land', dimFmt('L', P.L), { anchor: 'middle', edit: 'L' }));
+    if (sh !== 'wedge') g.push(handle(X(-b.X), Y(b.hIn), 'L', 'Drag left or right: the land length'));
+  }
+  if (sh === 'bevel') {
+    const [cx, cy] = b.C;
+    g.push(chip(X(cx) - 14, Y(cy) - 34, 'Bevel', dimFmt('bevelDeg', CFDG.bevelDeg), { anchor: 'end', edit: 'bevelDeg' }));
+    g.push(chip(X(cx) - 14, Y(cy) - 8, 'length', dimFmt('bevelLen', CFDG.bevelLen), { anchor: 'end', edit: 'bevelLen' }));
+    g.push(handle(X(cx), Y(cy), 'bevelC', 'Drag: the bevel\'s length and angle'));
+  } else if (sh === 'radius') {
+    const [cx, cy] = b.C;
+    g.push(`<line class="leader" x1="${f(X(cx))}" y1="${f(Y(cy))}" x2="${f(X(cx) + 30)}" y2="${f(Y(cy) - 26)}"/>`);
+    g.push(chip(X(cx) + 30, Y(cy) - 30, 'Edge radius', dimFmt('edgeR', CFDG.edgeR), { edit: 'edgeR' }));
+    g.push(handle(X(cx), Y(cy), 'edgeR', 'Drag: the edge radius'));
+  } else if (sh === 'wedge') {
+    const a = Math.atan((CFDG.inletGap - b.H) / P.L) * 180 / Math.PI;
+    g.push(chip(X(-b.X) + 10, Y(b.hIn) - 16, 'Inlet gap', dimFmt('inletGap', CFDG.inletGap), { edit: 'inletGap' }));   // (= the inlet height)
+    g.push(chip(X(-b.X / 2), Y((b.hIn + b.H) / 2) - 14, 'α', `${a.toFixed(2)}°`, { anchor: 'middle', muted: true, cls: 'dim-info' }));
+    g.push(handle(X(-b.X), Y(b.hIn), 'wedgeIn', 'Drag: left or right the length, up or down the inlet gap'));
+  } else if (sh === 'twostep') {
+    const dx = CFDG.riserDeg >= 90 ? 0 : CFDG.stepH / Math.tan(CFDG.riserDeg * Math.PI / 180), xr = -(P.L + dx);
+    g.push(dimline(-b.X, -b.X + CFDG.land1, yd), dimline(-P.L, 0, yd));
+    g.push(chip(X(-b.X + CFDG.land1 / 2), yd + 6, 'Land 1', dimFmt('land1', CFDG.land1), { anchor: 'middle', edit: 'land1' }));
+    g.push(chip(X(-P.L / 2), yd + 6, 'Land', dimFmt('L', P.L), { anchor: 'middle', edit: 'L' }));
+    g.push(chip(X(xr) - 10, Y(b.H + CFDG.stepH) - 18, 'Step', dimFmt('stepH', CFDG.stepH), { anchor: 'end', edit: 'stepH' }));
+    g.push(chip(X(-P.L) + 8, Y(b.H + CFDG.stepH / 2) + 4, 'Riser', dimFmt('riserDeg', CFDG.riserDeg), { edit: 'riserDeg' }));
+    g.push(handle(X(-b.X), Y(b.hIn), 'land1', 'Drag left or right: land 1\'s length'));
+    g.push(handle(X(xr), Y(b.H + CFDG.stepH), 'stepTop', 'Drag: left or right the land, up or down the step'));
+  } else if (sh === 'custom') {
+    // (a profile not yet possible -- while points are placed --: the points as they are)
+    const v = b.prof.verts || [], cor = new Set(b.prof.auto ? (b.prof.auto.corners || []) : []), xe = b.X, raw = !b.prof.placed;
+    const at = k => raw ? [v[k].x * 1000, v[k].y * 1000] : [v[k].x * 1000 - xe, v[k].y * 1000];
+    if (v.length > 1) g.push(`<polyline class="cust-poly" points="${v.map((_, k) => at(k)).map(q => `${f(X(q[0]))},${f(Y(q[1]))}`).join(' ')}"/>`);
+    v.forEach((_, k) => {
+      const [x, y] = at(k), c = cor.has(k);
+      g.push(c ? `<rect class="cust-pt${c ? ' corner' : ''}" data-h="v${k}" x="${f(X(x) - 5)}" y="${f(Y(y) - 5)}" width="10" height="10" tabindex="-1"><title>Point ${k + 1}: a corner (double-click: smooth). Drag to move.</title></rect>`
+        : `<circle class="cust-pt" data-h="v${k}" cx="${f(X(x))}" cy="${f(Y(y))}" r="5.5" tabindex="-1"><title>Point ${k + 1}: smooth (double-click: a corner). Drag to move.</title></circle>`);
+    });
+    if (v[b.prof.Mi]) { const [x, y] = at(b.prof.Mi); g.push(`<circle class="m-ring" data-h="M" cx="${f(X(x))}" cy="${f(Y(y))}" r="10"><title>M, the metering point: drag onto another point</title></circle><text class="note m-note" x="${f(X(x) + 12)}" y="${f(Y(y) + 22)}">M</text>`); }
+    if (v[b.prof.Ci] && b.prof.Ci !== b.prof.Mi) { const [x, y] = at(b.prof.Ci); g.push(`<circle class="c-ring" data-h="C" cx="${f(X(x))}" cy="${f(Y(y))}" r="10"><title>C, where the simple model's wetted part ends: drag onto another point</title></circle><text class="note c-note" x="${f(X(x) + 12)}" y="${f(Y(y) - 10)}">C</text>`); }
+  }
+  g.push(`<text class="note" x="${f(X(Math.max(b.notch[0], 0) + 2) + 8)}" y="${f(Y(b.notch[1]) + 4)}">notch corner (dry edge)</text>`);
+  g.push(`<text class="note" x="${f(X(-b.X) + 10)}" y="${f(Y(b.hIn * 0.14))}">slurry</text>`);
+  g.push(`<text class="note" x="${f(X(b.Ld))}" y="${f(Y(0) + 20)}" text-anchor="end">2D domain ends ${+b.Ld.toFixed(1)} mm after the edge ¦</text>`);
+  return g.join('');
+}
 function renderGeometry2D(host) {
-  const i = stepLoc2D(), b = bladeMM(i), round = b.round;
+  const i = stepLoc2D(), b = bladeMM(i), round = b.round, sh = CFDG.shape;
   const row = (l, v, k) => `<tr><td>${l}</td><td>${k ? `<input type="number" class="geo-in" data-geo="${k}" value="${+DIMS[k].get().toFixed(3)}" min="${DIMS[k].lo}" max="${DIMS[k].hi}" step="${DIMS[k].step}" aria-label="${DIMS[k].l}"><span class="u">${DIMS[k].u}</span>` : v}</td></tr>`;
+  // (a shaped blade: its own sizes, the land the sidebar's; a custom one: its editor)
+  const own = BLADE_DIMS.filter(d => d.shapes.includes(sh)).map(d => row(d.l, '', d.k)).join('');
+  const landL = { bevel: 'Land length', radius: 'Land length', wedge: 'Length', twostep: 'Land (metering)' }[sh];
+  const shapeRows = round ? row('Entry radius', '', 'R') + row('Pool edge upstream', '', 'pool') : sh === 'flat' ? row('Land length', '', 'L') : sh === 'custom' ? '' : own + row(landL, '', 'L');
+  const cl = bladeShapedFace() ? `<tr><td>Contact line</td><td>${CFDG.clModel === 'simple' ? 'simple: wetted up to C' : 'full: any corner or stretch'}</td></tr>` : '';
   host.innerHTML = `<div class="step-view geo-view"><div class="step-draw" id="geoDraw"></div>
     <aside class="step-side"><h4>${uiBadge('shape')}Blade profile</h4><table class="kv">
-      <tr><td>Entry</td><td>${round ? 'round' : 'flat land'}</td></tr>
-      ${round ? row('Entry radius', '', 'R') + row('Pool edge upstream', '', 'pool') : row('Land length', '', 'L')}
-      ${row('Exit face to the web', '', 'exitAngle')}${row('Notch face to corner', '', 'face')}
-      <tr><td>Inlet height</td><td>${b.hIn.toFixed(2)} mm</td></tr></table>
+      <tr><td>${bladeLegacy() ? 'Entry' : 'Shape'}</td><td>${round ? 'round' : sh === 'flat' ? 'flat land' : BLADE_SHAPES.find(q => q[0] === sh)[1].toLowerCase()}</td></tr>
+      ${shapeRows}
+      ${sh === 'custom' ? '' : row('Exit face to the web', '', 'exitAngle') + row('Notch face to corner', '', 'face')}${cl}
+      <tr><td>Inlet height</td><td>${b.hIn.toFixed(2)} mm</td></tr>${b.err ? `<tr><td colspan="2" class="warn-text">Not possible: ${escAttr(b.err)}</td></tr>` : ''}</table>
+      ${sh === 'custom' ? customEditorHTML(b) : ''}
       <h4>${uiBadge('height')}Gap and contact angle</h4><table class="kv">${CFD_LOCS.map((l, k) => `<tr${k === i ? ' class="on"' : ''}><td>L${k + 1} · z ${l.z} mm</td><td>${locInput(k, 'gap').toFixed(3)} mm · ${locInput(k, 'th').toFixed(1)}°</td></tr>`).join('')}</table>
       <p class="side-note">Gap = scraper height ${P.Hm.toFixed(2)} − fibre ${P.tf.toFixed(2)} mm, with the variation across the web (Inputs); a location can have its own. The 1D, 2D and 3D all use this blade.</p></aside></div>`;
   drawGeometry2D();
+  if (sh === 'custom') wireCustomEditor(host);
   host.querySelectorAll('.geo-in').forEach(el => el.addEventListener('change', () => {
     const k = el.dataset.geo, d = DIMS[k];
     el.id = el.id || 'geo_' + k;
@@ -278,11 +372,25 @@ function drawGeometry2D() {
   const host = document.getElementById('geoDraw');
   if (!host) return;
   const i = stepLoc2D(), w = Math.max(640, host.clientWidth), h = Math.max(240, host.clientHeight);
-  const d = bladeSVG(i, w, h, { dims: FV.stepDims });
+  if (!(CFDG.shape === 'custom' && CUST_PLACE)) CUST_FRAME = null;
+  const d = bladeSVG(i, w, h, { dims: FV.stepDims || (CFDG.shape === 'custom'), frame: CFDG.shape === 'custom' && CUST_PLACE && CUST_FRAME && CUST_FRAME.w === w && CUST_FRAME.h === h ? CUST_FRAME : null });
+  if (CFDG.shape === 'custom' && CUST_PLACE && !CUST_FRAME) CUST_FRAME = { ...d.F, w, h };
   host.innerHTML = d.svg;
   host._frame = d.F; host._b = d.b;
   wireDims(host, i);
+  if (CFDG.shape === 'custom' && CUST_PLACE) {
+    // (placing points: a click anywhere but on a handle adds one; the drawing's frame kept while placing)
+    const svg = host.querySelector('svg');
+    svg.classList.add('placing');
+    svg.addEventListener('click', e => {
+      if (e.target.closest('.cust-pt, .dim-h, .m-ring, .c-ring, .dim-edit')) return;
+      const r = svg.getBoundingClientRect(), sx = svg.viewBox.baseVal.width / r.width, F = CUST_FRAME || d.F;
+      custPlaceClick(F.ux((e.clientX - r.left) * sx), F.uy((e.clientY - r.top) * sx), host._b);
+    });
+  }
 }
+/** The drawing's frame while points are placed (so the page does not move under the clicks). */
+let CUST_FRAME = null;
 /** Click (or Enter) on a value: type a new one; drag a handle: change it, rounded to its step. */
 function wireDims(host, i) {
   const svg = host.querySelector('svg');
@@ -307,11 +415,21 @@ function wireDims(host, i) {
     g.addEventListener('click', () => openEdit(g));
     g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEdit(g); } });
   });
-  svg.querySelectorAll('.dim-h').forEach(c => c.addEventListener('pointerdown', e => {
+  // (the settings a drag can change, and a shaped blade's custom points)
+  const DKEYS = Object.keys(DIMS);
+  const snap = () => ({ ...Object.fromEntries(DKEYS.map(q => [q, DIMS[q].get()])), custom: JSON.stringify(CFDG.custom) });
+  const restore = o => { for (const q of DKEYS) { if (DIMS[q].input) P[DIMS[q].input] = o[q]; else DIMS[q].set(o[q]); } CFDG.custom = JSON.parse(o.custom); };
+  svg.querySelectorAll('.dim-h, .cust-pt, .m-ring, .c-ring').forEach(c => c.addEventListener('pointerdown', e => {
     e.preventDefault();
-    const k = c.dataset.h, F = host._frame, b0 = host._b, start = { R: CFDG.R, pool: CFDG.pool, L: P.L, face: P.face, exitAngle: CFDG.exitAngle };
+    const k = c.dataset.h, F = host._frame, b0 = host._b, start = snap();
     const rnd = (key, v) => { const d = DIMS[key]; return Math.min(d.hi, Math.max(d.lo, Math.round(v / d.step) * d.step)); };
     const tip = document.createElement('div'); tip.className = 'dim-tip'; host.appendChild(tip);
+    // (a custom point: its own frame is the placed one shifted -- kept from the drag's start)
+    const cust = CFDG.custom, pv = b0.prof && b0.prof.verts, vk = /^v\d+$/.test(k) ? +k.slice(1) : -1;
+    // (a profile not yet possible: its points drawn as they are)
+    const off = vk >= 0 && pv ? (b0.prof.placed ? [cust.verts[0].x - pv[0].x * 1000, cust.verts[vk].y - pv[vk].y * 1000] : [-b0.X, 0]) : null;
+    const nearestV = (x, y) => { let j = 0, best = Infinity; pv.forEach((q, n) => { const d = Math.hypot(q.x * 1000 - b0.X - x, q.y * 1000 - y); if (d < best) { best = d; j = n; } }); return j; };
+    const r2 = v => Math.round(v * 100) / 100;
     // (the drawing is redrawn while dragging, the handle with it: the window follows the pointer)
     const pid = e.pointerId;
     const move = ev => {
@@ -325,9 +443,26 @@ function wireDims(host, i) {
         CFDG.R = rnd('R', R); txt = `R ${CFDG.R} mm`;
       } else if (k === 'pool') { CFDG.pool = rnd('pool', -x); txt = `pool edge ${CFDG.pool} mm`; }
       else if (k === 'L') { P.L = rnd('L', -x); txt = `land ${P.L} mm`; }
-      else if (k === 'notch') {
-        const dx = x, dyy = y - b0.H, len = Math.hypot(dx, dyy), ang = Math.atan2(dyy, dx) * 180 / Math.PI;
+      else if (k === 'notch' || k === 'notchS') {
+        const o = k === 'notch' ? [0, b0.H] : b0.exitStart, dx = x - o[0], dyy = y - o[1], len = Math.hypot(dx, dyy), ang = Math.atan2(dyy, dx) * 180 / Math.PI;
         P.face = rnd('face', len); CFDG.exitAngle = rnd('exitAngle', ang); txt = `face ${P.face} mm at ${CFDG.exitAngle}°`;
+      } else if (k === 'bevelC') {
+        CFDG.bevelLen = rnd('bevelLen', Math.hypot(x, y - b0.H)); CFDG.bevelDeg = rnd('bevelDeg', Math.atan2(y - b0.H, x) * 180 / Math.PI); txt = `bevel ${CFDG.bevelDeg}° × ${CFDG.bevelLen} mm`;
+      } else if (k === 'edgeR') {
+        const th = CFDG.exitAngle * Math.PI / 180;
+        CFDG.edgeR = rnd('edgeR', Math.hypot(x, y - b0.H) / Math.hypot(Math.sin(th), 1 - Math.cos(th))); txt = `edge radius ${CFDG.edgeR} mm`;
+      } else if (k === 'wedgeIn') { P.L = rnd('L', -x); CFDG.inletGap = rnd('inletGap', y); txt = `length ${P.L} mm, inlet gap ${CFDG.inletGap} mm`; }
+      else if (k === 'land1' || k === 'stepTop') {
+        const dx = CFDG.riserDeg >= 90 ? 0 : CFDG.stepH / Math.tan(CFDG.riserDeg * Math.PI / 180);
+        if (k === 'land1') { CFDG.land1 = rnd('land1', -x - dx - P.L); txt = `land 1 ${CFDG.land1} mm`; }
+        else { P.L = rnd('L', -x - dx); CFDG.stepH = rnd('stepH', y - b0.H); txt = `land ${P.L} mm, step ${CFDG.stepH} mm`; }
+      } else if (vk >= 0 && off) {
+        CFDG.custom = { ...cust, verts: cust.verts.map((q, n) => n === vk ? { ...q, x: r2(x + b0.X + off[0]), y: r2(y + off[1]) } : q) };
+        txt = `point ${vk + 1}: ${CFDG.custom.verts[vk].x.toFixed(2)}, ${CFDG.custom.verts[vk].y.toFixed(2)} mm`;
+      } else if ((k === 'M' || k === 'C') && pv) {
+        const j = nearestV(x, y);
+        CFDG.custom = { ...cust, [k]: k === 'C' ? Math.max(j, b0.prof.Mi) : j };
+        txt = `${k} at point ${CFDG.custom[k] + 1}`;
       }
       const d = bladeSVG(i, svg.viewBox.baseVal.width, svg.viewBox.baseVal.height, { dims: true, frame: F });   // (the same frame: the handle stays under the pointer)
       svg.innerHTML = d.svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
@@ -336,15 +471,23 @@ function wireDims(host, i) {
     const up = ev => {
       if (ev.pointerId !== pid) return;
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); tip.remove();
-      const now = { R: CFDG.R, pool: CFDG.pool, L: P.L, face: P.face, exitAngle: CFDG.exitAngle };
-      Object.assign(CFDG, { R: start.R, pool: start.pool, exitAngle: start.exitAngle }); P.L = start.L; P.face = start.face;
-      const changed = Object.keys(now).filter(q => now[q] !== start[q]);
-      if (!changed.length) { drawGeometry2D(); return; }
-      undoHint(changed.map(q => `${DIMS[q].l}: ${dimFmt(q, start[q])} → ${dimFmt(q, now[q])}`).join('; '));
+      const now = snap();
+      restore(start);
+      const changed = DKEYS.filter(q => now[q] !== start[q]), custMoved = now.custom !== start.custom;
+      if (!changed.length && !custMoved) { drawGeometry2D(); return; }
+      undoHint([...changed.map(q => `${DIMS[q].l}: ${dimFmt(q, start[q])} → ${dimFmt(q, now[q])}`), ...(custMoved ? [vk >= 0 ? `Custom profile: point ${vk + 1} moved` : `Custom profile: ${k} at point ${JSON.parse(now.custom)[k] + 1}`] : [])].join('; '));
       for (const q of changed) { if (DIMS[q].input) setInput(DIMS[q].input, now[q]); else DIMS[q].set(now[q]); }
+      if (custMoved) CFDG.custom = JSON.parse(now.custom);
       if (tab === 4) viewCFD(); else render();
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  }));
+  // a custom point: double-click toggles corner / smooth
+  svg.querySelectorAll('.cust-pt').forEach(c => c.addEventListener('dblclick', () => {
+    const k = +c.dataset.h.slice(1), b0 = host._b, isC = b0.prof.auto && b0.prof.auto.corners.includes(k);
+    undoHint(`Custom profile: point ${k + 1} ${isC ? 'smooth' : 'a corner'}`);
+    CFDG.custom = { ...CFDG.custom, verts: CFDG.custom.verts.map((q, n) => n === k ? { ...q, corner: !isC } : q) };
+    if (tab === 4) viewCFD(); else render();
   }));
 }
 /** The Dimensions tab: each location's blade, gap and contact angle. */
@@ -353,7 +496,8 @@ function renderDims2D() {
   if (!host) return;
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table nowrap-table"><thead><tr><th>Location</th><th>z (mm)</th><th>Blade</th><th>Exit face (°)</th><th>Notch face (mm)</th><th>Gap at the edge (mm)</th><th>Inlet height (mm)</th><th>Contact angle (°)</th><th>Own inputs</th></tr></thead><tbody>${CFD_LOCS.map((l, i) => {
     const b = bladeMM(i), own = Object.keys(l.over);
-    return `<tr><td>L${i + 1}</td><td>${l.z}</td><td>${b.round ? `round R ${CFDG.R}, pool ${+b.X.toFixed(1)} mm` : `flat land ${P.L} mm`}</td><td>${CFDG.exitAngle}</td><td>${P.face}</td><td>${b.H.toFixed(3)}</td><td>${b.hIn.toFixed(2)}</td><td>${b.th.toFixed(1)}</td><td>${own.length ? own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ') : 'none'}</td></tr>`;
+    const custom = CFDG.shape === 'custom';
+    return `<tr><td>L${i + 1}</td><td>${l.z}</td><td>${b.round ? `round R ${CFDG.R}, pool ${+b.X.toFixed(1)} mm` : CFDG.shape === 'flat' ? `flat land ${P.L} mm` : bladeText()}</td><td>${custom ? '—' : CFDG.exitAngle}</td><td>${custom ? '—' : P.face}</td><td>${b.H.toFixed(3)}</td><td>${b.hIn.toFixed(2)}</td><td>${b.th.toFixed(1)}</td><td>${own.length ? own.map(k => LOC_INPUTS.find(q => q.k === k).l.toLowerCase()).join(', ') : 'none'}</td></tr>`;
   }).join('')}</tbody></table></div><p class="fv-note">The blade is the same at every location; the gap and contact angle vary across the web with the inputs under Variation across the web, or a location's own values (Locations across the web, its inputs button).</p>`;
 }
 
@@ -462,7 +606,7 @@ function renderMeshStep2D(host) {
       <div class="q-hist" aria-label="Quality histogram, 0 to 1">${s.hist.map((n, k) => `<i style="height:${Math.max(2, 46 * n / hmax)}px" title="${k / 10}–${(k + 1) / 10}: ${n} element${n === 1 ? '' : 's'}"></i>`).join('')}</div>
       <div class="q-axis"><span>quality 0</span><span>1</span></div>
       <p class="side-note">${s.below ? `<span class="warn-text">${s.below} element${s.below > 1 ? 's' : ''} below 0.5.</span> ` : ''}Worst ${s.worstWhere} <button type="button" class="linkish" id="meshShowWorst">show</button></p>
-      <p class="side-note">Quality: each element's smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 = degenerate).${m.solved ? '' : ' The surface starts on the static meniscus with the contact line at the edge; as it is solved the surface moves, and if the contact line climbs the face, elements are added there.'}</p>
+      <p class="side-note">Quality: each element's smallest over largest Jacobian of its quadratic map (1 = undistorted, 0 = degenerate).${m.solved ? '' : bladeLegacy() ? ' The surface starts on the static meniscus with the contact line at the edge; as it is solved the surface moves, and if the contact line climbs the face, elements are added there.' : ` The surface starts on the static meniscus, the contact line where it holds (${bladeShapedFace() && CFDG.clModel === 'simple' ? 'at C or above it' : 'at the metering edge, a corner of the face or on it'}); as it is solved the surface moves, and if the contact line climbs the face, elements are added there.`}</p>
       <p class="side-note">Element counts and grading: Inputs › Solver and mesh; this location's own: its inputs button. Refinement zones apply at every location.</p></aside></div>`;
   const el = host.querySelector('.fv-plot'), plot = host.querySelector('#cfdMeshPlot'), cap = plot.querySelector('.fv-caption');
   const maxH = plot.clientHeight - cap.offsetHeight - 8;
@@ -691,12 +835,14 @@ function bcCallouts(i) {
     line('bc-web', X(F.x0), Y(0), X(F.x1), Y(0));
     text(X(-b.X * 0.5), Y(-b.tf) + 22, 'middle', 'c-web', ['Web', `${val('U', v => `${v.toFixed(2)} m/min`)} →<tspan class="bc-sub"> · slip b ${(sl.b * 1e6).toFixed(1)} µm</tspan>`]);
     // exit face, free surface, outlet (right of the domain, each with a leader)
-    const faceMid = [(0 + b.notch[0]) / 2, (b.H + b.notch[1]) / 2];
-    line('bc-face', xs, Y(b.H), X(b.notch[0]), Y(b.notch[1]));
+    // (a shaped blade: its face as drawn, from the metering point; the free surface from C in the simple model)
+    const fp = b.prof ? b.facePts : [[0, b.H], b.notch], e0 = b.prof ? b.exitStart : [0, b.H], faceMid = [(e0[0] + b.notch[0]) / 2, (e0[1] + b.notch[1]) / 2];
+    out.push(`<path class="bc-line bc-face" d="${fp.map((q, n) => `${n ? 'L' : 'M'}${f(X(q[0]))} ${f(Y(q[1]))}`).join(' ')}"/>`);
     const yFace = Y(faceMid[1]);
     lead(X(faceMid[0]) + 4, yFace, xr - 4, yFace);
     text(xr, yFace + 4, 'start', 'c-face', ['Exit face', `θ ${val('th', v => `${v.toFixed(1)}°`)}`]);
-    out.push(`<path class="bc-line bc-free" d="M${f(xs)} ${f(Y(b.H))} C ${f(xs + (xo - xs) * 0.12)} ${f(Y(b.H * 0.94))}, ${f(xs + (xo - xs) * 0.3)} ${f(Y(fh))}, ${f(xo)} ${f(Y(fh))}"/>`);
+    const c0 = b.prof && bladeShapedFace() && CFDG.clModel === 'simple' ? [X(b.C[0]), Y(b.C[1])] : [xs, Y(b.H)];
+    out.push(`<path class="bc-line bc-free" d="M${f(c0[0])} ${f(c0[1])} C ${f(c0[0] + (xo - c0[0]) * 0.12)} ${f(Y(b.H * 0.94))}, ${f(c0[0] + (xo - c0[0]) * 0.3)} ${f(Y(fh))}, ${f(xo)} ${f(Y(fh))}"/>`);
     const ySurf = Math.min(Y(fh) - 4, yFace + 30), xSurf = xs + (xo - xs) * 0.6;
     lead(xSurf, Y(fh) - 2, xr - 4, ySurf);
     text(xr, ySurf + 4, 'start', 'c-free', ['Free surface', `γ ${val('g', v => `${v.toFixed(3)} N/m`)}`]);
@@ -710,13 +856,19 @@ function bcCallouts(i) {
   };
 }
 /** The boundary conditions at location i, each in words (extra: more list items, the 3D's sides). */
-function bcListHTML(i, extra = '') {
-  const geo = cfdGeometry(i);
+function bcListHTML(i, extra = '', face = null) {
+  const geo = cfdGeometry(i), th = geo.contactDeg.toFixed(1), f = v => +(+v).toFixed(2);
+  // (the exit face: the round entry and flat land's as it was; a shaped blade's face in words, and where its contact line can be)
+  const faceLi = face && face !== 'straight' ? face : (face === 'straight' || bladeLegacy(geo.shape) || !bladeShapedFace(geo.shape)
+    ? `(${CFDG.exitAngle}°): no slip; the contact line stays pinned at the metering edge, or climbs the face where the surface leaves it at the contact angle ${th}°.`
+    : `(${geo.shape === 'bevel' ? `bevel ${f(CFDG.bevelDeg)}° × ${f(CFDG.bevelLen)} mm, then ${CFDG.exitAngle}°` : geo.shape === 'radius' ? `edge radius ${f(CFDG.edgeR)} mm, then ${CFDG.exitAngle}°` : 'the custom profile\'s face'}): no slip; ${CFDG.clModel === 'simple'
+      ? `the face up to C always wetted (simple model); the contact line pinned at C, or climbing the face above it where the surface leaves it at the contact angle ${th}°.`
+      : `the contact line pinned at the metering edge or a corner of the face while the surface's angle lies between the contact angles either side (Gibbs), or on the face where the surface leaves it at the contact angle ${th}°.`}`);
   return `<h4>${uiBadge('flow')}Boundary conditions at L${i + 1}</h4><ul class="bc-list">
       <li><i class="c-in"></i><span><b>Inlet</b> (pool edge): the bead pressure ${locInput(i, 'Pup').toFixed(2)} kPa, plus the hydrostatic pressure with depth; no flow across.</span></li>
       <li><i class="c-blade"></i><span><b>Blade</b> underside: no slip, fixed.</span></li>
       <li><i class="c-web"></i><span><b>Web</b>: moving at ${(geo.U * 60).toFixed(2)} m/min${P.skew ? ` (the web's ${locInput(i, 'U').toFixed(2)} m/min × cos ${P.skew}° skew)` : ''}; the slurry slips over the air between the fibre's top filaments (slip length ${(fibreSlip().b * 1e6).toFixed(1)} µm); nothing enters the fibre.</span></li>
-      <li><i class="c-face"></i><span><b>Exit face</b> (${CFDG.exitAngle}°): no slip; the contact line stays pinned at the metering edge, or climbs the face where the surface leaves it at the contact angle ${geo.contactDeg.toFixed(1)}°.</span></li>
+      <li><i class="c-face"></i><span><b>Exit face</b> ${faceLi}</span></li>
       <li><i class="c-free"></i><span><b>Free surface</b>: surface tension ${locInput(i, 'g').toFixed(3)} N/m against air at ambient pressure; its shape is solved.</span></li>
       <li><i class="c-out"></i><span><b>Outlet</b> (${+bladeMM(i).Ld.toFixed(1)} mm after the edge): the film moves with the web; beyond it the 1D film to the oven (${(P.oven * 1000).toFixed(0)} mm).</span></li>
       <li><i class="c-g"></i><span><b>Gravity</b> down, 9.81 m/s².</span></li>${extra}</ul>`;
@@ -921,7 +1073,7 @@ function c3dSolveHTML() {
     ? `<li><i class="c-out"></i><span><b>Sides of the strip</b> (${C3D.stripW} mm): ${skew ? 'open: each held at its own station\'s flow along the skewed blade' : 'symmetry planes (no flow across, no shear)'}.</span></li>`
     : `<li><i class="c-out"></i><span><b>The web's edges</b>: ${skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'} (the edge bead is not modelled).</span></li>`;
   return `<div class="step-view solve-view"><div class="step-draw" id="bcDraw3">${C3D.source === 'made' ? '' : '<p class="v3d-msg">The blade from the file: see Geometry. Its conditions are listed here.</p>'}</div>
-    <aside class="step-side">${bcListHTML(i, sides)}
+    <aside class="step-side">${bcListHTML(i, sides, C3D.source === 'made' ? null : C3D.fileFace === 'file' ? `(from the file: each station's own section): no slip; the contact line as in 2D (the ${CFDG.clModel === 'simple' ? 'simple' : 'full'} contact-line model) at the contact angle ${cfdGeometry(i).contactDeg.toFixed(1)}°.` : 'straight')}
       ${C3D.region === 'full' ? `<p class="side-note">Drawn: the profile at L1; the gap and contact angle vary across the web with the inputs under Variation across the web.</p>` : ''}
       <h4>${uiBadge('tolerance')}Solve</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Region</td><td>${C3D.region === 'strip' ? `strip ${C3D.stripW} mm at L${C3D.loc + 1}` : 'full width'}</td></tr></table>
       <p class="side-note">${c3dEstimateText()}</p></aside></div>`;

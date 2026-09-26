@@ -7,13 +7,16 @@
  *   3D's), strip: { width (m), nEz, zs? (the stations, m: refinement zones across the web), gap: [[z, dH]...] (m, z from
  *   the location), th: [[z, deg]...] },
  *   file: null, or a blade read from a file: { xs, zs, low } (its underside height over the web at xs
- *   along the flow and zs across, m, z from the location) with msg.Xup its inlet distance }
+ *   along the flow and zs across, m, z from the location) with msg.Xup its inlet distance; with sections (its exit
+ *   face from the file): [{ z, verts: [{ x, y }] (m, the side section opened: inlet, metering point, face), H (the
+ *   gap at its metering point) }] at the stations -- each station's profile is its section }
+ *   (a shaped blade made from the 2D setup, msg.blade: each station's profile is it at that station's gap)
  * Messages out: { id, progress: { stage, it, residual, path, r0, add, solves } } while solving (for the progress
  *   bars: path, how far along its continuation the Newton solve is; r0, the 3D solve's first residual; add and solves,
  *   a station's 2D solves as cfd-worker.js sends them), then { id, ok: true, result } or { id, ok: false, error }.
  * A wide region (the full web width): messages with type 'wideInit' / 'wideSolve' (below).
  */
-importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-1d.js', 'cfd-fem3d.js');
+importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-fem3d.js');
 
 /** Linear interpolation in a sorted table of [x, y]. */
 function interp(tab, x) {
@@ -62,17 +65,37 @@ function fileHAt(file) {
     return x => interp(row, x);
   };
 }
+/**
+ * A shaped blade's profile at each station (z, m, from the region's reference): made from the 2D setup (msg.blade) at
+ * that station's gap, or a file's side section there (file.sections: the nearest); null for the round entry and flat
+ * land made here, and a file used for its underside only.
+ */
+function profileAtFor(o, strip, file) {
+  if (file && file.sections) {
+    const cache = new Map();
+    return z => {
+      let best = file.sections[0];
+      for (const sc of file.sections) if (Math.abs(sc.z - z) < Math.abs(best.z - z)) best = sc;
+      if (!cache.has(best)) { const p = customProfile({ verts: best.verts, join: 'straight', cornerDeg: 10 }, best.H); if (p.err) throw new Error(`the file's section at z ${(best.z * 1e3).toFixed(2)} mm: ${p.err}`); cache.set(best, p); }
+      return cache.get(best);
+    };
+  }
+  if (file || !o.blade) return null;
+  const cache = new Map(), dH = z => interp(strip.gap, z);
+  return z => { const H = o.H + dH(z); if (!cache.has(H)) cache.set(H, bladeProfile({ ...o.blade, H })); return cache.get(H); };
+}
 function wideOpts(o, strip, file) {
   const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
-  const hAt = file ? fileHAt(file) : null, shape = file ? null : bladeShape(o);
-  const hFn = file ? hAt(0) : shape.h, xe = file ? file.xs[file.xs.length - 1] : shape.Lx, H = hFn(xe);
+  const profileAt = profileAtFor(o, strip, file);
+  const hAt = file && !profileAt ? fileHAt(file) : null, shape = file || profileAt ? null : bladeShape(o), p0 = profileAt ? profileAt(0) : null;
+  const hFn = p0 ? p0.hUnder : file ? hAt(0) : shape.h, xe = p0 ? p0.xe : file ? file.xs[file.xs.length - 1] : shape.Lx, H = hFn(xe);
   let I2 = 0, I3 = 0; const M = 4000;
   for (let k = 0; k < M; k++) { const h = hFn((k + 0.5) * xe / M); I2 += xe / M / (h * h); I3 += xe / M / (h * h * h); }
   const qLub = (o.Pup + 6 * o.muRep * o.U * I2) / (12 * o.muRep * I3), sv = o.solver;
   return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
     webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
     fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0,
-    meshZones: sv.zones || null, meshFrac: sv.frac || null };
+    meshZones: sv.zones || null, meshFrac: sv.frac || null, ...(profileAt ? { profileAt, profile: p0, clModel: o.clModel || 'full' } : {}) };
 }
 const packStation = T => { const o = {}; for (const f of ['u', 'v', 'w', 'p', 'x', 'y', 'z', 'gd', 'mu', 'h']) if (T[f]) o[f] = Float64Array.from(T[f]); o.s = T.s; o.q = T.q; return o; };
 function wide(e) {
@@ -90,8 +113,8 @@ function wide(e) {
     // blade -- is never solved in 3D, and the result takes it from these)
     const full2 = {};
     for (const l of d.stations) { const r = S.r2[l]; full2[l] = { x: Float64Array.from(r.x), y: Float64Array.from(r.y), z: new Float64Array(r.x.length).fill(d.zs[l]), gd: Float64Array.from(r.gd), mu: Float64Array.from(r.mu), q: r.Q }; }
-    postMessage({ id, ok: true, result: { states, full2, mode: S.mode, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe, frac: S.r2[d.ref].meshDef.frac,
-      film2: Object.fromEntries(d.stations.map(l => [l, S.r2[l].Q / opts.U])), s2: Object.fromEntries(d.stations.map(l => [l, S.climbed ? S.r2[l].surface.s : 0])),
+    postMessage({ id, ok: true, result: { states, full2, mode: S.mode, k: S.k ?? null, climbed: S.climbed, NC: S.NC, NR: S.NR, cCL: S.cCL, cCorner: S.cCorner, H: S.H, xe: WIDE.opts.xe, frac: S.r2[d.ref].meshDef.frac,
+      film2: Object.fromEntries(d.stations.map(l => [l, S.r2[l].Q / opts.U])), s2: Object.fromEntries(d.stations.map(l => [l, S.climbed || S.k ? S.r2[l].surface.s : 0])),
       top2: Object.fromEntries(d.stations.map(l => [l, Array.from({ length: S.NC }, (_, c) => S.r2[l].p[c * S.NR + S.NR - 1])])) } });
     return;
   }
@@ -113,7 +136,9 @@ onmessage = e => {
   try {
     const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
     let hFn, hAt = null, xe;
-    if (file) {
+    const profileAt = profileAtFor(o, strip, file), p0 = profileAt ? profileAt(0) : null;
+    if (p0) { hFn = p0.hUnder; xe = p0.xe; }
+    else if (file) {
       hAt = fileHAt(file); xe = file.xs[file.xs.length - 1]; hFn = hAt(0);
     } else {
       const shape = bladeShape(o);
@@ -132,6 +157,7 @@ onmessage = e => {
       fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, webW: o.webW || 0, meshZones: sv.zones || null, meshFrac: sv.frac || null,
       width: strip.width, nEz: strip.nEz, zs: strip.zs || null, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z),
       onStage: pp.stage, onIteration: pp.iter2, onSolveStart: pp.solve2, onIteration3: pp.iter3,
+      ...(profileAt ? { profileAt, profile: p0, clModel: o.clModel || 'full' } : {}),
     });
     if (!res.r3) throw new Error(res.error || 'no solution');
     const r3 = res.r3, NL = r3.NL, NR = r3.NR, NC = r3.NC, mid = (NL - 1) / 2, r2m = res.r2[mid], m = r2m.meshDef;
@@ -143,7 +169,7 @@ onmessage = e => {
     }
     const f32 = a => Float32Array.from(a);
     const result = {
-      mode: res.mode, converged: r3.converged, iterations: r3.iterations, residual: r3.residual, history: r3.history.map(h => h.residual),
+      mode: res.mode, k: res.k ?? null, converged: r3.converged, iterations: r3.iterations, residual: r3.residual, history: r3.history.map(h => h.residual),
       ms2: res.ms2, ms3: res.ms3, size: r3.size, NC, NR, NL, cCorner: m.cCorner, cCL: m.cCL, xe, H, frac: m.frac,
       stations: res.stations, top,
       x: f32(r3.x), y: f32(r3.y), z: f32(r3.z), u: f32(r3.u), v: f32(r3.v), w: f32(r3.w), p: f32(r3.p), gd: f32(r3.gd), mu: f32(r3.mu),

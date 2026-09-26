@@ -132,7 +132,8 @@ async function rep3D() {
       : `elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : C3D.nzFull + ' across the web'}`)],
     ['Refinement zones', repEsc(`along the flow and up the gap: ${zonesText(C3D.region === 'full' ? CFDS.zones : solverOf(C3D.loc).zones)}${C3D.zoneScale !== 1 ? ` (sizes ÷${(+C3D.zoneScale).toFixed(2)})` : ''}; across: ${c3dZonesText(C3D.zZones)}${c3dNz() !== (C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull) ? ` (${c3dNz()} elements)` : ''}`)]];
   if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(`${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
-  if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`]);
+  if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`],
+    ['Exit face', C3D.fileFace === 'file' ? 'from the file: each station\'s side section (the contact line as in 2D)' : `straight at the 2D setup's angle (${CFDG.exitAngle}°)`]);
   // (solved: its Results step; else the Geometry step's numbers and view, then the Mesh step with its view)
   let pre = '';
   if (c3dShown()) C3D.step = 'results';
@@ -147,9 +148,10 @@ async function rep3D() {
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };
-  const keys = ['shape', ...(CFDG.shape === 'round' ? ['R', 'pool'] : []), 'exitAngle', 'model', 'fibre', 'gsm', 'rhoF', 'dFrom', ...(CFDG.dFrom === 'yarn' ? ['den', 'nf'] : []), 'airPerm', 'airDP', 'kozeny', 'airFrac', 'airU', 'airT', 'plenum'];
+  const own = BLADE_DIMS.filter(d => d.shapes.includes(CFDG.shape)).map(d => d.k);
+  const keys = ['shape', ...(CFDG.shape === 'round' ? ['R', 'pool'] : own), ...(CFDG.shape === 'custom' ? ['custom'] : ['exitAngle']), ...(bladeShapedFace() ? ['clModel'] : []), 'model', 'fibre', 'gsm', 'rhoF', 'dFrom', ...(CFDG.dFrom === 'yarn' ? ['den', 'nf'] : []), 'airPerm', 'airDP', 'kozeny', 'airFrac', 'airU', 'airT', 'plenum'];
   const rows = keys.map(g);
-  if (CFDG.shape !== 'round') rows.splice(1, 0, ['Land length', `${P.L} mm <small>(sidebar)</small>`]);
+  if (bladeUsesL()) rows.splice(1, 0, [CFDG.shape === 'wedge' ? 'Length' : 'Land length', `${P.L} mm <small>(sidebar)</small>`]);
   const s = CFDS;
   let counts = null;
   try { counts = cfdGeometry(0).solver; } catch (e) { /* (no counts) */ }
@@ -174,7 +176,7 @@ function repCfdStatus() {
       : r.status === 'error' ? `<span class="bad">failed: ${repEsc(r.error)}</span>` : r.status === 'blocked' ? `<span class="bad">not solved: ${repEsc(r.error)}</span>` : 'not solved';
     if (!r.field) return [`L${i + 1}`, status, '—', '—', '—', '—'];
     const q = r.result;
-    return [`L${i + 1}`, status, `${(q.Q / r.geo.U * 1000).toFixed(4)} mm`, q.mode === 'climbed' ? `${(q.sCL * 1000).toFixed(3)} mm up the face` : 'pinned at the edge',
+    return [`L${i + 1}`, status, `${(q.Q / r.geo.U * 1000).toFixed(4)} mm`, clWhere(q, true),
       `${q.converged ? 'converged' : 'partly converged'}, ${q.iterations} steps, residual ${q.residual.toExponential(1)}`, `${(r.elapsedMs / 1000).toFixed(1)} s`];
   });
   return repRows(rows, ['Location', 'Status', 'Wet film', 'Contact line', 'Convergence', 'Solve time']);

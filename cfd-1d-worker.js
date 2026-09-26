@@ -7,7 +7,7 @@
  *              geo: cfd-ui.js's cfdGeometry fields (SI), plus z (mm).
  * Message out: { id, ok: true, locs: [result], across: [result] | null, ms } or { id, ok: false, error }.
  */
-importScripts('cfd-solver.js', 'cfd-1d.js');
+importScripts('cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js');
 
 /** A location: its gap flow (arrays and three velocity profiles), film to the oven, ripple, meniscus. */
 function oneLocation(geo, ripple, full) {
@@ -15,7 +15,7 @@ function oneLocation(geo, ripple, full) {
   const out = {
     z: geo.z, q: r.q, film: r.film, qLub: r.qLub, filmLub: r.filmLub, Lx: r.Lx, converged: r.converged, worst: r.worstStation,
     x: r.x, h: r.h, p: r.p, G: r.G, tauWeb: r.tauWeb, tauBlade: r.tauBlade, H: geo.H, U: geo.U,
-    men: meniscus1D(r.film, geo.H, geo.contactDeg, geo.exitAngle, geo.gamma, geo.rho, geo.g),
+    men: r.blade ? meniscus1DPath(r.film, r.blade, geo.contactDeg, geo.gamma, geo.rho, geo.g) : meniscus1D(r.film, geo.H, geo.contactDeg, geo.exitAngle, geo.gamma, geo.rho, geo.g),
   };
   if (!full) return out;
   // velocity across the gap at the inlet, midway and at the metering edge

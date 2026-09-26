@@ -157,6 +157,7 @@ const rasterCache = new WeakMap();
  *   seeds        [[x,y]...], manualSeeds boolean
  *   probes       [{name, x, y, inside}] -- named probe points (filled when inside this field's fluid)
  *   exitAngle    blade exit face at the edge, degrees from the web (machine direction); default 90
+ *   faceAbove    a shaped blade's face from the contact line up, [[x, y], ...] (m): drawn instead of the straight face
  *   bladeLabel   text for the blade
  *   maxH         the canvas's whole height may not exceed this (px): the plot then fills it
  *   view         { x0, x1, y0, y1 } (m): the window shown (zoom); omitted = the whole domain. The plot
@@ -298,7 +299,13 @@ function drawFlowPlot(cv, s) {
   const [xF0, yF0] = surf[surf.length - 1];
   const edgePx = f.curv ? topRow[f.iCorner] : [xR, yF0];
   const face = [[xF0, yF0]];
-  {
+  if (s.faceAbove && s.faceAbove.length > 1) {
+    // a shaped face (its path from the contact line up, m), then straight up to the blade's band; never more than
+    // 12 px into the right margin
+    for (const [x, y] of s.faceAbove.slice(1)) face.push([Math.min(X(x), xR + 12), Y(y)]);
+    const [lx, ly] = face[face.length - 1];
+    if (ly > bladeTop) face.push([lx, bladeTop]);
+  } else {
     const tTop = (yF0 - bladeTop) / dY, xTop = xF0 + tTop * dX;
     if (xTop > xR + 12) { const t = (xR + 12 - xF0) / dX; face.push([xR + 12, yF0 - t * dY], [xR + 12, bladeTop]); }
     else if (xTop < xL) { const t = (xL - xF0) / dX; face.push([xL, yF0 - t * dY]); }

@@ -74,7 +74,7 @@ const F3_BOTTOM = f3FaceRule('eta', -1), F3_TOP = f3FaceRule('eta', 1), F3_INLET
  *   sideData: { lo, hi } a side held at a neighbouring strip's solution instead: { u, v, w (at the station's nodes c*NR + k,
  *     m/s), p (Pa, there), h (the free spines' heights, m, per c), s (the contact line, m) } (a region solved strip by strip;
  *     with webW both sides must be held: the flow along the blade passes through them)
- *   contactLine: { spine, faceFrom, alphaDeg (a number, or one per station) } or null; freeze (surface fixed)
+ *   contactLine: { spine, faceFrom, alphaDeg (a number, or one per station: a number, or a function of s, m) } or null; freeze (surface fixed)
  *   init: { sol, h, s } a previous state on the same layout; initNodal: { u, v, w, p } at the nodes (dimensional)
  *   homotopy, tol, maxIter, onIteration, label, onSolveStart, onSolveEnd
  *   checks: force(x, y, z) -> [fx, fy, fz] and exactBC(x, y, z) -> [u, v, w] (nondimensional; velocity set on every
@@ -398,7 +398,8 @@ function solveFEM3D(o) {
     const c = CL.spine;
     let xt = 0, yt = 0;
     for (let a = 0; a < 3; a++) { const n = nid(c + a, l, NR - 1); xt += X[n] * dQ0[a]; yt += Y[n] * dQ0[a]; }
-    const al = (typeof CL.alphaDeg === 'number' ? CL.alphaDeg : CL.alphaDeg[l]) * Math.PI / 180;
+    // (per station: a number, or on a curved face a function of the contact line's place s, m)
+    const aL = typeof CL.alphaDeg === 'number' ? CL.alphaDeg : CL.alphaDeg[l], al = (typeof aL === 'function' ? aL(sStar[l] * Hr) : aL) * Math.PI / 180;
     return (yt * Math.cos(al) - xt * Math.sin(al)) / Math.hypot(xt, yt);
   }
 
@@ -756,37 +757,51 @@ function stationLateral(r, webW, { webSlip = 0, outlet = 'plug', mu, gdMin = 0, 
  * layout kept), with the same number of elements up the exit face at every station: those layouts side
  * by side are the 3D mesh, and those solutions its starting state. The meniscus mode (pinned at the edge,
  * or climbed up the face) must be the same at every station.
- * opts: solveCoaterFEM's, and dH(z), contactAt(z), hAt(z) (see solveCoater3D); zs: the stations (m, from
- * the region's reference); ref: the station whose 2D sets the face elements (default the middle); only: a
- * set of the stations to solve (the rest left empty; ref is always solved -- a worker's share of a wide region).
+ * opts: solveCoaterFEM's, and dH(z), contactAt(z), hAt(z) (see solveCoater3D), profileAt(z) (a shaped blade: its
+ * profile at z, cfd-blade.js's; its contact line must then be at the same corner, or on the same stretch of the face,
+ * at every station); zs: the stations (m, from the region's reference); ref: the station whose 2D sets the face
+ * elements (default the middle); only: a set of the stations to solve (the rest left empty; ref is always solved --
+ * a worker's share of a wide region).
  * With opts.webW (a skewed blade), each solved station's flow along the blade too (stationLateral): w2.
- * Returns { r2: per station, w2, M: their meshes, mode, climbed, cCL, cCorner, NC, NR, H, ms } or { error }.
+ * Returns { r2: per station, w2, M: their meshes, mode, climbed, cCL, cCorner, NC, NR, H, ms } or { error } (a shaped
+ * blade: also k, the corner the contact line is at or above, cBase, and alphaL, each station's contact direction).
  */
 function coaterStations(opts, zs, ref = (zs.length - 1) >> 1, only = null) {
   const log = t => opts.onStage && opts.onStage(t), NL = zs.length, t0 = Date.now();
   const dHl = zs.map(z => (opts.dH ? opts.dH(z) : 0)), thl = zs.map(z => (opts.contactAt ? opts.contactAt(z) : opts.contactDeg));
-  const hl = l => opts.hAt ? opts.hAt(zs[l]) : x => opts.hFn(x) + dHl[l];
-  const solve2 = (l, extra) => solveCoaterFEM({ ...opts, hFn: hl(l), contactDeg: thl[l], keepMesh: true, ...extra });
+  const profs = [], profAt = opts.profileAt ? l => profs[l] || (profs[l] = opts.profileAt(zs[l])) : null;
+  const hl = l => profAt ? profAt(l).hUnder : opts.hAt ? opts.hAt(zs[l]) : x => opts.hFn(x) + dHl[l];
+  const solve2 = (l, extra) => solveCoaterFEM({ ...opts, hFn: hl(l), contactDeg: thl[l], keepMesh: true, ...(profAt ? { profile: profAt(l), xe: profAt(l).xe } : {}), ...extra });
   const r2 = new Array(NL);
   log(`2D at ${(zs[ref] * 1e3).toFixed(1)} mm`);
   r2[ref] = solve2(ref, {});
   const r0 = r2[ref];
   if (r0.error || !r0.meshDef || !r0.converged) return { error: `2D at ${(zs[ref] * 1e3).toFixed(1)} mm: ` + (r0.error || 'did not converge'), r2 };
-  const mode = r0.meniscus.mode, climbed = mode === 'climbed', m0 = r0.meshDef, nF = (m0.cCL - m0.cCorner) / 2;
-  // refinement zones: every station keeps the reference station's element counts (its sizes then follow the zones)
-  const fr = m0.frac, counts = opts.meshZones && fr ? { b: fr.b.length - 1, f: nF, s: fr.s.length - 1, y: fr.y.length - 1 } : null;
+  const mode = r0.meniscus.mode, climbed = mode === 'climbed', m0 = r0.meshDef, nF = (m0.cCL - (m0.cBase ?? m0.cCorner)) / 2;
+  const k = r0.meniscus.k ?? null, where = r => `${r.meniscus.mode}${r.meniscus.k ? ` (corner ${r.meniscus.k})` : ''}`;
+  // refinement zones: every station keeps the reference station's element counts (its sizes then follow the zones; a
+  // shaped blade's always, its underside's corners and steps kept as element ends)
+  const fr = m0.frac, counts = (opts.meshZones || profAt) && fr ? { b: fr.b.length - 1, f: nF, s: fr.s.length - 1, y: fr.y.length - 1 } : null;
   for (let l = 0; l < NL; l++) {
     if (l === ref || (only && !only.has(l))) continue;
     if (!opts.hAt && dHl[l] === dHl[ref] && thl[l] === thl[ref]) { r2[l] = r0; continue; }
     log(`2D at ${(zs[l] * 1e3).toFixed(1)} mm${opts.hAt ? '' : ` (gap ${dHl[l] >= 0 ? '+' : ''}${(dHl[l] * 1e6).toFixed(1)} µm)`}`);
-    const r = solve2(l, { ...(climbed ? { nFaceFixed: nF } : {}), ...(counts ? { meshCounts: counts } : {}) });
+    const r = solve2(l, { ...(climbed ? { nFaceFixed: nF } : {}), ...(m0.nFixK ? { nFaceFixedK: m0.nFixK } : {}), ...(counts ? { meshCounts: counts } : {}) });
     if (r.error || !r.converged || !r.meshDef) return { error: `2D at ${(zs[l] * 1e3).toFixed(1)} mm: ${r.error || 'did not converge'}`, r2 };
-    if (r.meniscus.mode !== mode || r.meshDef.NC !== m0.NC || r.meshDef.cCL !== m0.cCL)
-      return { error: `the meniscus is ${mode} at ${(zs[ref] * 1e3).toFixed(1)} mm but ${r.meniscus.mode} at ${(zs[l] * 1e3).toFixed(1)} mm: a region where it changes is not modelled`, r2 };
+    if (r.meniscus.mode !== mode || (r.meniscus.k ?? null) !== k || r.meshDef.NC !== m0.NC || r.meshDef.cCL !== m0.cCL)
+      return { error: `the meniscus is ${where(r0)} at ${(zs[ref] * 1e3).toFixed(1)} mm but ${where(r)} at ${(zs[l] * 1e3).toFixed(1)} mm: a region where it changes is not modelled`, r2 };
     r2[l] = r;
   }
   const w2 = opts.webW ? r2.map(r => r ? stationLateral(r, opts.webW, { webSlip: opts.webSlip, mu: opts.mu, gdMin: opts.gdMin }) : null) : null;
-  return { r2, w2, M: r2.map(r => r ? r.meshDef.mesh : null), zs, thl, mode, climbed, cCL: m0.cCL, cCorner: m0.cCorner, NC: m0.NC, NR: 2 * m0.mesh.nEy + 1, H: hl(ref)(opts.xe), ms: Date.now() - t0 };
+  // (a shaped blade: each station's contact direction on the stretch of its face the contact line is on -- a number on a
+  // straight one, else a function of s)
+  const alphaL = profAt && climbed ? zs.map((_, l) => {
+    const P = profAt(l), F = P.face, off = P.faceCorners[0].thp - F.th(0), sB = P.faceCorners[k].s, sT = k + 1 < P.faceCorners.length ? P.faceCorners[k + 1].s : F.len;
+    const a = q => thl[l] + (F.th(q) + off) * 180 / Math.PI - 180, vs = Array.from({ length: 17 }, (_, i) => a(sB + (sT - sB) * (0.001 + 0.998 * i / 16)));
+    return vs.every(v => Math.abs(v - vs[0]) < 1e-9) ? vs[0] : a;
+  }) : null;
+  return { r2, w2, M: r2.map(r => r ? r.meshDef.mesh : null), zs, thl, mode, climbed, cCL: m0.cCL, cCorner: m0.cCorner, NC: m0.NC, NR: 2 * m0.mesh.nEy + 1, H: hl(ref)(profAt ? profAt(ref).xe : opts.xe), ms: Date.now() - t0,
+    ...(profAt ? { k, cBase: m0.cBase, alphaL, shaped: true } : {}) };
 }
 /** A station's state from its 2D solution: u, v, w, p at its nodes (c*NR + k), the free spines' heights, the contact line (w: its flow along the blade, or none). */
 const stationFrom2D = (r, w) => ({ u: Float64Array.from(r.u), v: Float64Array.from(r.v), w: w ? Float64Array.from(w) : new Float64Array(r.u.length), p: Float64Array.from(r.p), h: Float64Array.from(r.state.h), s: r.surface.s });
@@ -832,8 +847,8 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
     mesh, U: opts.U, webW: opts.webW || 0, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: S.H, Ur: Math.abs(opts.U) || 1e-3,
     inlet: { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
     sideData: sideLo || sideHi ? { lo: sideLo ? side(state[l0]) : null, hi: sideHi ? side(state[l1]) : null } : null,
-    h0: (c, j) => state[l0 + j].h[c], s0: S.climbed ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
-    contactLine: S.climbed ? { spine: S.cCL, faceFrom: S.cCorner, alphaDeg: Array.from({ length: NL }, (_, j) => S.thl[l0 + j] + opts.faceDeg - 180) } : null,
+    h0: (c, j) => state[l0 + j].h[c], s0: S.climbed || S.k ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
+    contactLine: S.climbed ? { spine: S.cCL, faceFrom: S.cBase ?? S.cCorner, alphaDeg: Array.from({ length: NL }, (_, j) => S.alphaL ? S.alphaL[l0 + j] : S.thl[l0 + j] + opts.faceDeg - 180) } : null,
     homotopy: true, tol: opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D', ...extra,
   });
 }
@@ -868,9 +883,9 @@ function solveCoater3D(opts) {
   const ms3 = Date.now() - t1, NC = S.NC, NR = S.NR;
   const stations = zs.map((z, l) => {
     const top = ((NC - 1) * NL + l) * NR + NR - 1;
-    return { z, dH: opts.dH ? opts.dH(z) : 0, film: r3.y[top], q: r3.q[(NC - 1) * NL + l], s: S.climbed ? r3.surface.s[l] : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed ? S.r2[l].surface.s : 0 };
+    return { z, dH: opts.dH ? opts.dH(z) : 0, film: r3.y[top], q: r3.q[(NC - 1) * NL + l], s: S.climbed || S.k ? r3.surface.s[l] : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed || S.k ? S.r2[l].surface.s : 0 };
   });
-  return { r2: S.r2, r3, stations, mode: S.mode, ms2: S.ms, ms3, error: r3.converged ? undefined : '3D did not converge' };
+  return { r2: S.r2, r3, stations, mode: S.mode, k: S.k, ms2: S.ms, ms3, error: r3.converged ? undefined : '3D did not converge' };
 }
 
 /**
@@ -916,7 +931,7 @@ function solveCoaterWide(opts) {
   }
   // (the web's edges held at their own stations' flow, the web moving along the blade: those stations are their 2D's)
   const top2 = l => S.r2[l].y[(S.NC - 1) * S.NR + S.NR - 1];
-  const stations = zs.map((z, l) => ({ z, dH: opts.dH ? opts.dH(z) : 0, film: film(state[l]) ?? top2(l), q: state[l].q ?? S.r2[l].Q, s: S.climbed ? state[l].s : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed ? S.r2[l].surface.s : 0 }));
+  const stations = zs.map((z, l) => ({ z, dH: opts.dH ? opts.dH(z) : 0, film: film(state[l]) ?? top2(l), q: state[l].q ?? S.r2[l].Q, s: S.climbed || S.k ? state[l].s : 0, film2: S.r2[l].Q / opts.U, s2: S.climbed || S.k ? S.r2[l].surface.s : 0 }));
   return { r2: S.r2, S, state, stations, subs, sweeps, history, converged: converged && !err, error: err || (converged ? undefined : `not converged after ${sweeps} sweeps (last change ${history[history.length - 1].toExponential(1)} of the gap)`), mode: S.mode, ms2: S.ms, ms3: Date.now() - t1 };
 }
 

@@ -25,8 +25,17 @@
  * Units: SI throughout (m, s, Pa, Pa·s).
  */
 
-/** Blade height above the web over the blade's part of the domain, x = 0 at the inlet, x = Lx at the metering edge. */
+/**
+ * Blade height above the web over the blade's part of the domain, x = 0 at the inlet, x = Lx at the metering edge.
+ * A shaped blade (o.blade: cfd-blade.js's bladeProfile spec, a shape other than the round entry and flat land):
+ * its underside, and the profile itself (profile).
+ */
 function bladeShape(o) {
+  if (o.blade && o.blade.shape !== 'round' && o.blade.shape !== 'flat') {
+    const make = typeof bladeProfile === 'function' ? bladeProfile : require('./cfd-blade.js').bladeProfile;
+    const p = make({ ...o.blade, H: o.H });
+    return { Lx: p.xe, h: p.hUnder, profile: p };
+  }
   if (o.geometry === 'round') {
     // Round entry of radius R whose lowest point is the metering edge (gap H
     // there), converging from the pool edge Xup upstream.
@@ -100,12 +109,17 @@ function solveStation1D(h, U, lam, law, q, guess, ny = 160) {
  * shear stresses. nx stations, graded toward the metering edge where the gap is smallest.
  */
 function gapFlow1D(geo, { nx = 120, ny = 160 } = {}) {
-  const o = { geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup };
+  const o = { geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, blade: geo.blade };
   const shape = bladeShape(o), Lx = shape.Lx;
   const law = { muRef: geo.muRef, ty: geo.ty || 0, n: geo.n ?? 1 };
   const U = geo.U, lam = geo.webSlip || 0;
   // stations: denser near the edge (x = Lx), where the gap is smallest and the pressure falls fastest
   const xs = Array.from({ length: nx + 1 }, (_, i) => Lx * (1 - Math.pow(1 - i / nx, 1.6)));
+  // (a shaped blade's underside corners, a step's riser either side: stations there, so the pressure gradient's jump is not smeared)
+  if (shape.profile) {
+    for (const c of shape.profile.underCorners) { const x = shape.profile.under.P(c.s)[0]; xs.push(x * (1 - 1e-9), x * (1 + 1e-9)); }
+    xs.sort((a, b) => a - b);
+  }
   const hs = xs.map(shape.h);
   let last = null;
   const sweep = q => {
@@ -142,6 +156,7 @@ function gapFlow1D(geo, { nx = 120, ny = 160 } = {}) {
   const p = [geo.Pup];
   for (let i = 1; i < xs.length; i++) p.push(p[i - 1] - (xs[i] - xs[i - 1]) * (st[i].G + st[i - 1].G) / 2);
   return {
+    blade: shape.profile || null,               // (a shaped blade's profile, cfd-blade.js)
     q, film: q / U, qLub, filmLub: qLub / U, Lx, x: xs, h: hs, p, G: st.map(s => s.G),
     tauWeb: st.map(s => s.tau0), tauBlade: st.map((s, i) => s.tau0 - s.G * hs[i]),
     pEdgeResidual: p[p.length - 1], iterations: it, converged: st.every(s => s.converged),
@@ -189,4 +204,29 @@ function meniscus1D(h, H, contactDeg, faceDeg, gamma, rho, g) {
   return { pinned: false, s: (climb - H) / Math.sin(faceDeg * Math.PI / 180), hc, lcap };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { bladeShape, station1D, solveStation1D, gapFlow1D, film1D, ripple1D, meniscus1D };
+/**
+ * The same on a shaped face (prof: cfd-blade.js's profile, its face a path with corners): the contact line
+ * where the face's height is the film's plus the climb the contact angle asks for against the face there,
+ * 2 lcap sin(phi / 2), phi = 180 - face - contact (the face's own direction at that point), corner by corner
+ * from M: it stays at a corner when the face just above is already high enough, and passes a stretch of the
+ * face that is not. Returns { pinned, k (the corner it is at, or the one below it), s (m along the face from
+ * M), hc (the climb there), lcap }.
+ */
+function meniscus1DPath(h, prof, contactDeg, gamma, rho, g) {
+  const lcap = Math.sqrt(gamma / (rho * g)), F = prof.face, off = prof.faceCorners[0].thp - F.th(0);
+  const hcAt = s => { const phi = Math.min(Math.max(180 - (F.th(s) + off) * 180 / Math.PI - contactDeg, 0), 180) * Math.PI / 180; return 2 * lcap * Math.sin(phi / 2); };
+  const G = s => F.P(s)[1] - h - hcAt(s);
+  const cs = prof.faceCorners.map(c => c.s);
+  for (let k = 0; k < cs.length; k++) {
+    const a = cs[k], b = k + 1 < cs.length ? cs[k + 1] : F.len, e = 1e-9 * Math.max(b - a, 1e-6);
+    if (G(a + e) >= 0) return { pinned: true, k, s: a, hc: hcAt(a + e), lcap };
+    if (G(b - e) < 0 && k + 1 < cs.length) continue;
+    let lo = a + e, hi = b - e;
+    if (G(hi) < 0) return { pinned: false, k, s: hi, hc: hcAt(hi), lcap, beyond: true };
+    for (let it = 0; it < 80; it++) { const m = 0.5 * (lo + hi); if (G(m) < 0) lo = m; else hi = m; }
+    return { pinned: false, k, s: 0.5 * (lo + hi), hc: hcAt(0.5 * (lo + hi)), lcap };
+  }
+  return { pinned: true, k: 0, s: 0, hc: hcAt(0), lcap };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { bladeShape, station1D, solveStation1D, gapFlow1D, film1D, ripple1D, meniscus1D, meniscus1DPath };
