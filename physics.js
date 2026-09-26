@@ -215,8 +215,10 @@ function rippleLevelling() {
 }
 
 /** Local gap (mm) and contact angle (deg) at position z (mm) across the web (0 to 300 mm): waviness, the blade's tilt
- *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation. */
-const localGap = z => gapHeight() + (P.dH * Math.sin(2 * Math.PI * z / P.lw) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000;
+ *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation; and the blade
+ *  across the web's other parts (across-ui.js: a bow, more sines, chamfered ends, a measured gap, a crown -- none on:
+ *  nothing added, and the waviness's crest where it always was). */
+const localGap = z => gapHeight() + (acrossWave(z) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000 + acrossExtraMm(z);
 const localContactAngle = z => P.th + P.dth * spatialNoise(z, 4.1);
 /** The blade skewed across the web: its metering edge at P.skew degrees to the cross direction (+: the end at z = 300 mm
  *  further downstream). The 1D, 2D and 3D work in the blade's frame: the web crosses the blade at U cos(skew) and moves

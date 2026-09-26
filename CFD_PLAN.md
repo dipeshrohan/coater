@@ -12,6 +12,26 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Phase 4 (design): the blade across the web (in progress)
+
+User (with mock-ups, three rounds): purpose "A + B + C" (describe the blade across the web and see the film;
+the app finds the crown that evens the film; the new sizes as DOE factors, the film's spread across the web
+as a DOE output); bow "Both, a switch" (computed from the blade as a beam by default, typed for a measured
+bow: the gap's change at the middle and its shape, parabola / circular arc / cosine); chamfered ends "Front
+view, gap opens" (over the last c mm at each end the gap grows by d um, straight, each end its own); the
+web's edges in the 3D "Open edges, edge bead" (the slurry may leave past the blade's ends, the side free
+surface solved); placement "On the 1D Across the web page" (the front view with handles above its film and
+contact-line charts; the inputs in the sidebar too); crown "Both" (the best parabola and a free curve, each
+with its film, found with the 1D, checked with the 3D on request); the web's edge "Both, an input" (each
+blade end relative to the web's edge: + overhangs, the slurry spilling over the web's edge; - ends inside,
+a bead on the bare web); supports "A switch" (simply supported or clamped at the blade's ends); waviness
+"A, B and C" (one sine plus its phase; several sines, the first today's; a measured gap profile from a CSV,
+smoothed, added in); the open edge in "the full width and a strip at an edge"; the crown evens the film
+"all but a band at each edge" (an input); a found crown: "Use this crown" (added to the blade as a Crown
+part, switchable, one undo step; also a CSV).
+- Nothing removed: today's waviness, tilt, skew, fibre thickness and wetting variation stay as they are
+  (the first sine is today's waviness); new parts default off, so the old results stay the same.
+
 ### Phase 3: more blade shapes and a custom profile (built)
 
 User (with mock-ups): shapes bevel, edge radius, wedge, two-step, custom; custom from CSV / text points,
