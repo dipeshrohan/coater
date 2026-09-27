@@ -432,6 +432,32 @@ GO-1e built:
   oven: λ along the blade and rebuilding on the web; the quick tabs' pills; the report (the card, the tests with
   their plots and tables); help and guide entries.
 
+GO-2 decisions (user, with pictures):
+- Q42: both flake models, a switch on Materials: a liquid crystal (Doi–Hess, Maier–Saupe mean field; theory says
+  liquid crystalline at 40 vol% for flakes about 5000 times wider than thick) and a suspension (Folgar–Tucker:
+  Jeffery rotation plus flow-induced rotary diffusion C_i γ̇).
+- Q43: the alignment measured on SEM cross-sections. Q45: as images and as tables of flake angles (with depths).
+  Q46: cut both ways, along the web's motion and across it.
+- Q44: after the blade the flakes keep turning on the wet film until the oven (each model decides how much).
+
+GO-2 design:
+- The orientation of the flakes' normals p (3D, unit vectors) as an ensemble along each through-flow streamline
+  of the 2D, from the inlet to the film (Brownian dynamics: exact in the ensemble's limit, any sharpness of the
+  distribution, the whole distribution kept for the SEM comparison; a fixed seed, so a run repeats exactly).
+  Jeffery: dp/dt = W p + β (D p − (p D p) p), β from the flakes' aspect ratio (Materials: size / thickness).
+  Folgar–Tucker: rotary diffusion D_r = C_i γ̇. Doi–Hess: D_r (the card's) and the mean-field potential
+  V = −U p·⟨pp⟩·p (U from the ordering's strength; isotropic unstable above U = 5).
+- Entering at the inlet: steady in the inlet's flow (as the structure's), unless set otherwise; on the web: no flow,
+  the models' own relaxation (Folgar–Tucker: none without flow; Doi–Hess: to its equilibrium order) until the oven.
+- Results: S (the order parameter of the normals) and the director's angle through the film's depth leaving the
+  blade and at the oven; the flakes' trace angles in a cut along the web and across it (the SEM's view: their
+  histograms and their spread through the depth); orientation ellipses along the streamlines over the 2D plot;
+  S as a DOE output.
+- Checks: Jeffery's orbit period in simple shear (exact); rotary diffusion's relaxation exp(−6 D_r t) (exact);
+  planar extension aligning the normals fully (exact, no diffusion); Folgar–Tucker's steady state in simple shear
+  against an independent Fokker–Planck solution on a grid; Doi–Hess at rest against the Maier–Saupe
+  self-consistent order S(U) and the isotropic state below U = 5; the ensemble's size converged.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,
