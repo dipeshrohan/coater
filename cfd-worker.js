@@ -26,7 +26,7 @@
  *   used: index in solves of the solve whose solution is the result.
  */
 // (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
-importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {
@@ -56,7 +56,7 @@ onmessage = e => {
   try {
     const o = e.data;
     const shape = bladeShape(o), xe = shape.Lx, H = shape.h(xe);
-    const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
+    const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n, o.rheoX);
     const qLub = lubricationQ(o, shape);
     let lastPost = 0, stage = '', sent = 0;
     const trace = { r: [], solves: [], used: -1 };
@@ -117,7 +117,7 @@ onmessage = e => {
       while (i < g.iCorner - 1 && g.xWeb[i] < 0.5 * (land[0] + land[1])) i++;
       const G = -(g.pWeb[i + 1] - g.pWeb[i - 1]) / (g.xWeb[i + 1] - g.xWeb[i - 1]);
       // (with slip over the fibre, the wall moves at the solution's own web-surface velocity there)
-      const p1 = solveFullyDeveloped1D({ Ly: shape.profile ? shape.h(g.xWeb[i]) : o.H, U: g.uWeb[i], G, muRef: o.muRef, ty: o.ty, n: o.n, ny: 401 });
+      const p1 = solveFullyDeveloped1D({ Ly: shape.profile ? shape.h(g.xWeb[i]) : o.H, U: g.uWeb[i], G, muRef: o.muRef, ty: o.ty, n: o.n, x: o.rheoX, ny: 401 });
       prof1D = { y: p1.y, u: Array.from(p1.u), gd: Array.from(p1.gd), x: g.xWeb[i], G, uWall: g.uWeb[i] };
     }
 
@@ -126,7 +126,7 @@ onmessage = e => {
     // the oven, driven by this solve's own flow rate. Representative
     // viscosity at the film's own shear scale U/h_inf, h_inf = Q/U.
     const filmStart = g.xEnd - xe;                     // distance from the edge where the 1D film takes over
-    const muDownstream = muEffLocal(o.U * o.U / g.Q, o.muRef, o.ty, o.n);
+    const muDownstream = muEffLocal(o.U * o.U / g.Q, o.muRef, o.ty, o.n, o.rheoX);
     const film = o.ovenDistance > filmStart ? solveDownstreamFilm({
       H0: g.hEnd, Q: g.Q, U: o.U, mu: muDownstream,
       gamma: o.gamma, rho: o.rho, g: o.g, Lx: o.ovenDistance - filmStart,

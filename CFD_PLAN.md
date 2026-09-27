@@ -365,6 +365,40 @@ GO-0 built:
 - Report sections Process and Materials; help cards (oven.*, mat.*); guide entries; census against main:
   nothing lost (only help keys renamed and the Summary's links by section key).
 
+GO-1 decisions (user, with pictures):
+- Q30: no rheometer results yet (flow curve, thixotropy test and oscillation all wanted); Q35: Anton Paar;
+  Q37: the reader built from RheoCompass's export layout now (columns by name and unit, tab / semicolon /
+  comma, decimal comma or point), confirmed on the first real export.
+- Q31: rheology at the working solids fraction only: no concentration law (changing the solids does not
+  change the rheology).
+- Q32: liquid crystal not checked: no liquid-crystal model now; the viscoelastic sub-phase is asked later.
+- Q33: it thickens again at rest (thixotropic); Q34: whether the yield stress, the viscosity or both grow back
+  is not known: the model carries both, and fits to tests decide.
+- Q36: the structure model on, with typical values marked assumed (one switch turns it off).
+
+GO-1 design:
+- Laws (all anchored, as today, so the viscosity at 2.7 1/s is the sidebar's measured value): Newtonian,
+  power law, Herschel-Bulkley, and new Carreau-Yasuda eta = eta_inf + (eta0 - eta_inf)[1 + (L gd)^a]^((n-1)/a)
+  and Cross eta = eta_inf + (eta0 - eta_inf) / (1 + (L gd)^(1-n)), eta0 from the anchor; L, a, eta_inf on the
+  Materials card (assumed until fitted). One law function (muEffLocal with the model's extras) for every
+  solver; the old three models node-identical.
+- Structure lambda (0 broken .. 1 built): D lambda / Dt = (1 - lambda) / t_b - lambda gd / (gd_c t_b);
+  at a steady shear rate lambda_e = 1 / (1 + gd / gd_c). The stress keeps the steady flow curve tau_e(gd):
+  tau = tau_y (1 + c_y lambda)/(1 + c_y lambda_e) + (tau_e - tau_y)(1 + c_eta lambda)/(1 + c_eta lambda_e),
+  so at steady shear it is exactly the chosen law, rested it is stronger (c_y) and thicker (c_eta), just
+  sheared weaker and thinner. Assumed: t_b 30 s, gd_c 1 1/s, c_y = c_eta = 2.
+- Where: the 1D and 3D use the steady curve (and the 1D carries lambda along the blade one way, for the
+  exit value); the 2D carries lambda along its flow (steady transport, upwinded) and feeds it back into
+  the viscosity (outer iterations); after the blade lambda rebuilds at rest on the web, which slows the
+  levelling and raises the yield stress on the way to the oven.
+- Fits (Measured data, saved to the Materials card): flow curve -> each law; thixotropy test (3ITT) ->
+  t_b, gd_c and the contrasts (one common contrast from a single test, separate ones when tests at two
+  rates, or an amplitude sweep, allow it); amplitude sweep -> yield (G' = G'' crossover) and G' plateau;
+  frequency sweep -> G', G'' (kept for the viscoelastic sub-phase).
+- Checks: each law's limits and anchor; steady structure returns the steady curve; rest recovery exact;
+  transport against the exact solution in uniform shear; the 3ITT fit recovers known parameters from a
+  synthetic test; files in the RheoCompass layout (tab, semicolon, decimal comma, UTF-16) read the same.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

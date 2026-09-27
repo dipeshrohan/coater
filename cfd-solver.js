@@ -385,7 +385,12 @@ function solveChannelNS(opts) {
  * browser-global P/muEff from physics.js; see cfd-solver.channel.
  * validate.js for the same pattern).
  */
-function muEffLocal(gd, muRef, ty, n) {
+// (the laws beyond Herschel-Bulkley -- Carreau-Yasuda, Cross -- are rheo.js's: loaded before this file in the
+// page and the workers, required in Node; x = { model, etaInf, L, a } names one, anchored at muRef as below)
+const RHEO_LIB = typeof rheoCached === 'function' ? { rheoCached } : typeof require === 'function' ? require('./rheo.js') : null;
+const rheoExtra = x => !!(x && RHEO_LIB && (x.model === 'carreau' || x.model === 'cross'));
+function muEffLocal(gd, muRef, ty, n, x) {
+  if (rheoExtra(x)) return RHEO_LIB.rheoCached(muRef, ty, n, x).mu(gd);
   gd = Math.max(gd, 1e-9);
   const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
   return ty / gd + base * Math.pow(gd / 2.7, n - 1);
@@ -397,7 +402,8 @@ function muEffLocal(gd, muRef, ty, n) {
  * Returns gd=0 when |tau| <= ty (the unyielded/plug region -- a real
  * Herschel-Bulkley fluid does not shear at all below its yield stress).
  */
-function shearRateFromStress(absTau, muRef, ty, n) {
+function shearRateFromStress(absTau, muRef, ty, n, x) {
+  if (rheoExtra(x)) return RHEO_LIB.rheoCached(muRef, ty, n, x).gdOf(absTau);
   if (absTau <= ty) return 0;
   const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
   // Invert |tau| = ty + base*gd^n / 2.7^(n-1):
@@ -432,7 +438,7 @@ function shearRateFromStress(absTau, muRef, ty, n) {
  */
 function solveFullyDeveloped1D(opts) {
   const Ly = opts.Ly, U = opts.U || 0, G = opts.G || 0;
-  const muRef = opts.muRef, ty = opts.ty || 0, n = opts.n ?? 1;
+  const muRef = opts.muRef, ty = opts.ty || 0, n = opts.n ?? 1, x = opts.x;
   const ny = opts.ny ?? 401;
   const dy = Ly / (ny - 1);
 
@@ -441,7 +447,7 @@ function solveFullyDeveloped1D(opts) {
     for (let j = 0; j < ny - 1; j++) {
       const y = j * dy;
       const tau = tau0 - G * y;
-      const gd = shearRateFromStress(Math.abs(tau), muRef, ty, n);
+      const gd = shearRateFromStress(Math.abs(tau), muRef, ty, n, x);
       u += Math.sign(tau) * gd * dy;
     }
     return u; // target: u(Ly) = 0
@@ -469,12 +475,12 @@ function solveFullyDeveloped1D(opts) {
   for (let j = 0; j < ny; j++) y[j] = j * dy;
   for (let j = 0; j < ny - 1; j++) {
     const tau = tau0 - G * y[j];
-    gd[j] = shearRateFromStress(Math.abs(tau), muRef, ty, n);
+    gd[j] = shearRateFromStress(Math.abs(tau), muRef, ty, n, x);
     dudy[j] = Math.sign(tau) * gd[j];
     u[j + 1] = u[j] + dudy[j] * dy;
   }
   const tauLast = tau0 - G * y[ny - 1];
-  gd[ny - 1] = shearRateFromStress(Math.abs(tauLast), muRef, ty, n);
+  gd[ny - 1] = shearRateFromStress(Math.abs(tauLast), muRef, ty, n, x);
   dudy[ny - 1] = Math.sign(tauLast) * gd[ny - 1];
 
   return { y: Array.from(y), u, gd, dudy, tau0, dy, ny };

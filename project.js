@@ -82,11 +82,14 @@ function applyMeasured(m) {
   MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
   MEAS.dock = m.dock || 'compare'; MEAS.dockH = dockHSaved(m.dockH);
 }
-/** The slurry's card of a project (none, or a value it predates: the default). */
+/** The material cards of a project, the slurry's and how it flows (none, or a value it predates: the default). */
 function applyMaterials(m) {
   MAT = matDefaults();
-  const s = m && m.slurry;
-  if (s) for (const k of Object.keys(MAT.slurry)) if (s[k] && Number.isFinite(s[k].v)) MAT.slurry[k] = { ...MAT.slurry[k], ...s[k] };
+  for (const part of ['slurry', 'rheo']) {
+    const s = m && m[part];
+    if (s) for (const k of Object.keys(MAT[part])) if (s[k] && Number.isFinite(s[k].v)) MAT[part][k] = { ...MAT[part][k], ...s[k] };
+  }
+  if (m && m.rheo && typeof m.rheo.structOn === 'boolean') MAT.rheo.structOn = m.rheo.structOn;   // (a project from before GO-1: the structure model's default)
 }
 /** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
 function applyOven(o, cfdSetup) {

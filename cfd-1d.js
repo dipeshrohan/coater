@@ -52,7 +52,7 @@ function bladeShape(o) {
  */
 function station1D(h, U, lam, law, tau0, G, ny, keep) {
   const dy = h / ny;
-  const dudy = y => { const t = tau0 - G * y; return Math.sign(t) * shearRateFromStress(Math.abs(t), law.muRef, law.ty, law.n); };
+  const dudy = y => { const t = tau0 - G * y; return Math.sign(t) * shearRateFromStress(Math.abs(t), law.muRef, law.ty, law.n, law.x); };
   let d0 = dudy(0), u = U + (lam > 0 ? d0 / lam : 0);
   const us = keep ? new Float64Array(ny + 1) : null;
   if (us) us[0] = u;
@@ -74,7 +74,7 @@ function station1D(h, U, lam, law, tau0, G, ny, keep) {
  * Jacobian, damped by halving; start from `guess` (the previous station) or the Newtonian closed form.
  */
 function solveStation1D(h, U, lam, law, q, guess, ny = 160) {
-  const muN = muEffLocal(Math.abs(U) / h + 1e-12, law.muRef, law.ty, law.n);
+  const muN = muEffLocal(Math.abs(U) / h + 1e-12, law.muRef, law.ty, law.n, law.x);
   let tau0, G;
   if (guess) ({ tau0, G } = guess);
   else {   // Newtonian, no slip: q = U h / 2 + G h^3 / (12 mu), u(h) = 0 -> tau0 = G h / 2 - mu U / h
@@ -111,7 +111,7 @@ function solveStation1D(h, U, lam, law, q, guess, ny = 160) {
 function gapFlow1D(geo, { nx = 120, ny = 160 } = {}) {
   const o = { geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, blade: geo.blade };
   const shape = bladeShape(o), Lx = shape.Lx;
-  const law = { muRef: geo.muRef, ty: geo.ty || 0, n: geo.n ?? 1 };
+  const law = { muRef: geo.muRef, ty: geo.ty || 0, n: geo.n ?? 1, x: geo.rheoX };
   const U = geo.U, lam = geo.webSlip || 0;
   // stations: denser near the edge (x = Lx), where the gap is smallest and the pressure falls fastest
   const xs = Array.from({ length: nx + 1 }, (_, i) => Lx * (1 - Math.pow(1 - i / nx, 1.6)));
@@ -135,7 +135,7 @@ function gapFlow1D(geo, { nx = 120, ny = 160 } = {}) {
     return dp;
   };
   // q: the pressure drop over the blade grows with q; bracket, then Illinois (regula falsi)
-  const muRep = muEffLocal(U / geo.H, law.muRef, law.ty, law.n);
+  const muRep = muEffLocal(U / geo.H, law.muRef, law.ty, law.n, law.x);
   let I2 = 0, I3 = 0;
   for (let k = 0; k < 4000; k++) { const h = shape.h((k + 0.5) * Lx / 4000); I2 += Lx / 4000 / (h * h); I3 += Lx / 4000 / (h * h * h); }
   const qLub = (geo.Pup + 6 * muRep * U * I2) / (12 * muRep * I3);   // one viscosity (the classical estimate), as a starting point
@@ -168,7 +168,7 @@ function gapFlow1D(geo, { nx = 120, ny = 160 } = {}) {
 
 /** The film from the metering edge to the oven: the 1D thin-film equation (cfd-solver.js) with this flow rate. */
 function film1D(geo, q) {
-  const mu = muEffLocal(geo.U * geo.U / q, geo.muRef, geo.ty || 0, geo.n ?? 1);   // at the film's own shear scale U / h_inf, as the 2D's film
+  const mu = muEffLocal(geo.U * geo.U / q, geo.muRef, geo.ty || 0, geo.n ?? 1, geo.rheoX);   // at the film's own shear scale U / h_inf, as the 2D's film
   const r = solveDownstreamFilm({ H0: geo.H, Q: q, U: geo.U, mu, gamma: geo.gamma, rho: geo.rho, g: geo.g, Lx: geo.ovenDistance, nx: 200, maxSteps: 150000, tol: 1e-8 });
   return { ...r, mu };
 }
@@ -182,7 +182,7 @@ function film1D(geo, q) {
 function ripple1D(geo, h, dhdH, { dHum, vibUm, lamMm }) {
   const a0 = (Math.abs(dhdH) * dHum + vibUm) / 1e6;
   const k = 2 * Math.PI / (lamMm / 1000);
-  const mu = muEffLocal(0.5, geo.muRef, geo.ty || 0, geo.n ?? 1);   // slow, surface-tension-driven levelling
+  const mu = muEffLocal(0.5, geo.muRef, geo.ty || 0, geo.n ?? 1, geo.rheoX);   // slow, surface-tension-driven levelling
   const tau = 3 * mu / (h * h * h * (geo.gamma * k ** 4 + geo.rho * geo.g * k * k));
   const residual = (geo.ty || 0) / (h * (geo.gamma * k ** 3 + geo.rho * geo.g * k));
   const asymptote = Math.min(a0, residual);

@@ -13,7 +13,7 @@ const ACROSS_N = 61, ACROSS_W = 300;   // positions across the web (mm) for Acro
 function oneDGeo(i) {
   const g = cfdGeometry(i);
   return { z: g.z, shape: g.shape, U: g.U, H: g.H, L: g.L, R: g.R, Xup: g.Xup, exitAngle: g.exitAngle, contactDeg: g.contactDeg, webSlip: g.webSlip,
-    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}) };
+    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}), ...(g.rheoX ? { rheoX: g.rheoX } : {}) };
 }
 /** At z (mm) across the web: the shared inputs with that position's gap and contact angle (no location's own values). */
 function oneDGeoAt(z) {

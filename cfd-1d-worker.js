@@ -8,7 +8,7 @@
  * Message out: { id, ok: true, locs: [result], across: [result] | null, ms } or { id, ok: false, error }.
  * Or the crown (crownRun below): { id, crown: {...} } in, progress then { id, ok: true, crown } out.
  */
-importScripts('cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-across.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-across.js');
 
 /** A location: its gap flow (arrays and three velocity profiles), film to the oven, ripple, meniscus. */
 function oneLocation(geo, ripple, full) {

@@ -143,7 +143,11 @@ const RHEO_MODELS = {
   newtonian: { l: 'Newtonian', uses: [], law: 'μ = the viscosity at 2.7 1/s; n and yield stress not used' },
   power: { l: 'Power law', uses: ['n'], law: 'μ = μ(2.7 1/s) · (γ̇ / 2.7)^(n−1); yield stress not used' },
   hb: { l: 'Herschel–Bulkley', uses: ['n', 'ty'], law: 'μ = τy / γ̇ + K (γ̇ / 2.7)^(n−1), K such that μ(2.7 1/s) is the viscosity input' },
+  carreau: { l: 'Carreau–Yasuda', uses: ['n'], law: 'μ = μ∞ + (μ0 − μ∞)[1 + (λγ̇)^a]^((n−1)/a), μ0 such that μ(2.7 1/s) is the viscosity input; λ, a and μ∞ on Materials; yield stress not used' },
+  cross: { l: 'Cross', uses: ['n'], law: 'μ = μ∞ + (μ0 − μ∞) / (1 + (λγ̇)^(1−n)), μ0 such that μ(2.7 1/s) is the viscosity input; λ and μ∞ on Materials; yield stress not used' },
 };
+/** The law's extras for the solvers (Carreau–Yasuda, Cross: rheo.js), or null. */
+const cfdRheoX = () => CFDG.model === 'carreau' || CFDG.model === 'cross' ? { model: CFDG.model, etaInf: matR('etaInf'), L: matR('lamT'), a: matR('aCY') } : null;
 
 /** Permeability (m^2) from the air-permeability test: Darcy across the thickness t (m), air at 20 C, test pressure dp (Pa). */
 const airTestK = (t, dp) => CFDG.airPerm * 1e-3 * airProps(20).mu * t / dp;
@@ -324,7 +328,8 @@ const fmtTol = t => t.toExponential(0).replace('e-', '×10⁻').replace(/\d+$/, 
 /** Clamp a solver setting to its range (counts whole). */
 const solverValue = (q, v) => { v = Math.min(q.hi, Math.max(q.lo, v)); return q.d === 0 ? Math.round(v) : +v.toFixed(q.d); };
 /** The rheology law (as physics.js muEff) for given parameters. */
-function muLaw(gd, muRef, ty, n) {
+function muLaw(gd, muRef, ty, n, x) {
+  if (x) return muEffLocal(Math.max(gd, 1e-6), muRef, ty, n, x);   // (Carreau–Yasuda, Cross: rheo.js)
   gd = Math.max(gd, 1e-6);
   const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
   return ty / gd + base * Math.pow(gd / 2.7, n - 1);
@@ -463,13 +468,15 @@ function cfdGeometry(i) {
   const U = v('U') / 60 * Math.cos(skewRad());   // m/min -> m/s; across the blade (skewed: the web's speed x cos(skew))
   const H = v('gap') / 1000;                // mm -> m, gap at the metering edge
   const ty = uses.includes('ty') ? v('ty') : 0, n = uses.includes('n') ? v('n') : 1; // the model's parameters
+  const rheoX = cfdRheoX();   // (Carreau–Yasuda, Cross: their extras from Materials)
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
     ...(bladeLegacy() ? {} : { blade: bladeSpec(H), clModel: CFDG.clModel }),   // (a shaped blade: its profile's spec, and the contact-line model)
     contactDeg: v('th'), webSlip: 1 / fibreSlip().b,
     Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
     muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
-    muRep: muLaw(U / H, v('mu'), ty, n),    // at the representative shear rate U/H: one-viscosity estimates only
+    muRep: muLaw(U / H, v('mu'), ty, n, rheoX),    // at the representative shear rate U/H: one-viscosity estimates only
+    ...(rheoX ? { rheoX } : {}),
     model: CFDG.model, ty, n, rho: slurryRho(), gamma: v('g'), g: GRAVITY, ovenDistance: P.oven * Math.cos(skewRad()),   // (across the blade)
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
     solver: cfdSolverFor(i, H), solverOwn: Object.keys(CFD_LOCS[i].solver),
@@ -486,13 +493,14 @@ function solverFromSettings(s, H) {
     ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}) };
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
-  ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
+  ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho, ...(geo.rheoX ? [geo.rheoX] : [])]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
 /** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
 const cfdWorkerMessage = (geo, solver = geo.solver) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
   U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
   gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
   ...(geo.blade ? { blade: geo.blade, clModel: geo.clModel } : {}),
+  ...(geo.rheoX ? { rheoX: geo.rheoX } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
