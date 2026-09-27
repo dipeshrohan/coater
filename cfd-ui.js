@@ -501,15 +501,19 @@ function solverFromSettings(s, H) {
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
   ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho, ...(geo.rheoX ? [geo.rheoX] : []), ...(geo.struct ? [geo.struct] : [])]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
-/** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
-const cfdWorkerMessage = (geo, solver = geo.solver) => ({
+/**
+ * What a worker is sent to solve a location (solver: its settings, or others for a mesh study). withOrient: the flakes'
+ * alignment too, when it is on (the location's run and the DOE; not the mesh's studies, previews, measured-data
+ * solves or the 3D, which need the flow only).
+ */
+const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
   U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
   gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
   ...(geo.blade ? { blade: geo.blade, clModel: geo.clModel } : {}),
   ...(geo.rheoX ? { rheoX: geo.rheoX } : {}),
   ...(geo.struct ? { struct: geo.struct } : {}),
-  ...(geo.orient ? { orient: geo.orient } : {}),
+  ...(withOrient && geo.orient ? { orient: geo.orient } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 /** The alignment's own inputs (its model and the way to the oven): not the flow's, so a change needs only the alignment redone. */
@@ -580,7 +584,7 @@ function runLocation(i) {
     stepAfterRuns2D();
   };
   worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
-  worker.postMessage(cfdWorkerMessage(geo));
+  worker.postMessage(cfdWorkerMessage(geo, geo.solver, true));
   renderRunChips();
   renderCFD();
 }

@@ -184,7 +184,7 @@ function doeSetupId() {
   return JSON.stringify([d, cfdInputsKey(cfdGeometry(DOE.loc))]);
 }
 function undoKeepResults() {
-  for (const r of cfdRuns) if (r.field && r.key) undoRemember(r.key, { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, field: r.field, streamCache: r.streamCache || new Map(), metrics: r.metrics });
+  for (const r of cfdRuns) if (r.field && r.key) undoRemember(r.key, { status: 'done', result: r.result, geo: r.geo, key: r.key, orientKey: r.orientKey || null, elapsedMs: r.elapsedMs, field: r.field, streamCache: r.streamCache || new Map(), metrics: r.metrics });
   if (DOE.status !== 'running' && DOE.design && DOE.runs.length) undoRemember('doe ' + doeResultsId(), { design: DOE.design, runs: DOE.runs, status: DOE.status, key: DOE.key, t0: DOE.t0, t1: DOE.t1 });
 }
 function undoRestoreResults() {

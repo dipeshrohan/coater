@@ -192,7 +192,7 @@ function doeStart(run) {
     w1.postMessage({ id: 1, locs: [], across: G.across, ripple: G.ripple });
   };
   w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); settle(); };
-  w.postMessage(cfdWorkerMessage(geo));
+  w.postMessage(cfdWorkerMessage(geo, geo.solver, true));
 }
 function stopDOE() {
   if (DOE.status !== 'running') return;
