@@ -509,7 +509,7 @@ function drawFlowPlot(cv, s) {
   // x–y plane (the normals' main direction turned 90°), as thin as they are lined up (their normals' order in the plane),
   // in the plot's own scale (with the vertical exaggerated, a slope is drawn steeper, as the streamlines are)
   if (s.flakes && s.flakes.length) {
-    const sx = plotW / vw, sy = plotH / vh, R = compact ? 4.5 : 6.5, fl = cssVar('--accent');
+    const sx = plotW / vw, sy = plotH / vh, R = compact ? 4.5 : 6.5;
     c.save(); fluidPath(); c.clip();
     for (const q of s.flakes) {
       const px = X(q.x), py = Y(q.y);
@@ -524,8 +524,10 @@ function drawFlowPlot(cv, s) {
       c.beginPath();
       for (let k = 0; k <= 24; k++) { const t = k / 24 * 2 * Math.PI, u = ra * Math.cos(t), v = rb * Math.sin(t), qx = px + u * ca - v * sa, qy = py + u * sa + v * ca; k ? c.lineTo(qx, qy) : c.moveTo(qx, qy); }
       c.closePath();
-      c.fillStyle = fl; c.globalAlpha = 0.28; c.fill(); c.globalAlpha = 1;
-      c.lineWidth = 1.1; c.strokeStyle = fl; c.stroke();
+      // (in ink over a halo of the surface's colour, as the streamlines: seen over any field colour)
+      c.fillStyle = surface; c.globalAlpha = 0.55; c.fill(); c.globalAlpha = 1;
+      c.lineWidth = 2.6; c.strokeStyle = surface; c.stroke();
+      c.lineWidth = 1.2; c.strokeStyle = ink; c.stroke();
     }
     c.restore();
   }

@@ -15,6 +15,7 @@
 
 const OR_MODELS = { dh: 'Liquid crystal (Doi–Hess)', ft: 'Suspension (Folgar–Tucker)' };
 const OR = { redo: {}, img: null, mode: null, pend: null, cut: 'md' };   // (redos running; the SEM image open, its marking mode, a click waiting for its pair)
+const OR_URLS = new Map();   // (the SEM images' pixels by their id: undo keeps the marks, the pixels stay here)
 const orEsc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 /** Doi–Hess at rest: the Maier–Saupe order S(U) (ψ ∝ exp(1.5 U S cos²θ), self-consistent; 0: isotropic, below about 4.49). */
@@ -144,17 +145,21 @@ function orLoc() {
 
 // ---- the measured alignment: SEM images and tables ----
 const orId = () => Math.random().toString(36).slice(2, 10);
-/** Every measured angle of a cut: { angles, depths (0..1, NaN when not known), weights, sets } from the images and tables. */
+/**
+ * Every measured angle of a cut: { angles, depths (0..1, NaN when not known), weights, sets } from the images and
+ * tables, each set weighted as one measurement.
+ */
 function orMeasured(cut) {
   const out = { angles: [], depths: [], weights: [], sets: 0 };
   for (const im of (MAT.sem || { images: [] }).images) {
     if (im.cut !== cut || !im.web || !im.top) continue;
-    const parts = [im.auto && im.useAuto !== false ? im.auto : null, im.hand && im.hand.length ? semHand(im.hand, { web: im.web, top: im.top }) : null].filter(Boolean);
-    if (!parts.length) continue;
-    out.sets++;
+    const parts = [im.auto && im.useAuto !== false ? im.auto : null, im.hand && im.hand.length ? semHand(im.hand, { web: im.web, top: im.top }) : null].filter(p => p && p.angles.length);
     for (const p of parts) {
-      // (each image's reading carries the same total weight as its points: a set of 1000 automatic points or 12 clicks)
-      out.angles.push(...p.angles); out.depths.push(...p.depths); out.weights.push(...p.weights);
+      // (each set -- an image's automatic reading, its clicks, a table -- one measurement: the same total weight,
+      // whether it is 2000 points read or 12 flakes clicked)
+      const sw = p.weights.reduce((a, b) => a + b, 0) || 1;
+      out.sets++;
+      out.angles.push(...p.angles); out.depths.push(...p.depths); out.weights.push(...p.weights.map(w => w / sw));
     }
   }
   for (const t of (MAT.sem || { tables: [] }).tables) {
@@ -162,7 +167,7 @@ function orMeasured(cut) {
     if (!rows.length) continue;
     out.sets++;
     for (const [, d, a] of rows) {
-      out.angles.push(a); out.weights.push(1);
+      out.angles.push(a); out.weights.push(1 / rows.length);
       out.depths.push(!Number.isFinite(d) ? NaN : t.fraction ? d : t.thickness > 0 ? d / t.thickness : NaN);
     }
   }
@@ -390,13 +395,13 @@ function orDrawCharts(o, mdM, cdM) {
     c.fillText(cut === 'md' ? 'web moving →   (the web at the bottom; heights not to scale)' : 'across the web   (the web at the bottom)', 8, h - 6);
   }
 }
-/** A small legend line under a chart (in its figure). */
+/** A chart's legend under it (in its figure; the image export takes it with the chart): a dashed line says so in words. */
 function orLegend(cv, items) {
   if (!cv) return;
   const fig = cv.closest('figure');
-  let lg = fig.querySelector('.or-leg');
-  if (!lg) { lg = document.createElement('div'); lg.className = 'or-leg'; fig.appendChild(lg); }
-  lg.innerHTML = items.map(([t, c, d]) => `<span><i style="border-top:2px ${d ? 'dashed' : 'solid'} ${c}"></i>${t}</span>`).join('');
+  let lg = fig.querySelector('.xl-legend');
+  if (!lg) { lg = document.createElement('div'); lg.className = 'xl-legend or-leg'; fig.appendChild(lg); }
+  lg.innerHTML = items.map(([t, c, d]) => `<span class="lg"><i class="xl-sw" style="background:${c}"></i>${t}${d ? ' (dashed)' : ''}</span>`).join('');
 }
 /** The per-streamline table and each cut's histogram, as CSV. */
 function orExportCSV(i) {
@@ -467,8 +472,9 @@ function orImageDraw(cv, img, im) {
   const line = (s, col, w = lw) => { c.beginPath(); c.moveTo(s[0], s[1]); c.lineTo(s[2], s[3]); c.strokeStyle = col; c.lineWidth = w; c.stroke(); };
   // the automatic reading: a short tick at each point read (a direction a × the film's frame: along the web's line and up)
   if (im.auto && im.useAuto !== false && im.web && im.top && im.auto.xs) {
-    const fr = semFrame({ web: im.web, top: im.top }), L = Math.max(3, (im.win || 3) * 1.6);
+    const fr = semFrame({ web: im.web, top: im.top }), L = Math.max(3, (im.win || 3) * 1.6), every = Math.max(1, Math.ceil(im.auto.angles.length / 350));
     im.auto.angles.forEach((a, i) => {
+      if (i % every) return;   // (at most about 350 drawn: the image stays visible)
       const r = a * Math.PI / 180, dx = Math.cos(r) * fr.tx + Math.sin(r) * fr.nx, dy = Math.cos(r) * fr.ty + Math.sin(r) * fr.ny;
       const px = im.auto.xs[i], py = im.auto.ys[i];
       c.beginPath(); c.moveTo(px - L * dx, py + L * dy); c.lineTo(px + L * dx, py - L * dy);
