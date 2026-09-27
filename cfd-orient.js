@@ -245,14 +245,21 @@ function orientFromGrid(g) {
  * histograms, and a sample of its traces (the first nSample flakes' angles and weights, to draw a cross-section).
  */
 function orientCompact(res, { nSample = 200 } = {}) {
-  const st = s => ({ A: Array.from(s.A), S: s.S, Sy: s.Sy, angle: s.angle });
-  const cut = t => ({ ...CO_O.orCutStats(t.angles, t.weights), hist: Array.from(CO_O.orHist(t.angles, t.weights)),
-    sample: { angles: t.angles.slice(0, nSample), weights: t.weights.slice(0, nSample) } });
+  // (rounded to what is shown and used: moments to 1e-4, angles to 0.01°, weights to 0.001, shares to 5 figures,
+  // places to 6 figures -- a project with four locations stays small; the statistics are taken before rounding)
+  const r4 = x => Math.round(x * 1e4) / 1e4, r2 = x => Math.round(x * 100) / 100, p6 = x => +(+x).toPrecision(6), p5 = x => +(+x).toPrecision(5);
+  const st = s => ({ A: Array.from(s.A, r4), S: r4(s.S), Sy: r4(s.Sy), angle: r2(s.angle) });
+  const cs = c => ({ S2: r4(c.S2), mean: r2(c.mean), spread: r2(c.spread), n: c.n });
+  const cut = t => ({ ...cs(CO_O.orCutStats(t.angles, t.weights)), hist: Array.from(CO_O.orHist(t.angles, t.weights), p5),
+    sample: { angles: Array.from(t.angles.slice(0, nSample), r2), weights: Array.from(t.weights.slice(0, nSample), x => Math.round(x * 1000) / 1000) } });
+  const fs = s => ({ ...st(s), n: Array.from(s.n, r4), eig: Array.from(s.eig, r4) });
   return {
-    lines: res.lines.map(l => ({ f: l.f, yOut: l.yOut, depth: l.depth, how: l.how, nFlakes: l.nFlakes, tPath: l.tPath, tRested: l.tRested,
-      start: { ...st(l.start), turning: l.start.turning, turn: l.start.turn, groups: l.start.groups, settled: l.start.settled, gd: l.start.gd },
-      out: st(l.out), oven: st(l.oven), samples: l.samples, md: cut(l.traces.md), cd: cut(l.traces.cd) })),
-    film: res.film, cuts: res.cuts, hFilm: res.hFilm, stats: res.stats,
+    lines: res.lines.map(l => ({ f: l.f, yOut: p6(l.yOut), depth: r4(l.depth), how: l.how, nFlakes: l.nFlakes, tPath: p5(l.tPath), tRested: p5(l.tRested),
+      start: { ...st(l.start), turning: l.start.turning, turn: l.start.turn, groups: l.start.groups, settled: l.start.settled, gd: p5(l.start.gd) },
+      out: st(l.out), oven: st(l.oven), samples: l.samples.map(q => ({ x: p6(q.x), y: p6(q.y), A: q.A.map(r4) })), md: cut(l.traces.md), cd: cut(l.traces.cd) })),
+    film: { out: fs(res.film.out), oven: fs(res.film.oven) },
+    cuts: { md: cs(res.cuts.md), cd: cs(res.cuts.cd), mdHist: res.cuts.mdHist.map(p5), cdHist: res.cuts.cdHist.map(p5) },
+    hFilm: p6(res.hFilm), stats: res.stats,
   };
 }
 /** orStats from a second moment A alone (the film's mean). */
