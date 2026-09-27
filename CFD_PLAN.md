@@ -439,6 +439,14 @@ GO-2 decisions (user, with pictures):
 - Q43: the alignment measured on SEM cross-sections. Q45: as images and as tables of flake angles (with depths).
   Q46: cut both ways, along the web's motion and across it.
 - Q44: after the blade the flakes keep turning on the wet film until the oven (each model decides how much).
+- Q47: where the liquid crystal keeps turning over at the inlet (a slow shear: no steady state), the start is all
+  moments of the turn mixed, as different spots across the web would be.
+- Q49: the liquid crystal (Doi–Hess) on by default: U 8, D_r 0.025 1/s (a 5 µm flake's Brownian rotation in
+  water), both assumed; the suspension (Folgar–Tucker, C_i 0.01) on the switch.
+- Q50: computed with each 2D run while the switch is on, and a button to redo the alignment alone.
+- Q51: SEM images read both ways: automatically and by clicking flakes by hand; plus tables of angles.
+- (Where the results go: from Q43–Q46 and the design below, not asked again: the flakes over the 2D plot, a Flakes
+  panel in Flow › 2D, DOE outputs, the report.)
 
 GO-2 design:
 - The orientation of the flakes' normals p (3D, unit vectors) as an ensemble along each through-flow streamline
@@ -457,6 +465,38 @@ GO-2 design:
   planar extension aligning the normals fully (exact, no diffusion); Folgar–Tucker's steady state in simple shear
   against an independent Fokker–Planck solution on a grid; Doi–Hess at rest against the Maier–Saupe
   self-consistent order S(U) and the isotropic state below U = 5; the ensemble's size converged.
+
+GO-2 built:
+- orient.js: the ensemble (Heun for the drift, a tangent-plane weak step for the diffusion, renormalised), its
+  statistics, the steady state (noise-aware), the SEM traces and cut statistics. orient.validate.js: the checks
+  listed above, all passing.
+- cfd-orient.js: the film's through-flow as nLines streamlines (equal shares, from the outlet column's stream
+  function) traced back in the mesh's grid coordinates; the flakes start where each line enters and ride the FEM's
+  own velocity gradient (∂u/∂x = τxx/2μ, ∂v/∂y = τyy/2μ, shear τxy/μ, vorticity ω); at rest on the web to the oven
+  (Doi–Hess stops once settled: its director does not move at rest). Doi–Hess above U 5: the start settles in the
+  inlet's flow, is followed until its director has turned once (about 15 strain units), and 12 copies at evenly
+  spaced moments of that turn start the line, each group with its own mean field (1000 flakes each: 250 wander out
+  of the plane by their own scatter); no turn and steady (⟨pp⟩ varying ≤ 10 × its sampling variance): one group;
+  rocking (near the turning's edge): 12 over the window. Below a shear of 2 D_r the turn is taken at 2 D_r (its
+  shape barely changes; the film moves within 0.02 against 1 D_r). The model's own limit, not followed: at a few
+  D_r the turning can drift out of the flow's plane over hundreds of strain units (several motions possible; the
+  flakes' past decides). orientFromGrid: the alignment redone from a stored result's grid (exactly the same).
+  cfd-orient.validate.js: Couette (exact per line), steady stays steady, rest (Folgar–Tucker frozen, Doi–Hess to
+  Maier–Saupe, the early stop), the turning start against 4000-flake turns, rocking, the floor, the coating flow
+  (flat land and round entry, both models): lines traced to the inlet, mid-land at Folgar–Tucker's simple-shear
+  steady state, 1000 vs 4000 flakes and the half step within 0.02; all passing.
+- cfd-worker.js: the alignment after the flow (o.orient; progress "flake alignment: line k of N", 40 % of the bar)
+  and alone (orientOnly, the stored grid). About 10 s for 24 lines at the defaults (round entry, Doi–Hess).
+- sem.js: SEM cross-sections read by the structure tensor (Gaussian-derivative gradients: plain differences read a
+  slant 1–2° toward 45°), or by hand, angles in the film's own frame (the web's line drawn in the web's direction,
+  + rising along it), depths 0 web .. 1 top; tables of angles (CSV / tab / semicolon, by column name).
+  sem.validate.js: gratings at known angles within 0.1°, a tilted web line, two layers, noise, clicks, tables.
+- UI (orient-ui.js): the Materials card; Flow › 2D › Flakes (flatness through the film leaving the blade and at
+  the oven, both cuts' order through the film and angle histograms with the measured over them, cross-sections
+  drawn from the flakes, a table by streamline, CSV, Redo alignment; the SEM image tool and angle tables, each
+  measured set weighted as one measurement); the Flakes switch over the flow plot; DOE outputs (flatness leaving
+  and at the oven, the two cuts' spread); the report (the card, the measured sets, each location's panel);
+  projects, session, undo (the SEM images' pixels kept aside by id), help cards and the guide.
 
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
