@@ -84,5 +84,20 @@ const mono = s => s.every((v, k) => k === 0 || v >= s[k - 1]);
   check('full width: the share never back, below 100 % until done', mono(shares) && P.share < 1 && P.share > 0.9, `${shares.filter((_, k) => k % 6 === 0).map(v => Math.round(100 * v)).join(' ')} %, last ${(100 * P.share).toFixed(1)} %`);
 }
 
+// 5. the 2D with the structure: the first coating flow to PROG.flow, then its outer iterations, never back, below 100 %
+{
+  const tol = 1e-8, P = prog2D(tol, true), live = { r: [], solves: [] }, shares = [];
+  const feed = (lab, iters) => { live.solves = [...live.solves, [lab, live.r.length]]; for (let k = 0; k < iters; k++) { live.r.push(Math.pow(10, -8 * k / (iters - 1)) * (k === iters - 1 ? 0.5 : 1)); prog2DFeed(P, { residual: live.r[live.r.length - 1] }, live); shares.push(P.share); } };
+  feed('contact line at the edge: flow', 6); feed('contact line at the edge: surface and flow coupled', 6);
+  const inFlow = P.share;
+  feed('structure, flow 2: final solve again, warm', 1);
+  const atOuter = shares[shares.length - 1];
+  for (let k = 3; k <= 6; k++) feed(`structure, flow ${k}: final solve again, warm`, 5);
+  check('the 2D with the structure: the flow within PROG.flow; its outer iterations from there; never back, below 100 %', inFlow <= PROG.flow && Math.abs(atOuter - PROG.flow) < 1e-12 && mono(shares) && P.share < 1 && P.share > PROG.flow,
+    `${(inFlow * 100).toFixed(0)} % in the flow (held at the edge), ${(atOuter * 100).toFixed(0)} % as the outer iterations start, ${(P.share * 100).toFixed(0)} % after 5`);
+  const Q = prog2D(tol);
+  check('  without the structure: as before (the edge\'s two solves reach PROG.pin)', (() => { const l = { r: [], solves: [] }; for (const lab of ['contact line at the edge: a', 'contact line at the edge: b']) { l.solves = [...l.solves, [lab, l.r.length]]; for (let k = 0; k < 6; k++) { l.r.push(Math.pow(10, -8 * k / 5) * (k === 5 ? 0.5 : 1)); prog2DFeed(Q, {}, l); } } return Math.abs(Q.share - PROG.pin) < 1e-12; })());
+}
+
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exit(fails ? 1 : 0);

@@ -17,6 +17,8 @@
 const PROG = {
   pin: 0.35,      // the 2D: the meniscus at the edge, of the whole when the surface goes on to climb the face
   climb: 0.3,     // each solve placing the contact line on the face: this share of what is left
+  flow: 0.6,      // the 2D with the structure: the first coating flow's share; its outer iterations the rest
+  outer: 0.3,     //   each outer iteration: this share of what is left
   sweeps: 6,      // the full width: sweeps expected before two have shown how fast they converge
 };
 
@@ -31,9 +33,10 @@ function progNewton(r0, r, tol, path) {
 /**
  * A 2D run (cfd-worker.js), fed each progress message with the run's history so far (live: r, the residual at
  * every Newton iterate; solves, [label, k0] each solve started): { share (0..1), solve (the current solve's
- * number, from 0), it (its Newton steps so far), f (its share) }. tol: the Newton tolerance.
+ * number, from 0), it (its Newton steps so far), f (its share) }. tol: the Newton tolerance; struct: the run carries
+ * the structure (its outer iterations after the first coating flow).
  */
-function prog2D(tol) { return { tol, share: 0, solve: -1, k: 0, f: 0, it: 0 }; }
+function prog2D(tol, struct = false) { return { tol, struct, share: 0, solve: -1, k: 0, f: 0, it: 0 }; }
 function prog2DFeed(P, pr, live) {
   const sv = (live && live.solves) || [], n = sv.length, r = (live && live.r) || [];
   if (n) {
@@ -44,9 +47,13 @@ function prog2DFeed(P, pr, live) {
     if (pr && pr.path != null) P.f = Math.max(P.f, progNewton(0, 0, P.tol, pr.path));
   }
   // (the meniscus at the edge: its solves' labels say so; any later solve places the contact line on the face)
-  const pin = sv.filter(s => /^contact line at the edge/.test(s[0])).length, climbs = n > pin;
-  const s = !climbs ? PROG.pin * Math.min(1, (Math.max(0, n - 1) + (n ? P.f : 0)) / 2)
-    : PROG.pin + (1 - PROG.pin) * (1 - Math.pow(1 - PROG.climb, n - 1 - pin) * (1 - PROG.climb * P.f));
+  // (with the structure: the first coating flow is PROG.flow of the whole, its outer iterations -- solves labelled
+  // "structure, flow k" -- the rest, each PROG.outer of what is left)
+  const st = sv.filter(s => /^structure, flow/.test(s[0])).length, nf = st ? sv.findIndex(s => /^structure, flow/.test(s[0])) : n;
+  const pin = sv.slice(0, nf).filter(s => /^contact line at the edge/.test(s[0])).length, climbs = nf > pin, fF = st ? 1 : P.f;
+  const f1 = !climbs ? PROG.pin * Math.min(1, (Math.max(0, nf - 1) + (nf ? fF : 0)) / 2)
+    : PROG.pin + (1 - PROG.pin) * (1 - Math.pow(1 - PROG.climb, nf - 1 - pin) * (1 - PROG.climb * fF));
+  const s = !P.struct ? f1 : !st ? PROG.flow * f1 : PROG.flow + (1 - PROG.flow) * (1 - Math.pow(1 - PROG.outer, st - 1) * (1 - PROG.outer * P.f));
   P.share = Math.max(P.share, Math.min(1, s));
   return P;
 }

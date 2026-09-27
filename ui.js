@@ -477,7 +477,7 @@ function view2() {
 // Tab 4: Film surface
 // ---------------------------------------------------------------------
 function view3() {
-  const { lv, aEnd, remainMicrons, verdict } = surfaceOutlook(), { h, dhdH, a0, tau, residual: residualFromYield, asymptote, tRes } = lv;   // (physics.js)
+  const { lv, aEnd, remainMicrons, verdict } = surfaceOutlook(), { h, dhdH, a0, tau, residual: residualFromYield, tRes } = lv;   // (physics.js)
 
   view.innerHTML = moduleFrame({
     panes: [
@@ -506,7 +506,7 @@ function view3() {
   const tSpan = Math.max(tRes * 1.4, 1);
   for (let i = 0; i <= 100; i++) {
     const t = tSpan * i / 100;
-    tp.push([t, (asymptote + (a0 - asymptote) * Math.exp(-t / tau)) * 1e6]);
+    tp.push([t, lv.at(t) * 1e6]);
   }
   const c2 = document.getElementById('c2');
   plotChart(c2, fitAspect(c2, 0.34), {

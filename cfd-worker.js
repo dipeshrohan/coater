@@ -26,7 +26,7 @@
  *   used: index in solves of the solve whose solution is the result.
  */
 // (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
-importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {
@@ -93,10 +93,12 @@ onmessage = e => {
       postMessage({ ok: true, preview: o.preview, result: { ...g, Hedge: H, nEb, preview: true, ...shapedOut(shape.profile, pv) } });
       return;
     }
-    const r = solveCoaterFEM({
-      ...fo,
-      onStage: t => { stage = t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); }, onIteration, onSolveStart, onSolveEnd,
-    });
+    // (the structure: the flow with it fed back, outer iterations -- cfd-struct.js; else the steady law as it is)
+    let outer = 0;
+    const onStage = t => { stage = outer > 1 ? `structure, flow ${outer}: ${t}` : t; lastPost = 0; post({ it: 0, residual: NaN, s: 1 }); };
+    const r = o.struct
+      ? solveCoaterStruct({ ...fo, onStage, onIteration, onSolveStart, onSolveEnd }, o.struct, rheoCompile(o.muRef, o.ty, o.n, o.rheoX), { onOuter: k => { outer = k; } })
+      : solveCoaterFEM({ ...fo, onStage, onIteration, onSolveStart, onSolveEnd });
     // (a solve that ended without returning: its iterates so far)
     if (open) open.n = trace.r.length - open.k0;
     trace.used = r.solveId ?? -1;
@@ -133,7 +135,7 @@ onmessage = e => {
       nx: 200, maxSteps: 150000, tol: 1e-8,
     }) : { error: 'the oven is inside the 2D domain' };
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...shapedOut(shape.profile, r) } });
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...shapedOut(shape.profile, r) } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

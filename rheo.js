@@ -96,6 +96,54 @@ const rheoMuStruct = (gd, lam, law, S) => rheoTauStruct(Math.max(Math.abs(gd), 1
 /** The yield stress with structure lam (lambda_e = 1 at rest). */
 const rheoYieldStruct = (lam, law, S) => (law.ty || 0) * (1 + S.cy * lam) / (1 + S.cy);
 /**
+ * The integral over resting time t of 1 / m(lambda(s)), lambda rebuilding at rest from lam0 (rheoRest), for m linear in
+ * lambda (as rheoMuStruct is at a fixed shear rate): m(s) = M - B exp(-s / tb), M = m(1), B = M - m(lam0), so exactly
+ *   t / M + (tb / M) ln((M - B exp(-t / tb)) / m(lam0)).
+ */
+function rheoRestInv(mOf, lam0, S, t) {
+  const M = mOf(1), m0 = mOf(lam0), B = M - m0;
+  return t / M + (S.tb / M) * Math.log((M - B * Math.exp(-t / S.tb)) / m0);
+}
+/**
+ * Levelling on the web after the blade, the slurry rebuilding at rest from lam0 (lambda(t) = rheoRest): an amplitude A
+ * relaxes toward the residual R a yield stress holds, dA/dt = -(A - R) / tau, while above it, and stays once the
+ * rebuilding yield stress holds it (A <= R; R only grows as lambda rebuilds). tauOf(lam), resOf(lam): the levelling time
+ * and the residual at structure lam. Integrated on demand, in steps at most a two-hundredth of tb and a fifth of tau long
+ * (not below 1e-9 tb), each exact for tau and R at its middle; once lambda is within e^-40 of rebuilt, tau and R are
+ * constant and one step covers the rest. Held, too, once within 1e-12 a0 of the residual (with no yield stress: gone).
+ * (Some 8000 steps at most where tau is the longer; where it is the shorter, each step takes the ripple a fifth of tau
+ * nearer, so within some 140 steps it is held or gone.)
+ * Returns { at(t) (t in s; A non-increasing), frozen() (the time the yield stress holds it, or null), final() (what it
+ * settles to) }.
+ */
+function rheoLevel(a0, lam0, S, tauOf, resOf) {
+  const T = [0], A = [a0], Rm = [], Tm = [], settle = 40 * S.tb;
+  let tFrozen = a0 > resOf(lam0) ? null : 0;
+  const extend = tt => {
+    while (tFrozen === null && T[T.length - 1] < tt) {
+      const t = T[T.length - 1], a = A[A.length - 1];
+      // (the yield stress holds it from here -- or it is within 1e-12 of the start from its residual: as good as there)
+      if (!(a - resOf(rheoRest(lam0, t, S)) > 1e-12 * a0)) { tFrozen = t; break; }
+      const dt = t < settle ? Math.min(S.tb / 200, Math.max(0.2 * tauOf(rheoRest(lam0, t, S)), S.tb * 1e-9), settle - t) || S.tb / 200 : Math.max(tt - t, S.tb);
+      const lm = rheoRest(lam0, t + dt / 2, S), R = resOf(lm), tau = tauOf(lm);
+      // (not up toward a residual above it: the yield stress never raises the ripple)
+      const r = a > R ? R : a, tm = a > R ? tau : Infinity;
+      Rm.push(r); Tm.push(tm); T.push(t + dt); A.push(r + (a - r) * Math.exp(-dt / tm));
+    }
+  };
+  const at = t => {
+    if (!(t > 0)) return a0;
+    extend(t);
+    const n = Rm.length;
+    if (t >= T[n]) return A[n];                                                // (held since tFrozen)
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (T[m] <= t) lo = m; else hi = m - 1; }
+    return Rm[lo] + (A[lo] - Rm[lo]) * Math.exp(-(t - T[lo]) / Tm[lo]);
+  };
+  const final = () => { extend(settle); return tFrozen !== null ? A[A.length - 1] : Math.min(A[A.length - 1], resOf(1)); };
+  return { at, frozen: () => tFrozen, final };
+}
+/**
  * A thixotropy test (3ITT) as a rheometer runs it: intervals [{ gd (1/s), dur (s), n (points) }] at constant
  * shear rates, the structure starting from lam0 (default: steady at the first interval's rate). Returns the
  * points { t, gd, lam, eta } at the end of each of the interval's n equal steps.
@@ -113,4 +161,4 @@ function rheo3ITT(intervals, law, S, lam0) {
   return out;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { RHEO_EXTRA, rheoShape, rheoCompile, rheoCached, rheoLamEq, rheoLamStep, rheoRest, rheoLamRate, rheoTauStruct, rheoMuStruct, rheoYieldStruct, rheo3ITT };
+if (typeof module !== 'undefined' && module.exports) module.exports = { RHEO_EXTRA, rheoShape, rheoCompile, rheoCached, rheoLamEq, rheoLamStep, rheoRest, rheoLamRate, rheoTauStruct, rheoMuStruct, rheoYieldStruct, rheoRestInv, rheoLevel, rheo3ITT };

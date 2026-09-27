@@ -477,6 +477,7 @@ function cfdGeometry(i) {
     muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
     muRep: muLaw(U / H, v('mu'), ty, n, rheoX),    // at the representative shear rate U/H: one-viscosity estimates only
     ...(rheoX ? { rheoX } : {}),
+    ...(matStruct() ? { struct: matStruct() } : {}),   // (the structure model, when on: the 2D carries it along its flow)
     model: CFDG.model, ty, n, rho: slurryRho(), gamma: v('g'), g: GRAVITY, ovenDistance: P.oven * Math.cos(skewRad()),   // (across the blade)
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
     solver: cfdSolverFor(i, H), solverOwn: Object.keys(CFD_LOCS[i].solver),
@@ -493,7 +494,7 @@ function solverFromSettings(s, H) {
     ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}) };
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
-  ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho, ...(geo.rheoX ? [geo.rheoX] : [])]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
+  ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho, ...(geo.rheoX ? [geo.rheoX] : []), ...(geo.struct ? [geo.struct] : [])]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
 /** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
 const cfdWorkerMessage = (geo, solver = geo.solver) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
@@ -501,6 +502,7 @@ const cfdWorkerMessage = (geo, solver = geo.solver) => ({
   gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
   ...(geo.blade ? { blade: geo.blade, clModel: geo.clModel } : {}),
   ...(geo.rheoX ? { rheoX: geo.rheoX } : {}),
+  ...(geo.struct ? { struct: geo.struct } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 
@@ -534,7 +536,7 @@ function runLocation(i) {
   if (!cfdBatch.includes(i)) cfdBatch.push(i);
   run.status = 'running'; run.error = null; run.progress = null;
   run.live = { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol };
-  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT);
+  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT, !!geo.struct);
   let lastStage = null;
   logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : geo.shape === 'flat' ? 'flat land' : bladeText()}${geo.clModel === 'simple' ? ' (simple contact-line model)' : ''}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };

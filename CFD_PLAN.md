@@ -375,6 +375,7 @@ GO-1 decisions (user, with pictures):
 - Q33: it thickens again at rest (thixotropic); Q34: whether the yield stress, the viscosity or both grow back
   is not known: the model carries both, and fits to tests decide.
 - Q36: the structure model on, with typical values marked assumed (one switch turns it off).
+- Q38: the rebuild after the blade in the quick tabs too (Film surface, Web edge), not only the 1D.
 
 GO-1 design:
 - Laws (all anchored, as today, so the viscosity at 2.7 1/s is the sidebar's measured value): Newtonian,
@@ -398,6 +399,21 @@ GO-1 design:
 - Checks: each law's limits and anchor; steady structure returns the steady curve; rest recovery exact;
   transport against the exact solution in uniform shear; the 3ITT fit recovers known parameters from a
   synthetic test; files in the RheoCompass layout (tab, semicolon, decimal comma, UTF-16) read the same.
+
+GO-1c/d built:
+- 2D (cfd-struct.js): lambda at the nodes by tracing each node's streamline back (grid coordinates, exact updates
+  piece by piece; steady at the inlet's shear rate; memory cut at e^-15); fed back as the deviation from steady
+  (outer iterations, the final solve repeated warm, Aitken relaxation, half-way retry then the whole flow; film to
+  5e-4 twice and deviation rms 0.02). The result: lambda, the outer iterations, lambda flux weighted at the edge
+  and at the film's end. The 3D keeps the steady curve.
+- 1D (cfd-1d.js struct1D): 64 streamlines of equal flux along the blade, lambda leaving the edge flux weighted;
+  the ripple then levels as the slurry rebuilds at rest (rheo.js rheoLevel: tau and the residual follow lambda(t),
+  held once the rebuilding yield stress holds it). Quick tabs (physics.js): lambda just after the blade steady at
+  U / H; the ripple as the 1D's; the edge bead grows at gamma / (6 mu(t) R) (exact integral) until the rebuilding
+  yield stress beats the ridge's pressure. Structure off: every result exactly as before.
+- Checks: cfd-struct.validate.js, rebuild.validate.js (rest integral exact; levelling against Runge-Kutta and its
+  limits; 1D transport exact in uniform shear, its limits, converged in lines and stations, against the 2D along
+  the flat land (0.35 %) and at the edge (flat 3.9 %, round 1.9 %: the 2D's corner and entry)).
 
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier

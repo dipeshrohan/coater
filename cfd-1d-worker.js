@@ -4,7 +4,8 @@
  * and (when asked) the gap flow at every position across the web.
  *
  * Message in:  { id, locs: [geo], across: [geo] | null, ripple: { dHum, vibUm, lamMm } }
- *              geo: cfd-ui.js's cfdGeometry fields (SI), plus z (mm).
+ *              geo: cfd-ui.js's cfdGeometry fields (SI), plus z (mm); with struct (the structure, rheo.js) a location
+ *              carries it along the blade (struct1D) and the ripple levels as the slurry rebuilds at rest on the web.
  * Message out: { id, ok: true, locs: [result], across: [result] | null, ms } or { id, ok: false, error }.
  * Or the crown (crownRun below): { id, crown: {...} } in, progress then { id, ok: true, crown } out.
  */
@@ -28,9 +29,13 @@ function oneLocation(geo, ripple, full) {
   out.filmToOven = { x: f.x, h: f.h, hInf: f.hInf, converged: f.converged, error: f.error || null, mu: f.mu };
   const up = gapFlow1D({ ...geo, H: geo.H + 1e-5 }), dn = gapFlow1D({ ...geo, H: geo.H - 1e-5 });
   const dhdH = (up.film - dn.film) / 2e-5;
-  const rp = ripple1D(geo, r.film, dhdH, ripple);
+  // (the structure: carried along the blade to the edge, then rebuilding at rest on the web as the ripple levels)
+  const sb = geo.struct ? struct1D(r, geo.struct) : null;
+  if (sb) out.struct = { exit: sb.exit, lines: sb.lines, x: r.x, along: sb.along, tMean: sb.tMean };
+  const rp = ripple1D(geo, r.film, dhdH, ripple, sb ? sb.exit : null);
   const ts = Array.from({ length: 101 }, (_, i) => rp.tRes * 1.4 * i / 100);
-  out.ripple = { dhdH, a0: rp.a0, tau: rp.tau, residual: rp.residual, asymptote: rp.asymptote, tRes: rp.tRes, mu: rp.mu, t: ts, a: ts.map(rp.at), atOven: rp.at(rp.tRes) };
+  out.ripple = { dhdH, a0: rp.a0, tau: rp.tau, residual: rp.residual, asymptote: rp.asymptote, tRes: rp.tRes, mu: rp.mu, t: ts, a: ts.map(rp.at), atOven: rp.at(rp.tRes),
+    ...(sb ? { lam0: rp.lam0, tFrozen: rp.tFrozen, tauRested: rp.tauRested, residualRested: rp.residualRested } : {}) };
   return out;
 }
 

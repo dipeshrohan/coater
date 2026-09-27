@@ -173,20 +173,72 @@ function film1D(geo, q) {
   return { ...r, mu };
 }
 
+// (rheo.js: loaded before this in the page and the workers, required in Node)
+const ONED_R = typeof rheoLamStep === 'function' ? { rheoCompile, rheoLamEq, rheoLamStep, rheoMuStruct, rheoYieldStruct, rheoLevel } : require('./rheo.js');
+
+/**
+ * The structure carried along the blade (GO-1; S = { tb, gdc, cy, ce }, rheo.js): on nLines (64) streamlines, each carrying
+ * an equal share of the flow (the midpoints of the stream function's range, found from the web up: the through-flow,
+ * not a recirculation by the blade), lambda from steady at the inlet's shear rate there (the fully developed inflow, as
+ * the 2D's), updated exactly between stations at the piece's mean shear rate over its time dx / u (the mean of 1 / u at
+ * its ends). r: gapFlow1D's result. Returns { exit (lambda leaving the metering edge, flux weighted: the lines' mean),
+ * lines (each line's lambda there), along (the flux-weighted lambda at each station), tMean (the mean time under the
+ * blade, s) }.
+ */
+function struct1D(r, S, { nLines = 64, ny = 200 } = {}) {
+  const { law, U, lam } = r, N = r.x.length;
+  const lineAt = i => {   // at station i: each line's height's shear rate and speed
+    const h = r.h[i], t0 = r.tauWeb[i], G = r.G[i], p = station1D(h, U, lam, law, t0, G, ny, true), u = p.u, dy = h / ny;
+    const psi = new Float64Array(ny + 1);
+    for (let j = 0; j < ny; j++) psi[j + 1] = psi[j] + dy * (u[j] + u[j + 1]) / 2;
+    const out = [];
+    let j = 0;
+    for (let k = 0; k < nLines; k++) {
+      const f = (k + 0.5) / nLines * psi[ny];
+      while (j < ny - 1 && psi[j + 1] < f) j++;
+      const s = psi[j + 1] > psi[j] ? Math.min(1, Math.max(0, (f - psi[j]) / (psi[j + 1] - psi[j]))) : 0, y = (j + s) * dy;
+      out.push({ gd: shearRateFromStress(Math.abs(t0 - G * y), law.muRef, law.ty, law.n, law.x), u: u[j] + s * (u[j + 1] - u[j]) });
+    }
+    return out;
+  };
+  let prev = lineAt(0);
+  const lamL = prev.map(q => ONED_R.rheoLamEq(q.gd, S)), along = [lamL.reduce((a, b) => a + b, 0) / nLines], time = new Float64Array(nLines);
+  for (let i = 1; i < N; i++) {
+    const cur = lineAt(i), dx = r.x[i] - r.x[i - 1];
+    for (let k = 0; k < nLines; k++) {
+      const dt = dx * (1 / Math.max(prev[k].u, 1e-30) + 1 / Math.max(cur[k].u, 1e-30)) / 2;
+      lamL[k] = ONED_R.rheoLamStep(lamL[k], (prev[k].gd + cur[k].gd) / 2, dt, S); time[k] += dt;
+    }
+    along.push(lamL.reduce((a, b) => a + b, 0) / nLines);
+    prev = cur;
+  }
+  return { exit: along[N - 1], lines: Array.from(lamL), along, tMean: time.reduce((a, b) => a + b, 0) / nLines };
+}
+
 /**
  * Ripple levelling on the 1D film (the Film surface tab's model, on this film and rheology): the
  * starting amplitude a0 from the gap waviness through dh/dH plus vibration, the levelling time
  * tau = 3 mu / (h^3 (gamma k^4 + rho g k^2)), the residual a yield stress leaves, and the amplitude
  * at time t: at(t). dhdH: the film's sensitivity to the gap (dimensionless).
+ * With the structure (geo.struct, and lam0: lambda leaving the edge, struct1D) the slurry rebuilds at rest on the web
+ * (rheo.js's rheoLevel): mu and the yield stress follow lambda(t), the ripple levels toward the residual and stays once
+ * the rebuilding yield stress holds it; tau, mu and residual are then their values just after the blade (at lam0).
  */
-function ripple1D(geo, h, dhdH, { dHum, vibUm, lamMm }) {
+function ripple1D(geo, h, dhdH, { dHum, vibUm, lamMm }, lam0) {
   const a0 = (Math.abs(dhdH) * dHum + vibUm) / 1e6;
   const k = 2 * Math.PI / (lamMm / 1000);
+  const tRes = geo.ovenDistance / geo.U;
+  if (geo.struct && lam0 != null) {
+    const S = geo.struct, law = ONED_R.rheoCompile(geo.muRef, geo.ty || 0, geo.n ?? 1, geo.rheoX);
+    const muOf = l => ONED_R.rheoMuStruct(0.5, l, law, S), tauOf = l => 3 * muOf(l) / (h * h * h * (geo.gamma * k ** 4 + geo.rho * geo.g * k * k));
+    const resOf = l => ONED_R.rheoYieldStruct(l, law, S) / (h * (geo.gamma * k ** 3 + geo.rho * geo.g * k));
+    const lv = ONED_R.rheoLevel(a0, lam0, S, tauOf, resOf);
+    return { a0, tau: tauOf(lam0), residual: resOf(lam0), asymptote: lv.final(), tRes, mu: muOf(lam0), at: lv.at, lam0, tFrozen: lv.frozen(), tauRested: tauOf(1), residualRested: resOf(1) };
+  }
   const mu = muEffLocal(0.5, geo.muRef, geo.ty || 0, geo.n ?? 1, geo.rheoX);   // slow, surface-tension-driven levelling
   const tau = 3 * mu / (h * h * h * (geo.gamma * k ** 4 + geo.rho * geo.g * k * k));
   const residual = (geo.ty || 0) / (h * (geo.gamma * k ** 3 + geo.rho * geo.g * k));
   const asymptote = Math.min(a0, residual);
-  const tRes = geo.ovenDistance / geo.U;
   return { a0, tau, residual, asymptote, tRes, mu, at: t => asymptote + (a0 - asymptote) * Math.exp(-t / tau) };
 }
 
@@ -229,4 +281,4 @@ function meniscus1DPath(h, prof, contactDeg, gamma, rho, g) {
   return { pinned: true, k: 0, s: 0, hc: hcAt(0), lcap };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { bladeShape, station1D, solveStation1D, gapFlow1D, film1D, ripple1D, meniscus1D, meniscus1DPath };
+if (typeof module !== 'undefined' && module.exports) module.exports = { bladeShape, station1D, solveStation1D, gapFlow1D, film1D, struct1D, ripple1D, meniscus1D, meniscus1DPath };
