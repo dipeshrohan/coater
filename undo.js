@@ -148,6 +148,8 @@ const UNDO_UNITS = (() => {
   for (const [k] of MAT_SLURRY) u.push({ id: 'mat.' + k, get: () => MAT.slurry[k], set: v => { MAT.slurry[k] = v ? { ...v } : matDefaults().slurry[k]; }, label: (a, b) => matUndoLabel(k, a, b) });
   for (const [k] of MAT_RHEO) u.push({ id: 'matr.' + k, get: () => MAT.rheo[k], set: v => { MAT.rheo[k] = v ? { ...v } : matDefaults().rheo[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_RHEO) });
   u.push({ id: 'matr.structOn', get: () => MAT.rheo.structOn, set: v => { MAT.rheo.structOn = v !== false; }, label: (a, b) => `Structure (thixotropy) model ${b ? 'on' : 'off'}` });
+  u.push({ id: 'matr.side', get: () => MAT.rheo.side || {}, set: v => { MAT.rheo.side = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: () => 'Inputs from a rheometer fit' });
+  u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });
   u.push({ id: 'c3d.file', get: () => C3D_FILE ? C3D_FILE.id : null, set: v => { C3D_FILE = v != null && C3D_FILES.get(v) || null; C3D_GEO = null; },

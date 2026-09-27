@@ -58,7 +58,7 @@ const HELP = {
   'cfd.R': { t: 'Radius', d: 'Radius of the curved blade underside (round entry).', r: 'Range 10 to 500 mm · default 100 mm', e: 'Larger: a longer, flatter converging gap.', u: 'CFD, the DOE' },
   'cfd.pool': { t: 'Pool edge upstream', d: 'How far upstream of the metering edge the slurry pool begins: where the 2D domain starts. At most 0.8 × the radius is used.', r: 'Range 5 to 150 mm · default 40 mm', e: 'Further: a longer domain under the blade.', u: 'CFD, the DOE' },
   'cfd.exit': { t: 'Exit face to the web', d: 'Angle between the blade\'s exit face and the web, measured in the slurry (90° = vertical face).', r: 'Range 30 to 150° · default 90°. With the contact angle it must total 94 to 175°.', e: 'Changes where the meniscus sits and how far the contact line climbs.', u: 'CFD, the DOE' },
-  'cfd.model': { t: 'Rheology model', d: 'The viscosity law: Newtonian (constant), Power law (shear-thinning, n) or Herschel–Bulkley (yield stress + power law).', e: 'Which of n and the yield stress the CFD uses.', u: 'CFD, the DOE' },
+  'cfd.model': { t: 'Rheology model', d: 'The viscosity law: Newtonian (constant), Power law (shear-thinning, n), Herschel–Bulkley (yield stress + power law), Carreau–Yasuda or Cross (a plateau at low and high shear; their extras on Materials). Chosen here or on Materials.', e: 'Which of n and the yield stress the CFD uses.', u: 'CFD, the 1D, the DOE' },
   // CFD: fibre
   'cfd.fibre': { t: 'Test report', d: 'The fibre\'s data sheet: fills in the basis weight, density, yarn and air permeability.', u: 'CFD fibre results (porosity, permeability, slip, drying air)' },
   'cfd.gsm': { t: 'Basis weight', d: 'Mass of fibre per square metre (from the report).', r: 'Range 10 to 3000 g/m²', e: 'Higher, same thickness: a denser, less porous fibre.', u: 'CFD fibre results' },
@@ -83,6 +83,20 @@ const HELP = {
   'mat.flag': { t: 'Where the value is from', d: 'From you (you gave it), Assumed (a typical value until measured) or Measured. The counts at the top of the card and the pills follow it.', u: 'Materials' },
   'mat.src': { t: 'Source', d: 'Where the value comes from, in words: a datasheet, a test, a paper, you.', u: 'Materials, the report' },
   'mat.reset': { t: 'Defaults', d: 'The slurry card back to its first values (with Undo to go back).', u: 'Materials' },
+  // (how it flows, GO-1: the laws' extras and the structure, on the rheology card)
+  'matr.etaInf': { t: 'Viscosity at high shear, η∞', d: 'The Carreau–Yasuda and Cross laws\' plateau at high shear rates. Assumed until fitted to a flow curve.', r: 'Range 0 to 5 Pa·s (the laws use at most half the viscosity at 2.7 1/s)', u: 'The flow models with Carreau–Yasuda or Cross' },
+  'matr.lamT': { t: 'Time constant λ', d: 'The Carreau–Yasuda and Cross laws\' time: 1 / λ is the shear rate where the slurry starts to thin. Assumed until fitted.', r: 'Range 0.001 to 1000 s', e: 'Longer: thinning starts at lower shear rates.', u: 'The flow models with Carreau–Yasuda or Cross' },
+  'matr.aCY': { t: 'Transition sharpness a', d: 'How sharply the Carreau–Yasuda law turns from its plateau to thinning (2: the Carreau law). Assumed until fitted.', r: 'Range 0.2 to 5', u: 'The flow models with Carreau–Yasuda' },
+  'matr.structOn': { t: 'Structure (thixotropy)', d: 'The slurry\'s structure λ (0 broken down, 1 built up) breaks down under shear and rebuilds at rest; its viscosity and yield stress follow it. On: the 2D carries it along its flow and feeds it back, the 1D along the blade, and after the blade it rebuilds on the web (the ripple and the edge). Off: the steady flow curve everywhere, as before.', e: 'The 2D takes several flows (a few times longer).', u: '2D, 1D To the oven, Film surface, Web edge, the report' },
+  'matr.tb': { t: 'Rebuild time at rest', d: 'How long the structure takes to rebuild at rest: λ rebuilds as 1 − (1 − λ0) e^(−t / t_b). Assumed (tens of seconds, typical of GO dispersions) until fitted to a thixotropy test.', r: 'Range 0.1 to 100000 s', e: 'Longer: the slurry stays broken down (thinner, weaker) for longer after the blade.', u: 'The structure (2D, 1D, the web)' },
+  'matr.gdc': { t: 'Shear rate that halves the structure', d: 'At a steady shear rate γ̇ the structure settles to λ = 1 / (1 + γ̇ / γ̇c): half broken at γ̇c. Assumed until fitted.', r: 'Range 0.0001 to 10000 1/s', e: 'Lower: more broken down at a given shear rate.', u: 'The structure (2D, 1D, the web)' },
+  'matr.cy': { t: 'Yield stress gain when rested, c_y', d: 'Rested, the yield stress is (1 + c_y) times the fully broken one; at steady shear the flow curve is kept. Assumed until fitted.', r: 'Range 0 to 50', e: '0: the yield stress does not follow the structure.', u: 'The structure (2D, 1D, the web)' },
+  'matr.ce': { t: 'Viscosity gain when rested, c_η', d: 'Rested, the viscosity (above the yield stress) is (1 + c_η) times the fully broken one; at steady shear the flow curve is kept. Assumed until fitted.', r: 'Range 0 to 50', e: '0: the viscosity does not follow the structure.', u: 'The structure (2D, 1D, the web)' },
+  'matr.reset': { t: 'Defaults', d: 'The rheology card\'s own values (the laws\' extras, the structure) back to their first values (with Undo to go back).', u: 'Materials' },
+  'rt.import': { t: 'Import rheometer file', d: 'Reads a rheometer export (Anton Paar RheoCompass, or any table with named columns): tab, semicolon or comma between cells, a decimal point or comma, UTF-8 or UTF-16. A flow curve, a thixotropy test (3ITT), an amplitude or a frequency sweep, from its columns.', u: 'Materials (Rheometer tests)' },
+  'rt.test': { t: 'Rheometer test', d: 'Shows this test: its points, the fits and their values with one standard error; loose where the test cannot pin a value down.', u: 'Materials' },
+  'rt.remove': { t: 'Remove test', d: 'Takes this test off the card (with Undo to bring it back). The values a fit put on the card stay.', u: 'Materials' },
+  'rt.use': { t: 'Use this fit', d: 'Puts the fit\'s values on the rheology card (marked Measured, the file as the source): a flow curve sets the model, the viscosity at 2.7 1/s, n and the yield stress in the inputs (as their sliders take them) and the law\'s extras; a thixotropy test the structure\'s values; an amplitude sweep\'s point the yield stress.', u: 'Every flow model' },
   // CFD: drying air (each oven zone's)
   'oven.len': { t: 'Zone length', d: 'Length of this oven zone along the line. The zones follow one another; the film spends length / web speed in each. Assumed.', r: 'Range 0.1 to 100 m', u: 'Oven length and time (Process)' },
   'oven.airU': { t: 'Air speed up into the fibre', d: 'Speed of this oven zone\'s drying air driven up through the fibre. Assumed.', r: 'Range 0 to 50 m/s', u: 'CFD fibre results (drying air)' },
@@ -116,7 +130,7 @@ const HELP = {
   'tb.run': { t: 'Run all 4', d: 'Solve the four locations (each in its own worker, at the same time). Ctrl+Enter.' },
   'tb.stop': { t: 'Stop', d: 'Stop the solves running (the results already there are kept) and any mesh study.' },
   'tb.view': { t: 'Location shown', d: 'Show one location, all four one above the other (Compare), or the change between two (Diff, B − A).' },
-  'tb.field': { t: 'Field', d: 'The quantity coloured over the flow domain (velocity, shear rate, viscosity, pressure, vorticity, strain rate, dissipation) or none.' },
+  'tb.field': { t: 'Field', d: 'The quantity coloured over the flow domain (velocity, shear rate, viscosity, pressure, vorticity, strain rate, dissipation, the structure λ) or none.' },
   'tb.stream': { t: 'Streamlines', d: 'Lines tangent to the velocity: slurry moves along them. Settings in Display.' },
   'tb.vec': { t: 'Vectors', d: 'Arrows of the velocity on an even lattice. Settings in Display.' },
   'tb.contours': { t: 'Contours', d: 'Lines of equal value of a field, with their values printed. Field in Display.' },
@@ -216,13 +230,14 @@ const HELP_RESULTS = {
   'Recirculation area': 'Area of closed-streamline eddies.',
   'Stagnation points': 'Points where the slurry nearly stops.',
   'Mean residence time to the edge': 'Flux-weighted mean time from the inlet to the metering edge.',
+  'Structure λ leaving the edge': 'The structure (0 broken down, 1 built up) flux weighted where the film leaves the metering edge, and the flows the 2D took with it fed back.',
 };
 
 // ---- attaching: by id, by selector, by label ----
 const HELP_BY_ID = {
   cfdR: 'cfd.R', cfdPool: 'cfd.pool', cfdExit: 'cfd.exit', cfdModel: 'cfd.model', cfdFibreSel: 'cfd.fibre', cfdGsm: 'cfd.gsm', cfdRhoF: 'cfd.rhoF',
   cfdDFrom: 'cfd.dFrom', cfdDen: 'cfd.den', cfdNf: 'cfd.nf', cfdAirPerm: 'cfd.airPerm', cfdAirDP: 'cfd.airDP', cfdKoz: 'cfd.koz', cfdAirFrac: 'cfd.airFrac',
-  ovzAdd: 'oven.add', matReset: 'mat.reset', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
+  ovzAdd: 'oven.add', matReset: 'mat.reset', matModel: 'cfd.model', matStructOn: 'matr.structOn', matRheoReset: 'matr.reset', rtImport: 'rt.import', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
   cfdShape: 'cfd.shape', cfd_bevelDeg: 'cfd.bevelDeg', cfd_bevelLen: 'cfd.bevelLen', cfd_edgeR: 'cfd.edgeR', cfd_inletGap: 'cfd.inletGap', cfd_land1: 'cfd.land1', cfd_stepH: 'cfd.stepH', cfd_riserDeg: 'cfd.riserDeg', cfdClModel: 'cfd.clModel', cfdEditCustom: 'cfd.custom', cfdRunAll: 'tb.run', cfdCancel: 'tb.stop', cfdViewSeg: 'tb.view', fvBase: 'tb.field', fvStream: 'tb.stream', fvVec: 'tb.vec',
   fvContours: 'tb.contours', cfdCutPlace: 'tb.cut', cfdProbePlace: 'tb.probe', imgBtn: 'tb.image', themeBtn: 'tb.theme',
   fvScale: 'dp.scale', fvContourField: 'dp.contourField', fvMesh: 'dp.mesh', fvMeshQ: 'dp.meshQ', fvDensity: 'dp.density', fvSeedMode: 'dp.seeds',
@@ -238,6 +253,7 @@ const HELP_BY_SELECTOR = [
   ['[data-acr^="bladeEnds."]', 'acr.bladeEnds'], ['.acr-svg', 'acr.front'],
   ['[data-acrp="tilt"]', 'in.tilt'], ['[data-acrp="dH"]', 'in.dH'], ['[data-acrp="lw"]', 'in.lw'], ['[data-acrp="skew"]', 'in.skew'], ['[data-acrp="dt"]', 'in.dt'], ['[data-acrp="dth"]', 'in.dth'],
   ['#fvMore > summary', 'tb.display'], ['#cfdExport > summary', 'tb.export'],
+  ['.rt-pick', 'rt.test'], ['.rt-x', 'rt.remove'], ['.rt-use', 'rt.use'],
   ['.zoom-ctl [data-z="in"]', 'zm.in'], ['.zoom-ctl [data-z="out"]', 'zm.out'], ['.zoom-ctl [data-z="fit"]', 'zm.fit'], ['.zoom-ctl [data-z="edge"]', 'zm.edge'],
   ['.zoom-ctl [data-z="meniscus"]', 'zm.meniscus'], ['.zoom-ctl [data-z="box"]', 'zm.box'], ['.zoom-ctl [data-z="img"]', 'zm.img'],
   ['#cfdLocs input[data-i]', 'loc.z'], ['#cfdLocs [data-edit]', 'loc.own'], ['#cfdLocs [data-run]', 'loc.run'], ['#cfdLocs [data-pick]', 'loc.pick'],
@@ -282,6 +298,10 @@ function applyHelp() {
   document.querySelectorAll('input[type=number][data-mk]').forEach(el => { const key = 'mat.' + el.dataset.mk; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
   document.querySelectorAll('select[data-mk]').forEach(el => set(el, 'mat.flag'));
   document.querySelectorAll('input.mat-src[data-mk]').forEach(el => set(el, 'mat.src'));
+  // (the rheology card's own values, GO-1)
+  document.querySelectorAll('input[type=number][data-mr]').forEach(el => { const key = 'matr.' + el.dataset.mr; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
+  document.querySelectorAll('select[data-mr]').forEach(el => set(el, 'mat.flag'));
+  document.querySelectorAll('input.mat-src[data-mr]').forEach(el => set(el, 'mat.src'));
   // (the oven's zones: each input by its field; zone 1's drying air keeps its old ids)
   document.querySelectorAll('input[data-ovk]').forEach(el => {
     const key = 'oven.' + el.dataset.ovk, row = el.closest('.prop');

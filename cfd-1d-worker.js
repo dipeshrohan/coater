@@ -31,7 +31,7 @@ function oneLocation(geo, ripple, full) {
   const dhdH = (up.film - dn.film) / 2e-5;
   // (the structure: carried along the blade to the edge, then rebuilding at rest on the web as the ripple levels)
   const sb = geo.struct ? struct1D(r, geo.struct) : null;
-  if (sb) out.struct = { exit: sb.exit, lines: sb.lines, x: r.x, along: sb.along, tMean: sb.tMean };
+  if (sb) out.struct = { exit: sb.exit, lines: sb.lines, x: r.x, along: sb.along, tAlong: sb.tAlong, tMean: sb.tMean, S: geo.struct };
   const rp = ripple1D(geo, r.film, dhdH, ripple, sb ? sb.exit : null);
   const ts = Array.from({ length: 101 }, (_, i) => rp.tRes * 1.4 * i / 100);
   out.ripple = { dhdH, a0: rp.a0, tau: rp.tau, residual: rp.residual, asymptote: rp.asymptote, tRes: rp.tRes, mu: rp.mu, t: ts, a: ts.map(rp.at), atOven: rp.at(rp.tRes),

@@ -183,7 +183,7 @@ const ONED_R = typeof rheoLamStep === 'function' ? { rheoCompile, rheoLamEq, rhe
  * the 2D's), updated exactly between stations at the piece's mean shear rate over its time dx / u (the mean of 1 / u at
  * its ends). r: gapFlow1D's result. Returns { exit (lambda leaving the metering edge, flux weighted: the lines' mean),
  * lines (each line's lambda there), along (the flux-weighted lambda at each station), tMean (the mean time under the
- * blade, s) }.
+ * blade, s), tAlong (the lines' mean time from the inlet at each station, s) }.
  */
 function struct1D(r, S, { nLines = 64, ny = 200 } = {}) {
   const { law, U, lam } = r, N = r.x.length;
@@ -202,7 +202,7 @@ function struct1D(r, S, { nLines = 64, ny = 200 } = {}) {
     return out;
   };
   let prev = lineAt(0);
-  const lamL = prev.map(q => ONED_R.rheoLamEq(q.gd, S)), along = [lamL.reduce((a, b) => a + b, 0) / nLines], time = new Float64Array(nLines);
+  const lamL = prev.map(q => ONED_R.rheoLamEq(q.gd, S)), along = [lamL.reduce((a, b) => a + b, 0) / nLines], time = new Float64Array(nLines), tAlong = [0];
   for (let i = 1; i < N; i++) {
     const cur = lineAt(i), dx = r.x[i] - r.x[i - 1];
     for (let k = 0; k < nLines; k++) {
@@ -210,9 +210,10 @@ function struct1D(r, S, { nLines = 64, ny = 200 } = {}) {
       lamL[k] = ONED_R.rheoLamStep(lamL[k], (prev[k].gd + cur[k].gd) / 2, dt, S); time[k] += dt;
     }
     along.push(lamL.reduce((a, b) => a + b, 0) / nLines);
+    tAlong.push(time.reduce((a, b) => a + b, 0) / nLines);
     prev = cur;
   }
-  return { exit: along[N - 1], lines: Array.from(lamL), along, tMean: time.reduce((a, b) => a + b, 0) / nLines };
+  return { exit: along[N - 1], lines: Array.from(lamL), along, tAlong, tMean: tAlong[N - 1] };
 }
 
 /**

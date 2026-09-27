@@ -258,7 +258,7 @@ function drawFlowPlot(cv, s) {
           if (f.curv) { const at = f.locate(x, y); if (!at) continue; val = sc.at ? sc.at(x, y, at) : sampleIdx(f, sc.arr, at[0], at[1]) * sc.scale; } // outside: blade or air
           else { if (y > bladeHeightAt(f, x)) continue; val = sc.at ? sc.at(x, y, null) : sampleField(f, sc.arr, x, y) * sc.scale; } // inside the blade: drawn as solid below
           const p = (py * pw + px) * 4;
-          if (val == null) { const g = (px + py) % 6 < 2 ? noData[1] : noData[0]; img.data[p] = g; img.data[p + 1] = g; img.data[p + 2] = g - 3; img.data[p + 3] = 255; continue; } // (no data: grey hatch)
+          if (val == null || Number.isNaN(val)) { const g = (px + py) % 6 < 2 ? noData[1] : noData[0]; img.data[p] = g; img.data[p + 1] = g; img.data[p + 2] = g - 3; img.data[p + 3] = 255; continue; } // (no data: grey hatch)
           const n = Math.round(scaleT(sc, val) * (LUT_N - 1)) * 3;
           img.data[p] = lut[n]; img.data[p + 1] = lut[n + 1]; img.data[p + 2] = lut[n + 2]; img.data[p + 3] = 255;
         }

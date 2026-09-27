@@ -135,7 +135,7 @@ onmessage = e => {
       nx: 200, maxSteps: 150000, tol: 1e-8,
     }) : { error: 'the oven is inside the 2D domain' };
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...shapedOut(shape.profile, r) } });
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...shapedOut(shape.profile, r) } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

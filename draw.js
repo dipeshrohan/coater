@@ -75,9 +75,9 @@ function plotChart(cv, aspectRatio, opts) {
   });
   c.fillStyle = muted;
 
-  // gridlines + axis ticks (opts.yf: tick label formatter)
-  for (let i = 0; i <= 4; i++) {
-    const v = opts.y0 + (opts.y1 - opts.y0) * i / 4, y = Y(v);
+  // gridlines + axis ticks (opts.yf: tick label formatter; opts.yticks: their positions, else four equal steps)
+  for (const v of opts.yticks || [0, 1, 2, 3, 4].map(i => opts.y0 + (opts.y1 - opts.y0) * i / 4)) {
+    const y = Y(v);
     c.beginPath(); c.moveTo(margin.l, y); c.lineTo(w - margin.r, y); c.stroke();
     c.textAlign = 'right'; c.fillText(opts.yf ? opts.yf(v) : v.toFixed(opts.yd ?? 1), margin.l - 6, y + 4);
   }

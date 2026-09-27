@@ -376,6 +376,10 @@ GO-1 decisions (user, with pictures):
   is not known: the model carries both, and fits to tests decide.
 - Q36: the structure model on, with typical values marked assumed (one switch turns it off).
 - Q38: the rebuild after the blade in the quick tabs too (Film surface, Web edge), not only the 1D.
+- Q39: rheometer files on the Materials tab (a Rheometer tests card beside the rheology card: import, plot, fits,
+  Use this fit). Q40: the law's extras and the structure edited on the Materials card (value, from, source); viscosity,
+  n, yield stress and surface tension stay in the sidebar. Q41: the structure shown in the 2D field map (and the outer
+  iterations), on 1D To the oven, on the quick tabs (Film surface, Web edge) and in the report.
 
 GO-1 design:
 - Laws (all anchored, as today, so the viscosity at 2.7 1/s is the sidebar's measured value): Newtonian,

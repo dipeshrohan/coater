@@ -69,12 +69,15 @@ function makeFlowField(r, opts = {}) {
   }
 
   const mu = r.mu || null;
+  // (with the structure, GO-1: the yield stress where the slurry is, ty (1 + c_y lambda) / (1 + c_y lambda_e), rheo.js)
+  const lam = r.lam || null, S = lam && r.struct && r.struct.S;
+  const tyAt = S ? k => opts.ty * (1 + S.cy * lam[k]) / (1 + S.cy / (1 + shear[k] / S.gdc)) : () => opts.ty;
   let muCap = null, hasPlug = false, unyielded = null;
   if (mu) {
     unyielded = new Uint8Array(N);
     let flowMax = 0;
     for (let k = 0; k < N; k++) {
-      if (opts.ty > 0 && mu[k] * shear[k] < opts.ty) { unyielded[k] = 1; hasPlug = true; continue; }
+      if (opts.ty > 0 && mu[k] * shear[k] < tyAt(k)) { unyielded[k] = 1; hasPlug = true; continue; }
       flowMax = Math.max(flowMax, mu[k]);
     }
     muCap = hasPlug ? flowMax * 1.3 : flowMax;
@@ -97,7 +100,7 @@ function makeFlowField(r, opts = {}) {
   return {
     nx, ny, ...grid,
     u, v, speed, vmax, shear, mu, muCap, hasPlug, unyielded, psi, omega: r.omega || null, p: r.p || null,
-    strain1, strain2, strainDir, dissipation,
+    strain1, strain2, strainDir, dissipation, lam,
     psiWeb: psi ? psi[0] : null, psiLand: psi ? psi[(ny - 1) * nx] : null,
   };
 }

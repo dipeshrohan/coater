@@ -76,6 +76,19 @@ const cp1252 = s => Uint8Array.from([...s].map(ch => ch === '·' ? 0xB7 : ch ===
   const law = R.rheoCompile(10.5, 5, 0.6), noisy = F.rfFitFlow(gd, gd.map(g => law.mu(g) * g * noise(0.02))).hb;
   check('  with 2 % scatter: Herschel–Bulkley close (n ± 0.03, ty ± 15 %, anchor ± 3 %); its rms about 2 %', Math.abs(noisy.params.n - 0.6) < 0.03 && rel(noisy.params.ty, 5) < 0.15 && rel(noisy.app.muRef, 10.5) < 0.03 && noisy.rms > 0.01 && noisy.rms < 0.03,
     `n ${noisy.params.n.toFixed(3)}, ty ${noisy.params.ty.toFixed(2)}, anchor ${noisy.app.muRef.toFixed(2)}, rms ${(noisy.rms * 100).toFixed(1)} %`);
+  // the standard errors: against the scatter of the fitted values over 60 noisy curves (the same 2 %)
+  const runs = Array.from({ length: 60 }, () => F.rfFitFlow(gd, gd.map(g => law.mu(g) * g * noise(0.02))).hb);
+  const spread = k => { const v = runs.map(q => q.app[k]), mean = v.reduce((a, b) => a + b, 0) / v.length; return Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / (v.length - 1)) / Math.abs(mean); };
+  const said = k => runs.reduce((a, q) => a + q.err[k], 0) / runs.length;
+  const ratios = ['muRef', 'n', 'ty'].map(k => [k, said(k) / spread(k)]);
+  check('  its standard errors match the scatter of the fitted values over 60 noisy curves (within a factor 1.5); none loose', ratios.every(([, r]) => r > 1 / 1.5 && r < 1.5) && runs.every(q => q.loose.length === 0),
+    ratios.map(([k, r]) => `${k} ${(said(k) * 100).toFixed(2)} % said, ${(spread(k) * 100).toFixed(2)} % seen`).join('; '));
+  // a yield-stress curve through the laws without one: their extras not pinned down (loose), the Cross law without a
+  const yf = F.rfFitFlow(gd, gd.map(g => law.mu(g) * g * noise(0.02)));
+  check('  a yield-stress curve fitted by Carreau–Yasuda and Cross: their time constant loose (no plateau to pin it); no a for Cross', yf.carreau.loose.includes('L') && yf.cross.loose.includes('L') && !('a' in yf.cross.err),
+    `Carreau–Yasuda loose: ${yf.carreau.loose.join(', ')}; Cross loose: ${yf.cross.loose.join(', ')}`);
+  const cyf = fit(R.rheoCompile(10.5, 0, 0.4, { model: 'carreau', etaInf: 0.02, L: 3, a: 1.5 })).carreau;
+  check('  a clean Carreau–Yasuda curve: its values pinned down (none loose)', cyf.loose.length === 0, JSON.stringify(Object.fromEntries(Object.entries(cyf.err).map(([k, v]) => [k, +v.toExponential(1)]))));
 }
 
 // 3. thixotropy test

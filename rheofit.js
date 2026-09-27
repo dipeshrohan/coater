@@ -196,6 +196,34 @@ function rfStdErr(res, p) {
   const s2 = cost / Math.max(m - n, 1);
   return Array.from({ length: n }, (_, j) => { const e = new Array(n).fill(0); e[j] = 1; const x = rfSolve(A, e); return x && x[j] > 0 ? Math.sqrt(s2 * x[j]) : Infinity; });
 }
+/** The fit's variables' covariance s^2 (J^T J)^-1 at p, s^2 = cost / (m - n); null where J^T J is singular. */
+function rfCov(res, p) {
+  const r = res(p), m = r.length, n = p.length, cost = r.reduce((a, v) => a + v * v, 0);
+  const J = [];
+  for (let j = 0; j < n; j++) { const h = 1e-6 * Math.max(1, Math.abs(p[j])), q = p.slice(); q[j] += h; J.push(res(q).map((v, i) => (v - r[i]) / h)); }
+  const A = Array.from({ length: n }, (_, a) => Array.from({ length: n }, (_, b) => { let s = 0; for (let i = 0; i < m; i++) s += J[a][i] * J[b][i]; return s; }));
+  const s2 = cost / Math.max(m - n, 1), C = [];
+  for (let j = 0; j < n; j++) { const e = new Array(n).fill(0); e[j] = 1; const x = rfSolve(A, e); if (!x) return null; C.push(x.map(v => v * s2)); }
+  return C;
+}
+/**
+ * The relative standard errors of the values vals(p) gives (an object of numbers) at the optimum p: grad^T C grad
+ * (C: rfCov). Infinity where the data do not pin a value down (or the covariance is singular); values that are 0
+ * are left out. atLimit: the keys of values sitting at a bound of the fit (not pinned down either: Infinity).
+ */
+function rfValErr(res, p, vals, atLimit = []) {
+  const C = rfCov(res, p), v0 = vals(p), keys = Object.keys(v0).filter(k => Number.isFinite(v0[k]) && v0[k] !== 0), out = {};
+  const g = Object.fromEntries(keys.map(k => [k, []]));
+  for (let j = 0; j < p.length; j++) { const h = 1e-6 * Math.max(1, Math.abs(p[j])), q = p.slice(); q[j] += h; const v1 = vals(q); for (const k of keys) g[k].push((v1[k] - v0[k]) / h); }
+  for (const k of keys) {
+    let v = NaN;
+    if (C) { v = 0; for (let a = 0; a < p.length; a++) for (let b = 0; b < p.length; b++) v += g[k][a] * C[a][b] * g[k][b]; }
+    out[k] = atLimit.includes(k) || !(v >= 0) ? Infinity : Math.sqrt(v) / Math.abs(v0[k]);
+  }
+  return out;
+}
+/** The keys of a fit's errors above 25 % (not pinned down by the test). */
+const rfLoose = err => Object.keys(err).filter(k => !(err[k] < 0.25));
 /** Gaussian elimination with partial pivoting (small dense systems). */
 function rfSolve(A, b) {
   const n = b.length, M = A.map((r, i) => [...r, b[i]]);
@@ -214,21 +242,28 @@ const rfSig = (lo, hi) => [v => lo + (hi - lo) / (1 + Math.exp(-v)), x => -Math.
 
 // ---- fits ----
 /**
- * A flow curve (shear rates gd, stresses tau) fitted to each law in log stress. Returns { model: { params, app, rms } },
- * rms the root-mean-square of ln(model / measured) (so 0.05 is about 5 %); app the values the app keeps: the
- * viscosity at 2.7 1/s (muRef), n, the yield stress ty, and the Carreau–Yasuda / Cross extras.
+ * A flow curve (shear rates gd, stresses tau) fitted to each law in log stress. Returns { model: { params, app, rms,
+ * err, loose } }, rms the root-mean-square of ln(model / measured) (so 0.05 is about 5 %); app the values the app
+ * keeps: the viscosity at 2.7 1/s (muRef), n, the yield stress ty, and the Carreau–Yasuda / Cross extras; err their
+ * relative standard errors (rfValErr), loose those above 25 % (the curve does not pin them down).
  */
 function rfFitFlow(gd, tau) {
   const pts = [...gd].map((g, i) => [g, tau[i]]).filter(([g, t]) => g > 0 && t > 0);
   const lg = pts.map(([g]) => Math.log(g)), lt = pts.map(([, t]) => Math.log(t)), m = pts.length;
   const out = {}, rms = r => Math.sqrt(r.reduce((a, v) => a + v * v, 0) / m);
   // Newtonian and power law: closed form in logs
-  { const mu = Math.exp(lt.reduce((a, v, i) => a + v - lg[i], 0) / m); out.newtonian = { params: { mu }, app: { muRef: mu, n: 1, ty: 0 }, rms: rms(lt.map((v, i) => Math.log(mu) + lg[i] - v)) }; }
+  // (each law's err: the relative standard errors of the values the app keeps, app; loose: those above 25 %)
+  const withErr = (o, res, p, appOf, atLimit) => { o.err = rfValErr(res, p, appOf, atLimit); o.loose = rfLoose(o.err); return o; };
+  {
+    const mu = Math.exp(lt.reduce((a, v, i) => a + v - lg[i], 0) / m), res = p => lt.map((v, i) => p[0] + lg[i] - v);
+    out.newtonian = withErr({ params: { mu }, app: { muRef: mu, n: 1, ty: 0 }, rms: rms(lt.map((v, i) => Math.log(mu) + lg[i] - v)) }, res, [Math.log(mu)], p => ({ muRef: Math.exp(p[0]) }));
+  }
   {
     const mx = lg.reduce((a, v) => a + v, 0) / m, my = lt.reduce((a, v) => a + v, 0) / m;
     let sxy = 0, sxx = 0; for (let i = 0; i < m; i++) { sxy += (lg[i] - mx) * (lt[i] - my); sxx += (lg[i] - mx) ** 2; }
-    const n = sxx > 0 ? sxy / sxx : 1, K = Math.exp(my - n * mx);
-    out.power = { params: { K, n }, app: { muRef: K * Math.pow(2.7, n - 1), n, ty: 0 }, rms: rms(lt.map((v, i) => Math.log(K) + n * lg[i] - v)) };
+    const n = sxx > 0 ? sxy / sxx : 1, K = Math.exp(my - n * mx), res = p => lt.map((v, i) => p[0] + p[1] * lg[i] - v);
+    out.power = withErr({ params: { K, n }, app: { muRef: K * Math.pow(2.7, n - 1), n, ty: 0 }, rms: rms(lt.map((v, i) => Math.log(K) + n * lg[i] - v)) }, res, [Math.log(K), n],
+      p => ({ muRef: Math.exp(p[0]) * Math.pow(2.7, p[1] - 1), n: p[1] }));
   }
   // Herschel–Bulkley: ty + K gd^n (ty >= 0: squared; n in (0.05, 2))
   {
@@ -240,23 +275,26 @@ function rfFitFlow(gd, tau) {
       const t0 = f * Math.min(...pts.map(q => q[1])), r = rfLM(res, [Math.sqrt(t0), Math.log(pw.K * (1 - f) + 1e-12), nI(Math.min(1.9, Math.max(0.1, pw.n)))]);
       if (!best || r.cost < best.cost) best = r;
     }
-    const { ty, K, n } = model(best.p);
-    out.hb = { params: { ty, K, n }, app: { muRef: ty / 2.7 + K * Math.pow(2.7, n - 1), n, ty }, rms: rms(res(best.p)) };
+    const { ty, K, n } = model(best.p), appOf = p => { const q = model(p); return { muRef: q.ty / 2.7 + q.K * Math.pow(2.7, q.n - 1), n: q.n, ty: q.ty }; };
+    out.hb = withErr({ params: { ty, K, n }, app: appOf(best.p), rms: rms(res(best.p)) }, res, best.p, appOf, n < 0.05 + 2e-3 || n > 2 - 2e-3 ? ['n'] : []);
   }
   // Carreau–Yasuda and Cross: eta0, eta_inf (logs), L (log), a (0.2..5), n (0.05..1.2)
   for (const model of ['carreau', 'cross']) {
     const [nF, nI] = rfSig(0.05, 1.2), [aF, aI] = rfSig(0.2, 5);
-    const lawOf = p => { const e0 = Math.exp(p[0]), ei = Math.exp(p[1]), L = Math.exp(p[2]), a = model === 'cross' ? 1 : aF(p[3]), n = nF(p[4]); return { e0, ei, L, a, n }; };
+    // (the fit's variables: ln eta0, ln eta_inf, ln L, then a (Carreau–Yasuda only) and n, bounded)
+    const cy = model === 'carreau', lawOf = p => { const e0 = Math.exp(p[0]), ei = Math.exp(p[1]), L = Math.exp(p[2]), a = cy ? aF(p[3]) : 1, n = nF(p[cy ? 4 : 3]); return { e0, ei, L, a, n }; };
     const etaOf = (q, g) => { const t = Math.pow(q.L * g, model === 'cross' ? 1 - q.n : q.a); return q.ei + (q.e0 - q.ei) * (model === 'cross' ? 1 / (1 + t) : Math.pow(1 + t, (q.n - 1) / q.a)); };
     const res = p => { const q = lawOf(p); return pts.map(([g], i) => Math.log(etaOf(q, g) * g) - lt[i]); };
     const e = pts.map(([g, t]) => t / g), e0 = Math.max(...e), ei = Math.min(...e) * 0.01;
     let best = null;
     for (const L0 of [0.01, 1, 100]) for (const n0 of [0.3, 0.7]) {
-      const r = rfLM(res, [Math.log(e0), Math.log(ei), Math.log(L0), aI(2), nI(n0)]);
+      const r = rfLM(res, [Math.log(e0), Math.log(ei), Math.log(L0), ...(cy ? [aI(2)] : []), nI(n0)]);
       if (!best || r.cost < best.cost) best = r;
     }
     const q = lawOf(best.p), muRef = etaOf(q, 2.7);
-    out[model] = { params: { eta0: q.e0, etaInf: q.ei, L: q.L, a: q.a, n: q.n }, app: { muRef, n: q.n, ty: 0, etaInf: Math.min(q.ei, 0.5 * muRef), L: q.L, a: q.a }, rms: rms(res(best.p)) };
+    const appOf = p => { const w = lawOf(p), mr = etaOf(w, 2.7); return { muRef: mr, n: w.n, etaInf: Math.min(w.ei, 0.5 * mr), L: w.L, ...(cy ? { a: w.a } : {}) }; };
+    const lim = [...(q.n < 0.05 + 1e-3 || q.n > 1.2 - 1e-3 ? ['n'] : []), ...(cy && (q.a < 0.2 + 1e-3 || q.a > 5 - 1e-3) ? ['a'] : [])];
+    out[model] = withErr({ params: { eta0: q.e0, etaInf: q.ei, L: q.L, a: q.a, n: q.n }, app: { muRef, n: q.n, ty: 0, etaInf: Math.min(q.ei, 0.5 * muRef), L: q.L, a: q.a }, rms: rms(res(best.p)) }, res, best.p, appOf, lim);
   }
   return out;
 }
@@ -339,4 +377,4 @@ function rf3ITTPoints(file) {
   return pts.filter(q => q.gd > 0 && q.eta > 0 && Number.isFinite(q.t));
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { rfDecode, rfRead, rfKind, rfSteps, rfHeadCell, rfUnit, rfLM, rfStdErr, rfFitFlow, rfFit3ITT, rfAmp, rfFreq, rf3ITTPoints };
+if (typeof module !== 'undefined' && module.exports) module.exports = { rfDecode, rfRead, rfKind, rfSteps, rfHeadCell, rfUnit, rfLM, rfStdErr, rfCov, rfValErr, rfLoose, rfFitFlow, rfFit3ITT, rfAmp, rfFreq, rf3ITTPoints };

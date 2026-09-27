@@ -441,6 +441,9 @@ const SCALARS = {
   omega: { label: 'Vorticity', short: 'ω', unit: '1/s', scale: 1, kind: 'div', skipCorner: true, arr: f => f.omega },
   strain1: { label: 'Principal strain rate, stretching', short: 'λ₁', unit: '1/s', scale: 1, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.strain1 },
   dissip: { label: 'Viscous dissipation μγ̇²', short: 'Φ', unit: 'kW/m³', scale: 1e-3, kind: 'seq', zeroMin: true, skipCorner: true, arr: f => f.dissipation },
+  // (the structure, GO-1: 0 broken down, 1 built up; its range fixed at 0..1, so locations and runs compare)
+  // (a run without it -- solved with the structure off -- has none: not-a-number there, drawn as no data)
+  lam: { label: 'Structure λ (0 broken down, 1 built up)', short: 'λ', unit: '', scale: 1, kind: 'seq', fixed: [0, 1], arr: f => f.lam || f.lamNone || (f.lamNone = new Float64Array(f.u.length).fill(NaN)) },
 };
 // Fields that are never negative: a logarithmic colour scale is offered for these
 const LOG_OK = new Set(['speed', 'shear', 'mu', 'strain1', 'dissip']);
@@ -602,6 +605,11 @@ function cancelAllLocations() {
 function scalarRange(key, fields, win) {
   const d = SCALARS[key];
   let min = Infinity, max = -Infinity, capped = false, vref = 0;
+  // (a field no location in view has -- the structure, with it off: its fixed range, drawn as no data)
+  if (!fields.some(f => { const a = d.arr(f); return a && a.some(Number.isFinite); })) {
+    const [lo, hi] = d.fixed || [0, 1];
+    return { key, label: d.label, short: d.short, unit: d.unit, scale: d.scale, kind: FV.cmap === 'jet' ? 'jet' : d.kind === 'auto' ? 'seq' : d.kind, min: lo, max: hi, capped: false, log: false, levels: FV.levels, autoMin: lo, autoMax: hi, manual: false };
+  }
   for (const f of fields) {
     const a = d.arr(f);
     if (!a) continue;
@@ -635,6 +643,7 @@ function scalarRange(key, fields, win) {
     const m = Math.max(Math.abs(min), Math.abs(max), (d.floorFrac || 0) * vref) || 1;
     min = -m; max = m;
   } else if (d.zeroMin || (d.kind === 'auto' && min < 0)) min = 0;
+  if (d.fixed) { min = d.fixed[0]; max = d.fixed[1]; }
   if (!(max > min)) max = min + (Math.abs(min) || 1) * 1e-3;
   // logarithmic (never-negative fields): the automatic lower end is 1/1000 of the top
   const log = !!(FV.clog[key] && LOG_OK.has(key));
@@ -754,7 +763,7 @@ function viewCFD() {
           ${opt('speed', 'Velocity magnitude |V|', FV.base)}${opt('ux', 'u_x (machine direction)', FV.base)}${opt('uy', 'u_y (normal to web)', FV.base)}
           ${opt('shear', 'Shear rate', FV.base)}${opt('mu', 'Apparent viscosity', FV.base)}${opt('omega', 'Vorticity', FV.base)}
           ${opt('strain1', 'Principal strain rate', FV.base)}${opt('dissip', 'Viscous dissipation', FV.base)}
-          ${opt('pressure', 'Pressure', FV.base)}${opt('none', 'None (geometry only)', FV.base)}
+          ${opt('lam', 'Structure λ (thixotropy)', FV.base)}${opt('pressure', 'Pressure', FV.base)}${opt('none', 'None (geometry only)', FV.base)}
         </select></label>
         <label class="fv-chk"><input type="checkbox" id="fvStream"${FV.streamlines ? ' checked' : ''}> Streamlines</label>
         <label class="fv-chk"><input type="checkbox" id="fvVec"${FV.vectors ? ' checked' : ''}> Vectors</label>
@@ -1100,13 +1109,13 @@ function nodeKind(f, i, j) {
 }
 function exportField() {
   const rows = [['location', 'z_mm', 'i', 'j', 'boundary', 'x_mm', 'y_mm', 'u_mm_s', 'v_mm_s', 'speed_mm_s', 'p_Pa', 'shear_rate_1_s', 'viscosity_Pa_s', 'unyielded',
-    'vorticity_1_s', 'strain_rate_stretching_1_s', 'strain_rate_compression_1_s', 'stretching_direction_deg', 'dissipation_W_m3', 'stream_function_mm2_s']];
+    'vorticity_1_s', 'strain_rate_stretching_1_s', 'strain_rate_compression_1_s', 'stretching_direction_deg', 'dissipation_W_m3', 'stream_function_mm2_s', 'structure_lambda']];
   for (const L of exportLocs()) {
     const f = cfdRuns[L].field;
     for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) {
       const k = j * f.nx + i;
       rows.push([L + 1, CFD_LOCS[L].z, i, j, nodeKind(f, i, j), f.gx[k] * 1e3, f.gy[k] * 1e3, f.u[k] * 1e3, f.v[k] * 1e3, f.speed[k] * 1e3, f.p[k], f.shear[k], f.mu[k],
-        f.unyielded && f.unyielded[k] ? 1 : 0, f.omega[k], f.strain1[k], f.strain2[k], f.strainDir[k] * 180 / Math.PI, f.dissipation[k], f.psi[k] * 1e6]);
+        f.unyielded && f.unyielded[k] ? 1 : 0, f.omega[k], f.strain1[k], f.strain2[k], f.strainDir[k] * 180 / Math.PI, f.dissipation[k], f.psi[k] * 1e6, f.lam ? f.lam[k] : '']);
     }
   }
   downloadCSV(`cfd-field-${csvStamp()}.csv`, rows);
@@ -2293,6 +2302,7 @@ function wirePlotProbe(el) {
       <span>shear ${fmtNum(s(f.shear))} 1/s · ${muTxt}</span>
       ${f.omega ? `<span>ω ${fmtNum(s(f.omega))} 1/s</span>` : ''}
       ${f.p ? `<span>p ${fmtNum(s(f.p))} Pa</span>` : ''}
+      ${f.lam ? `<span>structure λ ${fmtNum(s(f.lam))}</span>` : ''}
       ${placeCut ? `<span class="fv-why">click to ${placeCut === 'start' ? 'start' : 'end'} the cut line here</span>` : placeProbes ? '<span class="fv-why">click to place a probe here</span>' : FV.seedMode === 'manual' && FV.streamlines ? '<span class="fv-why">click to add a seed here</span>' : ''}`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -2401,6 +2411,8 @@ function renderMetrics() {
   // [label, unit, value] -- units live in the label column so the values stay short enough to compare side by side
   const rows = [
     ['Rheology model', '', r => RHEO_MODELS[r.geo.model || 'hb'].l],
+    // (the structure, GO-1: flux weighted where the film leaves the metering edge)
+    ['Structure λ leaving the edge', '0 broken down, 1 built up; flux weighted', r => r.result.struct ? `${r.result.struct.lamEdge.toFixed(3)} <small>${r.result.struct.outer} flows${r.result.struct.converged ? '' : ', not settled'}</small>` : 'off'],
     ['Inputs of this run', 'set for this location (others shared)', r => r.geo.own && r.geo.own.length ? r.geo.own.map(k => { const q = LOC_INPUTS.find(x => x.k === k); return `${q.l} ${r.geo.ownVals[k]}${q.u ? ' ' + q.u : ''}`; }).join('<br>') : 'shared'],
     ['Wet film thickness, Q/U', 'mm', r => (r.result.Q / r.geo.U * 1000).toFixed(3)],
     ['Through-flow Q', 'mm²/s per mm width', r => fmtNum(r.metrics.Q * 1e6)],
@@ -2501,6 +2513,7 @@ const ACROSS = {
   tres: { l: 'Residence time to the edge, flux-weighted mean', u: 's', f: r => cfdFieldNumbers(r).res.mean },
   diss: { l: 'Viscous dissipation', u: 'mW per m width', f: r => cfdFieldNumbers(r).dissTot * 1000 },
   q: { l: 'Through-flow Q', u: 'mm²/s', f: r => r.result.Q * 1e6 },
+  lam: { l: 'Structure λ leaving the edge', u: '0–1', f: r => r.result.struct ? r.result.struct.lamEdge : NaN },
 };
 
 /** Direct labels at the right-hand ends of the series: a short line in the series colour, the name in ink, nudged apart. */
@@ -2567,7 +2580,7 @@ function renderAcross() {
     <div class="dock-grid">
     <figure class="dock-fig">${chart('xlMetricChart')}
     <div class="table-wrap"><table class="cfd-table xl-table"><thead><tr><th>${m.l}${m.u ? `<small>${m.u}</small>` : ''}</th>${vals.map(o => `<th><i class="xl-sw" style="background:${locColor(o.i)}"></i> L${o.i + 1}<small>z ${o.z} mm</small></th>`).join('')}</tr></thead>
-      <tbody><tr><th scope="row">value</th>${vals.map(o => `<td>${fmtNum(o.v)}${stale(o.i) ? ' <small>out of date</small>' : ''}</td>`).join('')}</tr></tbody></table></div>
+      <tbody><tr><th scope="row">value</th>${vals.map(o => `<td>${Number.isFinite(o.v) ? fmtNum(o.v) : 'none <small>(solved without it)</small>'}${stale(o.i) ? ' <small>out of date</small>' : ''}</td>`).join('')}</tr></tbody></table></div>
     <p class="cap"><b>${m.l}</b> at each location's position across the web${FV.across === 'film' || FV.across === 'gap' ? ' (the gap varies with the blade waviness and fibre-thickness variation set in the sidebar, or a location\'s own gap)' : ''}.</p></figure>
     <figure class="dock-fig">${chart('xlSurf')}
     <p class="cap"><b>Free surface</b> from the contact line into the film: height above the web against distance downstream of the metering edge.</p></figure>
@@ -2579,8 +2592,9 @@ function renderAcross() {
 
   // 1. the chosen quantity against z: markers in the location colours, a neutral line joining them in z order
   {
-    const cv = document.getElementById('xlMetricChart'), pts = vals.slice().sort((a, b) => a.z - b.z);
-    let lo = Math.min(...pts.map(o => o.v)), hi = Math.max(...pts.map(o => o.v));
+    // (a quantity a location was solved without -- the structure -- is left out of the chart)
+    const cv = document.getElementById('xlMetricChart'), pts = vals.filter(o => Number.isFinite(o.v)).sort((a, b) => a.z - b.z);
+    let lo = pts.length ? Math.min(...pts.map(o => o.v)) : 0, hi = pts.length ? Math.max(...pts.map(o => o.v)) : 1;
     const pad = (hi - lo) * 0.25 || Math.abs(hi) * 0.05 || 1; lo -= pad; hi += pad;
     cv.setAttribute('aria-label', `${m.l} against position across the web`);
     const map = plotChart(cv, 0.32, { x0: 0, x1: CFD_WEB_WIDTH_MM, y0: lo, y1: hi, xl: 'z across the web (mm)', yl: `${m.l}${m.u ? ' (' + m.u + ')' : ''}`, xd: 0, yd: Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(hi - lo || 1)))),
@@ -2596,6 +2610,7 @@ function renderAcross() {
     const wrap = cv.parentElement, tip = wrap.querySelector('.fv-tip');
     cv.addEventListener('pointermove', e => {
       const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+      if (!pts.length) { tip.hidden = true; return; }
       const near = pts.reduce((a, o) => Math.abs(map.X(o.z) - px) < Math.abs(map.X(a.z) - px) ? o : a);
       if (Math.abs(map.X(near.z) - px) > 30 || py < map.rect.t - 10 || py > map.rect.b + 10) { tip.hidden = true; return; }
       tip.innerHTML = `<b><i class="xl-sw" style="background:${locColor(near.i)}"></i> ${name(near.i)}</b><span>${m.l}: ${fmtNum(near.v)}${m.u ? ' ' + m.u : ''}</span>`;
@@ -2656,6 +2671,12 @@ function renderConvergence() {
     ['Its iterates', i => { const u = tr(i).solves[tr(i).used]; return u ? `${u.n}` : '—'; }],
     ['Its final residual', i => { const u = tr(i).solves[tr(i).used]; return u ? fmtE(u.residual) : '—'; }],
     ['Wall time', i => `${(cfdRuns[i].elapsedMs / 1000).toFixed(1)} s`],
+    // (the structure, GO-1: the flow solved again with the structure it carries, until both settle)
+    ...(locs.some(i => cfdRuns[i].result.struct) ? [
+      ['Structure (thixotropy)', i => { const s = cfdRuns[i].result.struct; return s ? `${s.outer} flows<small>${s.converged ? 'settled' : 'not settled'}${s.whole ? ', the whole flow again at the end' : ''}</small>` : 'off'; }],
+      ['Film, last two flows', i => { const s = cfdRuns[i].result.struct, h = s && s.history; if (!h || h.length < 2) return '—'; const a = h[h.length - 2].Q, b = h[h.length - 1].Q; return `${((b / a - 1) * 100).toFixed(3)} %<small>structure change ${fmtE(s.change)} (rms)</small>`; }],
+      ['Structure λ at the edge, film end', i => { const s = cfdRuns[i].result.struct; return s ? `${s.lamEdge.toFixed(3)}, ${s.lamEnd.toFixed(3)}<small>flux weighted</small>` : '—'; }],
+    ] : []),
   ];
   const table = `<div class="table-wrap"><table class="cfd-table${compare ? ' cmp' : ''}"><thead><tr><th></th>${locs.map(i => `<th>${compare ? `<i class="xl-sw" style="background:${locColor(i)}"></i> ` : ''}Location ${i + 1}<small>z ${CFD_LOCS[i].z} mm${stale(i) ? ' · out of date' : ''}</small></th>`).join('')}</tr></thead>
     <tbody>${rows.map(([l, f]) => `<tr><th scope="row">${l}</th>${locs.map(i => `<td>${f(i)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
