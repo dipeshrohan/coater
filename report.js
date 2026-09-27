@@ -162,8 +162,13 @@ async function repMaterials() {
     }
     RT.sel = keepSel; render(); await repFrame();
   }
+  // the flakes' alignment card, and what was measured of it (SEM images, tables of angles)
+  const semRows = [...(MAT.sem.images || []).map(im => { const p = orImagePoints(im), q = p.angles.length ? orCutStatsSafe(p) : null; return [repEsc(im.name), im.cut === 'cd' ? 'across the web' : 'along the web', p.angles.length ? `${p.angles.length} angles${im.auto && im.useAuto !== false ? ' (read automatically)' : ''}${im.hand.length ? `, ${im.hand.length} by hand` : ''}` : 'not read', q ? `mean ${q.mean.toFixed(1)}°, spread ${q.spread.toFixed(1)}°` : '—']; }),
+    ...(MAT.sem.tables || []).map(t => { const q = cut => { const r = t.rows.filter(x => x[0] === cut); return r.length ? `${cut === 'md' ? 'along' : 'across'}: ${r.length}, spread ${orCutStats(r.map(x => x[2])).spread.toFixed(1)}°` : ''; }; return [repEsc(t.name) + ' (table)', [q('md'), q('cd')].filter(Boolean).join('; '), `${t.rows.length} angles`, t.thickness ? `film ${t.thickness} µm` : t.fraction ? 'depths as fractions' : '']; })];
   return '<h3>Slurry: GO in water</h3>' + repRows([...card, ...derived], head)
     + '<h3>Slurry: how it flows</h3>' + repRows(ro(matRheoRows()), head)
+    + '<h3>Flakes: how they line up</h3>' + repRows(ro(orCardRows()), head)
+    + (semRows.length ? '<h4>Measured: SEM cross-sections and angle tables</h4>' + repRows(semRows, ['Measured', 'Cut', 'Angles', '']) : '')
     + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
@@ -268,6 +273,20 @@ async function repCfd(keep) {
       if (d === 'cuts' && !cfdCuts.length) continue;
       FV.dock = d; viewCFD(); await repFrame();
       for (const t of imageTargets().filter(x => x.id.startsWith('chart:'))) html += repFigure(t, `${t.title()} · ${t.subtitle()}`);
+    }
+    // the flakes' alignment (GO-2): each location that has it, its panel's numbers, charts and table
+    const withOr = CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].field && cfdRuns[i].result && cfdRuns[i].result.orient);
+    if (withOr.length) {
+      html += '<h3>Flakes: their alignment</h3>';
+      const keepTable = FV.orTable; FV.orTable = true;
+      for (const i of withOr) {
+        FV.view = i; FV.dock = 'flakes'; viewCFD(); await repFrame();
+        const st = orStatus(i), o = cfdRuns[i].result.orient;
+        html += `<h4>Location ${i + 1} · z ${CFD_LOCS[i].z} mm</h4><p class="lede">${repEsc(orientLogText(o))}${st === 'stale' ? ` ${repFlag()} The alignment's values changed since: this is for the earlier ones.` : ''}</p>`;
+        for (const t of imageTargets().filter(x => x.id.startsWith('chart:'))) html += repFigure(t, `${t.title()} · ${t.subtitle()}`);
+        html += repTable(document.querySelector('#cfdFlakes details.or-table table'));
+      }
+      FV.orTable = keepTable; FV.view = 'compare';
     }
   }
   html += '<h3>Checks and messages</h3><h4>Problems</h4>' + repProblems();

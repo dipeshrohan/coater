@@ -149,6 +149,14 @@ const UNDO_UNITS = (() => {
   for (const [k] of MAT_RHEO) u.push({ id: 'matr.' + k, get: () => MAT.rheo[k], set: v => { MAT.rheo[k] = v ? { ...v } : matDefaults().rheo[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_RHEO) });
   u.push({ id: 'matr.structOn', get: () => MAT.rheo.structOn, set: v => { MAT.rheo.structOn = v !== false; }, label: (a, b) => `Structure (thixotropy) model ${b ? 'on' : 'off'}` });
   u.push({ id: 'matr.side', get: () => MAT.rheo.side || {}, set: v => { MAT.rheo.side = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: () => 'Inputs from a rheometer fit' });
+  // (the flakes' alignment card: a unit per value, its switch and model; the measured alignment: one unit, the SEM images'
+  // pixels kept aside by their id -- a snapshot carries what was marked and read on them, not the images again)
+  for (const [k] of MAT_ORIENT) u.push({ id: 'mato.' + k, get: () => MAT.orient[k], set: v => { MAT.orient[k] = v ? { ...v } : matDefaults().orient[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_ORIENT) });
+  u.push({ id: 'mato.on', get: () => MAT.orient.on, set: v => { MAT.orient.on = v !== false; }, label: (a, b) => `Flake alignment ${b ? 'on' : 'off'}` });
+  u.push({ id: 'mato.model', get: () => MAT.orient.model, set: v => { MAT.orient.model = v === 'ft' ? 'ft' : 'dh'; }, label: (a, b) => `Alignment model: ${OR_MODELS[b] || b}` });
+  u.push({ id: 'mat.sem', get: () => ({ images: (MAT.sem.images || []).map(({ url, ...q }) => { OR_URLS.set(q.id, url); return q; }), tables: MAT.sem.tables || [] }),
+    set: v => { MAT.sem = v ? { images: (v.images || []).map(q => ({ ...q, url: OR_URLS.get(q.id) || '' })).filter(q => q.url), tables: JSON.parse(JSON.stringify(v.tables || [])) } : { images: [], tables: [] }; },
+    label: (a, b) => { const n = x => ((x && x.images) || []).length + ((x && x.tables) || []).length; return n(b) > n(a) ? 'Add a measurement of the flakes' : n(b) < n(a) ? 'Remove a measurement of the flakes' : 'Marks on an SEM image'; } });
   u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });
@@ -176,7 +184,7 @@ function doeSetupId() {
   return JSON.stringify([d, cfdInputsKey(cfdGeometry(DOE.loc))]);
 }
 function undoKeepResults() {
-  for (const r of cfdRuns) if (r.field && r.key) undoRemember(r.key, { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, field: r.field, streamCache: r.streamCache || new Map(), metrics: r.metrics });
+  for (const r of cfdRuns) if (r.field && r.key) undoRemember(r.key, { status: 'done', result: r.result, geo: r.geo, key: r.key, orientKey: r.orientKey || null, elapsedMs: r.elapsedMs, field: r.field, streamCache: r.streamCache || new Map(), metrics: r.metrics });
   if (DOE.status !== 'running' && DOE.design && DOE.runs.length) undoRemember('doe ' + doeResultsId(), { design: DOE.design, runs: DOE.runs, status: DOE.status, key: DOE.key, t0: DOE.t0, t1: DOE.t1 });
 }
 function undoRestoreResults() {

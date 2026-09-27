@@ -20,6 +20,7 @@ const PROG = {
   flow: 0.6,      // the 2D with the structure: the first coating flow's share; its outer iterations the rest
   outer: 0.3,     //   each outer iteration: this share of what is left
   sweeps: 6,      // the full width: sweeps expected before two have shown how fast they converge
+  aflow: 0.6,     // the 2D with the flakes' alignment: the flow's share; the alignment (line by line) the rest
 };
 
 /** A Newton solve's share done (0..1): its residual r fallen from its first, r0, toward tol on a log scale, or its continuation's path (0..1), whichever is further. */
@@ -36,8 +37,10 @@ function progNewton(r0, r, tol, path) {
  * number, from 0), it (its Newton steps so far), f (its share) }. tol: the Newton tolerance; struct: the run carries
  * the structure (its outer iterations after the first coating flow).
  */
-function prog2D(tol, struct = false) { return { tol, struct, share: 0, solve: -1, k: 0, f: 0, it: 0 }; }
+function prog2D(tol, struct = false, orient = false) { return { tol, struct, orient, share: 0, solve: -1, k: 0, f: 0, it: 0 }; }
 function prog2DFeed(P, pr, live) {
+  // (the flakes' alignment after the flow: its stage says so, s = the lines done of all; the flow before it PROG.aflow)
+  if (P.orient && pr && /^flake alignment/.test(pr.stage || '')) { P.share = Math.max(P.share, PROG.aflow + (1 - PROG.aflow) * Math.min(1, Math.max(0, pr.s || 0))); return P; }
   const sv = (live && live.solves) || [], n = sv.length, r = (live && live.r) || [];
   if (n) {
     const j = n - 1, k0 = sv[j][1];
@@ -54,7 +57,7 @@ function prog2DFeed(P, pr, live) {
   const f1 = !climbs ? PROG.pin * Math.min(1, (Math.max(0, nf - 1) + (nf ? fF : 0)) / 2)
     : PROG.pin + (1 - PROG.pin) * (1 - Math.pow(1 - PROG.climb, nf - 1 - pin) * (1 - PROG.climb * fF));
   const s = !P.struct ? f1 : !st ? PROG.flow * f1 : PROG.flow + (1 - PROG.flow) * (1 - Math.pow(1 - PROG.outer, st - 1) * (1 - PROG.outer * P.f));
-  P.share = Math.max(P.share, Math.min(1, s));
+  P.share = Math.max(P.share, Math.min(1, P.orient ? PROG.aflow * s : s));
   return P;
 }
 

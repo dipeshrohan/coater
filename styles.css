@@ -1678,3 +1678,20 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
   .mat-l { grid-column: 1 / -1; }
   .mat-src, .mat-src-t { grid-column: 1 / -1; }
 }
+
+/* ---- the flakes' alignment (GO-2): Flow › 2D › Flakes ---- */
+.or-stats { margin: 8px 0 4px; }
+.or-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px 16px; margin: 8px 0; }
+.or-fig { margin: 0; min-width: 0; }
+.or-fig figcaption { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.or-fig figcaption small { font-weight: 400; color: var(--muted); }
+.or-leg { font-size: 11px; margin-top: 2px; }
+.or-table { margin: 6px 0 10px; }
+.or-table summary { cursor: pointer; font-size: 12.5px; font-weight: 600; }
+.or-paste { margin: 6px 0; }
+.or-paste textarea { width: 100%; max-width: 640px; font: 12px var(--mono); padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.or-sets { margin: 6px 0; }
+.or-sets tr.on td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.or-tool { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; }
+.or-canvas { overflow: auto; max-height: 70vh; }
+.or-canvas canvas { display: block; cursor: crosshair; }

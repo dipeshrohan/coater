@@ -35,7 +35,7 @@ const lineSpeed = () => P.U / 60;
 const um0 = v => (v * 1e6).toFixed(0), gm2 = v => v.toFixed(0);
 
 // ---- the chain ----
-const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], later: ['Later phase', 'muted'] };
+const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'] };
 function processStages() {
   const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length;
   const two = CFD_LOCS.map((_, i) => twoDAt(i)), n2 = two.filter(t => t && !t.stale).length, s2 = two.filter(t => t && t.stale).length;
@@ -45,7 +45,9 @@ function processStages() {
     { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids; ${nA} of ${keys.length} values assumed` },
     { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : 'busy',
       s: [one ? 'wet film from the 1D' : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
-    { k: 'align', t: 'Flake alignment', st: 'later', s: 'the flakes lined up by the flow (GO-2)' },
+    (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
+      return { k: 'align', t: 'Flake alignment', go: 4, st: !MAT.orient.on ? 'set' : o.length ? 'solved' : 'wait',
+        s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].toLowerCase()}: computed with each 2D run` }; })(),
     { k: 'dry', t: 'Drying in the oven', go: 'oven', st: 'part', s: `${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m: the water to take out; the drying itself GO-3` },
     { k: 'film', t: 'Film, peeled off', st: 'part', s: 'its dry thickness and weight; stress, cracks and peel GO-4' },
     { k: 'props', t: 'Properties', st: 'later', s: 'the GO film, reduced and graphene film (GO-5)' },
@@ -236,6 +238,7 @@ function viewMaterials() {
         <div id="matRheoDerived"></div>
         <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matRheoReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matRheoCount"></span></div>
       </section>
+      ${orCardHTML()}
       ${rtCardHTML()}
       <section class="mat-card" aria-labelledby="matFibreH">
         <header><h3 id="matFibreH">${uiBadge('fibre')}Fibre web: what it is coated onto</h3><button type="button" class="linkish" id="matFibreEdit">Edit in Flow › 2D</button></header>
@@ -280,6 +283,7 @@ function viewMaterials() {
   document.getElementById('matFibreEdit').onclick = () => { FV.tree.fibre = true; tab = 4; render(); };
   matDerived();
   matRheoDerived();
+  orWire();
   rtDraw();
 }
 /** The rheology card's counts and warnings (in place). */

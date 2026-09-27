@@ -414,6 +414,8 @@ const FV = {
   crange: {},             // per field: a manual colour range { min, max } (either may be null = automatic), display units
   clog: {},               // per field: logarithmic colour scale (positive fields only)
   contours: false,        // contour lines (isolines) over the field
+  flakes: false,          // the flakes' alignment along the streamlines over the field (GO-2)
+  orTable: false,         // Flakes panel: the table by streamline open
   contourField: 'same',   // ... of this field ('same' = the colour field)
   mesh: false,            // draw the finite elements (edges and nodes) over the field
   meshQuality: false,     // ... filled by their quality instead of the field colours
@@ -481,6 +483,7 @@ function cfdGeometry(i) {
     muRep: muLaw(U / H, v('mu'), ty, n, rheoX),    // at the representative shear rate U/H: one-viscosity estimates only
     ...(rheoX ? { rheoX } : {}),
     ...(matStruct() ? { struct: matStruct() } : {}),   // (the structure model, when on: the 2D carries it along its flow)
+    ...(matOrient() ? { orient: matOrient() } : {}),   // (the flakes' alignment, when on: along the flow, then to the oven)
     model: CFDG.model, ty, n, rho: slurryRho(), gamma: v('g'), g: GRAVITY, ovenDistance: P.oven * Math.cos(skewRad()),   // (across the blade)
     own: Object.keys(CFD_LOCS[i].over), ownVals: { ...CFD_LOCS[i].over },
     solver: cfdSolverFor(i, H), solverOwn: Object.keys(CFD_LOCS[i].solver),
@@ -498,16 +501,23 @@ function solverFromSettings(s, H) {
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
   ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho, ...(geo.rheoX ? [geo.rheoX] : []), ...(geo.struct ? [geo.struct] : [])]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
-/** What a worker is sent to solve a location (solver: its settings, or others for a mesh study). */
-const cfdWorkerMessage = (geo, solver = geo.solver) => ({
+/**
+ * What a worker is sent to solve a location (solver: its settings, or others for a mesh study). withOrient: the flakes'
+ * alignment too, when it is on (the location's run and the DOE; not the mesh's studies, previews, measured-data
+ * solves or the 3D, which need the flow only).
+ */
+const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
   U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
   gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
   ...(geo.blade ? { blade: geo.blade, clModel: geo.clModel } : {}),
   ...(geo.rheoX ? { rheoX: geo.rheoX } : {}),
   ...(geo.struct ? { struct: geo.struct } : {}),
+  ...(withOrient && geo.orient ? { orient: geo.orient } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
+/** The alignment's own inputs (its model and the way to the oven): not the flow's, so a change needs only the alignment redone. */
+const cfdOrientKey = geo => JSON.stringify([geo.orient || null, geo.ovenDistance, geo.U]);
 
 // ---- solver messages: what each run did, in order (the Messages tab) ----
 const cfdLog = [];
@@ -539,7 +549,7 @@ function runLocation(i) {
   if (!cfdBatch.includes(i)) cfdBatch.push(i);
   run.status = 'running'; run.error = null; run.progress = null;
   run.live = { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol };
-  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT, !!geo.struct);
+  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT, !!geo.struct, !!geo.orient);
   let lastStage = null;
   logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : geo.shape === 'flat' ? 'flat land' : bladeText()}${geo.clModel === 'simple' ? ' (simple contact-line model)' : ''}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
@@ -559,7 +569,7 @@ function runLocation(i) {
       run.status = 'error'; run.error = `did not converge (residual ${r.residual.toExponential(1)} after ${r.iterations} steps)`;
     } else {
       Object.assign(run, {
-        status: 'done', result: r, geo, key: cfdInputsKey(geo), elapsedMs: ms,
+        status: 'done', result: r, geo, key: cfdInputsKey(geo), orientKey: r.orient ? cfdOrientKey(geo) : null, elapsedMs: ms,
         field: makeFlowField(r, { rho: geo.rho, ty: geo.ty }), streamCache: new Map(),
       });
       run.metrics = flowMetrics(run.field);
@@ -567,13 +577,14 @@ function runLocation(i) {
     if (run.status === 'done') {
       const tr = r.trace;
       logCFD(i, `solved in ${(ms / 1000).toFixed(1)} s: wet film ${(r.Q / geo.U * 1000).toFixed(3)} mm, contact line ${clWhere(r, true)}${r.shaped && r.shaped.note ? ` (${r.shaped.note})` : ''}, residual ${r.residual.toExponential(1)}${tr ? `, ${tr.solves.length} solves / ${tr.r.length} Newton iterates` : ''}${r.converged ? '' : ' (partly converged)'}`, r.converged ? 'ok' : 'warn');
+      if (r.orient) logCFD(i, orientLogText(r.orient), 'ok');
     } else logCFD(i, `failed: ${run.error}`, 'bad');
     renderRunChips();
     renderCFD();
     stepAfterRuns2D();
   };
   worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
-  worker.postMessage(cfdWorkerMessage(geo));
+  worker.postMessage(cfdWorkerMessage(geo, geo.solver, true));
   renderRunChips();
   renderCFD();
 }
@@ -768,6 +779,7 @@ function viewCFD() {
         <label class="fv-chk"><input type="checkbox" id="fvStream"${FV.streamlines ? ' checked' : ''}> Streamlines</label>
         <label class="fv-chk"><input type="checkbox" id="fvVec"${FV.vectors ? ' checked' : ''}> Vectors</label>
         <label class="fv-chk"><input type="checkbox" id="fvContours"${FV.contours ? ' checked' : ''}> Contours</label>
+        <label class="fv-chk" title="The flakes' alignment along the streamlines (computed with the 2D: Materials › Flakes)"><input type="checkbox" id="fvFlakes"${FV.flakes ? ' checked' : ''}> Flakes</label>
         <details class="vp-pop" id="fvMore"${FV.settingsOpen ? ' open' : ''}><summary class="tool-btn">${uiIco('tune')}Display</summary>
           <div class="pop-body">
             <div class="fv-grid">
@@ -832,7 +844,7 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
+          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('flakes', 'Flakes')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
           ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'])}
         </div>
         <div class="dock-body">
@@ -852,6 +864,7 @@ function viewCFD() {
           ${panel('across', `<div class="fv-bar"><label class="fv-ctl">Quantity <select id="xlMetric">${Object.entries(ACROSS).map(([k, m]) => opt(k, m.l, FV.across)).join('')}</select></label></div>
             <div id="cfdAcross"></div>`)}
           ${panel('profiles', '<h3 class="dock-h" id="cfdProfTitle">Profiles</h3><div id="cfdProfiles"></div>')}
+          ${panel('flakes', '<div id="cfdFlakes"></div>')}
           ${panel('fibre', '<div id="cfdFibre"></div>')}
           ${panel('conv', '<div id="cfdConv"></div>')}
           ${panel('mesh', '<div id="cfdMeshStudy"></div>')}
@@ -958,6 +971,7 @@ function viewCFD() {
   };
   bind('fvBase', 'base');
   bind('fvStream', 'streamlines', Boolean, 'checked');
+  bind('fvFlakes', 'flakes', Boolean, 'checked');
   bind('fvVec', 'vectors', Boolean, 'checked');
   bind('fvScale', 'yScale');
   bind('fvDensity', 'density');
@@ -1066,6 +1080,7 @@ function renderCFD() {
   renderAcross();
   renderFibre();
   renderProfiles();
+  renderFlakes();
   renderConvergence();
   renderSolverNote();
   if (typeof renderAccuracy === 'function') renderAccuracy();
@@ -1948,6 +1963,7 @@ function paintPlot(el, fast) {
     mesh: mo ? { quality: ctx.quality ? meshQuality(f) : null } : FV.mesh && f.curv ? { quality: FV.meshQuality && !ds ? meshQuality(f) : null } : null,
     contours: mo ? null : ds ? diffContours(ds, ranges.base) : contourSpec(f, ranges, zoom, ctx.fields),
     cuts: ds || mo ? [] : cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
+    flakes: FV.flakes && !ds && !mo ? orFlakeMarks(run) : null,
   });
   el._map = map;
   if (zoom) FV.zoom[zk] = map.view;           // (kept as clamped to the domain)

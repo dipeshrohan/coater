@@ -45,6 +45,11 @@ const DOE_OUTPUTS = [
   { k: 'stag', l: 'Stagnation points', u: '', g: 'Flow quality', d: 0 },
   { k: 'tres', l: 'Mean residence time to the edge', u: 's', g: 'Flow quality', d: 2 },
   { k: 'filmAcross', l: 'Film range across the web (1D)', u: 'µm', g: 'Across the web', d: 2 },
+  // (the flakes' alignment, when it is on: Materials › Flakes; computed with each run)
+  { k: 'flatOut', l: 'Flake flatness leaving the blade', u: '1 flat, 0 random', g: 'Flakes (alignment)', d: 3 },
+  { k: 'flatOven', l: 'Flake flatness at the oven', u: '1 flat, 0 random', g: 'Flakes (alignment)', d: 3 },
+  { k: 'mdSpread', l: 'SEM spread, cut along the web', u: '°', g: 'Flakes (alignment)', d: 1 },
+  { k: 'cdSpread', l: 'SEM spread, cut across the web', u: '°', g: 'Flakes (alignment)', d: 1 },
 ];
 const DOE = {
   loc: 0,
@@ -114,6 +119,8 @@ function doeOutputs(r, geo) {
     cl: r.mode === 'climbed' || (r.shaped && r.shaped.k) ? r.sCL * 1000 : 0, leave: r.leaveDeg,
     pMax: r.pMax, dpdx: -(r.pWeb[i + 1] - r.pWeb[i - 1]) / (r.xWeb[i + 1] - r.xWeb[i - 1]) / 1000, shear: gd,
     rev: m.reverseFraction * 100, recirc: m.recircArea * 1e6, stag: m.stagnation.length, tres: res.n ? res.mean : NaN,
+    flatOut: r.orient ? r.orient.film.out.Sy : NaN, flatOven: r.orient ? r.orient.film.oven.Sy : NaN,
+    mdSpread: r.orient ? r.orient.cuts.md.spread : NaN, cdSpread: r.orient ? r.orient.cuts.cd.spread : NaN,
   };
 }
 
@@ -185,7 +192,7 @@ function doeStart(run) {
     w1.postMessage({ id: 1, locs: [], across: G.across, ripple: G.ripple });
   };
   w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); settle(); };
-  w.postMessage(cfdWorkerMessage(geo));
+  w.postMessage(cfdWorkerMessage(geo, geo.solver, true));
 }
 function stopDOE() {
   if (DOE.status !== 'running') return;

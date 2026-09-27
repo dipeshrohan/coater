@@ -424,7 +424,7 @@ function accUse(i) {
   CFD_LOCS[i].solver = own;
   const geo = cfdGeometry(i), run = cfdRuns[i];
   if (!last.reused && JSON.stringify(geo.solver) === JSON.stringify(solverFromSettings(s, geo.H))) {
-    Object.assign(run, { status: 'done', error: null, result: last.r, geo, key: cfdInputsKey(geo), elapsedMs: last.ms, field: makeFlowField(last.r, { rho: geo.rho, ty: geo.ty }), streamCache: new Map() });
+    Object.assign(run, { status: 'done', error: null, result: last.r, geo, key: cfdInputsKey(geo), orientKey: null, elapsedMs: last.ms, field: makeFlowField(last.r, { rho: geo.rho, ty: geo.ty }), streamCache: new Map() });
     run.metrics = flowMetrics(run.field);
   }
   logCFD(i, `mesh from meshing to an accuracy kept: ${MESH_PRESETS[own.mesh].l.toLowerCase()}, ${last.nEx} × ${last.nEy} elements`);

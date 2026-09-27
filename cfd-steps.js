@@ -45,7 +45,7 @@ const STEP_DOCK_2D = {
   geometry: ['dims', 'problems', 'msgs', 'history'],
   mesh: ['meshlocs', 'mesh', 'accuracy', 'problems', 'msgs', 'history'],
   solve: ['conv', 'problems', 'msgs', 'history'],
-  results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method'],
+  results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'flakes', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method'],
 };
 /** The location a step other than Results shows (its own choice, independent of the Results' view). */
 const stepLoc2D = () => Math.max(0, Math.min(CFD_LOCS.length - 1, FV.stepLoc | 0));
