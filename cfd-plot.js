@@ -164,6 +164,7 @@ const rasterCache = new WeakMap();
  *                keeps its size; the window fills it (so its shape sets the vertical scale)
  *   fast         draw the colour raster at half resolution (while zooming / panning)
  *   cuts         [{ name, x1, y1, x2, y2, color }] -- cut lines (m), drawn with end ticks and their names
+ *   flakes       [{ x, y, A }] -- the flakes' alignment (A: their normals' second moment, 9 numbers) as ellipses
  *   contours     { sets: [{ v, lines }] (contourLines), colorOf: v => css colour | null (null = ink), fmt: v => label }
  *   mesh         { quality: meshQuality(f) | null } -- draw the finite elements' edges (curved through
  *                their mid nodes) and nodes over the field; with quality, the elements are filled by
@@ -502,6 +503,31 @@ function drawFlowPlot(cv, s) {
       if (q.inside) { c.fillStyle = cssVar('--warn'); c.fill(); }
       labelOn(c, q.name, px + r + 3, py, ink, 'left');
     }
+  }
+
+  // the flakes' alignment along the streamlines (GO-2): at each sample an ellipse, long along the flakes' plane in the
+  // x–y plane (the normals' main direction turned 90°), as thin as they are lined up (their normals' order in the plane),
+  // in the plot's own scale (with the vertical exaggerated, a slope is drawn steeper, as the streamlines are)
+  if (s.flakes && s.flakes.length) {
+    const sx = plotW / vw, sy = plotH / vh, R = compact ? 4.5 : 6.5, fl = cssVar('--accent');
+    c.save(); fluidPath(); c.clip();
+    for (const q of s.flakes) {
+      const px = X(q.x), py = Y(q.y);
+      if (px < pl - R || px > pr + R || py < pt - R || py > pb + R) continue;
+      const a = q.A[0], b = q.A[1], d = q.A[4], tr = a + d, df = Math.sqrt(Math.max(0, (a - d) * (a - d) / 4 + b * b));
+      const l1 = tr / 2 + df, l2 = tr / 2 - df, th = 0.5 * Math.atan2(2 * b, a - d);   // (the normals' main direction in x–y)
+      const ord = tr > 0 ? (l1 - l2) / tr : 0;
+      // (the flakes' plane: across the normals; on screen, with each axis's own scale)
+      const ex = -Math.sin(th) * sx, ey = Math.cos(th) * sy, ang = Math.atan2(-ey, ex);
+      // (as a polygon: the drawing context here may be a recorder for the image export, without ellipse())
+      const ra = R, rb = Math.max(0.8, R * (1 - 0.9 * ord)), ca = Math.cos(ang), sa = Math.sin(ang);
+      c.beginPath();
+      for (let k = 0; k <= 24; k++) { const t = k / 24 * 2 * Math.PI, u = ra * Math.cos(t), v = rb * Math.sin(t), qx = px + u * ca - v * sa, qy = py + u * sa + v * ca; k ? c.lineTo(qx, qy) : c.moveTo(qx, qy); }
+      c.closePath();
+      c.fillStyle = fl; c.globalAlpha = 0.28; c.fill(); c.globalAlpha = 1;
+      c.lineWidth = 1.1; c.strokeStyle = fl; c.stroke();
+    }
+    c.restore();
   }
 
   // cut lines: a halo, the line in its colour with a tick at each end, its name at the start

@@ -37,10 +37,12 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 
 // ---- the project as data, and back ----
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, MAT, OVEN]);
+// (the SEM images by their name and what was marked on them, not their pixels: a key cheap to make on every redraw)
+const projMatKey = () => ({ ...MAT, sem: MAT.sem ? { tables: MAT.sem.tables, images: MAT.sem.images.map(({ url, auto, ...q }) => ({ ...q, n: url ? url.length : 0, auto: !!auto })) } : null });
+const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
-  const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs } : null;
+  const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, orientKey: r.orientKey || null } : null;
   return {
     app: PROJ_APP, format: PROJ_FORMAT, saved: new Date().toISOString(), name: PROJ.name,
     inputs: Object.fromEntries(CFG.map(c => [c.k, P[c.k]])),
@@ -93,6 +95,15 @@ function applyMaterials(m) {
   // (the sidebar inputs a rheometer fit set, and the rheometer tests: kept as they are when they have their shape)
   if (m && m.rheo && m.rheo.side && typeof m.rheo.side === 'object') MAT.rheo.side = Object.fromEntries(Object.entries(m.rheo.side).filter(([k, q]) => ['mu', 'n', 'ty'].includes(k) && q && Number.isFinite(q.v)).map(([k, q]) => [k, { v: q.v, src: String(q.src || '') }]));
   if (m && Array.isArray(m.tests)) MAT.tests = m.tests.filter(t => t && t.id && t.name && RT_KINDS[t.kind] && Array.isArray(t.tables)).map(t => ({ ...t, warnings: Array.isArray(t.warnings) ? t.warnings : [] }));
+  // (the flakes' alignment card: a project from before GO-2 has none, the defaults; its SEM images and angle tables as saved)
+  const o = m && m.orient;
+  if (o) {
+    for (const k of Object.keys(MAT.orient)) if (o[k] && Number.isFinite(o[k].v)) MAT.orient[k] = { ...MAT.orient[k], ...o[k] };
+    if (typeof o.on === 'boolean') MAT.orient.on = o.on;
+    if (o.model === 'dh' || o.model === 'ft') MAT.orient.model = o.model;
+  }
+  const sem = m && m.sem;
+  if (sem) MAT.sem = { images: Array.isArray(sem.images) ? sem.images.filter(q => q && q.id && typeof q.url === 'string') : [], tables: Array.isArray(sem.tables) ? sem.tables.filter(q => q && q.id && Array.isArray(q.rows)) : [] };
 }
 /** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
 function applyOven(o, cfdSetup) {
@@ -135,7 +146,7 @@ function applyProject(p) {
     const s = (p.results || [])[i];
     if (s && s.result) {
       const field = makeFlowField(s.result, { rho: s.geo.rho, ty: s.geo.ty });
-      Object.assign(r, { status: 'done', result: s.result, geo: s.geo, key: s.key, elapsedMs: s.elapsedMs, field, streamCache: new Map(), metrics: flowMetrics(field) });
+      Object.assign(r, { status: 'done', result: s.result, geo: s.geo, key: s.key, orientKey: s.orientKey || null, elapsedMs: s.elapsedMs, field, streamCache: new Map(), metrics: flowMetrics(field) });
     } else r.status = 'idle';
   });
   cfdAutoStarted = cfdRuns.some(r => r.field);
@@ -318,7 +329,7 @@ function updateProjectTitle() {
 // ---------------------------------------------------------------------
 const SESSION = { suspended: true, lastKey: null, timer: 0 };
 /** What has to change for the session to be written again: inputs, view, results (2D and 3D), DOE, mesh study, project. */
-const sessionKey = () => [projKey(), JSON.stringify([tab, FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}`).join(','),
+const sessionKey = () => [projKey(), JSON.stringify([tab, FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}:${r.result && r.result.orient ? r.result.orient.ms : ''}`).join(','),
   DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : '', C3D_RES ? C3D_RES.when : ''].join('|');
 async function sessionSave(force = false) {
   if (SESSION.suspended || !window.indexedDB) return false;

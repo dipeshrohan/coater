@@ -138,17 +138,26 @@ function orRun(E, L, t, M, rng, opts) {
   return steps;
 }
 /**
- * The steady state in a constant gradient L, from random: run stretch after stretch (each half the longest of 50
- * strain units, 3 diffusion times, 3 mean-field times) until the moment A changes by less than tol over one (tol no
- * finer than the ensemble's own scatter, 0.75 / √n: below it the change is noise), at least 3 stretches and at most
- * maxStretches (30). Returns { E, converged, t }.
+ * The steady state in a constant gradient L, from random: run stretch after stretch until the moment A changes by
+ * less than tol over one (tol no finer than the ensemble's own scatter, 0.75 / √n: below it the change is noise), at
+ * least 3 stretches and at most maxStretches (30). A stretch is half of: Folgar–Tucker, the longest of 50 strain
+ * units and 3 diffusion times; Doi–Hess, its own time (the longest of 3 diffusion times, 3 mean-field times and 3
+ * growth times of order from random, 1 / (6 D_r |1 − U/5|)), or 50 strain units if shorter (the flow then leads).
+ * Doi–Hess above U = 5 in a slow shear has no steady state (the order keeps turning over: tumbling): converged false.
+ * Returns { E, converged, t }.
  */
 function orSteady(L, M, { n = 4000, seed = 7, tol = 3e-3, maxT = Infinity, E0 = null, maxStretches = 30 } = {}) {
   const rng = orRng(seed), E = E0 ? orCopy(E0) : orEnsemble(n, rng);
   const g = orGammaDot(L), Dr = orDr(L, M);
-  const scales = [g > 0 ? 50 / g : Infinity, Dr > 0 ? 3 / (6 * Dr) : Infinity, M.kind === 'dh' && M.U ? 3 / (3 * M.U * M.Dr) : Infinity].filter(Number.isFinite);
-  if (!scales.length) return { E, converged: true, t: 0 };
-  const stretch = Math.max(...scales.filter(s => s > 0)) / 2;
+  let stretch;
+  if (M.kind === 'dh' && Dr > 0) {
+    const own = Math.max(3 / (6 * Dr), M.U ? 3 / (3 * M.U * M.Dr) : 0, 3 / (6 * Dr * Math.max(0.03, Math.abs(1 - (M.U || 0) / 5))));
+    stretch = Math.min(own, g > 0 ? 50 / g : Infinity) / 2;
+  } else {
+    const scales = [g > 0 ? 50 / g : Infinity, Dr > 0 ? 3 / (6 * Dr) : Infinity].filter(Number.isFinite);
+    if (!scales.length) return { E, converged: true, t: 0 };
+    stretch = Math.max(...scales.filter(s => s > 0)) / 2;
+  }
   const tolE = Math.max(tol, 0.75 / Math.sqrt(E.n));
   let t = 0, prev = orA(E), converged = false;
   for (let k = 0; k < maxStretches && t < maxT; k++) {
