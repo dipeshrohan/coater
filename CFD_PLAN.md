@@ -419,6 +419,19 @@ GO-1c/d built:
   limits; 1D transport exact in uniform shear, its limits, converged in lines and stations, against the 2D along
   the flat land (0.35 %) and at the edge (flat 3.9 %, round 1.9 %: the 2D's corner and entry)).
 
+GO-1e built:
+- Materials: the rheology card edited in place (the model chosen there or in Flow › 2D; the Carreau–Yasuda and
+  Cross extras; the structure's switch and values, each with where it is from and its source; Defaults); the
+  sidebar's viscosity, n, yield stress and surface tension shown as they are (Measured while a fit's value holds).
+- Rheometer tests card: RheoCompass exports imported (flow curve, 3ITT, amplitude and frequency sweeps), plotted
+  with each fit, each value's standard error (flow-curve values by the delta method from the fit's covariance,
+  checked against the scatter of 60 noisy fits; loose above 25 % or at a fit bound), Use this fit to the card (the
+  sidebar inputs as their sliders take them, said in a message). Kept with the materials (project, cases, undo).
+- The structure shown: the 2D field λ (fixed 0..1 range; a run without it drawn as no data), its row in the flow
+  metrics and across the web, the outer iterations in the convergence panel, the field CSV's column; 1D To the
+  oven: λ along the blade and rebuilding on the web; the quick tabs' pills; the report (the card, the tests with
+  their plots and tables); help and guide entries.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

@@ -181,8 +181,6 @@ function rtDraw() {
   const ticks = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
   // (a standard error past 1000 %: just loose)
   const errText = (v, e, loose) => `${rtNum(v)}${Number.isFinite(e) && e <= 10 ? ` ± ${e < 0.001 ? '<0.1' : (e * 100).toPrecision(2)} %` : ''}${loose ? ' <span class="rt-loose">loose</span>' : ''}`;
-  // (round steps for a linear axis: 1, 2 or 5 times a power of ten, about five of them)
-  const niceTicks = (a, b) => { const r = (b - a) / 5, p = Math.pow(10, Math.floor(Math.log10(r))), st = [1, 2, 5, 10].map(m => m * p).find(q => q >= r) || r, out = []; for (let v = Math.ceil(a / st) * st; v <= b + 1e-9 * st; v += st) out.push(+v.toPrecision(12)); return out; };
   const tbl = (cols, rows) => `<table><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
   if (t.kind === 'flow') {
     const { gd, tau } = fit, eta = gd.map((g, i) => tau[i] / g), [x0, x1] = logRange(gd), [y0, y1] = logRange(eta);
@@ -207,8 +205,8 @@ function rtDraw() {
   } else if (t.kind === '3itt') {
     const { pts } = fit, [y0, y1] = logRange(pts.map(q => q.eta)), T = pts[pts.length - 1].t;
     const model = (f, c, dash) => ({ p: pts.map((q, i) => [q.t, L10(f.model[i])]), c, w: 2, dash });
-    const xt = niceTicks(0, T);
-    plotChart(cv, rtAspect(cv), { x0: 0, x1: Math.max(T, xt[xt.length - 1]), y0, y1, xticks: xt, yticks: ticks(y0, y1), xf: v => String(v), yf: dec, yl: 'viscosity (Pa·s)', xl: 'time (s)',
+    const xt = niceTicks(0, T, 5);   // (cfd-plot.js: round steps)
+    plotChart(cv, rtAspect(cv), { x0: 0, x1: T, y0, y1, xticks: xt, yticks: ticks(y0, y1), xf: v => String(+v.toPrecision(6)), yf: dec, yl: 'viscosity (Pa·s)', xl: 'time (s)',
       s: [{ p: pts.map(q => [q.t, L10(q.eta)]), c: ink, line: false, dots: true }, model(fit.common, locColor(0)), ...(fit.apart ? [model(fit.apart, locColor(1), [6, 4])] : [])] });
     document.getElementById('rtLegend').innerHTML = `<span><i class="rt-dot"></i>measured</span><span><i class="rt-sw" style="background:${locColor(0)}"></i>the structure model, one gain</span>${fit.apart ? `<span><i class="rt-sw dash" style="background:${locColor(1)}"></i>the yield and viscosity gains apart</span>` : ''}`;
     const row = (f, name, which) => `<tr><td>${name}</td><td class="num">${(f.rms * 100).toFixed(1)} %</td><td>${['tb', 'gdc', ...(which === 'apart' ? ['cy', 'ce'] : ['cy'])].map(k => `${which === 'common' && k === 'cy' ? 'gain c_y = c_η' : RT_VALS[k][0]} ${errText(f.S[k], f.err[k], f.loose.includes(k))}${RT_VALS[k][1] ? ' ' + RT_VALS[k][1] : ''}`).join(' · ')}</td><td><button type="button" class="btn btn-secondary btn-sm rt-use" data-which="${which}">Use this fit</button></td></tr>`;

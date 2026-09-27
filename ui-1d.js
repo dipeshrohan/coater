@@ -254,7 +254,7 @@ function view1DFilm() {
     // (time from entering the gap: under the blade, the lines' mean time at each station; then at rest on the web)
     const tE = St.tMean, blade = St.tAlong.map((t, k) => [t, St.along[k]]), web = [];
     for (let k = 0; k <= 120; k++) { const t = Rp.tRes * k / 120; web.push([tE + t, 1 - (1 - St.exit) * Math.exp(-t / St.S.tb)]); }
-    plotChart(c5, fitAspect(c5, 0.5), { x0: 0, x1: tE + Rp.tRes, y0: 0, y1: 1, yd: 1, xd: 0, yl: 'structure λ', xl: 'time from entering the gap (s)',
+    plotChart(c5, fitAspect(c5, 0.5), { x0: 0, x1: tE + Rp.tRes, y0: 0, y1: 1, yd: 2, xticks: niceTicks(0, tE + Rp.tRes, 5), xf: v => String(+v.toPrecision(6)), yl: 'structure λ', xl: 'time from entering the gap (s)',
       s: [{ p: blade, c: acc, w: 2.2 }, { p: web, c: acc, w: 2.2, dash: [6, 4] }], vl: [{ x: tE, c: mut, t: 'metering edge' }, { x: tE + Rp.tRes, c: warn, t: 'oven' }] });
   }
   const hEnd = hs[hs.length - 1], remain = Rp.atOven * 1e6;
