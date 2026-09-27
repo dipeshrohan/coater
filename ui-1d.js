@@ -46,11 +46,13 @@ function oneDRequest(needAcross) {
       ONE_D.res = { locs: e.data.locs }; ONE_D.key = key; ONE_D.error = null; ONE_D.ms = e.data.ms;
       if (e.data.across) { ONE_D.across = e.data.across; ONE_D.acrossKey = aKey; }
     } else ONE_D.error = e.data.error;
-    if (ONE_D.again || [8, 9, 10, 11].includes(tab)) render();
+    if (ONE_D.again || [8, 9, 10, 11, 12].includes(tab)) render();
   };
-  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([8, 9, 10, 11].includes(tab)) render(); };
+  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([8, 9, 10, 11, 12].includes(tab)) render(); };
   ONE_D.worker.postMessage({ id, locs, across: needAcross && aKey !== ONE_D.acrossKey ? across : null, ripple });
 }
+/** The 1D across the web, if it is for the inputs as they are (else null). */
+const oneDAcrossNow = () => ONE_D.across && ONE_D.acrossKey === JSON.stringify([acrossPositions().map(oneDGeoAt), oneDRipple()]) ? ONE_D.across : null;
 /** The results shown are for the inputs as they are (else they are the previous ones, being replaced). */
 const oneDCurrent = () => ONE_D.key === JSON.stringify([CFD_LOCS.map((_, i) => oneDGeo(i)), oneDRipple()]);
 /** Wait for the 1D results of the inputs as they are (the report). */
@@ -158,6 +160,20 @@ function view1DGap() {
   document.getElementById('oneDTable').innerHTML = oneDCompareTable();
 }
 
+/** The 3D result at a location, if solved: a strip there, its middle station; or the full width, its station nearest the location. */
+function threeDAt(i) {
+  const S = typeof C3D_RES !== 'undefined' ? C3D_RES : null;
+  if (!S) return null;
+  const R = S.result, stale = S.key !== c3dSolveKey3(S);
+  if (S.region === 'full') {
+    // (the web's edges open: nothing when the width was not solved, and only stations with a film of their own, not an edge block's)
+    if (!R.stations) return null;
+    const zi = CFD_LOCS[i].z / 1000 - R.zOff, own = new Set(c3dFilmStations(R));
+    let m = -1; R.stations.forEach((st, l) => { if (own.has(st) && (m < 0 || Math.abs(st.z - zi) < Math.abs(R.stations[m].z - zi))) m = l; });
+    return { R, m, stale };
+  }
+  return S.loc === i ? { R, m: (R.NL - 1) / 2, stale } : null;
+}
 /** The 1D / 2D / 3D table: per location, each stage's film, flow rate, peak pressure and contact line. */
 function oneDCompareTable() {
   const R = ONE_D.res;
@@ -171,20 +187,7 @@ function oneDCompareTable() {
     ['Contact line up the face', 'mm', L => L.men.pinned ? 0 : L.men.s * 1000, t => t.r.mode === 'climbed' ? t.r.sCL * 1000 : 0, 2, (R, m) => R.mode === 'climbed' ? R.stations[m].s * 1000 : 0],
   ];
   const head = `<tr><th>Quantity</th><th>Stage</th>${CFD_LOCS.map((l, i) => `<th>L${i + 1}<small>z ${l.z} mm</small></th>`).join('')}</tr>`;
-  // (3D: a strip at that location, its middle; or the full width, its station nearest the location)
-  const three = i => {
-    const S = typeof C3D_RES !== 'undefined' ? C3D_RES : null;
-    if (!S) return null;
-    const R = S.result, stale = S.key !== c3dSolveKey3(S);
-    if (S.region === 'full') {
-      // (the web's edges open: nothing when the width was not solved, and only stations with a film of their own, not an edge block's)
-      if (!R.stations) return null;
-      const zi = CFD_LOCS[i].z / 1000 - R.zOff, own = new Set(c3dFilmStations(R));
-      let m = -1; R.stations.forEach((st, l) => { if (own.has(st) && (m < 0 || Math.abs(st.z - zi) < Math.abs(R.stations[m].z - zi))) m = l; });
-      return { R, m, stale };
-    }
-    return S.loc === i ? { R, m: (R.NL - 1) / 2, stale } : null;
-  };
+  const three = threeDAt;
   const body = rows.map(([t, u, f1, f2, d, f3]) => ['1D', '2D', '3D'].map((s, k) => `<tr${k ? '' : ' class="grp-start"'}>${k ? '' : `<th rowspan="3">${t} <small>${u}</small></th>`}<td class="stage">${s}</td>${CFD_LOCS.map((_, i) => {
     const L = R.locs[i], two = twoDAt(i), v1 = f1(L);
     if (k === 0) return cell(v1, null, d);

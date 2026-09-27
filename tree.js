@@ -39,6 +39,7 @@ const PICON = {
   air: `<path d="M2 6h7.5a2 2 0 1 0-2-2M2 10h10a2 2 0 1 1-2 2M2 8h5" ${S}/>`,
   temp: `<path d="M6.5 9.5V3.5a1.5 1.5 0 0 1 3 0v6a3 3 0 1 1-3 0z" ${S}/><path d="M8 6.5v4.5" ${S}/>`,
   plenum: `<rect x="2.5" y="4.5" width="11" height="7" rx="1.5" ${S}/><path d="M5 8h6M9.5 6.5 11 8l-1.5 1.5" ${S} opacity=".6"/>`,
+  humidity: `<path d="M8 2.2c2.4 3 4 5.1 4 7.1a4 4 0 0 1-8 0c0-2 1.6-4.1 4-7.1z" ${S}/><path d="M6.3 11.3l3.4-3.4" ${S} opacity=".7"/><circle cx="6.5" cy="8.3" r=".75" fill="currentColor"/><circle cx="9.5" cy="11" r=".75" fill="currentColor"/>`,
   mesh: `<rect x="2.5" y="2.5" width="11" height="11" rx="1" ${S}/><path d="M2.5 6.2h11M2.5 9.8h11M6.2 2.5v11M9.8 2.5v11" ${S} opacity=".6"/>`,
   grading: `<rect x="2.5" y="2.5" width="11" height="11" rx="1" ${S}/><path d="M7.5 2.5v11M10.5 2.5v11M12.2 2.5v11" ${S} opacity=".6"/>`,
   tolerance: `<circle cx="8" cy="8" r="5.5" ${S}/><circle cx="8" cy="8" r="2.5" ${S} opacity=".7"/><circle cx="8" cy="8" r=".8" fill="currentColor"/>`,
@@ -66,12 +67,15 @@ const INPUT_ICON = {
   c3d_units: 'length', c3d_machine: 'process', c3d_up: 'height', c3d_inlet: 'pool', c3d_loc: 'location', c3d_stripW: 'position',
   c3d_nxGap: 'mesh', c3d_nxFilm: 'mesh', c3d_ny: 'mesh', c3d_nzStrip: 'mesh', c3d_nzFull: 'mesh',
 };
+/** The oven zones' inputs: by their field (zone 1's drying air also by its old id, above). */
+const OVEN_ICON = { len: 'length', airU: 'air', airT: 'temp', plenum: 'plenum', rh: 'humidity' };
 /** A read-only row's icon from its label (the DOE base case). */
 const LABEL_ICON = [[/^Location/, 'location'], [/^Gap/, 'height'], [/^Contact angle/, 'angle'], [/^Blade/, 'shape'], [/^Exit face/, 'exit'], [/^Rheology/, 'model'], [/^Fibre/, 'fibre'], [/^Mesh/, 'mesh'], [/^Across the web/, 'position']];
 /** Groups: their colour (a CSS variable) and icon; the shared inputs' groups by name, the setup's by their tree key. */
 const GROUPS = {
   'Process': ['process', 'process'], 'Slurry': ['slurry', 'drop'], 'Blade and bead': ['blade', 'shape'], 'Variation across the web': ['variation', 'wave'], 'Web edge and film': ['edge', 'ripple'],
   geo: ['blade', 'shape'], rheo: ['slurry', 'model'], fibre: ['process', 'fibre'], air: ['edge', 'air'], solver: ['neutral', 'mesh'], locs: ['variation', 'location'],
+  oven: ['edge', 'oven'], matro: ['slurry', 'drop'],
   anim: ['neutral', 'playback'], doe: ['neutral', 'doe'], meas: ['neutral', 'data'],
   c3d_geo: ['blade', 'shape'], c3d_region: ['variation', 'location'], c3d_mesh: ['neutral', 'mesh'],
 };
@@ -102,6 +106,8 @@ const cfdUses = () => {
 };
 /** Why a tab does not use an input (its hover note). */
 function unusedWhy(k) {
+  if (tab === 12) return 'not used by the process chain (it starts from the wet film)';
+  if (tab === 13) return 'not on a material card';
   if (tab === 4 || tab === 5 || tab >= 8) {
     if (k === 'n' || k === 'ty') return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
     if (k === 'L') return CFDG.shape === 'custom' ? 'not used with a custom blade profile (its points set the land)' : 'not used with a round blade entry (by the flat land and the shaped blades)';
@@ -111,7 +117,8 @@ function unusedWhy(k) {
 }
 // (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web and the 3D blade the notch face)
 // (the 3D also the contact angle on the web: its open edges)
-const inputUsed = k => { const u = tab === 4 || tab === 5 || tab === 8 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : tab === 9 ? [...cfdUses(), 'face', 'thw'] : USES[tab]; return !u || u.includes(k); };
+// (the Process tab: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
+const inputUsed = k => { const u = tab === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : tab === 4 || tab === 5 || tab === 8 || tab === 12 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : tab === 9 ? [...cfdUses(), 'face', 'thw'] : USES[tab]; return !u || u.includes(k); };
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {
@@ -126,7 +133,7 @@ function decorateTree() {
   tree.querySelectorAll('.prop, .sl').forEach(row => {
     if (row.querySelector(':scope > .pi, :scope > label > .pi, :scope > .prop-l > .pi')) return;
     const input = row.querySelector('input[id], select[id], .seg[id]');
-    let name = input ? INPUT_ICON[input.id.replace(/^n_/, '')] : null;
+    let name = input ? INPUT_ICON[input.id.replace(/^n_/, '')] || OVEN_ICON[input.dataset.ovk] : null;
     const lab = row.querySelector('.prop-l') || row.querySelector('label');
     if (!name && lab) { const hit = LABEL_ICON.find(([re]) => re.test(lab.textContent.trim())); if (hit) name = hit[1]; }
     if (!lab) return;

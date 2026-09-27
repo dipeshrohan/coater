@@ -1571,3 +1571,73 @@ body:has(#pgScope) #scope { display: none; }
 .acr-crown .acr-note { margin-left: 0; }
 .acr-crow { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 2px 6px; align-items: center; padding: 4px 0; }
 .acr-crow .acr-cbtn { grid-column: 2; display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ---- the oven's zones (sidebar) ---- */
+.ovz { margin: 2px 0 6px; }
+.ovz + .ovz { border-top: 1px solid var(--line-soft); padding-top: 4px; }
+.ovz-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 16px 2px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.ovz-h small { font-weight: 400; color: var(--muted); }
+.ovz-h .linkish { font-size: 12px; }
+.ovz-tag { font-size: 11px; font-weight: 600; color: var(--muted); }
+.ovz-line + .ovz-line { margin-top: 4px; }
+
+/* ---- Process: the chain of stages ---- */
+.chain { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+.chain li { position: relative; min-width: 0; display: flex; }
+.chain li + li::before { content: ''; position: absolute; left: -11px; top: 50%; width: 7px; height: 7px; border-top: 1.5px solid var(--muted); border-right: 1.5px solid var(--muted); transform: translateY(-50%) rotate(45deg); opacity: .75; }
+.ch-b { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; min-width: 0; }
+button.ch-b { cursor: pointer; }
+button.ch-b:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ch-later .ch-b { background: transparent; border-style: dashed; }
+.ch-later .ch-t { color: var(--muted); }
+.ch-n { font: 11px var(--mono); color: var(--muted); }
+.ch-t { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; line-height: 1.25; }
+.ch-st { font-size: 11px; padding: 1px 8px 1px 7px; border-radius: 9px; background: var(--soft); color: var(--ink); white-space: nowrap; }
+.ch-st::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: var(--muted); }
+.ch-st.ch-ok::before { background: var(--ok); }
+.ch-st.ch-bad::before { background: var(--bad); }
+.ch-st.ch-accent::before { background: var(--accent); }
+.ch-s { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.proc-mb td { font-family: var(--mono); }
+@media (max-width: 1180px) { .chain { grid-template-columns: repeat(3, minmax(0, 1fr)); } .chain li:nth-child(3n + 1)::before { display: none; } }
+@media (max-width: 640px) { .chain { grid-template-columns: minmax(0, 1fr); gap: 8px; } .chain li::before { display: none; } }
+
+/* ---- Materials: the cards ---- */
+.mat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 14px; align-items: start; }
+.mat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px 10px; min-width: 0; }
+.mat-card:first-child { grid-row: span 2; }
+.mat-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.mat-card h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.mat-card header .linkish { margin-left: 0; font-size: 12.5px; }
+.mat-count { font-size: 11.5px; color: var(--muted); }
+.mat-head, .mat-row { display: grid; grid-template-columns: minmax(130px, 1fr) 136px 112px minmax(0, 1.3fr); gap: 10px; align-items: center; }
+.mat-head { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 2px 0 4px; }
+.mat-row { padding: 5px 0; border-top: 1px solid var(--line-soft); min-width: 0; }
+.mat-l { font-size: 12.5px; color: var(--ink); min-width: 0; }
+.mat-v { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.mat-v input { font: 12px var(--mono); width: 76px; text-align: right; height: 26px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.mat-v b { font: 500 12.5px var(--mono); }
+.mat-v .prop-u { min-width: 0; }
+.mat-fsel { font: 12px var(--sans); height: 26px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 6px; background: var(--surface); color: var(--ink); padding: 0 4px; min-width: 0; }
+.mat-src { font: 12px var(--sans); height: 26px; padding: 2px 6px; border: 1px solid var(--line-soft); border-radius: 6px; background: transparent; color: var(--muted); min-width: 0; width: 100%; }
+.mat-v input:focus-visible, .mat-fsel:focus-visible, .mat-src:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); color: var(--ink); }
+.mat-src-t { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mat-flag { justify-self: start; font-size: 11px; padding: 1px 8px 1px 7px; border-radius: 9px; background: var(--soft); color: var(--ink); white-space: nowrap; }
+.mat-flag::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: var(--muted); }
+.mat-flag.f-given::before { background: var(--accent); }
+.mat-flag.f-assumed::before { background: var(--warn); }
+.mat-flag.f-measured::before { background: var(--ok); }
+.mat-fsel.f-given { border-left-color: var(--accent); }
+.mat-fsel.f-assumed { border-left-color: var(--warn); }
+.mat-fsel.f-measured { border-left-color: var(--ok); }
+.mat-derived .mat-row:first-child { border-top: 1px solid var(--line); margin-top: 4px; }
+.mat-warn { margin: 6px 0 0; font-size: 12px; }
+.mat-actions { display: flex; gap: 8px; padding-top: 8px; }
+@media (max-width: 700px) {
+  .mat-card:first-child { grid-row: auto; }
+  .mat-head { display: none; }
+  .mat-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+  .mat-l { grid-column: 1 / -1; }
+  .mat-src, .mat-src-t { grid-column: 1 / -1; }
+}

@@ -37,7 +37,7 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 
 // ---- the project as data, and back ----
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR]);
+const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, MAT, OVEN]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs } : null;
@@ -45,6 +45,7 @@ function projectData() {
     app: PROJ_APP, format: PROJ_FORMAT, saved: new Date().toISOString(), name: PROJ.name,
     inputs: Object.fromEntries(CFG.map(c => [c.k, P[c.k]])),
     cfdSetup: { ...CFDG }, solver: { ...CFDS }, across: JSON.parse(JSON.stringify(ACR)),
+    materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
     locations: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes, cuts: cfdCuts, cases: readCases() || [],
     view: { module: tab, FV },
@@ -81,6 +82,19 @@ function applyMeasured(m) {
   MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
   MEAS.dock = m.dock || 'compare'; MEAS.dockH = dockHSaved(m.dockH);
 }
+/** The slurry's card of a project (none, or a value it predates: the default). */
+function applyMaterials(m) {
+  MAT = matDefaults();
+  const s = m && m.slurry;
+  if (s) for (const k of Object.keys(MAT.slurry)) if (s[k] && Number.isFinite(s[k].v)) MAT.slurry[k] = { ...MAT.slurry[k], ...s[k] };
+}
+/** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
+function applyOven(o, cfdSetup) {
+  OVEN = ovenDefaults();
+  if (o && Array.isArray(o.zones) && o.zones.length) { OVEN.zones = o.zones.slice(0, OVEN_MAX_ZONES).map(z => ({ ...OVEN_ZONE_DEFAULT, ...z })); return; }
+  const c = cfdSetup || {};
+  for (const z of OVEN.zones) for (const k of ['airU', 'airT', 'plenum']) if (Number.isFinite(c[k])) z[k] = c[k];
+}
 /** The 3D setup of a project, its blade file and its last 3D solve (none: the defaults, no file, no result). */
 function applyC3D(c) {
   c = c || {};
@@ -96,6 +110,7 @@ function applyProject(p) {
   for (const c of CFG) setInput(c.k, p.inputs && c.k in p.inputs ? p.inputs[c.k] : c.v);   // (an input the project predates: its default)
   Object.assign(CFDG, CFDG_DEFAULTS); for (const k of Object.keys(CFDG)) if (p.cfdSetup && k in p.cfdSetup) CFDG[k] = p.cfdSetup[k];
   Object.assign(CFDS, SOLVER_DEFAULTS, p.solver || {});
+  applyMaterials(p.materials); applyOven(p.oven, p.cfdSetup);
   applyAcross(p.across);   // (a project from before: the blade across the web as it was, no new part)
   CFD_LOCS.forEach((l, i) => { const s = (p.locations || [])[i] || {}; l.z = s.z ?? LOC_Z_DEFAULTS[i]; l.over = { ...(s.over || {}) }; l.solver = { ...(s.solver || {}) }; });
   cfdProbes = Array.isArray(p.probes) ? p.probes.map(q => ({ ...q })) : []; saveProbes();
@@ -118,7 +133,7 @@ function applyProject(p) {
     } else r.status = 'idle';
   });
   cfdAutoStarted = cfdRuns.some(r => r.field);
-  meshStudy = p.meshStudy ? { ...p.meshStudy, runs: p.meshStudy.runs.map(r => ({ ...r, metrics: r.r ? flowMetrics(makeFlowField(r.r, { rho: RHO, ty: cfdGeometry(p.meshStudy.loc).ty })) : null })) } : null;
+  meshStudy = p.meshStudy ? { ...p.meshStudy, runs: p.meshStudy.runs.map(r => ({ ...r, metrics: r.r ? flowMetrics(makeFlowField(r.r, { rho: cfdGeometry(p.meshStudy.loc).rho, ty: cfdGeometry(p.meshStudy.loc).ty })) : null })) } : null;
   const d = p.doe || {};
   Object.assign(DOE, DOE_DEFAULTS, { loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: dockHSaved(d.dockH),
     design: d.design ? d.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null, runs: d.runs || [], status: d.runs && d.runs.length ? (d.status || 'done') : 'idle', key: d.key || null, t0: d.t0 || 0, t1: d.t1 || 0, active: new Set() });
@@ -137,6 +152,7 @@ async function newProject() {
   for (const c of CFG) setInput(c.k, c.v);
   Object.assign(CFDG, JSON.parse(JSON.stringify(CFDG_DEFAULTS)));
   Object.assign(CFDS, SOLVER_DEFAULTS);
+  applyMaterials(null); applyOven(null);
   applyAcross(null);
   CFD_LOCS.forEach((l, i) => { l.z = LOC_Z_DEFAULTS[i]; l.over = {}; l.solver = {}; });
   cfdProbes = []; saveProbes(); cfdCuts = []; saveCuts();

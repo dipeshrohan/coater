@@ -165,6 +165,8 @@ const TREE_NOTE = [
   'The 3D uses the 2D setup at the strip\'s location (blade, rheology, fibre, the gap and contact angle across the web), or a blade from an STL or STEP file; its geometry, region and mesh are below.',
   'The 1D uses these inputs and the 2D setup; the ripple comes from the gap waviness and vibration below.',
   'The 1D at every position across the web: the gap and contact angle vary there with the inputs under Variation across the web.',
+  'The chain starts from the wet film these inputs give (the 1D, or the 2D and 3D where solved); the oven\'s zones are below.',
+  'The rheology card and the fibre web card show these inputs as they are; the slurry\'s card is on the page.',
 ];
 /** The (i) of a view's toolbar: this tab's guide in the help. */
 const aboutButton = () => `<button type="button" class="icon-btn vp-about" data-about title="About this tab: what it answers and how to read it" aria-label="About this tab"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg></button>`;
@@ -579,15 +581,15 @@ function viewSummary() {
       <p class="pg-scope" id="pgScope"></p>
       <h2 class="sum-h">Go further</h2>
       <div class="sum-more">
-        <button type="button" data-sec="1">${uiBadge(4)}<b>Flow under the blade</b><span>1D along the blade, 2D CFD at four places across the web.</span></button>
-        <button type="button" data-sec="2">${uiBadge(5)}<b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
-        <button type="button" data-sec="3">${uiBadge(6)}<b>Check against your data</b><span>Import measurements and fit the model.</span></button>
+        <button type="button" data-sec="flow">${uiBadge(4)}<b>Flow under the blade</b><span>1D along the blade, 2D CFD at four places across the web.</span></button>
+        <button type="button" data-sec="doe">${uiBadge(5)}<b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
+        <button type="button" data-sec="meas">${uiBadge(6)}<b>Check against your data</b><span>Import measurements and fit the model.</span></button>
       </div>
     </div>
   </div>`;
   document.getElementById('sumInputs').onclick = () => setPanelHidden('model', false);
   view.querySelectorAll('.sum-card').forEach(c => { c.onclick = () => { tab = +c.dataset.view; render(); }; });
-  view.querySelectorAll('.sum-more [data-sec]').forEach(b => { b.onclick = () => goSection(+b.dataset.sec); });
+  view.querySelectorAll('.sum-more [data-sec]').forEach(b => { b.onclick = () => goSection(SECTIONS.findIndex(s => s.k === b.dataset.sec)); });
 }
 
 // ---------------------------------------------------------------------
@@ -595,9 +597,9 @@ function viewSummary() {
 // ---------------------------------------------------------------------
 // The views, by number (the number is what the project file, the undo history and the help keep):
 // 0 Start-up animation, 1 Contact line, 2 Web edge, 3 Film surface, 4 2D CFD, 5 DOE, 6 Measured data, 7 Summary,
-// 8 1D gap flow, 9 3D, 10 1D to the oven, 11 1D across the web.
+// 8 1D gap flow, 9 3D, 10 1D to the oven, 11 1D across the web, 12 Process, 13 Materials.
 let tab = 7;
-const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web'];
+const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web', 'Process', 'Materials'];
 /** What each view answers, in plain words (its tooltip, the welcome screen, its About). */
 const TAB_Q = [
   'How the slurry moves under the blade, from start-up (animation)',
@@ -612,6 +614,8 @@ const TAB_Q = [
   'How does the slurry flow in 3D, across the web too, and what film and contact line does it give? (3D)',
   'How does the film settle, and the ripple level, between the blade and the oven? (1D)',
   'How do the film and the contact line vary across the web? (1D at every position)',
+  'From the wet film to the dry GO film: how thick and heavy is it, and how much water must the oven take out?',
+  'What is the slurry made of, and what is it coated onto? Each value with its unit, where it is from, and whether it is assumed.',
 ];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
@@ -626,6 +630,8 @@ const TAB_ICONS = [
   '<path d="M8 1.8 14 5v6l-6 3.2L2 11V5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M2 5l6 3.2L14 5M8 8.2v6" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" opacity=".7"/>',
   '<path d="M1.5 10.5c1.5-3 3-4 6.5-4h6.5M1.5 13.5h13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
   '<path d="M1.5 9c1.2-1.4 2.4-1.4 3.6 0s2.4 1.4 3.6 0 2.4-1.4 3.6 0 1.6 1 2.2.6M3 4.5h10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M3 3v3M13 3v3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>',
+  '<rect x="1.2" y="5.8" width="3.6" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="11.2" y="5.8" width="3.6" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M4.8 8h6.4M9.4 6.4 11 8l-1.6 1.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3.5h10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/>',
+  '<path d="M6 1.8h4M6.6 1.8v4.3L2.9 12.6a1.1 1.1 0 0 0 1 1.6h8.2a1.1 1.1 0 0 0 1-1.6L9.4 6.1V1.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/><path d="M4.4 10.2h7.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".6"/>',
 ];
 /**
  * The tab bar's sections, each with its pages (views) in order: the first is where the section
@@ -634,6 +640,8 @@ const TAB_ICONS = [
  */
 const SECTIONS = [
   { k: 'results', t: 'Results', icon: 7, views: [7, 1, 2, 3] },
+  { k: 'process', t: 'Process', icon: 12, views: [12] },
+  { k: 'materials', t: 'Materials', icon: 13, views: [13] },
   { k: 'flow', t: 'Flow', icon: 4, views: [8, 10, 11, 0, 4, 9], groups: [{ k: '1d', t: '1D', views: [8, 10, 11, 0] }, { k: '2d', t: '2D', views: [4] }, { k: '3d', t: '3D', views: [9] }] },
   { k: 'doe', t: 'DOE', icon: 5, views: [5] },
   { k: 'meas', t: 'Measured data', icon: 6, views: [6] },
@@ -706,6 +714,11 @@ function render() {
   SEC_LAST[sec.k] = tab;
   if (grp) GROUP_LAST[grp.k] = tab;
   tabButtons().forEach(b => { const on = b.dataset.sec === sec.k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
+  // (a narrow window scrolls the tab bar: the section shown kept in view)
+  if (tabsEl.scrollWidth > tabsEl.clientWidth) {
+    const onB = tabButtons().find(b => b.dataset.sec === sec.k), r = onB.getBoundingClientRect(), m = tabsEl.getBoundingClientRect();
+    if (r.left < m.left) tabsEl.scrollLeft -= m.left - r.left + 8; else if (r.right > m.right) tabsEl.scrollLeft += r.right - m.right + 8;
+  }
   document.body.dataset.tab = tab;
   document.body.dataset.sec = sec.k;
   applyPanels();
@@ -716,7 +729,7 @@ function render() {
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials][tab]();
   wireModDock();
   acrossSidebar();
   decorateImageButtons();

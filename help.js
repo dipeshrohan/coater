@@ -70,10 +70,26 @@ const HELP = {
   'cfd.airDP': { t: 'Test pressure', d: 'Pressure difference of that air permeability test (0 = not stated in the report).', r: 'Range 0 to 2000 Pa', u: 'CFD fibre results' },
   'cfd.koz': { t: 'Kozeny constant', d: 'Constant of the Kozeny–Carman relation between porosity, filament size and permeability (about 5 for random fibres).', r: 'Range 1 to 20', u: 'CFD fibre results' },
   'cfd.airFrac': { t: 'Air fraction, top surface', d: 'Share of the fibre\'s top surface that is air pockets under the slurry: sets the slip of the slurry over the fibre.', r: 'Range 0.05 to 0.95', e: 'Higher: more slip at the web, the web drags the slurry less.', u: 'CFD (web slip), fibre results' },
-  // CFD: drying air
-  'cfd.airU': { t: 'Air speed up into the fibre', d: 'Speed of the oven\'s drying air driven up through the fibre. Assumed.', r: 'Range 0 to 50 m/s', u: 'CFD fibre results (drying air)' },
-  'cfd.airT': { t: 'Air temperature', d: 'Temperature of the drying air (sets its viscosity and density). Assumed.', r: 'Range 0 to 400 °C', u: 'CFD fibre results (drying air)' },
-  'cfd.plenum': { t: 'Plenum length', d: 'Length of the air plenum under the fibre in the oven. Assumed.', r: 'Range 1 to 5000 mm', u: 'CFD fibre results (drying air)' },
+  // Materials: the slurry's card
+  'mat.phi': { t: 'Solids', d: 'Volume fraction of the GO solids in the slurry. From you: over 40 vol% (the exact fraction not given).', r: 'Range 1 to 74 vol%', e: 'Higher: a denser slurry (the flow models), a thicker dry film and less water to take out.', u: 'Slurry density (all flow models), Process (mass balance)' },
+  'mat.rhoS': { t: 'Solids density (GO)', d: 'Density of the GO particles. Assumed: 1.9 g/cm³ (1.8–2.2 reported).', r: 'Range 1 to 3 g/cm³', u: 'Slurry density, dry coat weight' },
+  'mat.rhoL': { t: 'Liquid density (water)', d: 'Density of the liquid the solids are in: water.', r: 'Range 900 to 1100 kg/m³', u: 'Slurry density, the water to take out' },
+  'mat.dMean': { t: 'Particle size, mean', d: 'Mean size of the particles (flakes, across). From you: 2–8 µm (the mean not given).', r: 'Range 0.1 to 100 µm', u: 'The card (the flakes\' alignment in a later phase)' },
+  'mat.dMin': { t: 'Particle size, smallest', d: 'Smallest particle size. From you: 2 µm.', r: 'Range 0.1 to 100 µm', u: 'The card' },
+  'mat.dMax': { t: 'Particle size, largest', d: 'Largest particle size. From you: 8 µm.', r: 'Range 0.1 to 100 µm', u: 'The card' },
+  'mat.tFlake': { t: 'Flake thickness', d: 'Thickness of a GO flake. Assumed: about 1 nm (a single sheet).', r: 'Range 0.5 to 1000 nm', u: 'The card (the flakes\' aspect ratio in a later phase)' },
+  'mat.co': { t: 'C/O ratio', d: 'Carbon to oxygen ratio of the GO. Assumed: about 2.', r: 'Range 1 to 20', u: 'The card (reduction in a later phase)' },
+  'mat.phiDry': { t: 'Dry film packing', d: 'Solids fraction of the dry film: the stacked flakes and the pores between them. Assumed: 0.85.', r: 'Range 0.3 to 1', e: 'Higher: a thinner, denser dry film for the same wet film.', u: 'Process (dry film thickness, its density)' },
+  'mat.flag': { t: 'Where the value is from', d: 'From you (you gave it), Assumed (a typical value until measured) or Measured. The counts at the top of the card and the pills follow it.', u: 'Materials' },
+  'mat.src': { t: 'Source', d: 'Where the value comes from, in words: a datasheet, a test, a paper, you.', u: 'Materials, the report' },
+  'mat.reset': { t: 'Defaults', d: 'The slurry card back to its first values (with Undo to go back).', u: 'Materials' },
+  // CFD: drying air (each oven zone's)
+  'oven.len': { t: 'Zone length', d: 'Length of this oven zone along the line. The zones follow one another; the film spends length / web speed in each. Assumed.', r: 'Range 0.1 to 100 m', u: 'Oven length and time (Process)' },
+  'oven.airU': { t: 'Air speed up into the fibre', d: 'Speed of this oven zone\'s drying air driven up through the fibre. Assumed.', r: 'Range 0 to 50 m/s', u: 'CFD fibre results (drying air)' },
+  'oven.airT': { t: 'Air temperature', d: 'Temperature of this oven zone\'s drying air (sets its viscosity and density). Assumed.', r: 'Range 0 to 400 °C', e: 'Above the fibre\'s continuous use temperature: a warning in the fibre results.', u: 'CFD fibre results (drying air)' },
+  'oven.plenum': { t: 'Plenum length', d: 'Length of the air plenum under the fibre in this oven zone, along the line. Assumed.', r: 'Range 1 to 5000 mm', u: 'CFD fibre results (drying air)' },
+  'oven.rh': { t: 'Air humidity', d: 'Relative humidity of this oven zone\'s drying air. Assumed.', r: 'Range 0 to 100 %', u: 'Drying (next phases)' },
+  'oven.add': { t: 'Add zone', d: 'Adds an oven zone after the last one, starting with the last zone\'s values. Up to 8 zones; Remove takes a zone out.', u: 'The oven' },
   // CFD: solver and mesh
   'sol.mesh': { t: 'Mesh', d: 'Density of the finite-element mesh: Coarse, Medium (default) and Fine scale the element counts by 1/1.5, 1 and 1.5; Custom takes counts you set.', e: 'Finer: more accurate near the edge and the meniscus, but slower (Fine takes about ten times as long).', u: 'CFD, mesh study, the DOE' },
   'sol.nEb': { t: 'Elements along the blade', d: 'Elements from the pool edge to the metering edge (empty = about 0.6 gap each, 12 to 40).', r: 'Range 6 to 120', u: 'CFD' },
@@ -206,7 +222,7 @@ const HELP_RESULTS = {
 const HELP_BY_ID = {
   cfdR: 'cfd.R', cfdPool: 'cfd.pool', cfdExit: 'cfd.exit', cfdModel: 'cfd.model', cfdFibreSel: 'cfd.fibre', cfdGsm: 'cfd.gsm', cfdRhoF: 'cfd.rhoF',
   cfdDFrom: 'cfd.dFrom', cfdDen: 'cfd.den', cfdNf: 'cfd.nf', cfdAirPerm: 'cfd.airPerm', cfdAirDP: 'cfd.airDP', cfdKoz: 'cfd.koz', cfdAirFrac: 'cfd.airFrac',
-  cfdAirU: 'cfd.airU', cfdAirT: 'cfd.airT', cfdPlenum: 'cfd.plenum', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
+  ovzAdd: 'oven.add', matReset: 'mat.reset', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
   cfdShape: 'cfd.shape', cfd_bevelDeg: 'cfd.bevelDeg', cfd_bevelLen: 'cfd.bevelLen', cfd_edgeR: 'cfd.edgeR', cfd_inletGap: 'cfd.inletGap', cfd_land1: 'cfd.land1', cfd_stepH: 'cfd.stepH', cfd_riserDeg: 'cfd.riserDeg', cfdClModel: 'cfd.clModel', cfdEditCustom: 'cfd.custom', cfdRunAll: 'tb.run', cfdCancel: 'tb.stop', cfdViewSeg: 'tb.view', fvBase: 'tb.field', fvStream: 'tb.stream', fvVec: 'tb.vec',
   fvContours: 'tb.contours', cfdCutPlace: 'tb.cut', cfdProbePlace: 'tb.probe', imgBtn: 'tb.image', themeBtn: 'tb.theme',
   fvScale: 'dp.scale', fvContourField: 'dp.contourField', fvMesh: 'dp.mesh', fvMeshQ: 'dp.meshQ', fvDensity: 'dp.density', fvSeedMode: 'dp.seeds',
@@ -262,6 +278,15 @@ function applyHelp() {
     const row = el.closest('.prop');
     if (row) { set(row.querySelector('.prop-l'), key); addInfo(row, key); }
   }
+  // (the slurry's card: each value by its key, its flag and its source)
+  document.querySelectorAll('input[type=number][data-mk]').forEach(el => { const key = 'mat.' + el.dataset.mk; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
+  document.querySelectorAll('select[data-mk]').forEach(el => set(el, 'mat.flag'));
+  document.querySelectorAll('input.mat-src[data-mk]').forEach(el => set(el, 'mat.src'));
+  // (the oven's zones: each input by its field; zone 1's drying air keeps its old ids)
+  document.querySelectorAll('input[data-ovk]').forEach(el => {
+    const key = 'oven.' + el.dataset.ovk, row = el.closest('.prop');
+    set(el, key); if (row) { set(row.querySelector('.prop-l'), key); addInfo(row, key); }
+  });
   for (const q of typeof SOLVER_INPUTS !== 'undefined' ? SOLVER_INPUTS : []) {
     const el = document.getElementById('cfdS_' + q.k), row = el && el.closest('.prop');
     if (el) { set(el, 'sol.' + q.k); if (row) { set(row.querySelector('.prop-l'), 'sol.' + q.k); addInfo(row, 'sol.' + q.k); } }
