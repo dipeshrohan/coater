@@ -22,11 +22,31 @@ const MAT_SLURRY = [
   ['co', 'C/O ratio', '', 1, 20, 0.1, 1, 2, 'assumed', 'typical for GO (about 2)'],
   ['phiDry', 'Dry film packing', 'fraction', 0.3, 1, 0.01, 2, 0.85, 'assumed', 'solids fraction of the dry film (stacked flakes)'],
 ];
+/**
+ * How the slurry flows beyond the sidebar's inputs (GO-1), the same shape: the Carreau–Yasuda and Cross laws'
+ * extras ('law') and the structure (thixotropy) model's values ('struct'; rheo.js). All assumed until fitted.
+ */
+const MAT_RHEO = [
+  ['etaInf', 'Viscosity at high shear, η∞', 'Pa·s', 0, 5, 0.001, 3, 0.01, 'assumed', 'Carreau–Yasuda and Cross; at most half the viscosity at 2.7 1/s', 'law'],
+  ['lamT', 'Time constant λ', 's', 0.001, 1000, 0.01, 3, 1, 'assumed', 'Carreau–Yasuda and Cross: 1 / the shear rate where the slurry starts to thin', 'law'],
+  ['aCY', 'Transition sharpness a', '', 0.2, 5, 0.1, 1, 2, 'assumed', 'Carreau–Yasuda (2: the Carreau law)', 'law'],
+  ['tb', 'Rebuild time at rest', 's', 0.1, 100000, 1, 1, 30, 'assumed', 'tens of seconds, typical of GO dispersions in published thixotropy tests', 'struct'],
+  ['gdc', 'Shear rate that halves the structure', '1/s', 0.0001, 10000, 0.1, 3, 1, 'assumed', 'steady at this shear rate, half the structure is broken', 'struct'],
+  ['cy', 'Yield stress gain when rested, c_y', '', 0, 50, 0.1, 2, 2, 'assumed', 'rested, the yield stress is (1 + c_y)× the fully broken one', 'struct'],
+  ['ce', 'Viscosity gain when rested, c_η', '', 0, 50, 0.1, 2, 2, 'assumed', 'rested, the viscosity is (1 + c_η)× the fully broken one', 'struct'],
+];
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
-const matDefaults = () => ({ slurry: Object.fromEntries(MAT_SLURRY.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }])) });
+const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
+// (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
+// tests: the rheometer tests imported, rheo-ui.js)
+const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [] });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;
+/** A rheology value (its number). */
+const matR = k => MAT.rheo[k].v;
+/** The structure model's values for rheo.js, or null when it is off. */
+const matStruct = (m = MAT) => m.rheo.structOn ? { tb: m.rheo.tb.v, gdc: m.rheo.gdc.v, cy: m.rheo.cy.v, ce: m.rheo.ce.v } : null;
 
 /** The slurry's density (kg/m³) from its solids: phi rho_solids + (1 - phi) rho_liquid. */
 function slurryRho(m = MAT) {
@@ -62,4 +82,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_SLURRY, MAT_FLAGS, matDefaults, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_SLURRY, MAT_RHEO, MAT_FLAGS, matDefaults, matStruct, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

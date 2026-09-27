@@ -427,6 +427,7 @@ function c3dSharedGeometry(zc = ACROSS_W / 2) {
 function c3dSolveMessage(withFile = true) {
   const full = C3D.region === 'full', edgeR = C3D.region === 'edge', open = full && C3D.webEdges === 'open', i = C3D.loc, rgE = edgeR || open ? c3dRegion() : null;
   const msg = cfdWorkerMessage(full && !open ? c3dSharedGeometry() : rgE ? c3dSharedGeometry(rgE.zc * 1000) : cfdGeometry(i));
+  delete msg.struct;   // (the 3D takes the steady flow curve: the structure is the 2D's)
   // (the 3D's own element counts, with the 2D's refinement zones at every station; a location's adapted 2D mesh is its 2D's only)
   const { frac, ...sv } = msg.solver;
   msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: C3D.ny };

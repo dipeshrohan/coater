@@ -82,11 +82,17 @@ function applyMeasured(m) {
   MEAS.fit = m.fit || null; MEAS.fitKeys = Array.isArray(m.fitKeys) && m.fitKeys.length ? m.fitKeys : ['th']; MEAS.fitRange = m.fitRange || {}; MEAS.fitSets = m.fitSets || null;
   MEAS.dock = m.dock || 'compare'; MEAS.dockH = dockHSaved(m.dockH);
 }
-/** The slurry's card of a project (none, or a value it predates: the default). */
+/** The material cards of a project, the slurry's and how it flows (none, or a value it predates: the default). */
 function applyMaterials(m) {
   MAT = matDefaults();
-  const s = m && m.slurry;
-  if (s) for (const k of Object.keys(MAT.slurry)) if (s[k] && Number.isFinite(s[k].v)) MAT.slurry[k] = { ...MAT.slurry[k], ...s[k] };
+  for (const part of ['slurry', 'rheo']) {
+    const s = m && m[part];
+    if (s) for (const k of Object.keys(MAT[part])) if (s[k] && Number.isFinite(s[k].v)) MAT[part][k] = { ...MAT[part][k], ...s[k] };
+  }
+  if (m && m.rheo && typeof m.rheo.structOn === 'boolean') MAT.rheo.structOn = m.rheo.structOn;   // (a project from before GO-1: the structure model's default)
+  // (the sidebar inputs a rheometer fit set, and the rheometer tests: kept as they are when they have their shape)
+  if (m && m.rheo && m.rheo.side && typeof m.rheo.side === 'object') MAT.rheo.side = Object.fromEntries(Object.entries(m.rheo.side).filter(([k, q]) => ['mu', 'n', 'ty'].includes(k) && q && Number.isFinite(q.v)).map(([k, q]) => [k, { v: q.v, src: String(q.src || '') }]));
+  if (m && Array.isArray(m.tests)) MAT.tests = m.tests.filter(t => t && t.id && t.name && RT_KINDS[t.kind] && Array.isArray(t.tables)).map(t => ({ ...t, warnings: Array.isArray(t.warnings) ? t.warnings : [] }));
 }
 /** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
 function applyOven(o, cfdSetup) {

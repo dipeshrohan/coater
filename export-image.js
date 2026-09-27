@@ -288,6 +288,10 @@ function imageTargets() {
       canvases: () => [panes()[n]].filter(Boolean), legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => captionText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
     }));
     if (panes().length > 1) out.push({ id: 'panes', slug: 'plots', label: `All plots of “${mod}”`, canvases: panes, legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => '', subtitle: () => '', captions: true });
+    // (Materials: the rheometer test shown, GO-1)
+    const rt = () => document.getElementById('rtChart');
+    if (tab === 13 && rt()) out.push({ id: 'rheometer', slug: 'rheometer-test', label: `Rheometer test: ${(rtSel() || {}).name || ''}`, canvases: () => [rt()].filter(Boolean),
+      legend: () => document.querySelectorAll('#rtLegend span'), title: () => (rtSel() || {}).name || 'Rheometer test', subtitle: () => RT_KINDS[(rtSel() || {}).kind] || '' });
   }
   out.push({ id: 'window', slug: 'window', label: 'Whole window', window: true });
   return out;

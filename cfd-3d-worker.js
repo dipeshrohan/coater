@@ -20,7 +20,7 @@
  *   open, the bead pressure raised in steps from none; messages { id, step } after each step; the result as a strip's (at the
  *   highest pressure the edge held) with { region: 'edge', held, P, Pset, limit, steps, valid, squeeze, open (the surface round the edge) }.
  */
-importScripts('cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-fem3d.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-fem3d.js');
 
 /** Linear interpolation in a sorted table of [x, y]. */
 function interp(tab, x) {
@@ -89,7 +89,7 @@ function profileAtFor(o, strip, file) {
   return z => { const H = o.H + dH(z); if (!cache.has(H)) cache.set(H, bladeProfile({ ...o.blade, H })); return cache.get(H); };
 }
 function wideOpts(o, strip, file) {
-  const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
+  const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n, o.rheoX);
   const profileAt = profileAtFor(o, strip, file);
   const hAt = file && !profileAt ? fileHAt(file) : null, shape = file || profileAt ? null : bladeShape(o), p0 = profileAt ? profileAt(0) : null;
   const hFn = p0 ? p0.hUnder : file ? hAt(0) : shape.h, xe = p0 ? p0.xe : file ? file.xs[file.xs.length - 1] : shape.Lx, H = hFn(xe);
@@ -181,7 +181,7 @@ onmessage = e => {
   if (e.data.type) { try { wide(e); } catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); } return; }
   const { id, msg: o, strip, file } = e.data;
   try {
-    const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n);
+    const law = gd => muEffLocal(gd, o.muRef, o.ty, o.n, o.rheoX);
     let hFn, hAt = null, xe;
     const profileAt = profileAtFor(o, strip, file), p0 = profileAt ? profileAt(0) : null;
     if (p0) { hFn = p0.hUnder; xe = p0.xe; }

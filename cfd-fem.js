@@ -137,9 +137,11 @@ function solveFEM(o) {
   const Hr = o.Hr, Ur = o.Ur, gdRef = Ur / Hr, muR = o.mu(gdRef), Pr = muR * Ur / Hr;
   const epsTarget = (o.gdMin ?? 1e-3 * gdRef) / gdRef;
   let eps = epsTarget, sHom = 1;
-  const muLaw = gd => o.mu(Math.sqrt(gd * gd + eps * eps) * gdRef) / muR;
-  const muStar = gd => sHom === 1 ? muLaw(gd) : Math.pow(muLaw(gd), sHom);
-  const muTan = gd => { if (!(gd > 0)) return muStar(0); const d = 1e-5, a = gd * (1 + d), b = gd * (1 - d); return (muStar(a) * a - muStar(b) * b) / (a - b); };
+  // (with the structure: o.muL(gd, lambda) and lambda at the nodes from o.lamAt, held through the solve -- the
+  // outer iterations move it; the tangent is at fixed lambda)
+  const muLaw = o.muL ? (gd, l) => o.muL(Math.sqrt(gd * gd + eps * eps) * gdRef, l) / muR : gd => o.mu(Math.sqrt(gd * gd + eps * eps) * gdRef) / muR;
+  const muStar = (gd, l) => sHom === 1 ? muLaw(gd, l) : Math.pow(muLaw(gd, l), sHom);
+  const muTan = (gd, l) => { if (!(gd > 0)) return muStar(0, l); const d = 1e-5, a = gd * (1 + d), b = gd * (1 - d); return (muStar(a, l) * a - muStar(b, l) * b) / (a - b); };
   const Re = rho * Ur * Hr / muR;                         // inertia
   const Gr = rho * grav * Hr * Hr / (muR * Ur);            // gravity body force (nondim)
   const Ca = muR * Ur / (gamma || 1);                      // surface tension enters as 1/Ca
@@ -208,6 +210,9 @@ function solveFEM(o) {
     for (let n = 0; n < NN; n++) { X[n] /= Hr; Y[n] /= Hr; }
   };
 
+  // lambda at this mesh's nodes (the structure: from the last outer iteration's field, dimensional coordinates)
+  const lamN = o.lamAt && o.muL ? (placeNodes(), o.lamAt(X.map(v => v * Hr), Y.map(v => v * Hr))) : null;
+
   // element e = (ex, ey): node ids
   const elemNodes = (ex, ey) => {
     const r = new Int32Array(9);
@@ -239,8 +244,10 @@ function solveFEM(o) {
         u += ue[a] * q.N[a]; v += ve[a] * q.N[a]; ux += ue[a] * Nx[a]; uy += ue[a] * Ny[a]; vx += ve[a] * Nx[a]; vy += ve[a] * Ny[a];
       }
       for (let a = 0; a < 4; a++) p += pe[a] * q.P[a];
+      let lq = 0;
+      if (lamN) for (let a = 0; a < 9; a++) lq += lamN[nodes[a]] * q.N[a];
       const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx));
-      const mu = muStar(gd), wd = q.w * J;
+      const mu = muStar(gd, lq), wd = q.w * J;
       const txx = 2 * mu * ux, tyy = 2 * mu * vy, txy = mu * (uy + vx), div = ux + vy;
       for (let a = 0; a < 9; a++) {
         RL[a] += wd * (Re * (u * ux + v * uy) * q.N[a] + txx * Nx[a] + txy * Ny[a] - p * Nx[a]);
@@ -249,7 +256,7 @@ function solveFEM(o) {
       for (let i = 0; i < 4; i++) RL[18 + i] -= wd * q.P[i] * div;
       if (!withK) continue;
       // tangent: d tau = 2 mu dD + c4 (D:dD) D, c4 = 4 mu'/gd = 2 (mu_t - mu)/gd^2 (Newton only)
-      const c4 = newton && gd > 0 ? 2 * (muTan(gd) - mu) / (gd * gd) : 0;
+      const c4 = newton && gd > 0 ? 2 * (muTan(gd, lq) - mu) / (gd * gd) : 0;
       const Dxx = ux, Dyy = vy, Dxy = 0.5 * (uy + vx);
       for (let b = 0; b < 9; b++) {
         // trial: du = N_b e_x
@@ -292,16 +299,17 @@ function solveFEM(o) {
     out.fill(0);
     const nodes = elemNodes(ex, 0);
     for (const e of FEM_EDGE) {
-      let xs = 0, xt = 0, ys = 0, yt = 0, us = 0, ut = 0, vs = 0, vt = 0, u = 0;
+      let xs = 0, xt = 0, ys = 0, yt = 0, us = 0, ut = 0, vs = 0, vt = 0, u = 0, lq = 0;
       for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
         const n = nodes[b * 3 + a], Ns = e.dN[a] * B0[b], Nt = e.N[a] * dB0[b], uu = sol[dU[n]], vv = sol[dV[n]];
         xs += X[n] * Ns; xt += X[n] * Nt; ys += Y[n] * Ns; yt += Y[n] * Nt;
         us += uu * Ns; ut += uu * Nt; vs += vv * Ns; vt += vv * Nt; u += uu * e.N[a] * B0[b];
+        if (lamN) lq += lamN[n] * e.N[a] * B0[b];
       }
       const J = xs * yt - xt * ys;
       const ux = (yt * us - ys * ut) / J, uy = (xs * ut - xt * us) / J, vx = (yt * vs - ys * vt) / J, vy = (xs * vt - xt * vs) / J;
       const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx)), ds = Math.hypot(xs, ys);
-      const tau = muStar(gd) * lamS * (u - Us);
+      const tau = muStar(gd, lq) * lamS * (u - Us);
       for (let a = 0; a < 3; a++) out[a] += e.w * tau * e.N[a] * ds;
     }
   }
@@ -617,13 +625,13 @@ function solveFEM(o) {
   const epsDim = epsTarget * gdRef;
   for (let n = 0; n < NN; n++) {
     const ux = gUx[n] / cnt[n], uy = gUy[n] / cnt[n], vx = gVx[n] / cnt[n], vy = gVy[n] / cnt[n];
-    const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx)), mu = o.mu(Math.sqrt(gd * gd + epsDim * epsDim));
+    const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx)), gdr = Math.sqrt(gd * gd + epsDim * epsDim), mu = lamN ? o.muL(gdr, lamN[n]) : o.mu(gdr);
     gdo[n] = gd; muo[n] = mu; txy[n] = mu * (uy + vx); txx[n] = 2 * mu * ux; tyy[n] = 2 * mu * vy; omo[n] = vx - uy;
   }
   const st = stNow(), resid = res ? norms(res) : Infinity;
   if (o.onSolveEnd) o.onSolveEnd({ converged, residual: resid, iterations: it });
   return {
-    NC, NR, x: xo, y: yo, u: uo, v: vo, p: po, psi, gd: gdo, mu: muo, tauXY: txy, tauXX: txx, tauYY: tyy, omega: omo, Q, converged, iterations: it, factorizations, stages, history, solveId,
+    NC, NR, x: xo, y: yo, u: uo, v: vo, p: po, psi, gd: gdo, mu: muo, tauXY: txy, tauXX: txx, tauYY: tyy, omega: omo, ...(lamN ? { lam: lamN } : {}), Q, converged, iterations: it, factorizations, stages, history, solveId,
     residual: resid, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca },
     state: { sol: Float64Array.from(sol), h: st.h, s: st.s },
   };
@@ -635,7 +643,7 @@ function solveFEM(o) {
  * a bin grid), the nearest node for points outside r's domain. For warm
  * starts on a new mesh.
  */
-function femInterpolate(r, X, Y) {
+function femInterpolate(r, X, Y, fields = ['u', 'v', 'p']) {
   const NC = r.NC, NR = r.NR, x = r.x, y = r.y, n = X.length;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (let k = 0; k < x.length; k++) { x0 = Math.min(x0, x[k]); x1 = Math.max(x1, x[k]); y0 = Math.min(y0, y[k]); y1 = Math.max(y1, y[k]); }
@@ -647,7 +655,7 @@ function femInterpolate(r, X, Y) {
     const qx = q.map(i => x[i]), qy = q.map(i => y[i]);
     for (let b = by(Math.min(...qy)); b <= by(Math.max(...qy)); b++) for (let a = bx(Math.min(...qx)); a <= bx(Math.max(...qx)); a++) bins[b * nb + a].push(c * NR + k);
   }
-  const out = { u: new Float64Array(n), v: new Float64Array(n), p: new Float64Array(n) };
+  const out = Object.fromEntries(fields.map(f => [f, new Float64Array(n)]));
   for (let m = 0; m < n; m++) {
     const px = X[m], py = Y[m];
     let done = false;
@@ -664,13 +672,13 @@ function femInterpolate(r, X, Y) {
       }
       if (!(s > -1e-6 && s < 1 + 1e-6 && t > -1e-6 && t < 1 + 1e-6)) continue;
       const w = [(1 - s) * (1 - t), s * (1 - t), (1 - s) * t, s * t];
-      for (const [f, dst] of [[r.u, out.u], [r.v, out.v], [r.p, out.p]]) dst[m] = w[0] * f[q[0]] + w[1] * f[q[1]] + w[2] * f[q[2]] + w[3] * f[q[3]];
+      for (const k of fields) { const f = r[k]; out[k][m] = w[0] * f[q[0]] + w[1] * f[q[1]] + w[2] * f[q[2]] + w[3] * f[q[3]]; }
       done = true; break;
     }
     if (!done) {
       let best = 0, bd = Infinity;
       for (let k = 0; k < x.length; k++) { const d = (x[k] - px) ** 2 + (y[k] - py) ** 2; if (d < bd) { bd = d; best = k; } }
-      out.u[m] = r.u[best]; out.v[m] = r.v[best]; out.p[m] = r.p[best];
+      for (const k of fields) out[k][m] = r[k][best];
     }
   }
   return out;
@@ -882,13 +890,16 @@ function layerSize(d, L, after) {
  * meniscus { mode, alphaMaxDeg, s, leaveDeg, static }, or { error } for an unsupported case.
  */
 function solveCoaterFEM(opts) {
+  // (each solve keeps its arguments, not enumerable: the structure's outer iterations repeat the final one warm)
+  const femCall = a => { const r = solveFEM(a); if (r && typeof r === 'object') Object.defineProperty(r, 'call', { value: a, enumerable: false }); return r; };
   const { hFn, xe, faceDeg, contactDeg, U, Pup, rho, g, gamma, Ld } = opts;
   const H = hFn(xe), th = faceDeg * Math.PI / 180, alphaDeg = contactDeg + faceDeg - 180;
   const nEb = opts.nEb ?? 40, nEf = opts.nEf ?? 6, nEs = opts.nEs ?? 24, nEy = opts.nEy ?? 8, gradeB = opts.gradeB ?? 1.6, gradeS = opts.gradeS ?? 1.4, gradeY = opts.gradeY ?? 1.5;
   const xEnd = xe + Ld;
   const base = { U, rho, g, gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: H, Ur: Math.abs(U) || 1e-3,
     inlet: { type: 'traction', p: y => Pup - rho * g * y }, outlet: { type: 'plug' }, flatEnd: !U, webSlip: opts.webSlip,
-    tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration, onSolveStart: opts.onSolveStart, onSolveEnd: opts.onSolveEnd };
+    tol: opts.tol, maxIter: opts.maxIter, onIteration: opts.onIteration, onSolveStart: opts.onSolveStart, onSolveEnd: opts.onSolveEnd,
+    ...(opts.muL && opts.lamAt ? { muL: opts.muL, lamAt: opts.lamAt } : {}) };
 
   const MZ = opts.meshZones || null, MF = opts.meshFrac || null, FC = opts.meshCounts || null;
   function buildMesh(mode, s0, stat, fan) {
@@ -1287,13 +1298,13 @@ function solveCoaterFEM(opts) {
     if (from && from.r) {
       // warm start: the earlier solution interpolated onto this mesh, at the final rheology
       const { X, Y } = femNodes(m.mesh, { h: m.h0, s: s0 });
-      frozen = solveFEM({ ...base, label: `${where}: flow, surface frozen (warm start)`, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null, initNodal: femInterpolate(from.r, X, Y) });
+      frozen = femCall({ ...base, label: `${where}: flow, surface frozen (warm start)`, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null, initNodal: femInterpolate(from.r, X, Y) });
     }
-    if (!frozen || !frozen.converged) frozen = solveFEM({ ...base, label: `${where}: flow, surface frozen`, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null });
+    if (!frozen || !frozen.converged) frozen = femCall({ ...base, label: `${where}: flow, surface frozen`, mesh: m.mesh, h0: c => m.h0[c], s0, freeze: true, contactLine: null });
     if (!frozen.converged) return { error: 'flow with the surface frozen did not converge', r: frozen, m, stat };
     log(`${where}: surface and flow coupled`);
     // (held trial heights fail fast: a failure only halves the step toward them)
-    const r = solveFEM({ ...base, label: `${where}: surface and flow coupled`, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: ctx ? m.cBase : m.cCorner, alphaDeg: aUse } : null, s0,
+    const r = femCall({ ...base, label: `${where}: surface and flow coupled`, mesh: m.mesh, init: frozen.state, contactLine: free ? { spine: m.cCL, faceFrom: ctx ? m.cBase : m.cCorner, alphaDeg: aUse } : null, s0,
       homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, iterCap) });
     r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac, ...(ctx ? { k: ctx.k, cBase: m.cBase, nFixK: m.nFixK } : {}) };
     if (!r.converged) return { error: 'surface and flow coupled did not converge', r, m, stat };
@@ -1454,7 +1465,7 @@ function solveCoaterFEM(opts) {
           log(`contact angle continuation from ${c.toFixed(1)}° to ${contactDeg.toFixed(1)}°`);
           while (Math.abs(dc) >= 0.25) {
             const c1 = Math.abs(contactDeg - c) <= Math.abs(dc) ? contactDeg : c + dc, a1 = aOn(k, c1);
-            const r1 = solveFEM({ ...base, label: `contact angle ${c1.toFixed(1)}°, contact line free on the face`, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cBase, alphaDeg: a1 }, s0: cur.sNow,
+            const r1 = femCall({ ...base, label: `contact angle ${c1.toFixed(1)}°, contact line free on the face`, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cBase, alphaDeg: a1 }, s0: cur.sNow,
               homotopy: true, maxIter: 60 });
             if (r1.converged && r1.surface.s > sB) {
               r1.meshInfo = cur.r.meshInfo;
@@ -1534,7 +1545,7 @@ function solveCoaterFEM(opts) {
         if (best.s <= sB) return { pinned: true };
         best = remeshed(best, true);
         log('contact line free on the face: final solve');
-        const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cBase, alphaDeg: aK }, s0: best.s,
+        const r = femCall({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cBase, alphaDeg: aK }, s0: best.s,
           homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
         r.meshInfo = { mode: 'climbed', k, cCL: best.m.cCL, cCorner: best.m.cCorner, cBase: best.m.cBase, nFixK: best.m.nFixK, nEy: best.m.mesh.nEy, quality: best.m.quality, frac: best.m.frac };
         const o = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL), alpha: aK, ctx } : { ...best, error: undefined, heldOnly: true };
@@ -1621,7 +1632,7 @@ function solveCoaterFEM(opts) {
       log(`contact angle continuation from ${a.toFixed(1)}° to ${alphaDeg.toFixed(1)}°`);
       while (Math.abs(da) >= 0.25) {
         const a1 = Math.abs(alphaDeg - a) <= Math.abs(da) ? alphaDeg : a + da;
-        const r1 = solveFEM({ ...base, label: `contact angle ${(a1 + 180 - faceDeg).toFixed(1)}°, contact line free on the face`, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cCorner, alphaDeg: a1 }, s0: cur.sNow,
+        const r1 = femCall({ ...base, label: `contact angle ${(a1 + 180 - faceDeg).toFixed(1)}°, contact line free on the face`, mesh: cur.m.mesh, init: cur.r.state, contactLine: { spine: cur.m.cCL, faceFrom: cur.m.cCorner, alphaDeg: a1 }, s0: cur.sNow,
           homotopy: true, maxIter: 60 });
         if (r1.converged && r1.surface.s > 0) {
           r1.meshInfo = cur.r.meshInfo;
@@ -1684,11 +1695,32 @@ function solveCoaterFEM(opts) {
   best = remeshed(best, true);
   // release: contact-angle condition, starting from the held solution on its own mesh
   log('contact line free on the face: final solve');
-  const r = solveFEM({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cCorner, alphaDeg }, s0: best.s,
+  const r = femCall({ ...base, label: 'contact line free on the face: final solve', mesh: best.m.mesh, init: best.r.state, contactLine: { spine: best.m.cCL, faceFrom: best.m.cCorner, alphaDeg }, s0: best.s,
     homotopy: true, maxIter: Math.max(opts.maxIter ?? 0, 200) });
   r.meshInfo = { mode: 'climbed', cCL: best.m.cCL, cCorner: best.m.cCorner, nEy: best.m.mesh.nEy, quality: best.m.quality, frac: best.m.frac };
   const fin = r.converged ? { r, m: best.m, stat: best.stat, s: best.s, leave: leaveDeg(r, best.m.cCL) } : { ...best, error: undefined, heldOnly: true };
   return finish(fin, 'climbed', r.converged ? {} : { note: 'contact-angle solve did not converge; result held at the bracketed height' });
+}
+
+/**
+ * The final solve of a coating flow r (solveCoaterFEM's result) again, warm from its solution, on its mesh, with
+ * extra options (the structure's muL and lamAt, a label): the contact line where the final solve left it free
+ * (held, pinned) as it was. The mesh info and the meniscus are r's, the contact line's place and the surface's
+ * leaving angle as this solve finds them. null when r kept no final solve.
+ */
+function refineCoaterFEM(r, extra) {
+  if (!r || !r.call || !r.state) return null;
+  const r2 = solveFEM({ ...r.call, init: r.state, initNodal: undefined, ...extra });
+  if (!r2 || !r2.x) return r2;
+  Object.defineProperty(r2, 'call', { value: { ...r.call, ...extra }, enumerable: false });
+  r2.meshInfo = r.meshInfo;
+  if (r.meshDef) r2.meshDef = r.meshDef;
+  const cCL = r.meshInfo.cCL, NR = r2.NR, d = dq2(-1);
+  let tx = 0, ty = 0;
+  for (let a = 0; a < 3; a++) { const n = (cCL + a) * NR + NR - 1; tx += r2.x[n] * d[a]; ty += r2.y[n] * d[a]; }
+  r2.meniscus = { ...r.meniscus, s: r2.surface ? r2.surface.s : r.meniscus.s, leaveDeg: Math.atan2(ty, tx) * 180 / Math.PI };
+  if (!r2.converged) r2.error = r2.error || 'the flow with the structure did not converge';
+  return r2;
 }
 
 /**
@@ -1705,6 +1737,7 @@ function coaterGrid(r, geo) {
   const g = {
     grid: 'curvilinear', nx, ny, gx: re(r.x), gy: re(r.y), u: re(r.u), v: re(r.v), p: re(r.p), psi: re(r.psi),
     gd: re(r.gd), mu: re(r.mu), tauXY: re(r.tauXY), tauXX: re(r.tauXX), tauYY: re(r.tauYY), omega: re(r.omega),
+    ...(r.lam ? { lam: re(r.lam) } : {}),
   };
   const top = i => (ny - 1) * nx + i;
   const iCorner = r.meshInfo.cCorner, iCL = r.meshInfo.cCL;
@@ -1727,4 +1760,4 @@ function coaterGrid(r, geo) {
   };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveFEM, solveCoaterFEM, staticMeniscus, femNodes, femQuality, femInterpolate, coaterGrid, FEM_QP, zonedEnds, layerSize };
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveFEM, solveCoaterFEM, refineCoaterFEM, staticMeniscus, femNodes, femQuality, femInterpolate, coaterGrid, FEM_QP, zonedEnds, layerSize };

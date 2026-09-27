@@ -147,8 +147,24 @@ async function repMaterials() {
   const ro = rows => rows.map(([l, v, u, f, s]) => [repEsc(l), repEsc(repUnit(v, u)), f === 'calc' ? 'Worked out' : repEsc(flag(f)), repEsc(s)]);
   const head = ['', 'Value', 'From', 'Source'];
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
+  // the rheometer tests (GO-1): each one's plot and fit table, as the card shows them
+  let tests = '';
+  if ((MAT.tests || []).length) {
+    const keepSel = RT.sel;
+    tests = '<h3>Rheometer tests</h3>';
+    for (const t of MAT.tests) {
+      RT.sel = t.id; render(); await repFrame();
+      const tg = imageTargets().find(x => x.id === 'rheometer');
+      tests += `<h4>${repEsc(t.name)} · ${repEsc(RT_KINDS[t.kind])}</h4>` + `<p class="lede">${repEsc(cleanText(document.querySelector('.rt-meta')))}</p>`
+        + (tg ? repFigure(tg, `${t.name} · ${RT_KINDS[t.kind]}`) : '') + repTable(document.querySelector('#rtTable table'))
+        + [...document.querySelectorAll('#rtTable .mat-warn, #rtBody > .mat-warn')].map(p => `<p class="warn">${repEsc(cleanText(p))}</p>`).join('')
+        + [...document.querySelectorAll('#rtTable .rt-note')].map(p => `<p class="lede">${repEsc(cleanText(p))}</p>`).join('');
+    }
+    RT.sel = keepSel; render(); await repFrame();
+  }
   return '<h3>Slurry: GO in water</h3>' + repRows([...card, ...derived], head)
     + '<h3>Slurry: how it flows</h3>' + repRows(ro(matRheoRows()), head)
+    + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
 }

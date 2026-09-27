@@ -13,7 +13,7 @@ const ACROSS_N = 61, ACROSS_W = 300;   // positions across the web (mm) for Acro
 function oneDGeo(i) {
   const g = cfdGeometry(i);
   return { z: g.z, shape: g.shape, U: g.U, H: g.H, L: g.L, R: g.R, Xup: g.Xup, exitAngle: g.exitAngle, contactDeg: g.contactDeg, webSlip: g.webSlip,
-    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}) };
+    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}), ...(g.rheoX ? { rheoX: g.rheoX } : {}), ...(g.struct ? { struct: g.struct } : {}) };
 }
 /** At z (mm) across the web: the shared inputs with that position's gap and contact angle (no location's own values). */
 function oneDGeoAt(z) {
@@ -219,6 +219,9 @@ function view1DFilm() {
       { id: 'f3', icon: 'ripple', title: 'Ripple on the film, blade to oven', aria: 'Ripple amplitude from the blade to the oven',
         note: 'The ripple the gap waviness (through the film\'s sensitivity to the gap) and vibration leave, levelled by surface tension on this film; a yield stress stops it at a residual.' },
       { id: 'f4', icon: 3, title: 'Film surface across the web', aria: 'Film surface ripple just after the blade and at the oven', legend: oneDLegend([['just after the blade', cssVar('--muted'), 'dash'], ['at the oven', cssVar('--accent')]]) },
+      // (the structure, GO-1: broken down along the blade, rebuilding at rest on the web)
+      ...(matStruct() ? [{ id: 'f5', icon: 'model', title: 'Structure: along the blade, then at rest on the web', aria: 'Structure lambda against time, under the blade and on the web to the oven',
+        note: 'λ, flux weighted over the flow (0 broken down, 1 built up): steady at the inlet\'s shear rate, broken down under the blade, then rebuilding at rest on the web; its viscosity and yield stress follow it, so the ripple levels until the rebuilding yield stress holds it.' }] : []),
     ],
   });
   const R = ONE_D.res;
@@ -246,11 +249,20 @@ function view1DFilm() {
   const c4 = document.getElementById('f4');
   plotChart(c4, fitAspect(c4, 0.5), { x0: 0, x1: win, y0: -ym, y1: ym, yl: 'film deviation (µm)', xl: 'across the web (mm)',
     s: [{ p: p0, c: mut, dash: [5, 4] }, { p: p1, c: acc, w: 2.4 }] });
+  const St = L.struct, c5 = document.getElementById('f5');
+  if (St && c5) {
+    // (time from entering the gap: under the blade, the lines' mean time at each station; then at rest on the web)
+    const tE = St.tMean, blade = St.tAlong.map((t, k) => [t, St.along[k]]), web = [];
+    for (let k = 0; k <= 120; k++) { const t = Rp.tRes * k / 120; web.push([tE + t, 1 - (1 - St.exit) * Math.exp(-t / St.S.tb)]); }
+    plotChart(c5, fitAspect(c5, 0.5), { x0: 0, x1: tE + Rp.tRes, y0: 0, y1: 1, yd: 2, xticks: niceTicks(0, tE + Rp.tRes, 5), xf: v => String(+v.toPrecision(6)), yl: 'structure λ', xl: 'time from entering the gap (s)',
+      s: [{ p: blade, c: acc, w: 2.2 }, { p: web, c: acc, w: 2.2, dash: [6, 4] }], vl: [{ x: tE, c: mut, t: 'metering edge' }, { x: tE + Rp.tRes, c: warn, t: 'oven' }] });
+  }
   const hEnd = hs[hs.length - 1], remain = Rp.atOven * 1e6;
   document.getElementById('st').innerHTML =
     (remain > 5 ? pill('Ripple survives to the oven: ' + remain.toFixed(0) + ' µm', 'bad') : remain > 1 ? pill('Small ripple remains: ' + remain.toFixed(1) + ' µm', 'warn') : pill('Film levels out before the oven', 'ok'))
     + pill(`Film settles to ${hInf.toFixed(3)} mm within ${xs[k1].toFixed(1)} mm of the edge`, '')
     + pill(Rp.residual >= Rp.a0 && Rp.residual > 0 ? 'Yield stress blocks levelling completely' : Rp.residual > 0 ? 'Levels down to a yield-limited residual' : 'Levelling limited by viscosity only', '')
+    + (L.struct ? pill(`Structure λ ${L.struct.exit.toFixed(2)} leaving the blade (${L.struct.tMean.toFixed(0)} s under it), ${(1 - (1 - L.struct.exit) * Math.exp(-Rp.tRes / L.struct.S.tb)).toFixed(2)} at the oven${Rp.tFrozen != null && Rp.residualRested > 0 ? (Rp.tFrozen === 0 ? '; the yield stress holds the ripple from the start' : `; the rebuilding yield stress holds the ripple from ${Rp.tFrozen < 10 ? Rp.tFrozen.toFixed(1) : Rp.tFrozen.toFixed(0)} s`) : ''}`, '') : '')
     + (F.converged ? '' : pill('The film solve did not fully settle', 'warn'))
     + (oneDCurrent() ? '' : pill('Solving for the inputs as they are…', 'warn'));
   document.getElementById('ss').innerHTML = [

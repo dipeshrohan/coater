@@ -166,7 +166,7 @@ const TREE_NOTE = [
   'The 1D uses these inputs and the 2D setup; the ripple comes from the gap waviness and vibration below.',
   'The 1D at every position across the web: the gap and contact angle vary there with the inputs under Variation across the web.',
   'The chain starts from the wet film these inputs give (the 1D, or the 2D and 3D where solved); the oven\'s zones are below.',
-  'The rheology card and the fibre web card show these inputs as they are; the slurry\'s card is on the page.',
+  'The slurry\'s card and the rheology model, its laws\' extras and the structure are edited on the page; viscosity, n, yield stress, surface tension and the fibre web as set here and in Flow › 2D.',
 ];
 /** The (i) of a view's toolbar: this tab's guide in the help. */
 const aboutButton = () => `<button type="button" class="icon-btn vp-about" data-about title="About this tab: what it answers and how to read it" aria-label="About this tab"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg></button>`;
@@ -434,7 +434,9 @@ function view2() {
   });
 
   document.getElementById('st').innerHTML = pill(...verdict)
-    + pill('Capillary pressure ' + e.pc.toFixed(0) + ' Pa vs yield ' + P.ty.toFixed(1) + ' Pa', '');
+    + pill('Capillary pressure ' + e.pc.toFixed(0) + ' Pa vs yield ' + P.ty.toFixed(1) + ' Pa', '')
+    // (the structure, GO-1: just sheared at the blade, the slurry rebuilds on the web)
+    + (e.lam0 != null ? pill(`Structure λ ${e.lam0.toFixed(2)} just after the blade: grows at ${e.sig.toFixed(2)} 1/s at first (rested ${(P.g / (6 * e.muRested * e.R)).toFixed(2)} 1/s); ${e.arrest ? 'the yield stress holds it from the start' : Number.isFinite(e.tArrest) ? `the rebuilding yield stress holds it from ${e.tArrest.toFixed(0)} s (${(e.tArrest * U * 1000).toFixed(0)} mm)` : 'the rebuilt yield stress does not hold it'}`, '') : '');
 
   const c2 = document.getElementById('c2');
   const { c, w, h } = setupCanvas(c2, fitAspect(c2, 0.32));
@@ -477,7 +479,7 @@ function view2() {
 // Tab 4: Film surface
 // ---------------------------------------------------------------------
 function view3() {
-  const { lv, aEnd, remainMicrons, verdict } = surfaceOutlook(), { h, dhdH, a0, tau, residual: residualFromYield, asymptote, tRes } = lv;   // (physics.js)
+  const { lv, aEnd, remainMicrons, verdict } = surfaceOutlook(), { h, dhdH, a0, tau, residual: residualFromYield, tRes } = lv;   // (physics.js)
 
   view.innerHTML = moduleFrame({
     panes: [
@@ -506,7 +508,7 @@ function view3() {
   const tSpan = Math.max(tRes * 1.4, 1);
   for (let i = 0; i <= 100; i++) {
     const t = tSpan * i / 100;
-    tp.push([t, (asymptote + (a0 - asymptote) * Math.exp(-t / tau)) * 1e6]);
+    tp.push([t, lv.at(t) * 1e6]);
   }
   const c2 = document.getElementById('c2');
   plotChart(c2, fitAspect(c2, 0.34), {
@@ -521,6 +523,8 @@ function view3() {
   document.getElementById('st').innerHTML = pill(...verdict)
     + pill(P.ty > 0 && residualFromYield >= a0 ? 'Yield stress blocks levelling completely'
       : P.ty > 0 ? 'Levels down to a yield-limited residual' : 'Levelling limited by viscosity only', '')
+    // (the structure, GO-1: just sheared at the blade, the slurry rebuilds on the web)
+    + (lv.lam0 != null ? pill(`Structure λ ${lv.lam0.toFixed(2)} just after the blade, rebuilding at rest: levelling time ${tau.toFixed(2)} → ${lv.tauRested.toFixed(2)} s, residual ${(residualFromYield * 1e6).toFixed(0)} → ${(lv.residualRested * 1e6).toFixed(0)} µm${lv.tFrozen != null && lv.residualRested > 0 ? (lv.tFrozen === 0 ? '; held from the start' : `; held from ${lv.tFrozen < 10 ? lv.tFrozen.toFixed(1) : lv.tFrozen.toFixed(0)} s`) : ''}`, '') : '')
     // Ca's value is already in the validity banner above; here we just flag whether it crosses the ribbing threshold.
     + pill('Ribbing watch above Ca 0.5 (roll-coating value)', Ca > 0.5 ? 'warn' : '');
 

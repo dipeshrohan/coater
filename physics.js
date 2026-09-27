@@ -182,10 +182,21 @@ function edgeBead() {
   const h = contactLine(H, P.th).h / 1000; // mm -> m
   const R = h / 2;                         // bead treated as a half-round ridge
   const gd = 0.1;                          // slow, near-static relaxation
+  const capillaryPressure = P.g / R;           // Pa, Laplace pressure of the ridge
+  const wavelength = 9 * R * 1000;             // m -> mm
+  const st = rebuildOnWeb();
+  if (st) {
+    // the slurry rebuilding at rest on the web (GO-1): mu and the yield stress follow lambda(t) from just after the blade;
+    // the bead grows at gamma / (6 mu(t) R) until the rebuilding yield stress beats the ridge's pressure (tArrest), then holds
+    const { S, law, lam0 } = st, muOf = l => rheoMuStruct(gd, l, law, S), mu = muOf(lam0);
+    const lamStop = P.ty > 0 ? ((capillaryPressure / P.ty) * (1 + S.cy) - 1) / S.cy : Infinity;   // (lambda where the yield stress reaches it)
+    const arrested = lamStop <= lam0;
+    const tArrest = arrested ? 0 : lamStop < 1 ? S.tb * Math.log((1 - lam0) / (1 - lamStop)) : Infinity;
+    const growth = t => P.g / (6 * R) * rheoRestInv(muOf, lam0, S, Math.min(t, tArrest));   // (the growth exponent by time t)
+    return { h, R, mu, sig: P.g / (6 * mu * R), lam: wavelength, pc: capillaryPressure, arrest: arrested, lam0, tArrest, growth, muRested: muOf(1) };
+  }
   const mu = muEff(gd);
   const growthRate = P.g / (6 * mu * R);       // 1/s
-  const wavelength = 9 * R * 1000;             // m -> mm
-  const capillaryPressure = P.g / R;           // Pa, Laplace pressure of the ridge
   const arrested = capillaryPressure < P.ty;   // yield stress beats the driving pressure
   return { h, R, mu, sig: growthRate, lam: wavelength, pc: capillaryPressure, arrest: arrested };
 }
@@ -193,7 +204,19 @@ function edgeBead() {
 /** Edge scallop amplitude (mm) at x mm downstream of the blade (the Web edge tab's curve). */
 function edgeAmplitudeAt(xmm) {
   const e = edgeBead(), U = P.U / 60;
-  return e.arrest ? P.a0e / 1000 : Math.min(P.a0e / 1000 * Math.exp(e.sig * xmm / 1000 / U), e.lam / 4);
+  if (e.arrest) return P.a0e / 1000;
+  return Math.min(P.a0e / 1000 * Math.exp(e.growth ? e.growth(xmm / 1000 / U) : e.sig * xmm / 1000 / U), e.lam / 4);
+}
+
+/**
+ * The structure (thixotropy, GO-1) the quick tabs follow after the blade, when it is on: the Herschel–Bulkley law as
+ * muEff (rheo.js), S (materials.js), and lambda just after the blade, lam0: steady at the land's shear rate U / H (the
+ * representative rate these tabs use; the 1D carries it along the blade). Null when off.
+ */
+function rebuildOnWeb() {
+  const S = typeof matStruct === 'function' ? matStruct() : null;
+  if (!S) return null;
+  return { S, law: rheoCompile(P.mu, P.ty, P.n), lam0: rheoLamEq((P.U / 60) / (gapHeight() / 1000), S) };
 }
 
 /**
@@ -212,6 +235,16 @@ function rippleLevelling() {
   const residual = P.ty / (h * (P.g * k ** 3 + slurryRho() * GRAVITY * k));
   const asymptote = Math.min(a0, residual);
   const tRes = P.oven / (P.U / 60);                                          // residence time to the oven, s
+  const st = rebuildOnWeb();
+  if (st) {
+    // the slurry rebuilding at rest on the web (GO-1): mu and the yield stress follow lambda(t) from just after the blade
+    // (rheo.js's rheoLevel); tau and residual are their values just after the blade
+    const { S, law, lam0 } = st, rho = slurryRho();
+    const tauOf = l => 3 * rheoMuStruct(0.5, l, law, S) / (h * h * h * (P.g * k ** 4 + rho * GRAVITY * k * k));
+    const resOf = l => rheoYieldStruct(l, law, S) / (h * (P.g * k ** 3 + rho * GRAVITY * k));
+    const lv = rheoLevel(a0, lam0, S, tauOf, resOf);
+    return { h, dhdH, a0, tau: tauOf(lam0), residual: resOf(lam0), asymptote: lv.final(), tRes, at: lv.at, lam0, tFrozen: lv.frozen(), tauRested: tauOf(1), residualRested: resOf(1) };
+  }
   return { h, dhdH, a0, tau, residual, asymptote, tRes, at: t => asymptote + (a0 - asymptote) * Math.exp(-t / tau) };
 }
 
