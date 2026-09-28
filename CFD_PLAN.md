@@ -579,6 +579,61 @@ GO-3 built:
   dried. The report (Process: the drying, the zones' tops; Materials: the card), help cards, the guide; projects,
   undo (the card, the measured, the zones' tops); a pane's own legend in its image export.
 
+GO-4 decisions (user, with pictures; the pictures go into the app beside the choices they ask about):
+- Q56: both -- the slice through the film and the web along the line (2D) first, then the whole peeled sheet (3D).
+- Q57: all four are seen: cracks (a network, like dried mud), curl after peeling, hard to peel or it tears (bits
+  left on the web), wrinkles or blisters.
+- Q58: curl, cracks and the peel force are measured (or can be): each goes beside the computed.
+- Q59: peeled by hand first (pulled back, about 180°), then taken up by an automated winder.
+- Q60: the angle at the winder is not known: the force needed computed against every angle, 0 to 180°.
+- Q61: the winder's core is not known: an input, 76 mm assumed.
+- Q62: on the Process tab, under the drying: 5 · The film, peeled off.
+- Q63: peeled after a stretch in the room: its length an input; the drying followed through it to the peel.
+- Q64: on the roll the film's top (the side that faced the oven's air) faces out.
+
+GO-4 design (the slice; the sheet follows):
+- The drying followed to the peel: after the oven's last zone the strip runs through the room (the stretch's length
+  an input; the room's temperature and humidity, still air above and below) to the peel point. drying.js keeps,
+  when asked, the history the mechanics needs at every step: the fronts, the temperatures through the film, the
+  vapour pressure at each skin's outer face. Without the new options it runs exactly as before (GO-3's results and
+  checks unchanged).
+- The film is laid down layer by layer: a layer (fixed in the GO's own coordinate ζ) is born -- sets, carries
+  in-plane stress -- when a skin's front passes it (its solids reach the dry packing). Born stress-free: its natural
+  length is the web's length then. After it: it shrinks and swells with the water it holds (β per kg/kg, in-plane;
+  GO paper's pseudo-negative expansion, −67e-6/K from 25 to 150 °C as its water leaves: Su et al., Carbon 2012) and
+  with temperature (GO's own in-plane expansion near zero); the web with its temperature (PET fabric about
+  20e-6/K). The set film's water: its own diffusion (water vapour through GO at the skin's permeability, stored by
+  the isotherm, capped at the packing's pores as in GO-3), saturated at a wet front, at the air's (or the skin's
+  outer face's) activity at a surface. Stiffness: GO paper transversely isotropic (in-plane E_p, through E_t, G_pt,
+  ν), softer with water; the wet film under a skin a soft gel; the web an orthotropic layer (in-plane E_w).
+- Stress on the line (held flat): a laminate at each place along the line (the layers' natural strains, the web's,
+  force balance); where the film is in tension, channel cracks: the steady-state energy release rate of a crack
+  through the set layers from a 2D plane-strain FEM (quadratic elements, the layers as they are: skin, gel, web;
+  G = (1/2h)∫σδ over the crack's faces, Beuth) against the film's fracture energy; the crack spacing where cracks
+  stop forming (a crack midway between two at spacing s: G(s) = [2∫σu(s/2) − ∫σu(s)]/h, against the toughness).
+- The peel: steady peel of the film at angle θ (0–180°) with its residual strain, by the energy balance (exact for
+  an elastic arm, bending included: G = (F/b)(1 − (1+ε_b) cos θ) + (F/b)²/(2E h) + h u_b) against the interface's
+  toughness: the force needed against the angle (the winder's, not known) and at 180° (the hand start). Tear: the
+  film's tension at the peel front (the arm's pull plus its bending there, the elastica with a stiff interface: an
+  upper bound) against its strength. Bits left: the interface tougher than the film's own layers.
+- Curl: the free film's curvature from its layers' natural strains, right after peeling (water as it is then) and
+  settled in the room (water at the room's humidity): radius, and an edge's lift for a sheet of given length.
+  Winding (top out, the core's diameter an input): the surface's strain on the roll against the film's failure
+  strain; the curl it sets (a fraction, assumed 0 until measured).
+- Wrinkles and blisters: a skin compressed over the soft wet film (wrinkling stress and wavelength: the gel as a
+  thick substrate); the dry film compressed on the web (buckle-delamination: the blister's energy release against
+  the interface's toughness, the smallest width that buckles); steam under the skin (GO-3's boiling under the
+  skin: the overpressure lifts it).
+- Measured beside computed: the curl (radius, or an edge's lift with the sheet's length), the cracks (spacing,
+  width, where seen), the peel force (at its angle); each read back as the value it implies (the interface's
+  toughness from the peel force, the swelling coefficient from the curl, the fracture energy from the spacing),
+  with a button to use it.
+- Checks (film.validate.js): the patch test; Stoney's curvature; Timoshenko's bilayer (any thickness and stiffness
+  ratio); the channel crack in a film on a like substrate, Z = 1.976 (Hutchinson–Suo, Beuth); the peel's energy
+  balance against Kendall's equation (no residual strain) and the elastica's front moment (closed form against a
+  shooting solution); the moisture diffusion against its exact solution (constant diffusivity); layers born
+  stress-free; mesh convergence.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

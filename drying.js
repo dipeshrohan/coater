@@ -178,6 +178,8 @@ function drStretches(o) {
       ir: ir ? o.irAbs * z.ir : 0, bottom: z.airU > 0 ? { kind: 'air', ua: z.airU } : { kind: 'nat', ua: 0 } });
     x += z.len;
   });
+  // (after the oven, when asked: the room again, to the peel -- still air above and below, nothing blown)
+  if (o.after && o.after.len > 0) out.push({ name: 'after', x0: x, x1: x + o.after.len, Ta: o.after.T, pa: o.after.rh * drPsat(o.after.T), Tw: o.after.T, top: { kind: 'nat' }, ir: 0, bottom: { kind: 'nat', ua: 0 } });
   void P;
   return out;
 }
@@ -268,7 +270,8 @@ function drStrip(o) {
   if (!(o.h0 > 0) || !(o.U > 0)) throw new Error('no wet film, or the line not moving');
   const Zs = drStretches(o), xEnd = Zs[Zs.length - 1].x1, xStart = Zs[0].x0;
   // the skin's bound water: the dry GO's isotherm at the last zone's humidity (kept below the packing's pores)
-  const Zl = Zs[Zs.length - 1], aExit = Math.min(1, Zl.pa / drPsat(Zl.Ta)), Xb = drGAB(aExit, o.gab);
+  const Zl = [...Zs].reverse().find(Z => Z.name !== 'after'), aExit = Math.min(1, Zl.pa / drPsat(Zl.Ta)), Xb = drGAB(aExit, o.gab);
+  const xOven = Zs.filter(Z => Z.name !== 'after').pop().x1;   // (the oven's exit; the line's end when nothing follows it)
   const es = Math.min(Xb * rhoS / rhoL, 0.9 * em), swells = Xb * rhoS / rhoL > 0.9 * em;
   // each stretch's constant rate (the wet film's steady state were its surfaces to stay wet) and its drying Peclet
   // number h0 E / D(φ0) there
@@ -517,10 +520,22 @@ function drStrip(o) {
   };
   const thickness = () => { const L = zt - zb; let h = (Phi - L) / phiM; if (!dry) for (let j = 0; j < N; j++) h += L * ds[j] * (1 + e[j]); return h; };
   let lastE = { t: 0, b: 0 };
+  // (o.history: what the film's mechanics needs at every step -- the fronts, the temperatures through the film (the
+  // fixed ζ cells), the vapour pressure at each set surface: a skin's outer face, the air's once dry; NaN where the
+  // surface is the wet film's own, or sealed (the bottom when the water leaves from the top only))
+  const hist = o.history ? { x: [], t: [], zt: [], zb: [], dry: [], Ts: [], Tb: [], pvT: [], pvB: [], Tc: [], zone: [] } : null;
   const record = (Z, Et, Eb) => {
     const Tft = modeT === 'skin' ? Tat(zt, Tc, Ts, Tb) : Ts, Tfb = modeB === 'skin' ? Tat(zb, Tc, Ts, Tb) : Tb;
     series.push({ x, t, Ts, Tb, Tft, Tfb, Et, Eb, wet: dry ? 0 : wetWater(), bound: skinWater(), h: thickness(), skinT: (Phi - zt) / phiM, skinB: zb / phiM, zone: Z.name });
+    if (hist) {
+      const pvT = dry ? Z.pa : modeT === 'skin' && zt < Phi ? sideState(drTopSide, Z, Tft, Ts, (Phi - zt) / phiM).pv : NaN;
+      const pvB = !both ? NaN : dry ? Z.pa : modeB === 'skin' && zb > 0 ? sideState(drBottomSide, Z, Tfb, Tb, zb / phiM).pv : NaN;
+      hist.x.push(x); hist.t.push(t); hist.zt.push(zt); hist.zb.push(zb); hist.dry.push(dry ? 1 : 0); hist.Ts.push(Ts); hist.Tb.push(Tb);
+      hist.pvT.push(pvT); hist.pvB.push(pvB); hist.Tc.push(Float64Array.from(Tc)); hist.zone.push(Z.name);
+    }
   };
+  let ovenExit = null;
+  const atOven = () => { const w = dry ? 0 : wetWater(), b = skinWater(); ovenExit = { x, free: w, bound: b, water: w + b, waterPct: 100 * (w + b) / (Phi * rhoS), h: thickness(), Ts, Tb, dry }; };
   record(Zs[0], 0, 0);
   // energy (J/m²): the film's enthalpy (from 0 °C), the heat in at the surfaces, the heat of the water that left
   const enthalpy = CC => { let h = 0; for (let k = 0; k < M; k++) h += CC[k] * Tc[k]; return h; };
@@ -538,7 +553,7 @@ function drStrip(o) {
     const Z = stretchAt(x);
     // the next stop (a stretch's end or a profile's place) caps the step
     const xNext = stops.find(v => v > x + 1e-12) ?? xEnd;
-    let dtv = Math.min(dt, (xNext - x) / o.U, (xEnd - xStart) / 150 * (o.dtScale || 1) / o.U);
+    let dtv = Math.min(dt, (xNext - x) / o.U, (xOven - xStart) / 150 * (o.dtScale || 1) / o.U);   // (sized by the oven's line: a stretch after it leaves the oven's steps as they were)
     if (!dry) {
       // a skin forms where the surface's water reaches the packing's (the surface value from the last face's flux)
       if (modeT === 'free') {
@@ -613,6 +628,7 @@ function drStrip(o) {
     if (events.condense == null && (Et < 0 || Eb < 0)) events.condense = x;
     lastE = { t: Et, b: Eb };
     record(Z, Et, Eb);
+    if (ovenExit == null && Math.abs(x - xOven) < 1e-9) atOven();
     if (profX.some(v => Math.abs(v - x) < 1e-9)) profiles.push(profile(`${x.toFixed(2)} m`));
     // the next step
     dt = dtv * Math.min(1.6, Math.max(0.3, 1 / Math.max(chg, 1e-3)));
@@ -622,11 +638,13 @@ function drStrip(o) {
   const exit = series[series.length - 1];
   profiles.push(profile('exit'));
   const mGO = Phi * rhoS, free = dry ? 0 : wetWater(), bound = skinWater();
+  if (ovenExit == null) atOven();
   return {
     series, profiles, events, nSteps, stats,
     exit: { free, bound, water: free + bound, waterPct: 100 * (free + bound) / mGO, h: exit.h, Ts: exit.Ts, Tb: exit.Tb, dry }, aWet,
     energy: T.T == null ? { H0, H: enthalpy(cells(e, zb, zt).C), Qin, Qlat, Qsens } : null,
-    W0, evT, evB, lost, mGO, Pe, rates, es, swells, aExit, Xb, Tboil, xStart, xEnd,
+    W0, evT, evB, lost, mGO, Pe, rates, es, swells, aExit, Xb, Tboil, xStart, xEnd, xOven, ovenExit,
+    history: hist ? { ...hist, sT: Array.from(sT), M, N, Phi, phiM, em, es, n: hist.x.length, both } : null,
   };
 }
 
