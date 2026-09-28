@@ -132,6 +132,10 @@ async function repProcess() {
   await dryWait();        // (the drying in the oven, GO-3: every film, both ways the water may leave)
   await filmWait();       // (the film followed on to the peel, GO-4)
   if (typeof sheetWait === 'function') await sheetWait();   // (a piece of it in 3D, GO-4d)
+  if (typeof stackWait === 'function') await stackWait();   // (the pieces in the pressed stack, let go, GO-4f)
+  // (the module as cut; out of the stack and a day later after it)
+  const keepState = typeof SHEET !== 'undefined' ? SHEET.state : null;
+  if (keepState) SHEET.state = 'cut';
   let html = await repModule(12);
   const chain = [...document.querySelectorAll('.chain li')].map(li => [repEsc(cleanText(li.querySelector('.ch-t'))), repEsc(cleanText(li.querySelector('.ch-st'))), repEsc(cleanText(li.querySelector('.ch-s')))]);
   const t = document.querySelector('.proc-mb'), note = document.querySelector('#procTable .fv-note');
@@ -168,14 +172,29 @@ async function repProcess() {
     + (fStats.length ? repRows(fStats, ['', 'Top only · top and bottom']) : '')
     + (ft ? repTable(ft, { max: 12 }) : '')
     + (fmRows.length ? '<h4>Measured film</h4>' + repRows(fmRows, ['Measured', 'What', '']) + (fImp.length ? `<ul class="checks">${fImp.join('')}</ul>` : '') : '')
-    + '<h4>After the oven</h4>' + repRows([[repEsc(OVEN_PEEL_FIELDS[0][1]), repEsc(repUnit(repNum(pl.len, 1), 'm')), pl.lenSet ? 'From you' : 'Assumed'], [repEsc(OVEN_PEEL_FIELDS[1][1]), repEsc(repUnit(repNum(pl.core, 0), 'mm')), pl.coreSet ? 'From you' : 'Assumed']], ['', 'Value', 'From'])
+    + '<h4>After the oven</h4>' + repRows(OVEN_PEEL_FIELDS.map(([k, l, u, , , , d, flag]) => [repEsc(l), repEsc(repUnit(repNum(pl[k], d), u)), pl[flag] ? 'From you' : 'Assumed']), ['', 'Value', 'From'])
     + (fNote && cleanText(fNote) ? `<p class="lede">${repEsc(cleanText(fNote))}</p>` : '');
   // a piece in 3D (GO-4d): its state line, the two shapes in words, the measured size and what it implies (the drawings go with the plots)
   const sSt = document.getElementById('sheetState'), sL = ['sh1Lg', 'sh2Lg'].map(id => document.getElementById(id)).filter(Boolean);
   const sRows = ((MAT.filmMeas || {}).size || []).map(q => [q.loc === 'web' ? 'The web' : q.loc, repEsc(`size pressed flat, ${SHEET_WHEN[q.when] || SHEET_WHEN.dry}`), repEsc([Number.isFinite(q.L) ? `${q.L} mm long` : '', Number.isFinite(q.W) ? `${q.W} mm wide` : ''].filter(Boolean).join(', '))]);
   const sImp = [...document.querySelectorAll('#sheetMeas .film-imp li')].map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*Use (top only|top and bottom)'s/g, ''))}</li>`);
-  const piece = sSt && cleanText(sSt) ? `<h4>A piece cut from the roll, in 3D (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(sSt))}</p>` + repRows([['Held up (free)', repEsc(cleanText(sL[0]))], ['On a table (its weight)', repEsc(cleanText(sL[1]))]], ['', 'Its shape'])
+  let piece = sSt && cleanText(sSt) ? `<h4>A piece cut from the roll, in 3D (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(sSt))}</p>` + repRows([['Held up (free)', repEsc(cleanText(sL[0]))], ['On a table (its weight)', repEsc(cleanText(sL[1]))]], ['', 'Its shape'])
     + (sRows.length ? repRows(sRows, ['Measured', 'What', '']) + (sImp.length ? `<ul class="checks">${sImp.join('')}</ul>` : '') : '') : '';
+  // the pressed stack (GO-4f): its line and tiles (its two charts go with the plots); the piece out of the stack and a
+  // day later, each in words and drawn
+  const kSt = document.getElementById('stackState'), kTiles = [...document.querySelectorAll('#stackStats .stat')].map(el => [repEsc(cleanText(el.querySelector('span'))), repEsc(cleanText(el.querySelector('strong')))]);
+  if (kSt && cleanText(kSt)) piece += `<h4>In the pressed stack, and out of it</h4><p class="lede">${repEsc(cleanText(kSt))}</p>` + (kTiles.length ? repRows(kTiles, ['', 'Top only · top and bottom']) : '');
+  if (keepState && typeof stackCurrent === 'function' && stackCurrent()) {
+    for (const st of ['out', 'day']) {
+      SHEET.state = st; sheetRender(); await repFrame();
+      const lg = ['sh1Lg', 'sh2Lg'].map(id => cleanText(document.getElementById(id)));
+      const figs = imageTargets().filter(t => t.id.startsWith('pane:') && ['sh1', 'sh2'].includes((t.canvases()[0] || {}).id));
+      piece += `<h4>${repEsc(SHEET_STATES[st])} (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(document.getElementById('sheetState')))}</p>`
+        + repRows([['Held up (free)', repEsc(lg[0])], ['On a table (its weight)', repEsc(lg[1])]], ['', 'Its shape'])
+        + figs.map(t => repFigure(t, `${SHEET_STATES[st]}: ${t.title()}`)).join('');
+    }
+  }
+  if (keepState) { SHEET.state = keepState; sheetRender(); }
   return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
     + drying
     + film + piece

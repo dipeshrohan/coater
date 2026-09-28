@@ -89,6 +89,8 @@ const MAT_FILM = [
   ['nuw', 'Fibre web\'s Poisson\'s ratio', '', 0, 0.49, 0.01, 2, 0.3, 'assumed', 'a typical polymer'],
   ['alphaW', 'Fibre web\'s heat expansion', '×10⁻⁶/K', -50, 300, 1, 0, 20, 'assumed', 'polyester fibre expands about 0.4 % from 25 to 230 °C'],
   ['Eg', 'Wet film under a skin: its stiffness', 'kPa', 0.01, 1e6, 1, 1, 100, 'assumed', 'a GO paste: soft (its yield stress a few pascals, the Rheology card)'],
+  ['stackK', 'Water along the pieces in the pressed stack', '×10⁻⁷ kg/(m·s·Pa)', 1e-4, 1e6, 0.1, 3, 3, 'assumed', 'not measured: 3 is the least that fits your answers -- dry all over out of the drying oven, the size back to as cut 1–2 h later, the same a day later'],
+  ['creepTau', 'Its creep time wet (as cut), in the drying oven', 'min', 0.1, 1e5, 1, 1, 10, 'assumed', 'GO paper creeps, the more so with water (Su et al. 2012); not known: the waves in your photos will give it'],
 ];
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
@@ -161,10 +163,13 @@ const OVEN_ZONE_DEFAULT = { len: 2, airU: 1, airT: 100, plenum: 100, rh: 20, top
 // wound on the winder's core (Q61: not known, 76 mm assumed); lenSet / coreSet: set by you, else assumed)
 // (pieceL / pieceW: the pieces cut from the roll later, GO-4d -- Q65: 30 × 30 cm, from you; Q70: cut from the roll; dryT: the
 // drying oven the pieces are stacked in -- Q72: about 100 °C, from you; Q73/Q74: 1–2 h, pressed)
-const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true };
+// (tOven: the pieces' time in the drying oven -- Q73: 1–2 h, 1.5 from you; tRest: under the plate after it, in the room,
+// until they are taken out to be looked at and measured -- Q84/Q85: 1–2 h, 1.5 from you; GO-4f)
+const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true, tOven: 1.5, tRest: 1.5, stackSet: true };
 const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet'],
   ['pieceL', 'Piece\'s length (along the line)', 'mm', 10, 2000, 1, 0, 'pieceSet'], ['pieceW', 'Piece\'s width', 'mm', 10, 2000, 1, 0, 'pieceSet'],
-  ['dryT', 'Drying oven for the pieces', '°C', 20, 300, 1, 0, 'drySet']];
+  ['dryT', 'Drying oven for the pieces', '°C', 20, 300, 1, 0, 'drySet'], ['tOven', 'Time in the drying oven', 'h', 0.05, 48, 0.1, 2, 'stackSet'],
+  ['tRest', 'Under the plate after, until taken out', 'h', 0, 72, 0.1, 2, 'stackSet']];
 const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT } });
 let OVEN = ovenDefaults();
 const OVEN_MAX_ZONES = 8;

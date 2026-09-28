@@ -4,6 +4,9 @@
  * under its weight (Q67: where the curl is seen is not known), drawn in a view from above and the front with its
  * heights; its size pressed flat later against as cut (Q68/69); a measured size read back as the swelling it implies.
  * Q65: 30 × 30 cm pieces (an input); Q70: cut from the roll later.
+ * GO-4f (press.js, in two sheet workers, one per way): the pieces pressed in the stack -- their water through the drying
+ * oven and after it under the plate in the room, the stress each holds flat, the creep; the piece let go out of the stack
+ * (1–2 h after the oven, Q85) and a day later (Q81), its size then (Q83/Q86).
  */
 const SHEET = { res: null, key: null, busy: false, error: null, pending: null, worker: null, id: 0, way: 'top', again: false, prog: null, ms: 0 };
 const SHEET_WAYS = { top: 'top only', both: 'top and bottom' };
@@ -51,6 +54,64 @@ async function sheetWait() {
   return false;
 }
 
+// ---- the stack (GO-4f): the pieces pressed through the drying oven and under the plate after it; let go ----
+const STACK = { res: null, key: null, busy: false, error: null, pending: null, workers: [], id: 0, again: false, prog: {}, ms: 0 };
+const SHEET_STATES = { cut: 'As cut', out: 'Out of the stack', day: 'A day later' };
+SHEET.state = 'cut';
+/** The stack to solve: the pieces as sheetInputs, the stack's permeability and creep (the Film card), the times (after the oven). */
+function stackInputs() {
+  const q = sheetInputs();
+  if (!q || typeof drPsat !== 'function') return null;
+  const f = MAT.film, pl = OVEN.peel, P0 = q.pieces[0].plate;
+  if (!P0.tab) return null;
+  return { key: q.key, pieces: q.pieces, Lx: q.Lx, Ly: q.Ly,
+    stack: { K: f.stackK.v * 1e-7, tau: f.creepTau.v * 60, tOven: pl.tOven * 3600, tRest: pl.tRest * 3600, psatOven: drPsat(pl.dryT), psatRoom: drPsat(P0.Troom) } };
+}
+const stackKeyNow = () => { const q = stackInputs(); return q ? JSON.stringify(q) : null; };
+const stackCurrent = () => !!STACK.res && STACK.key === stackKeyNow();
+/** Solve the stack (each way in its own worker, side by side), unless it is solved or being solved. */
+function stackRequest() {
+  const q = stackInputs();
+  if (!q) return;
+  const key = JSON.stringify(q);
+  if (key === STACK.key || key === STACK.pending) return;
+  if (STACK.busy) { STACK.again = true; return; }
+  STACK.busy = true; STACK.again = false; STACK.pending = key; STACK.prog = {};
+  const id = ++STACK.id, runs = [], t0 = Date.now();
+  let left = q.pieces.length, failed = null;
+  const done = () => {
+    STACK.busy = false; STACK.pending = null; STACK.key = key;
+    if (failed) { STACK.res = null; STACK.error = failed; }
+    else { STACK.res = { runs: q.pieces.map(pc => runs.find(r => r.where === pc.where)), q }; STACK.error = null; STACK.ms = Date.now() - t0; }
+    if (STACK.again) stackRequest();
+    if (tab === 12) sheetRender();
+  };
+  q.pieces.forEach((pc, k) => {
+    if (!STACK.workers[k]) STACK.workers[k] = makeWorker('cfd-sheet-worker.js');
+    const w = STACK.workers[k];
+    w.onmessage = e => {
+      const m = e.data;
+      if (m.id !== id) return;
+      if (m.progress) { STACK.prog[pc.where] = m.progress; sheetStatusPaint(); return; }
+      if (m.ok) runs.push(...m.runs); else failed = failed || m.error;
+      if (--left === 0) done();
+    };
+    w.onerror = ev => { failed = failed || ev.message || 'the stack\'s worker failed'; if (--left === 0) done(); };
+    w.postMessage({ id, kind: 'stack', pieces: [pc], Lx: q.Lx, Ly: q.Ly, stack: q.stack });
+  });
+}
+/** Wait for the stack for the inputs as they are (the report): true when solved. */
+async function stackWait() {
+  if (!(await sheetWait())) return false;
+  for (let k = 0; k < 4800; k++) {
+    stackRequest();
+    if (!STACK.busy && stackCurrent()) return true;
+    if (!STACK.busy && STACK.error && STACK.key === stackKeyNow()) return false;
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return false;
+}
+
 // ---- pictures ----
 /** Q70: the roll kept, unwound and cut into pieces. */
 function filmPicCut(sc = 1) {
@@ -67,6 +128,16 @@ function filmPicDryStack(sc = 1) {
   const w = 190, h = 106, b = 86;
   let st = ''; for (let k = 0; k < 10; k++) st += `<rect x="62" y="${b - k * 5}" width="66" height="3" fill="#e8590c"/>`;
   return filmSvg(w, h, 'The pieces stacked 20 at a time under an aluminium plate in the drying oven', `<rect x="30" y="14" width="130" height="84" rx="6" fill="none" stroke="#c92a2a" stroke-width="2"/><text x="95" y="10" font-size="9" text-anchor="middle" fill="#c92a2a">drying oven</text>${st}<rect x="58" y="${b - 10 * 5 - 5}" width="74" height="6" fill="#adb5bd" stroke="#868e96"/><text x="95" y="${b - 10 * 5 - 9}" font-size="8" text-anchor="middle" fill="var(--muted)">aluminium plate</text>`, sc);
+}
+
+/** Q84/Q85: out of the oven, the stack stays under the plate in the room; the room's water comes back at its edges. */
+function filmPicStackRest(sc = 1) {
+  const w = 190, h = 96, b = 70;
+  let st = ''; for (let k = 0; k < 10; k++) st += `<rect x="62" y="${b - k * 5}" width="66" height="3" fill="#e8590c"/>`;
+  const arr = (x1, x2, y) => `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#1c7ed6" stroke-width="1.6" marker-end="url(#stArr)"/>`;
+  return filmSvg(w, h, 'Out of the oven the stack stays under the plate in the room; the room\'s water comes back in at its edges', `<defs><marker id="stArr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0L10,5L0,10z" fill="#1c7ed6"/></marker></defs>`
+    + `<line x1="20" y1="${b + 5}" x2="170" y2="${b + 5}" stroke="var(--muted)" stroke-width="2"/>${st}<rect x="58" y="${b - 10 * 5 - 5}" width="74" height="6" fill="#adb5bd" stroke="#868e96"/>`
+    + `${arr(34, 58, b - 18)}${arr(34, 58, b - 32)}${arr(156, 132, b - 18)}${arr(156, 132, b - 32)}<text x="95" y="10" font-size="9" text-anchor="middle" fill="var(--muted)">in the room, under the plate</text><text x="95" y="${b + 17}" font-size="8" text-anchor="middle" fill="#1c7ed6">the room's water in at the edges</text>`, sc);
 }
 
 // ---- the drawing: the piece in a view from above and the front, its heights exaggerated (said) ----
@@ -106,8 +177,9 @@ function drawSheet(cv, r, L, Wd, sign, table, col) {
 }
 
 /** A shape in words, from how high its ends (along the line) and its sides lift: which way it rolls, or a bowl. */
-const sheetShapeKind = r => { const ex = r.edgeX, ey = r.edgeY; return Math.max(ex, ey, r.corner) < 1e-4 ? 'flat' : ex > 3 * ey ? 'along' : ey > 3 * ex ? 'across' : 'bowl'; };
-const SHEET_SHAPES = { flat: 'flat', along: 'rolls up along the line: its ends lift (a tube lying across the web)', across: 'rolls up across the web: its sides lift (a tube lying along the line)', bowl: 'a bowl: its corners lift' };
+// (edges: both edges' middles well above its corners -- a wave along each edge, as a piece let go out of the stack can)
+const sheetShapeKind = r => { const ex = r.edgeX, ey = r.edgeY; return Math.max(ex, ey, r.corner) < 1e-4 ? 'flat' : ex > 3 * ey ? 'along' : ey > 3 * ex ? 'across' : r.corner < 0.7 * Math.min(ex, ey) ? 'edges' : 'bowl'; };
+const SHEET_SHAPES = { flat: 'flat', along: 'rolls up along the line: its ends lift (a tube lying across the web)', across: 'rolls up across the web: its sides lift (a tube lying along the line)', bowl: 'a bowl: its corners lift', edges: 'wavy edges: the middles of its edges lift more than its corners' };
 const sheetShapeText = r => SHEET_SHAPES[sheetShapeKind(r)];
 const sheetMM = v => `${(v * 1000).toFixed(v * 1000 >= 10 ? 0 : 1)} mm`;
 /** Its size pressed flat later over as cut (Q68/69), from its film's plate. */
@@ -121,17 +193,35 @@ function sheetSectionHTML() {
     <h3 class="oned-h">A piece cut from the roll, in 3D</h3>
     <div class="sheet-head">${filmPicCut(0.9)}<p class="fv-why">Pieces of ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm are cut from the roll later, then stacked 20 at a time under an aluminium plate and dried in the drying oven. As cut, how a piece curls is not known, nor where it is looked at, so it is shown held up (free) and lying on a table under its weight, drawn with its curl up.</p>
       <div class="seg" role="tablist" aria-label="Which way the water left" id="sheetWay">${Object.entries(SHEET_WAYS).map(([k, t]) => `<button type="button" role="tab" data-sheetway="${k}" aria-selected="${k === SHEET.way}">${t}</button>`).join('')}</div></div>
+    <div class="sheet-when"><span class="fv-why">The piece</span><div class="seg" role="tablist" aria-label="When the piece is shown" id="sheetWhen">${Object.entries(SHEET_STATES).map(([k, t]) => `<button type="button" role="tab" data-sheetwhen="${k}" aria-selected="${k === SHEET.state}">${t}</button>`).join('')}</div></div>
     <div id="sheetState"></div>
     <div class="dry-grid sheet-grid">
       <figure class="pane dry-pane"><figcaption>${uiBadge('film')}Held up (free)</figcaption><canvas id="sh1" role="img" aria-label="The cut piece held up, as it curls free, in a view from above and the front"></canvas><div class="pane-legend" id="sh1Lg"></div></figure>
       <figure class="pane dry-pane"><figcaption>${uiBadge('film')}On a table (its weight)</figcaption><canvas id="sh2" role="img" aria-label="The cut piece lying on a table under its weight, its curl up, in a view from above and the front"></canvas><div class="pane-legend" id="sh2Lg"></div></figure>
+    </div>
+    <div class="stack-sec" id="stackSec">
+      <h4 class="oned-h">In the pressed stack, and out of it</h4>
+      <div class="sheet-head stack-head">${filmPicDryStack(0.9)}${filmPicStackRest(0.9)}<p class="fv-why">Stacked 20 at a time, the pieces lie flat under the plate, free in their own plane. Their water leaves along them to the stack's edges in the drying oven, then comes back the same way under the plate in the room. Held flat, a piece carries the stress of its uneven water, and while wet it creeps and eases it: what the creep leaves is how the piece lies when it is taken out.</p></div>
+      <div id="stackState"></div>
+      <div class="stats" id="stackStats"></div>
+      <div class="dry-grid">
+        <figure class="pane dry-pane"><figcaption>${uiBadge('drop')}Water across a piece</figcaption><canvas id="st1" role="img" aria-label="The water along the middle of a piece from its edge in, at times in the drying oven and under the plate after it"></canvas><div class="pane-legend" id="st1Lg"></div></figure>
+        <figure class="pane dry-pane"><figcaption>${uiBadge('cut')}The pull held flat</figcaption><canvas id="st2" role="img" aria-label="The largest pull in a piece held flat in the stack against time, with the film's strength"></canvas><div class="pane-legend" id="st2Lg"></div></figure>
+      </div>
     </div>
     <div id="sheetMeas"></div>
   </div>`;
 }
 function sheetStatusPaint() {
   const el = document.getElementById('sheetState');
-  if (el && SHEET.busy) { const p = SHEET.prog; el.innerHTML = `<p class="dry-msg">${pill(p ? `The piece: ${p.k + 1} of ${p.n}…` : 'The piece…', '')}</p>`; }
+  if (el && SHEET.busy && SHEET.state === 'cut') { const p = SHEET.prog; el.innerHTML = `<p class="dry-msg">${pill(p ? `The piece: ${p.k + 1} of ${p.n}…` : 'The piece…', '')}</p>`; }
+  const sl = document.getElementById('stackState');
+  if (STACK.busy) {
+    const ps = Object.values(STACK.prog), k = ps.reduce((a, p) => a + p.k, 0), n = ps.reduce((a, p) => a + p.n, 0);
+    const msg = `<p class="dry-msg">${pill(n ? `The stack and the piece let go: ${k + 1} of ${n}…` : 'The stack and the piece let go…', '')}</p>`;
+    if (sl) sl.innerHTML = msg;
+    if (el && SHEET.state !== 'cut') el.innerHTML = msg;
+  }
 }
 function sheetRender() {
   const sec = document.getElementById('sheetSec');
@@ -141,6 +231,8 @@ function sheetRender() {
     sec.addEventListener('click', e => {
       const b = e.target.closest && e.target.closest('[data-sheetway]');
       if (b) { SHEET.way = b.dataset.sheetway; sheetRender(); return; }
+      const wn = e.target.closest && e.target.closest('[data-sheetwhen]');
+      if (wn) { SHEET.state = wn.dataset.sheetwhen; sheetRender(); return; }
       const del = e.target.closest && e.target.closest('[data-sheetdel]');
       if (del) { const k = +del.dataset.sheetdel; undoHint('Measured piece removed'); MAT = { ...MAT, filmMeas: { ...MAT.filmMeas, size: MAT.filmMeas.size.filter((_, i) => i !== k) } }; render(); return; }
       const use = e.target.closest && e.target.closest('[data-sheetuse]');
@@ -148,9 +240,12 @@ function sheetRender() {
     });
   }
   sec.querySelectorAll('[data-sheetway]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.sheetway === SHEET.way)));
+  sec.querySelectorAll('[data-sheetwhen]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.sheetwhen === SHEET.state)));
   const st = document.getElementById('sheetState');
   sheetMeasured();
+  stackRender();
   if (!filmCurrent()) { st.innerHTML = `<p class="fv-why">After the film is solved.</p>`; sheetClear(); return; }
+  if (SHEET.state !== 'cut') { sheetLetGo(); return; }
   if (!sheetCurrent()) {
     if (SHEET.error && SHEET.key === sheetKeyNow()) { st.innerHTML = `<p class="dry-msg">${pill(`The piece could not be solved: ${dryEsc(SHEET.error)}`, 'bad')}</p>`; sheetClear(); return; }
     sheetRequest(); sheetStatusPaint(); sheetClear(); return;
@@ -166,9 +261,88 @@ function sheetRender() {
   document.getElementById('sh2Lg').innerHTML = `<p class="fv-why">${words(run.table, true)}${run.table.middle > 1e-4 ? '' : '; its middle on the table'}.</p>`;
   const warn = [run.free, run.table].some(r => r.maxSlope > 0.35);
   const sz = sheetSize(P), both = q.pieces.map(x => ({ w: x.where, s: sheetSize(x.plate) }));
-  st.innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. As cut from the roll (before the drying oven), it wants to curl to a radius of ${Math.abs(P.kS) > 1e-6 ? `${(1000 / Math.abs(P.kS)).toFixed(0)} mm` : '—'} both ways${Math.abs(P.kSet) > 1e-9 ? `, and along the line the roll's set adds a curl of radius ${(1 / Math.abs(P.kSet) * 1000).toFixed(0)} mm` : ''}${topDown ? ' (away from its top: it is drawn and lies with its top down)' : ' (toward its top)'}. ${['along', 'across'].includes(sheetShapeKind(run.free)) ? `Held up, this piece rolls one way rather than keep a bowl (a bowl would have to stretch)${Math.abs(P.kSet) > 1e-9 ? ': along the line, the roll\'s set' : ': along the line here -- which way is decided by small differences, as the flakes\' alignment; with no roll set it could as well roll across'}.` : sheetShapeKind(run.free) === 'bowl' ? 'Held up, this piece is small enough to keep a bowl.' : ''} Dried through in the drying oven (${P.Tdry} °C) and pressed flat, a piece cut ${L.toFixed(0)} × ${Wd.toFixed(0)} mm measures <b>${(L * sz).toFixed(1)} × ${(Wd * sz).toFixed(1)} mm</b> (${((sz - 1) * 100).toFixed(2)} %; ${both.map(b => `${SHEET_WAYS[b.w]} ${((b.s - 1) * 100).toFixed(2)} %`).join(', ')}): on the roll its water (${(P.Xcut * 100).toFixed(1)} % of the GO) stays in; the oven's air (the room's heated, ${(P.rhDry * 100).toFixed(1)} % humidity) leaves ${(P.Xdry * 100).toFixed(1)} %. Whether 1–2 h in the pressed stack dries it through, and the wrinkles and waviness your pieces come out with, come next.${warn ? ` ${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}` : ''}</p>`;
+  st.innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. As cut from the roll (before the drying oven), it wants to curl to a radius of ${Math.abs(P.kS) > 1e-6 ? `${(1000 / Math.abs(P.kS)).toFixed(0)} mm` : '—'} both ways${Math.abs(P.kSet) > 1e-9 ? `, and along the line the roll's set adds a curl of radius ${(1 / Math.abs(P.kSet) * 1000).toFixed(0)} mm` : ''}${topDown ? ' (away from its top: it is drawn and lies with its top down)' : ' (toward its top)'}. ${['along', 'across'].includes(sheetShapeKind(run.free)) ? `Held up, this piece rolls one way rather than keep a bowl (a bowl would have to stretch)${Math.abs(P.kSet) > 1e-9 ? ': along the line, the roll\'s set' : ': along the line here -- which way is decided by small differences, as the flakes\' alignment; with no roll set it could as well roll across'}.` : sheetShapeKind(run.free) === 'bowl' ? 'Held up, this piece is small enough to keep a bowl.' : ''} Dried through in the drying oven (${P.Tdry} °C) and pressed flat while still dry, a piece cut ${L.toFixed(0)} × ${Wd.toFixed(0)} mm measures <b>${(L * sz).toFixed(1)} × ${(Wd * sz).toFixed(1)} mm</b> (${((sz - 1) * 100).toFixed(2)} %; ${both.map(b => `${SHEET_WAYS[b.w]} ${((b.s - 1) * 100).toFixed(2)} %`).join(', ')}): on the roll its water (${(P.Xcut * 100).toFixed(1)} % of the GO) stays in; the oven's air (the room's heated, ${(P.rhDry * 100).toFixed(1)} % humidity) leaves ${(P.Xdry * 100).toFixed(1)} %. Out of the stack and a day later: the buttons above; the stack itself: below.${warn ? ` ${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}` : ''}</p>`;
 }
+/** The piece let go (GO-4f): out of the stack or a day later, held up and on a table. */
+function sheetLetGo() {
+  const st = document.getElementById('sheetState');
+  if (!stackCurrent()) {
+    if (STACK.error && STACK.key === stackKeyNow()) { st.innerHTML = `<p class="dry-msg">${pill(`The stack could not be solved: ${dryEsc(STACK.error)}`, 'bad')}</p>`; sheetClear(); return; }
+    stackRequest(); sheetClear(); sheetStatusPaint(); return;
+  }
+  const q = STACK.res.q, run = STACK.res.runs.find(r => r.where === SHEET.way).stack, pl = OVEN.peel;
+  const k = SHEET.state === 'out' ? 'out' : 'day', fr = run.shapes[k + 'Free'], tb = run.shapes[k + 'Table'];
+  const L = q.Lx * 1000, Wd = q.Ly * 1000, col = DRY.sel === 'web' ? '#e8590c' : dryFilmColor(DRY.sel);
+  drawSheet(document.getElementById('sh1'), fr, L, Wd, fr.sign, false, col);
+  drawSheet(document.getElementById('sh2'), tb, L, Wd, 1, true, col);
+  const waves = r => (r.crestsEnd > 1 || r.crestsSide > 1) ? `; waves: ${r.crestsEnd} crests along its ends, ${r.crestsSide} along its sides` : '';
+  const words = (r, table) => `${sheetShapeText(r)}; its corners ${sheetMM(r.corner)} ${table ? 'off the table' : 'off its middle'}, the middles of its ends ${sheetMM(r.edgeX)}, of its sides ${sheetMM(r.edgeY)}${waves(r)}`;
+  document.getElementById('sh1Lg').innerHTML = `<p class="fv-why">${words(fr, false)}.</p>`;
+  document.getElementById('sh2Lg').innerHTML = `<p class="fv-why">${words(tb, true)}${tb.middle > 1e-4 ? '' : '; its middle on the table'}.</p>`;
+  const sz = k === 'out' ? run.sizeOut : run.sizeDay, cu = run.curl[k], rad = v => Math.abs(v) > 1e-6 ? `${(1000 / Math.abs(v)).toFixed(0)} mm` : 'none (flat)';
+  const Xk = k === 'out' ? run.Xend[run.Xend.length - 1] : q.pieces[0].plate.Xroom;
+  const when = k === 'out' ? `Out of the stack (${pl.tOven} h in the drying oven at ${pl.dryT} °C${run.rest ? `, then ${pl.tRest} h under the plate in the room` : ', taken out straight away'}), as you look at it and measure it: its water ${(Xk * 100).toFixed(1)} % of the GO (its middle ${(run.XmidEnd[run.XmidEnd.length - 1] * 100).toFixed(1)} %)`
+    : `A day later, laid out in the room: its water the room's all through (${(Xk * 100).toFixed(1)} % of the GO); what is left is what the stack's creep set`;
+  const warn = [fr, tb].some(r => r.maxSlope > 0.35);
+  st.innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. ${when}. Pressed flat it measures <b>${(L * (1 + sz[0])).toFixed(1)} × ${(Wd * (1 + sz[1])).toFixed(1)} mm</b> (${(sz[0] * 100).toFixed(2)} % from as cut). Its curl: a radius of ${rad(cu[0])} along the line and ${rad(cu[1])} across (as cut ${rad(run.curl.cut[0])} and ${rad(run.curl.cut[1])}): pressed in the stack, the creep eased it. A thin piece can settle in several shapes of about the same energy: this is the one it reaches let go gradually, even about both middle lines.${warn ? ` ${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}` : ''}</p>`;
+}
+
+/** The stack (GO-4f): tiles, the water across a piece through time, the pull held flat. */
+function stackRender() {
+  const el = document.getElementById('stackState');
+  if (!el) return;
+  const stats = document.getElementById('stackStats');
+  const clear = () => { stats.innerHTML = ''; for (const id of ['st1', 'st2']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, FILM_ASPECT); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } };
+  if (!filmCurrent() || !sheetInputs()) { el.innerHTML = '<p class="fv-why">After the film is solved.</p>'; clear(); return; }
+  if (!stackCurrent()) {
+    if (STACK.error && STACK.key === stackKeyNow()) { el.innerHTML = `<p class="dry-msg">${pill(`The stack could not be solved: ${dryEsc(STACK.error)}`, 'bad')}</p>`; clear(); return; }
+    stackRequest(); clear(); sheetStatusPaint(); return;
+  }
+  const q = STACK.res.q, [rt, rb] = STACK.res.runs.map(r => r.stack), pl = OVEN.peel, F = MAT.film, P = q.pieces[0].plate;
+  const both = (f, d = 0) => `${f(rt)} · ${f(rb)}`, pct = v => `${(v * 100).toFixed(2)} %`;
+  const tiles = [
+    ['Middle dry after', both(r => r.dryThrough != null ? `${r.dryThrough.toFixed(r.dryThrough < 10 ? 1 : 0)} min` : `over ${pl.tOven} h`), 'oven'],
+    ['Largest pull, held flat', both(r => `${r.peak.MPa.toFixed(0)} MPa`), 'cut'],
+    ['Water when taken out', both(r => `${(r.Xend[r.Xend.length - 1] * 100).toFixed(1)} %`), 'drop'],
+    ['Size out of the stack, from as cut', both(r => pct(r.sizeOut[0])), 'film'],
+    ['Size a day later, from as cut', both(r => pct(r.sizeDay[0])), 'film'],
+    ['Highest on a table, out of the stack', both(r => sheetMM(r.shapes.outTable.high)), 'wave'],
+  ];
+  stats.innerHTML = tiles.map(([l, v, ic]) => `<div class="stat" title="${l} — top only · top and bottom: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>top only · top and bottom</small></div>`).join('');
+  const over = [rt, rb].filter(r => r.peak.MPa >= F.sigF.v);
+  el.innerHTML = `<p class="fv-why dry-where">${pl.tOven} h in the drying oven at ${pl.dryT} °C${pl.tRest > 0 ? `, then ${pl.tRest} h under the plate in the room` : ''}. The water moves along the pieces at ${F.stackK.v} × 10⁻⁷ kg/(m·s·Pa) (the Film card: the least that fits your answers -- dry all over out of the oven, the size back to as cut 1–2 h later, the same a day later); wet, the film creeps with a time of ${F.creepTau.v} min (assumed until your photos). Out of the stack its water is ${both(r => `${(r.Xend[r.Xend.length - 1] * 100).toFixed(1)} %`)} of the GO (as cut ${(P.Xcut * 100).toFixed(1)} %).${over.length ? ` ${pill(`Held flat in the oven its drying edges pull ${Math.max(...over.map(r => r.peak.MPa)).toFixed(0)} MPa, over the film's strength (${F.sigF.v} MPa): they may crack at the edges`, 'warn')}` : ''}</p>`;
+  // (1) the water along the middle line from the edge in: the oven's times in one hue light to dark, the room's dashed
+  const run = STACK.res.runs.find(r => r.where === SHEET.way).stack, mut = cssVar('--muted'), bad = cssVar('--bad');
+  const col = DRY.sel === 'web' ? '#e8590c' : dryFilmColor(DRY.sel), blue = '#1c7ed6';
+  const half = q.Lx * 500, pr = run.prof, xs = pr.flatMap(p => p.X.map(v => v * 100)), yHi = Math.max(...xs, P.Xcut * 100) * 1.08;
+  // (one hue light to dark over time: the colour at an opacity, rgba -- the report's image export reads plain colours)
+  const shade = (c, k, n) => { const a = 0.3 + 0.7 * (n > 1 ? k / (n - 1) : 1), m = /^#([0-9a-f]{6})$/i.exec(c); if (!m) return c; const v = parseInt(m[1], 16); return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a.toFixed(2)})`; };
+  const ov = pr.filter(p => p.stage === 0), rs = pr.filter(p => p.stage === 1);
+  const minF = t => t < 10 ? t.toFixed(1) : t.toFixed(0);
+  plotChart(document.getElementById('st1'), FILM_ASPECT, { x0: 0, x1: half, y0: 0, y1: yHi, xl: 'from the edge in (mm)', yl: 'water (% of the GO)', yd: 1, xd: 0,
+    hl: [{ y: P.Xcut * 100, c: mut, t: 'as cut', left: true }],
+    s: [...ov.map((p, k) => ({ p: p.x.map((x, i) => [x, p.X[i] * 100]), c: shade(col, k, ov.length), w: 2 })), ...rs.map((p, k) => ({ p: p.x.map((x, i) => [x, p.X[i] * 100]), c: shade(blue, k, rs.length), w: 2, dash: [6, 4] }))] });
+  document.getElementById('st1Lg').innerHTML = oneDLegend([...ov.map((p, k) => [`oven, ${minF(p.t)} min`, shade(col, k, ov.length)]), ...rs.map((p, k) => [`under the plate, ${minF(p.t - pl.tOven * 60)} min`, shade(blue, k, rs.length), 'dash'])])
+    + `<p class="fv-why">${dryFilmName(DRY.sel)}, ${SHEET_WAYS[SHEET.way]}: along the middle of a piece, 0 at its edge, ${half.toFixed(0)} mm its middle.</p>`;
+  // (2) the largest pull in a piece held flat against time (both ways), the oven's time shaded, the film's strength
+  const tEnd = Math.max(...[rt, rb].map(r => r.hist[r.hist.length - 1].t)), sHi = Math.max(...[rt, rb].flatMap(r => r.hist.map(h => h.MPa)), 1) * 1.15;
+  const yTop = Math.max(sHi, Math.min(F.sigF.v * 1.1, sHi * 3));
+  plotChart(document.getElementById('st2'), FILM_ASPECT, { x0: 0, x1: tEnd, y0: 0, y1: yTop, xl: 'time (min)', yl: 'largest pull (MPa)', yd: 0, xd: 0,
+    bands: [{ x0: 0, x1: pl.tOven * 60, c: cssVar('--soft') }], vl: [{ x: pl.tOven * 60, c: mut, t: 'out of the oven' }],
+    hl: F.sigF.v < yTop ? [{ y: F.sigF.v, c: bad, t: `its strength (${F.sigF.v} MPa)`, left: true, below: true }] : [],
+    s: [[rt, []], [rb, [6, 4]]].map(([r, dash]) => ({ p: r.hist.map(h => [h.t, h.MPa]), c: col, w: 2, dash })) });
+  document.getElementById('st2Lg').innerHTML = oneDLegend([['top only', col], ['top and bottom', col, 'dash']]) + '<p class="fv-why">The largest pull in the piece\'s plane while it is held flat: at its drying edges as the oven starts; eased by the creep while wet.</p>';
+}
+
 function sheetClear() { for (const id of ['sh1', 'sh2']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, 0.62); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } }
+
+/** The plate at a uniform water from its film's table (rows [X, A, D, eFlat, κ, eX]; linear between rows, held past its ends). */
+function sheetTabAt(tab, X) {
+  if (!tab || !tab.length) return null;
+  if (X <= tab[0][0]) return tab[0];
+  for (let i = 0; i < tab.length - 1; i++) if (X <= tab[i + 1][0]) { const f = (X - tab[i][0]) / (tab[i + 1][0] - tab[i][0]); return tab[i].map((v, c) => v + f * (tab[i + 1][c] - v)); }
+  return tab[tab.length - 1];
+}
 
 /** The measured sizes (Q68/69/71): length and width pressed flat, before the drying oven (as cut), after it, after the
  * furnace; after the oven against before it (or the size cut) read back as the swelling it implies. */
@@ -181,15 +355,26 @@ function sheetMeasured() {
   if (sheetInputs()) {
     const [rt, rb] = filmRuns(DRY.sel), here = m.filter(q => q.loc === DRY.sel), cut = here.find(q => q.when === 'cut');
     const refL = cut && Number.isFinite(cut.L) ? cut.L : OVEN.peel.pieceL, refW = cut && Number.isFinite(cut.W) ? cut.W : OVEN.peel.pieceW;
+    // (measured after the drying oven: Q83/Q85 -- out of the stack, 1–2 h later under the plate. Its water then is the
+    //  stack's (GO-4f), so the swelling it implies is read at that water; until the stack is solved, as dried through)
+    const stk = stackCurrent() ? STACK.res.runs.map(r => r.stack) : null;
     for (const q of here.filter(q => q.when === 'dry')) {
       const r = [q.L / refL, q.W / refW].filter(v => Number.isFinite(v) && v > 0);
       if (!r.length) continue;
       const ratio = r.reduce((a, v) => a + v, 0) / r.length;
-      // (the size pressed flat is linear in β both ways: (1 + e0D + β eXD) / (1 + e0C + β eXC) = the ratio measured)
-      const beta = P => { const b0 = MAT.film.beta.v, e0D = P.eFlatDry - b0 * P.eXDry, e0C = P.eFlatCut - b0 * P.eXCut, den = P.eXDry - ratio * P.eXCut; return Math.abs(den) > 1e-12 ? (ratio * (1 + e0C) - 1 - e0D) / den : NaN; };
-      const bt = beta(rt.plate), bb = beta(rb.plate), f = v => Number.isFinite(v) ? v.toFixed(3) : '—';
+      // (the size pressed flat is linear in β both ways: (1 + e0D + β eXD) / (1 + e0C + β eXC) = the ratio measured,
+      //  D the state measured: its water's row of the plate's table -- or dried through)
+      const beta = (P, run) => {
+        const b0 = MAT.film.beta.v, at = run ? sheetTabAt(P.tab, run.Xend[run.Xend.length - 1]) : null, eD = at ? at[3] : P.eFlatDry, xD = at ? at[5] : P.eXDry;
+        const e0D = eD - b0 * xD, e0C = P.eFlatCut - b0 * P.eXCut, den = xD - ratio * P.eXCut;
+        // (it says little when a swelling of 0.1 per kg/kg would change it less than 10 × a 0.05 mm reading, over its length)
+        return Math.abs(den) * 0.1 * refL > 0.5 ? (ratio * (1 + e0C) - 1 - e0D) / den : NaN;
+      };
+      const bt = beta(rt.plate, stk && stk[0]), bb = beta(rb.plate, stk && stk[1]), f = v => Number.isFinite(v) ? v.toFixed(3) : '—';
       const use = (v, lbl) => Number.isFinite(v) && v > 0 ? ` <button type="button" class="linkish" data-sheetuse="${+v.toPrecision(3)}|your piece's size after the drying oven">Use ${lbl}</button>` : '';
-      imp.push(`<li>Your piece after the drying oven, ${txt(q)} (${((ratio - 1) * 100).toFixed(2)} % from ${cut ? 'your size before it' : `the ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm cut`}), means the film swells <b>${f(bt)}</b> per kg/kg (top only) or <b>${f(bb)}</b> (top and bottom), if the oven dried it through.${use(bt, 'top only\'s')}${use(bb, 'top and bottom\'s')}</li>`);
+      const state = stk ? `measured as it comes out of the stack (${OVEN.peel.tRest} h after the oven: its water ${(stk[0].Xend[stk[0].Xend.length - 1] * 100).toFixed(1)} %)` : 'if the oven dried it through (the stack not solved yet)';
+      const flat = !Number.isFinite(bt) && !Number.isFinite(bb);
+      imp.push(`<li>Your piece after the drying oven, ${txt(q)} (${((ratio - 1) * 100).toFixed(2)} % from ${cut ? 'your size before it' : `the ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm cut`}), ${flat ? `${state}: it has taken back about the water it was cut with, so its size says little about how the film swells.` : `means the film swells <b>${f(bt)}</b> per kg/kg (top only) or <b>${f(bb)}</b> (top and bottom), ${state}.${use(bt, 'top only\'s')}${use(bb, 'top and bottom\'s')}`}</li>`);
     }
     if (here.some(q => q.when === 'furnace')) imp.push('<li>After the furnace: kept for the next phase (the graphene film).</li>');
   }
