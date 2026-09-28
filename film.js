@@ -494,7 +494,7 @@ function fmRun(dr, o) {
       sBond: hb > 0 ? Nb / hb : null, EbBond: hb > 0 ? Eb / hb : 0, sWeb: S.sigW, GestF: est(tf), GestB: est(tb) };
   });
   // the FEM where a crack is likeliest (each part's estimate's peaks), the oven's exit and the peel
-  const nSt = o.stations || 6, pick = new Set([n - 1]);
+  const nSt = o.stations || 4, pick = new Set([n - 1]);
   const peaks = key => line.map((Lr, i) => [Lr[key], i]).filter(([g]) => g > 0).sort((p, q) => q[0] - p[0]);
   const spread = (list, m) => { const out = []; for (const [, i] of list) { if (out.length >= m) break; if (out.every(j => Math.abs(line[j].x - line[i].x) > 0.25)) out.push(i); } return out; };
   spread(peaks('GestF'), nSt).forEach(i => pick.add(i));
@@ -513,16 +513,20 @@ function fmRun(dr, o) {
   for (const S of stations) for (const w of ['float', 'bond']) if (S[w] && (!worst || S[w].ratio > worst.ratio)) worst = { ...S[w], i: S.i, x: S.x, which: w };
   // the crack spacing where the worst crack forms: a crack midway between two at spacing s releases
   // G(s) = [2 ∫σu(s/4 half-cell) − ∫σu(s/2 half-cell)] / h; cracks keep forming while G(s) ≥ the toughness
-  let spacing = null;
-  if (worst && worst.ratio >= 1) {
-    const L = lay(worst.i), E = Lh => fmCrack(L, worst.which, o, Lh).E, h = worst.h;
-    const Gs = sv => (2 * E(sv / 4) - E(sv / 2)) / h;
-    let lo = 0.5 * h, hi = 4 * worst.Lh;
-    if (Gs(lo) >= F.GcF) spacing = { lo, hi: 2 * lo, below: true };
-    else if (Gs(hi) < F.GcF) spacing = null;
-    else {
-      for (let it = 0; it < 24; it++) { const m = Math.sqrt(lo * hi); if (Gs(m) >= F.GcF) hi = m; else lo = m; if (hi / lo < 1.02) break; }
-      spacing = { lo: hi, hi: 2 * hi };
+  let spacing = null, ladder = null;
+  if (worst && worst.G > 0) {
+    // half-cells doubling from h/8: G at spacing s = 4 Lh_j is [2E(Lh_j) − E(Lh_(j+1))]/h, rising with s; where cracks
+    // form (G_ss above the toughness), the smallest spacing that still cracks: its crossing (log-linear between rungs)
+    const L = lay(worst.i), h = worst.h, Es = [];
+    for (let Lh = h / 8; Lh <= 2 * worst.Lh * 1.0001; Lh *= 2) Es.push([Lh, fmCrack(L, worst.which, o, Lh).E]);
+    ladder = []; for (let j = 0; j + 1 < Es.length; j++) ladder.push([4 * Es[j][0], (2 * Es[j][1] - Es[j + 1][1]) / h]);
+    if (worst.ratio >= 1) {
+      if (ladder.length && ladder[0][1] >= F.GcF) spacing = { lo: ladder[0][0], hi: 2 * ladder[0][0], below: true };
+      else for (let j = 1; j < ladder.length; j++) if (ladder[j][1] >= F.GcF) {
+        const [s0, g0] = ladder[j - 1], [s1, g1] = ladder[j], f = (F.GcF - g0) / (g1 - g0), sc = s0 * Math.pow(s1 / s0, Math.min(Math.max(f, 0), 1));
+        spacing = { lo: sc, hi: 2 * sc };
+        break;
+      }
     }
   }
   const firstCrack = (() => { for (const S of stations) for (const w of ['float', 'bond']) if (S[w] && S[w].ratio >= 1) return { x: S.x, which: w }; return null; })();
@@ -575,11 +579,26 @@ function fmRun(dr, o) {
   const blMax = bl.reduce((b, w) => w.ratio > b.ratio ? w : b, { ratio: 0 });
   let steam = null;
   if (dr.events.boilSkin) { let Tmax = -Infinity; for (const q of dr.series) Tmax = Math.max(Tmax, q.Tft, q.Tfb); steam = { x: dr.events.boil, dp: psat(Tmax) - (o.P || 101325) }; }
-  return { line, stations, worst, spacing, firstCrack, curl, peel, roll, blisters: { max: blMax, line: bl, steam },
-    peelX: SP.x, ovenX: dr.xOven, wetAtPeel: !LP.dry, hPeel: hF, Xcap: hh.Xcap };
+  // through the film at the peel (z up from the web): each set layer's stress and water; the wet film between, if any
+  const profile = { cells: Lp.map(Lr => ({ z0: Lr.z0, t: Lr.t, sig: SP.sig[Lr.k], X: SP.X[Lr.k] })), hB: LP.hB, hWet: LP.hWet, hFilm: LP.hFilm };
+  return { line, stations, worst, spacing, ladder, firstCrack, curl, peel, roll, blisters: { max: blMax, line: bl, steam },
+    peelX: SP.x, ovenX: dr.xOven, wetAtPeel: !LP.dry, hPeel: hF, Xcap: hh.Xcap, profile };
+}
+
+/**
+ * The free film's curl only (right after the peel and settled in the room), without the cracks and the peel: the
+ * layers' history and the free laminate. The curl is linear in β (every strain source enters linearly; the stiffnesses
+ * depend on the water, not on β), so two of these (β = 0, β = 1) give it for any β.
+ */
+function fmCurlOnly(dr, o) {
+  const hh = fmHistory(dr, o), F = o.film, n = hh.steps.length, SP = hh.steps[n - 1], LP = fmLayout(hh, n - 1, dr.series[n - 1].h, o);
+  const Xroom = Math.min(fmGAB(o.rhRoom, o.gab), hh.Xcap);
+  const lay = (Xv, Tv) => { const out = []; for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + SP.X[k] / F.Xh), Ek = F.Ep * f;
+    out.push({ t: LP.tSet(k), z0: LP.z0[k], Q: Ek / (1 - F.nup), en: hh.bornE[k] + F.alphaF * (Tv[k] - hh.bornT[k]) + F.beta * (Xv[k] - hh.bornX[k]) }); } return out; };
+  return { atPeel: fmFree(lay(SP.X, SP.T)).kappa, settled: fmFree(lay(new Float64Array(hh.K).fill(Xroom), new Float64Array(hh.K).fill(o.Troom))).kappa };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
   fmTransIso, fmIso, fmGAB, fmTri, fmFaces, fmHistory, fmFree, fmPeelForce, fmFrontMoment,
-  fmBand, fmBandAdd, fmBandSolve, fmGrade, fmQ9K, fmChannel, fmLayout, fmTension, fmCrack, fmRun,
+  fmBand, fmBandAdd, fmBandSolve, fmGrade, fmQ9K, fmChannel, fmLayout, fmTension, fmCrack, fmRun, fmCurlOnly,
 };

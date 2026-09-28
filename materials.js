@@ -65,15 +65,42 @@ const MAT_DRY = [
   ['Troom', 'Room temperature', '°C', 0, 60, 1, 0, 25, 'assumed', 'between the blade and the oven: the film enters the oven at it'],
   ['rhRoom', 'Room humidity', '%', 0, 100, 1, 0, 50, 'assumed', 'between the blade and the oven'],
 ];
+/**
+ * The dry film on the fibre web (GO-4; film.js), the same shape: the GO film's stiffness, strength and toughness,
+ * how it swells with water and heat, its hold on the web; the web's stiffness and expansion; the wet film under a
+ * skin; the curl a roll sets. All assumed until measured (the measured curl, cracks and peel force give some).
+ */
+const MAT_FILM = [
+  ['Ep', 'Dry film\'s stiffness along it, E_p', 'GPa', 0.1, 200, 0.5, 1, 20, 'assumed', 'GO paper 32 GPa (Dikin et al., Nature 2007); 1–40 GPa reported for other preparations'],
+  ['Et', 'Dry film\'s stiffness through it, E_t', 'GPa', 0.01, 100, 0.1, 2, 3, 'assumed', 'GO paper is far softer through its thickness: its layers held by water and oxygen groups'],
+  ['Gpt', 'Shear between its layers, G', 'GPa', 0.01, 50, 0.1, 2, 1, 'assumed', 'the layers slide on each other'],
+  ['nup', 'Poisson\'s ratio along it, ν_p', '', 0, 0.49, 0.01, 2, 0.2, 'assumed', 'graphene 0.17; GO paper about 0.2'],
+  ['nupt', 'Poisson\'s ratio through it, ν_pt', '', 0, 0.49, 0.01, 2, 0.1, 'assumed', 'its thickness change under an in-plane stress'],
+  ['Xh', 'Softer with water: its stiffness halves at', 'kg/kg', 0.01, 10, 0.01, 2, 0.15, 'assumed', 'GO paper softens as it takes up water'],
+  ['beta', 'Swelling along it with its water, β', 'per kg/kg', 0, 1, 0.005, 3, 0.08, 'assumed', 'GO paper shrinks −67e-6/K from 25 to 150 °C as its water leaves (Su et al., Carbon 2012): about 0.08 per kg/kg with the isotherm on the Drying card'],
+  ['alphaF', 'Its own heat expansion along it', '×10⁻⁶/K', -50, 100, 0.5, 1, 0, 'assumed', 'GO\'s own in-plane expansion is near zero (Su et al. 2012; the shrinkage is its water leaving)'],
+  ['sigF', 'Dry film\'s strength', 'MPa', 1, 2000, 1, 0, 100, 'assumed', 'GO paper 120 MPa (Dikin et al. 2007); 4–120 MPa reported'],
+  ['GcF', 'Its fracture energy (a crack through it)', 'J/m²', 0.1, 10000, 1, 1, 40, 'assumed', 'multilayer GO about 39 J/m² (J-integral); thicker films may be tougher: the crack spacing measured gives it'],
+  ['Gil', 'Between its layers (it splits)', 'J/m²', 0.1, 10000, 1, 1, 20, 'assumed', 'GO paper splits between its layers more easily than across them'],
+  ['Gi', 'Its hold on the fibre web', 'J/m²', 0.01, 10000, 0.5, 2, 10, 'assumed', 'not known: the peel force measured gives it'],
+  ['setFrac', 'Curl the roll sets (of the roll\'s)', 'fraction', 0, 1, 0.01, 2, 0, 'assumed', 'GO paper is viscoelastic (Su et al. 2012): the curl measured after the roll gives it'],
+  ['Ew', 'Fibre web\'s stiffness along it', 'GPa', 0.01, 50, 0.05, 2, 1, 'assumed', 'PET filament about 8 GPa (60–90 gf/den); about a quarter of a plain weave\'s fibres run along the line and their crimp lowers it'],
+  ['soft', 'Fibre web through its thickness and in shear', '× along it', 0.001, 1, 0.01, 3, 0.1, 'assumed', 'a fabric: its yarns flatten and slide'],
+  ['nuw', 'Fibre web\'s Poisson\'s ratio', '', 0, 0.49, 0.01, 2, 0.3, 'assumed', 'a typical polymer'],
+  ['alphaW', 'Fibre web\'s heat expansion', '×10⁻⁶/K', -50, 300, 1, 0, 20, 'assumed', 'polyester fibre expands about 0.4 % from 25 to 230 °C'],
+  ['Eg', 'Wet film under a skin: its stiffness', 'kPa', 0.01, 1e6, 1, 1, 100, 'assumed', 'a GO paste: soft (its yield stress a few pascals, the Rheology card)'],
+];
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
 // tests: the rheometer tests imported, rheo-ui.js)
 // (orient: the flakes' alignment card, on or off, its model 'dh' (Doi–Hess, the default: Q49) or 'ft' (Folgar–Tucker);
 // sem: the measured alignment -- SEM images and tables of flake angles, orient-ui.js;
-// dry: the drying card; dryMeas: the drying measured -- temperatures in the oven and values at its exit, drying-ui.js)
+// dry: the drying card; dryMeas: the drying measured -- temperatures in the oven and values at its exit, drying-ui.js;
+// film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
-  orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] } });
+  orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [] } });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;
@@ -130,7 +157,11 @@ const OVEN_TOP_FIELDS = [['jetU', 'Jet speed at the nozzles', 'm/s', 0.5, 150, 0
   ['jetB', 'Slot width', 'mm', 0.5, 50, 0.5, 1, 'air'], ['jetH', 'Nozzles above the film', 'mm', 1, 500, 1, 0, 'air'], ['jetS', 'Slot pitch along the line', 'mm', 5, 1000, 5, 0, 'air'],
   ['ir', 'IR power reaching the film', 'kW/m²', 0, 200, 0.5, 1, 'ir']];
 const OVEN_ZONE_DEFAULT = { len: 2, airU: 1, airT: 100, plenum: 100, rh: 20, top: 'none', jetU: 10, jetT: 100, jetB: 5, jetH: 20, jetS: 100, ir: 5 };
-const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })) });
+// (peel: after the oven the film runs through the room to where it is peeled (Q63: a stretch, its length yours) and is
+// wound on the winder's core (Q61: not known, 76 mm assumed); lenSet / coreSet: set by you, else assumed)
+const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false };
+const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet']];
+const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT } });
 let OVEN = ovenDefaults();
 const OVEN_MAX_ZONES = 8;
 /** The oven's length (m) and the time the film spends in it at the line speed U (m/s). */
@@ -139,4 +170,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

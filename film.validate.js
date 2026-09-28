@@ -10,7 +10,8 @@
  *     f = S ε + √(2 S G); the elastica's front moment M² = 2 D f (1 − cos θ) brackets its shooting solution.
  *  6. The set film's water: diffusion against Crank's series (a slab sealed below, its top held).
  *  7. A real run (the drying to the peel): layers set stress-free; a floating skin's force zero, the bonded film's
- *     with the web's zero; a skin joining the bonded film keeps its stress; the app's crack mesh against a finer one.
+ *     with the web's zero; a skin joining the bonded film keeps its stress; the curl linear in β; the app's crack mesh
+ *     against a finer one.
  */
 global.drPsat = require('./drying.js').drPsat;
 const D = require('./drying.js'), F = require('./film.js');
@@ -166,6 +167,10 @@ const rel = (a, b) => Math.abs(a - b) / Math.abs(b);
       const spread = Math.max(...d) - Math.min(...d);
       check(`a skin joining the bonded film keeps its stress (${tag}, at ${B.x.toFixed(2)} m): all layers' strain changes equal`, joined > 0 && spread <= 1e-9 * big, `${joined} layers joined; the spread ${spread.toExponential(1)} of strains to ${big.toExponential(1)}; the common change ${d[0].toExponential(2)}`);
     }
+    // the curl is linear in β (a measured curl read back as the β it implies): two runs give any β's
+    { const c = b => F.fmCurlOnly(dr, { ...o, film: { ...o.film, beta: b } }), k0 = c(0), k1 = c(1), kb = c(o.film.beta);
+      const e = Math.max(Math.abs(kb.atPeel - (k0.atPeel + o.film.beta * (k1.atPeel - k0.atPeel))) / Math.abs(kb.atPeel), Math.abs(kb.settled - (k0.settled + o.film.beta * (k1.settled - k0.settled))) / Math.max(Math.abs(kb.settled), 1e-9));
+      check(`the curl is linear in β: from β = 0 and 1, exactly (${tag})`, e < 1e-9, `${e.toExponential(1)}; κ at the peel ${kb.atPeel.toFixed(4)} 1/m`); }
     // the app's crack mesh against a finer one at the worst place
     const r = F.fmRun(dr, o);
     if (r.worst) {

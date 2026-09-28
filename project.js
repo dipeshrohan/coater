@@ -112,10 +112,22 @@ function applyMaterials(m) {
     temps: Array.isArray(dm.temps) ? dm.temps.filter(t => t && Array.isArray(t.rows)).map(t => ({ name: String(t.name || 'temperatures'), rows: t.rows.filter(q => q && Number.isFinite(q.x) && Number.isFinite(q.T)).map(q => ({ x: q.x, T: q.T, kind: ['top', 'web', 'air'].includes(q.kind) ? q.kind : 'top', loc: /^L[1-4]$/.test(q.loc) ? q.loc : 'web' })) })) : [],
     exit: Array.isArray(dm.exit) ? dm.exit.filter(q => q && (q.loc === 'web' || /^L[1-4]$/.test(q.loc))).map(q => ({ loc: q.loc, water: fin(q.water), h: fin(q.h), dryAt: fin(q.dryAt) })) : [],
   };
+  // (the film's card and the film measured, GO-4: a project from before has none -- the defaults)
+  const fc = m && m.film;
+  if (fc) for (const k of Object.keys(MAT.film)) if (fc[k] && Number.isFinite(fc[k].v)) MAT.film[k] = { ...MAT.film[k], ...fc[k] };
+  const fm = m && m.filmMeas, locOk = q => q && (q.loc === 'web' || /^L[1-4]$/.test(q.loc)), arr = v => Array.isArray(v) ? v : [];
+  if (fm) MAT.filmMeas = {
+    curl: arr(fm.curl).filter(locOk).map(q => ({ loc: q.loc, R: fin(q.R), lift: fin(q.lift), sheet: fin(q.sheet), toward: ['top', 'bottom'].includes(q.toward) ? q.toward : '' })),
+    cracks: arr(fm.cracks).filter(locOk).map(q => ({ loc: q.loc, spacing: fin(q.spacing), width: fin(q.width), where: ['web', 'peel', 'roll'].includes(q.where) ? q.where : '' })),
+    peel: arr(fm.peel).filter(locOk).map(q => ({ loc: q.loc, f: fin(q.f), angle: fin(q.angle) })),
+  };
 }
 /** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
 function applyOven(o, cfdSetup) {
   OVEN = ovenDefaults();
+  // (after the oven, to the peel and the winder, GO-4: a project from before has none -- the defaults, assumed)
+  const pl = o && o.peel;
+  if (pl) for (const [k, , , lo, hi, , , flag] of OVEN_PEEL_FIELDS) { if (Number.isFinite(pl[k]) && pl[k] >= lo && pl[k] <= hi) OVEN.peel[k] = pl[k]; OVEN.peel[flag] = pl[flag] === true; }
   if (o && Array.isArray(o.zones) && o.zones.length) { OVEN.zones = o.zones.slice(0, OVEN_MAX_ZONES).map(z => ({ ...OVEN_ZONE_DEFAULT, ...z })); return; }
   const c = cfdSetup || {};
   for (const z of OVEN.zones) for (const k of ['airU', 'airT', 'plenum']) if (Number.isFinite(c[k])) z[k] = c[k];
