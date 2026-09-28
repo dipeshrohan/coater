@@ -70,6 +70,8 @@ const DOE_OUTPUTS = [
   { k: 'rollBoth', l: 'Stress on the roll, top and bottom', u: 'MPa', g: 'Film (peeled off)', d: 0 },
   { k: 'blisterTop', l: 'Blister risk, top only', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
   { k: 'blisterBoth', l: 'Blister risk, top and bottom', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
+  { k: 'sizeTop', l: 'A piece\'s size change in the drying oven, top only', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
+  { k: 'sizeBoth', l: 'A piece\'s size change in the drying oven, top and bottom', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
 ];
 const DOE = {
   loc: 0,
@@ -148,7 +150,7 @@ function doeOutputs(r, geo) {
     ...(() => { const m = r.peeled && !r.peeled.error ? r.peeled : null, v = (w, f) => m ? f(m[w]) : NaN;
       return { crackTop: v('top', q => q.crack), crackBoth: v('both', q => q.crack), peelTop: v('top', q => q.peelHand), peelBoth: v('both', q => q.peelHand),
         curlTop: v('top', q => q.curl), curlBoth: v('both', q => q.curl), rollTop: v('top', q => q.roll / 1e6), rollBoth: v('both', q => q.roll / 1e6),
-        blisterTop: v('top', q => q.blister), blisterBoth: v('both', q => q.blister) }; })(),
+        blisterTop: v('top', q => q.blister), blisterBoth: v('both', q => q.blister), sizeTop: v('top', q => q.size), sizeBoth: v('both', q => q.size) }; })(),
   };
 }
 

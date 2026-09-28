@@ -22,7 +22,7 @@ function filmCompact(r, dr) {
   return {
     line, blisterLine: bl, stations: r.stations.map(S => ({ x: p(S.x, 6), float: st(S.float), bond: st(S.bond) })),
     worst: r.worst ? { x: r.worst.x, which: r.worst.which, G: r.worst.G, ratio: r.worst.ratio, h: r.worst.h, sMean: r.worst.sMean } : null,
-    spacing: r.spacing, ladder: r.ladder, firstCrack: r.firstCrack, curl: r.curl, peel: r.peel, roll: r.roll, curlBeta: r.curlBeta,
+    spacing: r.spacing, ladder: r.ladder, firstCrack: r.firstCrack, curl: r.curl, peel: r.peel, roll: r.roll, plate: r.plate, curlBeta: r.curlBeta,
     blisters: { max: r.blisters.max, steam: r.blisters.steam }, profile: r.profile,
     peelX: r.peelX, ovenX: r.ovenX, wetAtPeel: r.wetAtPeel, hPeel: r.hPeel,
     atPeel: { waterPct: dr.exit.waterPct, dry: dr.exit.dry, Ts: last.Ts, Tb: last.Tb, h: last.h }, ovenExit: dr.ovenExit, dryAt: dr.events.dry,

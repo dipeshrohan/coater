@@ -1756,6 +1756,15 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .ovz-peel .prop-l small { color: var(--warn); font-weight: 400; }
 .ovz-peel .ovz-pic .film-pic { max-width: 180px; }
 .ovz-peel .ovz-roll .film-pic { max-width: 110px; }
+/* (the (i) right after the name, "assumed" on the line under it) */
+.ovz-peel .pl-t { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
+.ovz-peel .pl-t > .help-i { order: 2; }
+.ovz-peel .pl-t > small { order: 3; flex-basis: 100%; }
+/* (a piece cut from the roll, in 3D: GO-4d) */
+.sheet-sec { margin-top: 14px; }
+.sheet-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
+.sheet-head .fv-why { flex: 1 1 320px; margin: 0; }
+.sheet-head .film-pic { border-radius: 8px; }
 @media (max-width: 640px) {
   .film-checks { grid-template-columns: 1fr; }
   .film-check { flex-direction: column; }

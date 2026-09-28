@@ -166,9 +166,9 @@ const UNDO_UNITS = (() => {
     label: (a, b) => { a = a || { temps: [], exit: [] }; b = b || { temps: [], exit: [] }; return b.temps.length !== a.temps.length ? (b.temps.length > a.temps.length ? `Import temperatures ${b.temps[b.temps.length - 1].name}` : 'Remove measured temperatures') : b.exit.length > a.exit.length ? 'Add a measured exit value' : 'Remove a measured exit value'; } });
   // (the film's card, the film measured and the peel's place and the winder's core, GO-4)
   for (const [k] of MAT_FILM) u.push({ id: 'matf.' + k, get: () => MAT.film[k], set: v => { MAT.film[k] = v ? { ...v } : matDefaults().film[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_FILM) });
-  u.push({ id: 'mat.filmMeas', get: () => MAT.filmMeas || { curl: [], cracks: [], peel: [] }, set: v => { MAT.filmMeas = v ? JSON.parse(JSON.stringify(v)) : { curl: [], cracks: [], peel: [] }; },
-    label: (a, b) => { a = a || { curl: [], cracks: [], peel: [] }; b = b || { curl: [], cracks: [], peel: [] };
-      for (const [k, l] of [['curl', 'curl'], ['cracks', 'cracks'], ['peel', 'peel force']]) { const na = (a[k] || []).length, nb = (b[k] || []).length; if (na !== nb) return nb > na ? `Add a measured ${l}` : `Remove a measured ${l}`; }
+  u.push({ id: 'mat.filmMeas', get: () => MAT.filmMeas || { curl: [], cracks: [], peel: [], size: [] }, set: v => { MAT.filmMeas = v ? JSON.parse(JSON.stringify(v)) : { curl: [], cracks: [], peel: [], size: [] }; },
+    label: (a, b) => { a = a || { curl: [], cracks: [], peel: [], size: [] }; b = b || { curl: [], cracks: [], peel: [], size: [] };
+      for (const [k, l] of [['curl', 'curl'], ['cracks', 'cracks'], ['peel', 'peel force'], ['size', 'piece\'s size']]) { const na = (a[k] || []).length, nb = (b[k] || []).length; if (na !== nb) return nb > na ? `Add a measured ${l}` : `Remove a measured ${l}`; }
       return 'Film measured'; } });
   u.push({ id: 'oven.peel', get: () => OVEN.peel || { ...OVEN_PEEL_DEFAULT }, set: v => { OVEN.peel = v ? { ...v } : { ...OVEN_PEEL_DEFAULT }; },
     label: (a, b) => { a = a || OVEN_PEEL_DEFAULT; b = b || OVEN_PEEL_DEFAULT; for (const [k, l, u2, , , , d] of OVEN_PEEL_FIELDS) if (a[k] !== b[k]) return undoChange(l, a[k], b[k], v => undoNum(v, d), u2); return 'After the oven'; } });

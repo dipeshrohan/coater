@@ -9,7 +9,7 @@
  */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const DIR = __dirname, OUT = path.join(DIR, 'workers-src.js');
-const WORKERS = ['cfd-worker.js', 'cfd-1d-worker.js', 'cfd-3d-worker.js', 'cfd-dry-worker.js', 'cfd-film-worker.js'];
+const WORKERS = ['cfd-worker.js', 'cfd-1d-worker.js', 'cfd-3d-worker.js', 'cfd-dry-worker.js', 'cfd-film-worker.js', 'cfd-sheet-worker.js'];
 
 const read = f => fs.readFileSync(path.join(DIR, f), 'utf8');
 /** The scripts a worker imports, in order (its importScripts call). */
