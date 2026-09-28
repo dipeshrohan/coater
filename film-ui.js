@@ -129,6 +129,9 @@ const filmCurlText = k => !Number.isFinite(k) || Math.abs(k) < 1e-6 ? 'flat' : `
 const filmLift = (k, L) => { if (!Number.isFinite(k) || Math.abs(k) < 1e-9) return 0; const R = 1 / Math.abs(k); return L / 2 < Math.PI * R ? R * (1 - Math.cos(L / (2 * R))) : 2 * R; };
 /** The sheet length the lift is shown for: a measured curl's, else 100 mm. */
 const filmSheet = key => { const q = (MAT.filmMeas.curl || []).find(c => c.loc === key && Number.isFinite(c.sheet)); return q ? q.sheet / 1000 : 0.1; };
+/** Its curl unwound from the roll, settled: the settled curl and what the roll set (the Film card's share of the roll's bend). */
+const filmUnwound = r => r.curl.settled.kappa + r.roll.set;
+const FILM_WHEN = { settled: 'settled', peel: 'right after peeling', roll: 'unwound from the roll' };
 
 // ---- the chain's line ----
 function filmStage() {
@@ -231,7 +234,8 @@ function filmChecks(rt, rb) {
   const peel = r => r.peel.selfPeel ? bad('comes off by itself: its stored stress beats its hold on the web') : `by hand ${filmN(r.peel.hand.f)} N/m; at the winder ${filmN(filmAngle(r, 150).f)} (150°) to ${filmN(filmAngle(r, 30).f)} N/m (30°)`;
   const tear = r => { const t = r.peel.byAngle.filter(q => q.tears); return t.length ? bad(`tears when peeled at ${t[0].deg}°–${t[t.length - 1].deg}° (the pull and the bend at the peel front beat its strength)`) : r.peel.bits ? bad('leaves bits: its hold on the web is more than its layers\' hold on each other') : 'peels cleanly'; };
   const curl = r => { const L = filmSheet(DRY.sel) * 1000; return `${filmCurlText(r.curl.atPeel.kappa)} right after; ${filmCurlText(r.curl.settled.kappa)} settled (a ${L.toFixed(0)} mm sheet's edges lift ${(filmLift(r.curl.settled.kappa, L / 1000) * 1000).toFixed(1)} mm)`; };
-  const roll = r => r.roll.cracks ? bad(`cracks on the roll: bent round the ${OVEN.peel.core} mm core its top reaches ${(r.roll.sMax / 1e6).toFixed(0)} MPa, over its ${F.sigF.v} MPa strength`) : `holds: at most ${(r.roll.sMax / 1e6).toFixed(0)} of its ${F.sigF.v} MPa strength`;
+  const unw = r => `; unwound, ${F.setFrac.v > 0 ? `it curls ${filmCurlText(filmUnwound(r))} (it keeps ${(F.setFrac.v * 100).toFixed(0)} % of the roll's bend)` : 'it springs back to its settled curl (the Film card\'s curl the roll sets is 0)'}`;
+  const roll = r => (r.roll.cracks ? bad(`cracks on the roll: bent round the ${OVEN.peel.core} mm core its top reaches ${(r.roll.sMax / 1e6).toFixed(0)} MPa, over its ${F.sigF.v} MPa strength`) : `holds: at most ${(r.roll.sMax / 1e6).toFixed(0)} of its ${F.sigF.v} MPa strength`) + unw(r);
   const blis = r => { const m = r.blisters.max, s = r.blisters.steam; return (m.ratio >= 1 ? bad(`blisters: compressed on the web it buckles off (${m.ratio.toFixed(1)}× its hold, at ${dryPlace(m.x)}; ${(m.bMin * 2000).toFixed(0)} mm and wider)`) : `no buckling off the web (${m.ratio.toFixed(2)}× its hold)`) + (s ? `; ${bad(`steam under the skin at ${dryPlace(s.x)} (${(s.dp / 1000).toFixed(0)} kPa over the air)`)}` : ''); };
   const card = (pic, title, body) => `<div class="film-check">${pic}<div><h4>${title}</h4>${body}</div></div>`;
   document.getElementById('filmChecks').innerHTML = [
@@ -311,7 +315,7 @@ function filmCharts(rt, rb) {
   lg('fm5', [['the film on the web, compressed', col], ['top and bottom', col, 'dash']]);
   // 6. the peeled sheet on a table (to scale)
   drawFilmSheet(cv('fm6'), rt, rb, col);
-  lg('fm6', [['right after peeling (top only)', col], ['settled in the room', col, 'dash'], ['top and bottom, settled', mut, 'dash']]);
+  lg('fm6', [['right after peeling (top only)', col], ['settled in the room', col, 'dash'], ['top and bottom, settled', mut, 'dash'], ...(MAT.film.setFrac.v > 0 ? [['unwound from the roll', cssVar('--warn'), 'dot']] : [])]);
 }
 /**
  * A sheet of the film lying on a table, curled as computed: curling toward its top it rests on its middle, its edges
@@ -320,7 +324,7 @@ function filmCharts(rt, rb) {
 function drawFilmSheet(cv, rt, rb, col) {
   const { c, w, h } = setupCanvas(cv, FILM_ASPECT), mut = cssVar('--muted'), ink = cssVar('--ink');
   const L = filmSheet(DRY.sel), pad = 30, sc = (w - 2 * pad) / L, y0 = h - 30;
-  const curves = [[rt.curl.atPeel.kappa, col, []], [rt.curl.settled.kappa, col, [6, 4]], [rb.curl.settled.kappa, mut, [3, 3]]];
+  const curves = [[rt.curl.atPeel.kappa, col, []], [rt.curl.settled.kappa, col, [6, 4]], [rb.curl.settled.kappa, mut, [3, 3]], ...(MAT.film.setFrac.v > 0 ? [[filmUnwound(rt), cssVar('--warn'), [1, 3]]] : [])];
   // the shape: height above the table at s (−L/2 .. L/2)
   const shape = k => { const n = 80, out = [];
     const R = Math.abs(k) > 1e-9 ? 1 / Math.abs(k) : Infinity, top = Number.isFinite(R) ? R * (1 - Math.cos(Math.min(Math.PI, L / 2 / R))) : 0;
@@ -404,6 +408,12 @@ function filmMeasured(rt, rb) {
     for (const q of (m.curl || []).filter(q => q.loc === DRY.sel)) {
       const k = filmCurlKappa(q), st = q.when === 'peel' ? 'atPeel' : 'settled';
       if (!Number.isFinite(k)) continue;
+      if (q.when === 'roll') {   // (unwound: the share of the roll's bend it kept, β as on the card)
+        const sf = r => { const d = r.roll.kappa - r.curl.atPeel.kappa; return Math.abs(d) > 1e-12 ? (k - r.curl.settled.kappa) / d : NaN; };
+        const st2 = sf(rt), sb2 = sf(rb), pc = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)} %` : '—';
+        imp.push(`<li>Your curl unwound from the roll (${filmCurlText(k)}) means the film keeps <b>${pc(st2)}</b> of the roll's bend (top only) or <b>${pc(sb2)}</b> (top and bottom)${st2 < 0 || sb2 < 0 || st2 > 1 || sb2 > 1 ? ' <span class="warn-text">— outside 0–100 %: its settled curl on the card is off too (check the swelling with water)</span>' : ''}.${use('setFrac', +Math.min(1, Math.max(0, st2)).toPrecision(3), 'your curl unwound from the roll', 'top only\'s')}${use('setFrac', +Math.min(1, Math.max(0, sb2)).toPrecision(3), 'your curl unwound from the roll', 'top and bottom\'s')}</li>`);
+        continue;
+      }
       const b = r => { const [k0, k1] = r.curlBeta[st]; return Math.abs(k1) > 1e-12 ? (k - k0) / k1 : NaN; };
       const bt = b(rt), bb = b(rb);
       imp.push(`<li>Your curl (${filmCurlText(k)}, ${q.when === 'peel' ? 'right after peeling' : 'settled'}) means the film swells <b>${Number.isFinite(bt) ? bt.toFixed(3) : '—'}</b> per kg/kg (top only) or <b>${Number.isFinite(bb) ? bb.toFixed(3) : '—'}</b> (top and bottom)${bt < 0 || bb < 0 ? ' <span class="warn-text">— negative: something else curls it (the heat, how it sets): check the card\'s other values</span>' : ''}.${use('beta', +bt.toPrecision(3), 'your curl', 'top only\'s')}${use('beta', +bb.toPrecision(3), 'your curl', 'top and bottom\'s')}</li>`);
@@ -422,9 +432,9 @@ function filmMeasured(rt, rb) {
       <div class="dry-mcol"><h4>${filmPicCurl('top', 0.5)} Curl</h4>
         <div class="dry-exit-form">${locSel('fmCLoc')}${num('fmCR', 'Radius', 'mm', 1, 1e6, 1)}<span class="fv-why">or</span>${num('fmCLift', 'Edge lift', 'mm', 0, 1e4, 0.1)}${num('fmCSheet', 'Sheet length', 'mm', 1, 1e5, 1)}
           <label>Rolls <select id="fmCTo"><option value="top">toward its top</option><option value="bottom">away from its top</option></select></label>
-          <label>Measured <select id="fmCWhen"><option value="settled">later (settled)</option><option value="peel">right after peeling</option></select></label>
+          <label>Measured <select id="fmCWhen"><option value="settled">later (settled)</option><option value="peel">right after peeling</option><option value="roll">unwound from the roll</option></select></label>
           <button class="btn btn-secondary btn-sm" type="button" id="fmCAdd">Add</button></div>
-        <ul class="dry-list">${list('curl', q => [Number.isFinite(q.R) ? `radius ${q.R} mm` : '', Number.isFinite(q.lift) ? `lift ${q.lift} mm over ${q.sheet} mm` : '', q.toward === 'bottom' ? 'away from its top' : 'toward its top'].filter(Boolean).join(', '))}</ul></div>
+        <ul class="dry-list">${list('curl', q => [Number.isFinite(q.R) ? `radius ${q.R} mm` : '', Number.isFinite(q.lift) ? `lift ${q.lift} mm over ${q.sheet} mm` : '', q.toward === 'bottom' ? 'away from its top' : 'toward its top', FILM_WHEN[q.when] || ''].filter(Boolean).join(', '))}</ul></div>
       <div class="dry-mcol"><h4>${filmPicCracks(0.5)} Cracks</h4>
         <div class="dry-exit-form">${locSel('fmKLoc')}${num('fmKS', 'Spacing', 'mm', 0.001, 1e4, 0.1)}${num('fmKW', 'Width', 'µm', 0, 1e5, 1)}
           <label>Seen <select id="fmKWhere"><option value="web">on the web</option><option value="peel">after peeling</option><option value="roll">on the roll</option></select></label>

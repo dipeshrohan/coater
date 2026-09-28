@@ -117,7 +117,7 @@ function applyMaterials(m) {
   if (fc) for (const k of Object.keys(MAT.film)) if (fc[k] && Number.isFinite(fc[k].v)) MAT.film[k] = { ...MAT.film[k], ...fc[k] };
   const fm = m && m.filmMeas, locOk = q => q && (q.loc === 'web' || /^L[1-4]$/.test(q.loc)), arr = v => Array.isArray(v) ? v : [];
   if (fm) MAT.filmMeas = {
-    curl: arr(fm.curl).filter(locOk).map(q => ({ loc: q.loc, R: fin(q.R), lift: fin(q.lift), sheet: fin(q.sheet), toward: ['top', 'bottom'].includes(q.toward) ? q.toward : '', when: q.when === 'peel' ? 'peel' : 'settled' })),
+    curl: arr(fm.curl).filter(locOk).map(q => ({ loc: q.loc, R: fin(q.R), lift: fin(q.lift), sheet: fin(q.sheet), toward: ['top', 'bottom'].includes(q.toward) ? q.toward : '', when: ['peel', 'roll'].includes(q.when) ? q.when : 'settled' })),
     cracks: arr(fm.cracks).filter(locOk).map(q => ({ loc: q.loc, spacing: fin(q.spacing), width: fin(q.width), where: ['web', 'peel', 'roll'].includes(q.where) ? q.where : '' })),
     peel: arr(fm.peel).filter(locOk).map(q => ({ loc: q.loc, f: fin(q.f), angle: fin(q.angle) })),
   };
