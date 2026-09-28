@@ -130,7 +130,7 @@ function drySectionHTML() {
       <div class="seg" role="tablist" aria-label="Which film" id="drySel">${seg.map(([k, t]) => `<button type="button" role="tab" data-dry="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="dryZones" data-chain="oven" title="The oven's zones, in the inputs bar">${uiIco('oven')}Oven zones</button><button type="button" class="btn btn-secondary btn-sm" id="dryCsv">Export CSV</button></header>
     <div class="dry-ways" id="dryWays">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
-      <p class="fv-why">Where the water leaves is not known (Q53), so both are computed. From the top only: the fibre under the film only brings the hot air's heat. From the top and the bottom: vapour also goes into the air blown up through the fibre, which carries it away.</p></div>
+      <p class="fv-why">Where the water leaves is not known, so both are computed. From the top only: the fibre under the film only brings the hot air's heat. From the top and the bottom: vapour also goes into the air blown up through the fibre, which carries it away.</p></div>
     <div id="dryState"></div>
     <figure class="pane dry-oven"><figcaption>${uiBadge('oven')}The film through the room and the oven <span class="fv-why">(click to look through the film there)</span></figcaption><canvas id="dryOven" role="img" aria-label="The oven drawn along the line: its zones, what is above the film, and the film with its skin, top-only way above, top-and-bottom below"></canvas></figure>
     <div class="stats" id="dryStats"></div>
@@ -220,14 +220,16 @@ function dryWarnings(rt, rb) {
 /** The oven drawn: the room and the zones (what is above each), the film on its web in two lanes (top only; top and bottom), their skins and events; the place looked through. */
 function drawDryOven(rt, rb) {
   const cv = document.getElementById('dryOven');
-  const { c, w, h } = setupCanvas(cv, Math.min(0.26, 230 / Math.max(cv.parentElement.clientWidth || 800, 400)));
+  // (236 px high at any width: the zones, the two lanes, the air and the scale)
+  const par = cv.parentElement, pcs = getComputedStyle(par), pw = par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
+  const { c, w, h } = setupCanvas(cv, 236 / (pw > 0 ? pw : 600));
   const ink = cssVar('--ink'), mut = cssVar('--muted'), line = cssVar('--line'), soft = cssVar('--soft'), surf = cssVar('--surface'), fibre = cssVar('--fibre'), warn = cssVar('--warn'), bad = cssVar('--bad');
   const L = 70, R = 14, x0 = rt.xStart, x1 = rt.xEnd, X = x => L + (x - x0) / (x1 - x0) * (w - L - R);
   cv._map = { invX: px => x0 + (px - L) / (w - L - R) * (x1 - x0) };
   c.font = '11px ' + cssVar('--sans'); c.textBaseline = 'middle';
   // the room and the zones (boxes; what is above the film drawn under each label)
   const topY = 6, boxH = 44;
-  if (x0 < 0) { c.fillStyle = soft; c.fillRect(X(x0), topY, X(0) - X(x0) - 2, boxH); c.fillStyle = mut; c.textAlign = 'center'; c.fillText('room', (X(x0) + X(0)) / 2, topY + 12); c.fillText(`${(-x0).toFixed(2)} m`, (X(x0) + X(0)) / 2, topY + 27); }
+  if (x0 < 0) { const rw = X(0) - X(x0) - 2, rm = (X(x0) + X(0)) / 2, fits = t => c.measureText(t).width < rw - 4; c.fillStyle = soft; c.fillRect(X(x0), topY, rw, boxH); c.fillStyle = mut; c.textAlign = 'center'; if (fits('room')) c.fillText('room', rm, topY + 12); if (fits(`${(-x0).toFixed(2)} m`)) c.fillText(`${(-x0).toFixed(2)} m`, rm, topY + 27); }
   let xz = 0;
   OVEN.zones.forEach((z, i) => {
     const a = X(xz), b = X(xz + z.len) - 2, mid = (a + b) / 2;
@@ -257,13 +259,13 @@ function drawDryOven(rt, rb) {
     c.beginPath(); S.forEach((q, k) => { const yy = web - q.h * sc; k ? c.lineTo(X(q.x), yy) : c.moveTo(X(q.x), yy); }); for (let k = S.length - 1; k >= 0; k--) c.lineTo(X(S[k].x), web - (S[k].h - S[k].skinT) * sc); c.closePath(); c.fill();
     if (S.some(q => q.skinB > 0)) { c.beginPath(); S.forEach((q, k) => { const yy = web; k ? c.lineTo(X(q.x), yy) : c.moveTo(X(q.x), yy); }); for (let k = S.length - 1; k >= 0; k--) c.lineTo(X(S[k].x), web - S[k].skinB * sc); c.closePath(); c.fill(); }
     // events: skin, dry, boiling
-    const mark = (x, t, col, above = true) => { if (x == null || x < x0 || x > x1) return; c.strokeStyle = col; c.setLineDash([3, 2]); c.beginPath(); c.moveTo(X(x), y - 4); c.lineTo(X(x), web + 8); c.stroke(); c.setLineDash([]); c.fillStyle = col; c.textAlign = X(x) > w - 80 ? 'right' : 'left'; c.fillText(t, X(x) + (X(x) > w - 80 ? -3 : 3), above ? y - 2 : web + 14); };
+    const mark = (x, t, col, above = true) => { if (x == null || x < x0 || x > x1) return; c.strokeStyle = col; c.setLineDash([3, 2]); c.beginPath(); c.moveTo(X(x), y - 4); c.lineTo(X(x), web + 8); c.stroke(); c.setLineDash([]); const flip = X(x) + 3 + c.measureText(t).width > w - 2; c.fillStyle = col; c.textAlign = flip ? 'right' : 'left'; c.fillText(t, X(x) + (flip ? -3 : 3), above ? y - 2 : web + 14); };
     mark(r.events.skinTop, 'skin', ink);
-    if (r.events.dry != null) mark(r.events.dry, 'dry', cssVar('--ok'), false);
+    if (r.events.dry != null) mark(r.events.dry, 'dry', cssVar('--ok'));
     if (r.events.boil != null) mark(r.events.boil, r.events.boilSkin ? 'boils under the skin' : 'boils', bad, false);
   }
-  // the air blown up into the fibre (under the lower lane)
-  const ay = lanes[1][2] + laneH + 12;
+  // the air blown up into the fibre (under the lower lane, below its labels)
+  const ay = lanes[1][2] + laneH + 22;
   xz = 0;
   c.strokeStyle = '#d9480f'; c.fillStyle = '#d9480f'; c.lineWidth = 1.4;
   OVEN.zones.forEach(z => { if (z.airU > 0) for (let f = 0.2; f < 1; f += 0.3) { const xx = X(xz + f * z.len); c.beginPath(); c.moveTo(xx, ay + 14); c.lineTo(xx, ay + 2); c.moveTo(xx - 3, ay + 6); c.lineTo(xx, ay + 2); c.lineTo(xx + 3, ay + 6); c.stroke(); } xz += z.len; });
@@ -307,7 +309,7 @@ function dryCharts(rt, rb) {
   const cv = id => document.getElementById(id);
   // 1. water in the film
   const W0 = rt.W0 * 1000, meas = dryExitMeasured(DRY.sel);
-  plotChart(cv('dr1'), DRY_ASPECT, { ...common, y0: 0, y1: W0 * 1.05, yl: 'water (g/m²)', yd: 0, vl: [...vl, ...ways.filter(([r]) => r.exit.dry).map(([r], k) => ({ x: r.events.dry, c: ok, t: k ? 'dry (top + bottom)' : 'dry (top only)' }))],
+  plotChart(cv('dr1'), DRY_ASPECT, { ...common, y0: 0, y1: W0 * 1.05, yl: 'water (g/m²)', yd: 0, vl: [...vl, ...ways.map(([r], k) => r.exit.dry ? { x: r.events.dry, c: ok, t: k ? 'dry (top + bottom)' : 'dry (top only)' } : null).filter(Boolean)],
     s: [...ways.map(([r, dash]) => ({ p: r.series.map(q => [q.x, (q.wet + q.bound) * 1000]), c: col, w: 2, dash })),
       ...(meas.length ? [{ p: meas.filter(m => Number.isFinite(m.water)).map(m => [x1, m.water / 100 * rt.mGO * 1000]), c: col, line: false, dots: true }] : [])] });
   lg('dr1', [[dryFilmName(DRY.sel), col], ...(meas.some(m => Number.isFinite(m.water)) ? [['measured at the exit', col, 'dot']] : [])]);
@@ -319,7 +321,7 @@ function dryCharts(rt, rb) {
   const Tall = [...rt.series, ...rb.series].flatMap(q => [q.Ts, q.Tb]).concat(air.map(p => p[1]), mt.map(m => m.T));
   const Thi = Math.max(...Tall), Tlo = Math.min(0, ...Tall);
   plotChart(cv('dr2'), DRY_ASPECT, { ...common, y0: Tlo, y1: Math.ceil(Thi / 10) * 10 + 10, yl: 'temperature (°C)', yd: 0, vl,
-    hl: [{ y: rt.Tboil, c: cssVar('--bad'), t: `water boils (${rt.Tboil.toFixed(0)} °C)` }],
+    hl: [{ y: rt.Tboil, c: cssVar('--bad'), t: `water boils (${rt.Tboil.toFixed(0)} °C)`, left: true }],
     s: [{ p: air, c: mut, w: 1.4, dash: [2, 3] }, ...ways.flatMap(([r, dash]) => [{ p: r.series.map(q => [q.x, q.Ts]), c: col, w: 2, dash }, { p: r.series.map(q => [q.x, q.Tb]), c: web, w: 2, dash }]),
       ...['top', 'web', 'air'].map(k => ({ p: mt.filter(m => m.kind === k).map(m => [m.x, m.T]), c: kinds[k], line: false, dots: true })).filter(q => q.p.length)] });
   lg('dr2', [['the film\'s top', col], ['its bottom (the web)', web], ['the air', mut, 'dash'], ...(mt.length ? [['measured', col, 'dot']] : [])]);
@@ -329,7 +331,7 @@ function dryCharts(rt, rb) {
   const E = [...rt.series, ...rb.series].flatMap(q => [q.Et, q.Eb]).map(v => v * 1000).sort((a, b) => a - b);
   const q = f => E[Math.min(E.length - 1, Math.max(0, Math.round(f * (E.length - 1))))];
   const Ehi = Math.max(0.01, q(0.98)) * 1.15, Elo = Math.min(0, Math.max(E[0], -Ehi)), clipped = E[0] < Elo - 1e-9 || E[E.length - 1] > Ehi;
-  plotChart(cv('dr3'), DRY_ASPECT, { ...common, y0: Elo, y1: Ehi, yl: 'evaporation (g/(m²·s))', yd: 2, vl, hl: Elo < 0 ? [{ y: 0, c: mut, t: clipped ? 'below: condensing (off the scale at the entry)' : 'below: condensing' }] : [],
+  plotChart(cv('dr3'), DRY_ASPECT, { ...common, y0: Elo, y1: Ehi, yl: 'evaporation (g/(m²·s))', yd: 2, vl, hl: Elo < 0 ? [{ y: 0, c: mut, t: clipped && (cv('dr3').parentElement.clientWidth || 800) > 520 ? 'below: condensing (off the scale at the entry)' : 'below: condensing', below: true }] : [],
     s: ways.flatMap(([r, dash], k) => [{ p: r.series.map(q => [q.x, q.Et * 1000]), c: col, w: 2, dash }, ...(k ? [{ p: r.series.map(q => [q.x, q.Eb * 1000]), c: web, w: 2, dash }] : [])]) });
   lg('dr3', [['from the top', col], ['from the bottom (top and bottom only)', web, 'dash']]);
   // 4. the film and its skin
@@ -359,7 +361,7 @@ function dryTable() {
     return one(rt, 'top') + one(rb, 'both') + m;
   }).join('');
   host.innerHTML = `<h3 class="oned-h">The drying at each location</h3><div class="oned-scroll"><table class="cfd-table dry-table">
-    <tr><th>Film</th><th>Water leaves</th><th>Dry at</th><th>Water left at the exit <small>% of the GO</small></th><th>Skin forms at</th><th>Film at the exit <small>µm</small></th><th>Hottest <small>°C</small></th><th>Boils</th></tr>${rows}</table></div>`;
+    <thead><tr><th>Film</th><th>Water leaves</th><th>Dry at</th><th>Water left at the exit <small>% of the GO</small></th><th>Skin forms at</th><th>Film at the exit <small>µm</small></th><th>Hottest <small>°C</small></th><th>Boils</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function dryNoteText(r) {
   const d = MAT.dry, len = ovenTime(lineSpeed()).len;

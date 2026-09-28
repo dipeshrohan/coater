@@ -95,7 +95,8 @@ function plotChart(cv, aspectRatio, opts) {
     c.strokeStyle = ref.c; c.setLineDash([5, 4]);
     c.beginPath(); c.moveTo(margin.l, Y(ref.y)); c.lineTo(w - margin.r, Y(ref.y)); c.stroke();
     c.setLineDash([]);
-    c.fillStyle = ref.c; c.textAlign = 'right'; c.fillText(ref.t, w - margin.r - 4, Y(ref.y) - 5);
+    // (ref.left: the label at the line's left end; ref.below: under the line -- where the curves leave it clear)
+    c.fillStyle = ref.c; c.textAlign = ref.left ? 'left' : 'right'; c.fillText(ref.t, ref.left ? margin.l + 4 : w - margin.r - 4, Y(ref.y) + (ref.below ? 14 : -5));
   });
   (opts.vl || []).forEach(ref => {
     c.strokeStyle = ref.c; c.setLineDash([5, 4]);
