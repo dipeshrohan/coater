@@ -520,6 +520,11 @@ function fmRun(dr, o) {
     const L = lay(worst.i), h = worst.h, Es = [];
     for (let Lh = h / 8; Lh <= 2 * worst.Lh * 1.0001; Lh *= 2) Es.push([Lh, fmCrack(L, worst.which, o, Lh).E]);
     ladder = []; for (let j = 0; j + 1 < Es.length; j++) ladder.push([4 * Es[j][0], (2 * Es[j][1] - Es[j + 1][1]) / h]);
+    // (a crack only just above the toughness crosses it at wide spacings: the ladder goes on until it does, 12 rungs at most)
+    for (let more = 0; worst.ratio >= 1 && more < 12 && !(ladder.length && ladder[ladder.length - 1][1] >= F.GcF); more++) {
+      const Lh = Es[Es.length - 1][0] * 2; Es.push([Lh, fmCrack(L, worst.which, o, Lh).E]);
+      const j = Es.length - 2; ladder.push([4 * Es[j][0], (2 * Es[j][1] - Es[j + 1][1]) / h]);
+    }
     if (worst.ratio >= 1) {
       if (ladder.length && ladder[0][1] >= F.GcF) spacing = { lo: ladder[0][0], hi: 2 * ladder[0][0], below: true };
       else for (let j = 1; j < ladder.length; j++) if (ladder[j][1] >= F.GcF) {

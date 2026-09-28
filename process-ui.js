@@ -50,7 +50,7 @@ function processStages() {
       return { k: 'align', t: 'Flake alignment', go: 4, st: !MAT.orient.on ? 'set' : o.length ? 'solved' : 'wait',
         s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')}${o.every(q => q.film.dried) ? `, dried ${o.map(q => q.film.dried.Sy.toFixed(2)).join(', ')}` : ''} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].charAt(0).toLowerCase() + OR_MODELS[MAT.orient.model].slice(1)}: computed with each 2D run` }; })(),
     { k: 'dry', t: 'Drying in the oven', go: 'dry', ...dryStage() },
-    { k: 'film', t: 'Film, peeled off', st: 'part', s: 'its dry thickness and weight; stress, cracks and peel GO-4' },
+    { k: 'film', t: 'Film, peeled off', go: 'film', ...filmStage() },
     { k: 'props', t: 'Properties', st: 'later', s: 'the GO film, reduced and graphene film (GO-5)' },
   ];
 }
@@ -58,7 +58,7 @@ const STAGE_ICON = { slurry: 'drop', coat: 8, align: 'fibre', dry: 'oven', film:
 function processChainHTML() {
   return `<ol class="chain" aria-label="The process, stage by stage">${processStages().map((g, i) => {
     const [stT, stC] = STAGE_ST[g.st], inner = `<span class="ch-n">${i + 1}</span><span class="ch-t">${uiBadge(STAGE_ICON[g.k])}${g.t}</span><span class="ch-st ch-${stC}">${stT}</span><span class="ch-s">${g.s}</span>`;
-    return `<li class="ch-${g.st}">${g.go != null ? `<button type="button" class="ch-b" data-chain="${g.go}" title="${g.go === 'oven' ? 'The oven\'s zones, in the inputs bar' : g.go === 'dry' ? 'The drying, below the chain' : `Open ${TABS[g.go]}`}">${inner}</button>` : `<div class="ch-b">${inner}</div>`}</li>`;
+    return `<li class="ch-${g.st}">${g.go != null ? `<button type="button" class="ch-b" data-chain="${g.go}" title="${g.go === 'oven' ? 'The oven\'s zones, in the inputs bar' : g.go === 'dry' ? 'The drying, below the chain' : g.go === 'film' ? 'The film, below the drying' : `Open ${TABS[g.go]}`}">${inner}</button>` : `<div class="ch-b">${inner}</div>`}</li>`;
   }).join('')}</ol>`;
 }
 
@@ -69,7 +69,7 @@ function processSidebar() {
   const c = MAT.slurry, row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
   document.getElementById('setupExtra').innerHTML = `
     <div class="tree-sep">Process setup</div>
-    <details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>Drying air (oven)</summary>${ovenZonesTree()}</details>
+    <details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>Drying air (oven)</summary>${ovenZonesTree({ peel: true })}</details>
     <details class="grp cfd-grp" data-tree="matro"${open('matro')}><summary>From the materials</summary>
       ${row('Solids (GO)', `${c.phi.v} vol%`)}${row('GO density', `${c.rhoS.v} g/cm³`)}${row('Liquid (water)', `${c.rhoL.v} kg/m³`)}${row('Dry film packing', `${c.phiDry.v}`)}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`)}
       <p class="prop-note">The slurry's card, on Materials. Its density follows from the solids, and the flow models use it.</p>
@@ -92,7 +92,7 @@ function processPageBody() {
   oneDRequest(true);
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   view.innerHTML = moduleFrame({
-    top: processChainHTML() + drySectionHTML(),
+    top: processChainHTML() + drySectionHTML() + filmSectionHTML(),
     panes: [{ id: 'pr1', icon: 'film', title: 'Wet and dry film across the web', aria: 'Wet film and dry film against position across the web',
       legend: oneDLegend([['wet film (1D)', mut, 'dash'], ['dry film (mass balance)', acc]]),
       note: 'The wet film is the 1D gap flow at every position across the web (Flow › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
@@ -104,7 +104,8 @@ function processPageBody() {
       const b = e.target.closest && e.target.closest('[data-chain]');
       if (!b || tab !== 12) return;
       const go = b.dataset.chain;
-      if (go === 'dry') { const sec = document.getElementById('drySec'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      if (go === 'dry' || go === 'film') { const sec = document.getElementById(go === 'dry' ? 'drySec' : 'filmSec'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      else if (go === 'peel') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; const b = document.getElementById('ovzPeel'); if (b) b.scrollIntoView({ block: 'nearest' }); const f = document.getElementById('ovzPeelLen'); if (f) f.focus(); } }
       else if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else { tab = +go; render(); }
     });
@@ -114,7 +115,7 @@ function processPageBody() {
   // (the web: the 1D across it; until it is solved, the four locations' mean)
   const locs = CFD_LOCS.map((_, i) => processFilmAt(i));
   const known = locs.filter(Boolean), hWeb = web ? web.mean : known.length ? known.reduce((a, q) => a + q.h, 0) / known.length : null;
-  if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', ''); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); return; }
+  if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', ''); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); filmRender(); return; }
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
   let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film`, '');
   pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${ACROSS_W} mm web at ${P.U} m/min`, '');
@@ -142,6 +143,7 @@ function processPageBody() {
   } else { const cx = setupCanvas(cv, fitAspect(cv, 0.4)); cx.c.fillStyle = mut; cx.c.font = '13px ' + cssVar('--sans'); cx.c.fillText('Solving the 1D across the web…', 16, 28); }
   drawProcessTable(locs, web);
   dryRender();
+  filmRender();
 }
 /** Per location: the wet film (and which model it is from), and what the mass balance makes of it; the web's mean beside them. */
 function drawProcessTable(locs, web) {
@@ -243,6 +245,7 @@ function viewMaterials() {
       </section>
       ${orCardHTML()}
       ${dryCardHTML()}
+      ${filmCardHTML()}
       ${rtCardHTML()}
       <section class="mat-card" aria-labelledby="matFibreH">
         <header><h3 id="matFibreH">${uiBadge('fibre')}Fibre web: what it is coated onto</h3><button type="button" class="linkish" id="matFibreEdit">Edit in Flow › 2D</button></header>
@@ -289,6 +292,7 @@ function viewMaterials() {
   matRheoDerived();
   orWire();
   dryWireCard();
+  filmWireCard();
   rtDraw();
 }
 /** The rheology card's counts and warnings (in place). */

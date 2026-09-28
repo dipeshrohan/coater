@@ -1740,3 +1740,24 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .prop.ovz-top { display: block; }
 .prop.ovz-top .prop-v { display: block; margin-top: 4px; }
 .prop.ovz-top select { width: 100%; }
+/* GO-4: the film, peeled off (film-ui.js) -- the checks with their pictures, the measured */
+.film-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px 14px; margin: 10px 0; }
+.film-check { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); min-width: 0; }
+.film-check h4 { margin: 0 0 4px; font-size: 13px; }
+.film-check > div { min-width: 0; font-size: 12.5px; line-height: 1.4; }
+.film-check .film-pic { background: var(--surface); }
+.film-v { display: block; margin: 2px 0; color: var(--ink); }
+.film-v b { font-weight: 600; color: var(--muted); margin-right: 4px; }
+.film-meas .dry-mcol h4 { display: flex; align-items: center; gap: 8px; }
+.film-meas .dry-mcol h4 .dry-pic { border-radius: 6px; }
+.film-imp li { margin: 4px 0; }
+.film-imp .linkish { margin-left: 6px; font-size: 12px; }
+.ovz-peel { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 6px; }
+.ovz-peel .prop-l small { color: var(--warn); font-weight: 400; }
+.ovz-peel .ovz-pic .film-pic { max-width: 180px; }
+.ovz-peel .ovz-roll .film-pic { max-width: 110px; }
+@media (max-width: 640px) {
+  .film-checks { grid-template-columns: 1fr; }
+  .film-check { flex-direction: column; }
+  .film-check .film-pic { width: 100%; max-width: 220px; height: auto; }
+}
