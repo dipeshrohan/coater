@@ -100,7 +100,7 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [] } });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] } });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;
@@ -159,8 +159,12 @@ const OVEN_TOP_FIELDS = [['jetU', 'Jet speed at the nozzles', 'm/s', 0.5, 150, 0
 const OVEN_ZONE_DEFAULT = { len: 2, airU: 1, airT: 100, plenum: 100, rh: 20, top: 'none', jetU: 10, jetT: 100, jetB: 5, jetH: 20, jetS: 100, ir: 5 };
 // (peel: after the oven the film runs through the room to where it is peeled (Q63: a stretch, its length yours) and is
 // wound on the winder's core (Q61: not known, 76 mm assumed); lenSet / coreSet: set by you, else assumed)
-const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false };
-const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet']];
+// (pieceL / pieceW: the pieces cut from the roll later, GO-4d -- Q65: 30 × 30 cm, from you; Q70: cut from the roll; dryT: the
+// drying oven the pieces are stacked in -- Q72: about 100 °C, from you; Q73/Q74: 1–2 h, pressed)
+const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true };
+const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet'],
+  ['pieceL', 'Piece\'s length (along the line)', 'mm', 10, 2000, 1, 0, 'pieceSet'], ['pieceW', 'Piece\'s width', 'mm', 10, 2000, 1, 0, 'pieceSet'],
+  ['dryT', 'Drying oven for the pieces', '°C', 20, 300, 1, 0, 'drySet']];
 const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT } });
 let OVEN = ovenDefaults();
 const OVEN_MAX_ZONES = 8;

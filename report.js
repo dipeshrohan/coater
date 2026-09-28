@@ -30,8 +30,8 @@ function reportSections() {
   const solved = cfdRuns.filter(r => r.field).length, stale = CFD_LOCS.filter((_, i) => cfdIsStale(i)).length;
   return [
     { k: 'inputs', l: 'Inputs', note: 'the sidebar inputs every module uses' },
-    { k: 'proc', l: TABS[12], note: `the chain, the drying in the oven, the mass balance, the oven's ${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}` },
-    { k: 'mat', l: TABS[13], note: 'the slurry card, how it flows, the fibre web' },
+    { k: 'proc', l: TABS[12], note: `the chain, the drying in the oven, the film peeled off and a piece of it in 3D, the mass balance, the oven's ${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}` },
+    { k: 'mat', l: TABS[13], note: 'the slurry card, how it flows, the flakes, the drying, the film, the fibre web' },
     { k: 'm0', l: TABS[0], note: 'scenario, results, plots, checks' },
     { k: 'm1', l: TABS[1], note: 'results, plots, checks' },
     { k: 'm2', l: TABS[2], note: 'results, plots, checks' },
@@ -131,6 +131,7 @@ async function repProcess() {
   await oneDWait(true);   // (the wet film across the web: the 1D, for the inputs as they are)
   await dryWait();        // (the drying in the oven, GO-3: every film, both ways the water may leave)
   await filmWait();       // (the film followed on to the peel, GO-4)
+  if (typeof sheetWait === 'function') await sheetWait();   // (a piece of it in 3D, GO-4d)
   let html = await repModule(12);
   const chain = [...document.querySelectorAll('.chain li')].map(li => [repEsc(cleanText(li.querySelector('.ch-t'))), repEsc(cleanText(li.querySelector('.ch-st'))), repEsc(cleanText(li.querySelector('.ch-s')))]);
   const t = document.querySelector('.proc-mb'), note = document.querySelector('#procTable .fv-note');
@@ -169,9 +170,15 @@ async function repProcess() {
     + (fmRows.length ? '<h4>Measured film</h4>' + repRows(fmRows, ['Measured', 'What', '']) + (fImp.length ? `<ul class="checks">${fImp.join('')}</ul>` : '') : '')
     + '<h4>After the oven</h4>' + repRows([[repEsc(OVEN_PEEL_FIELDS[0][1]), repEsc(repUnit(repNum(pl.len, 1), 'm')), pl.lenSet ? 'From you' : 'Assumed'], [repEsc(OVEN_PEEL_FIELDS[1][1]), repEsc(repUnit(repNum(pl.core, 0), 'mm')), pl.coreSet ? 'From you' : 'Assumed']], ['', 'Value', 'From'])
     + (fNote && cleanText(fNote) ? `<p class="lede">${repEsc(cleanText(fNote))}</p>` : '');
+  // a piece in 3D (GO-4d): its state line, the two shapes in words, the measured size and what it implies (the drawings go with the plots)
+  const sSt = document.getElementById('sheetState'), sL = ['sh1Lg', 'sh2Lg'].map(id => document.getElementById(id)).filter(Boolean);
+  const sRows = ((MAT.filmMeas || {}).size || []).map(q => [q.loc === 'web' ? 'The web' : q.loc, repEsc(`size pressed flat, ${SHEET_WHEN[q.when] || SHEET_WHEN.dry}`), repEsc([Number.isFinite(q.L) ? `${q.L} mm long` : '', Number.isFinite(q.W) ? `${q.W} mm wide` : ''].filter(Boolean).join(', '))]);
+  const sImp = [...document.querySelectorAll('#sheetMeas .film-imp li')].map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*Use (top only|top and bottom)'s/g, ''))}</li>`);
+  const piece = sSt && cleanText(sSt) ? `<h4>A piece cut from the roll, in 3D (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(sSt))}</p>` + repRows([['Held up (free)', repEsc(cleanText(sL[0]))], ['On a table (its weight)', repEsc(cleanText(sL[1]))]], ['', 'Its shape'])
+    + (sRows.length ? repRows(sRows, ['Measured', 'What', '']) + (sImp.length ? `<ul class="checks">${sImp.join('')}</ul>` : '') : '') : '';
   return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
     + drying
-    + film
+    + film + piece
     + (t ? '<h3>The mass balance at each location</h3>' + repTable(t) + (note ? `<p class="lede">${repEsc(cleanText(note))}</p>` : '') : '')
     + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1])), 'Above the film']) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min. Assumed values.`)}</p>`;
 }

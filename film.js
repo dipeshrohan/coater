@@ -538,15 +538,17 @@ function fmRun(dr, o) {
 
   // ---- the film at the peel ----
   const iP = n - 1, SP = hh.steps[iP], LP = lay(iP);
-  const layers = en => {
+  // (each set layer: its stiffness at the water it holds then -- as at the peel, or settled)
+  const layers = (en, Xv = SP.X) => {
     const out = [];
-    for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + SP.X[k] / F.Xh), Ek = F.Ep * f; out.push({ k, t: LP.tSet(k), z0: LP.z0[k], E: Ek, Q: Ek / (1 - F.nup), en: en[k] }); }
+    for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + Xv[k] / F.Xh), Ek = F.Ep * f; out.push({ k, t: LP.tSet(k), z0: LP.z0[k], E: Ek, Q: Ek / (1 - F.nup), en: en[k] }); }
     return out;
   };
   // (the natural strains: as at the peel; settled in the room -- its humidity's water, its temperature)
   const Xroom = Math.min(fmGAB(o.rhRoom, o.gab), hh.Xcap);
   const enAt = (Xv, Tv) => { const e = new Float64Array(hh.K).fill(NaN); for (let k = 0; k < hh.K; k++) if (SP.set[k]) e[k] = hh.bornE[k] + F.alphaF * (Tv[k] - hh.bornT[k]) + F.beta * (Xv[k] - hh.bornX[k]); return e; };
-  const Lp = layers(enAt(SP.X, SP.T)), Ls = layers(enAt(new Float64Array(hh.K).fill(Xroom), new Float64Array(hh.K).fill(o.Troom)));
+  const XroomA = new Float64Array(hh.K).fill(Xroom), TroomA = new Float64Array(hh.K).fill(o.Troom);
+  const Lp = layers(enAt(SP.X, SP.T)), Ls = layers(enAt(XroomA, TroomA), XroomA);
   const free = fmFree(Lp), settled = fmFree(Ls);
   const lift = (kap, Lv) => { if (Math.abs(kap) < 1e-12) return 0; const R = 1 / Math.abs(kap); return Lv / 2 < Math.PI * R ? R * (1 - Math.cos(Lv / (2 * R))) : 2 * R; };
   const sheet = o.sheet || 0.1;
@@ -573,6 +575,23 @@ function fmRun(dr, o) {
   for (const Lr of Lp) for (const zz of [Lr.z0, Lr.z0 + Lr.t]) sRollMax = Math.max(sRollMax, Lr.Q * (e0w + kW * zz - Lr.en));
   const topL = Lp[Lp.length - 1], sRollTop = topL ? topL.Q * (e0w + kW * (topL.z0 + topL.t) - topL.en) : 0;
   const roll = { core: o.core, kappa: kW, sMax: sRollMax, sTop: sRollTop, cracks: sRollMax >= F.sigF, strainTop: hF / o.core, set: (F.setFrac || 0) * (kW - free.kappa) };
+  // the plate a piece cut from the roll is (GO-4d, sheet.js), as cut: on the roll its water evens out through it but
+  // stays in (the turns seal each other; only the roll's ends breathe), at the room's temperature -- its stiffnesses
+  // about its neutral plane, its natural curvature both ways (+ the roll's set along the line), its weight. Pressed
+  // flat, its natural strain as cut and after the drying oven (Q72: dried through at the oven's temperature, its air
+  // the room's heated -- the isotherm's water there -- then cooled to the room's)
+  // (eX: the part of the flat strain per unit β -- it is linear in β -- so a measured size reads back as a β)
+  const plateOf = (Ls2, Xv) => { let S2 = 0, Sz = 0; for (const Lr of Ls2) { S2 += Lr.E * Lr.t; Sz += Lr.E * Lr.t * (Lr.z0 + Lr.t / 2); }
+    const zn = Sz / S2; let D2 = 0, An2 = 0, Bn2 = 0, EX2 = 0;
+    for (const Lr of Ls2) { const zm = Lr.z0 + Lr.t / 2 - zn; D2 += Lr.E * (Lr.t * zm * zm + Lr.t * Lr.t * Lr.t / 12); An2 += Lr.E * Lr.t * Lr.en; Bn2 += Lr.E * Lr.t * zm * Lr.en; EX2 += Lr.E * Lr.t * (Xv[Lr.k] - hh.bornX[Lr.k]); }
+    return { A: S2, D: D2, eFlat: An2 / S2, eX: EX2 / S2, kappa: Bn2 / D2 }; };
+  let tX = 0, xX = 0; for (const Lr of Lp) { tX += Lr.t; xX += Lr.t * SP.X[Lr.k]; }
+  const Xcut = tX > 0 ? xX / tX : Xroom, XcutA = new Float64Array(hh.K).fill(Xcut);
+  const Tdry = Number.isFinite(o.Tdry) ? o.Tdry : 100, rhDry = Math.min(1, o.rhRoom * psat(o.Troom) / psat(Tdry));
+  const Xdry = Math.min(fmGAB(rhDry, o.gab), hh.Xcap), XdryA = new Float64Array(hh.K).fill(Xdry);
+  const pC = plateOf(layers(enAt(XcutA, TroomA), XcutA), XcutA), pD = plateOf(layers(enAt(XdryA, TroomA), XdryA), XdryA), phiM = 1 / (1 + dr.history.em);
+  const plate = { A: pC.A, D: pC.D, nu: F.nup, h: hF, kS: pC.kappa, kSet: roll.set, p: o.rhoS * phiM * (1 + Xcut) * 9.81 * hF,
+    eFlatCut: pC.eFlat, eFlatDry: pD.eFlat, eXCut: pC.eX, eXDry: pD.eX, kDry: pD.kappa, Xcut, Xdry, Tdry, rhDry };
   // blisters: the bonded film compressed on the web buckles off it (buckle-delamination: the most a straight blister
   // releases, (1 − ν²) σ² h / (2E), against the interface's toughness; the narrowest that can buckle), and steam under a skin
   const bl = line.map(Lr => {
@@ -586,7 +605,7 @@ function fmRun(dr, o) {
   if (dr.events.boilSkin) { let Tmax = -Infinity; for (const q of dr.series) Tmax = Math.max(Tmax, q.Tft, q.Tfb); steam = { x: dr.events.boil, dp: psat(Tmax) - (o.P || 101325) }; }
   // through the film at the peel (z up from the web): each set layer's stress and water; the wet film between, if any
   const profile = { cells: Lp.map(Lr => ({ z0: Lr.z0, t: Lr.t, sig: SP.sig[Lr.k], X: SP.X[Lr.k] })), hB: LP.hB, hWet: LP.hWet, hFilm: LP.hFilm };
-  return { line, stations, worst, spacing, ladder, firstCrack, curl, peel, roll, blisters: { max: blMax, line: bl, steam },
+  return { line, stations, worst, spacing, ladder, firstCrack, curl, peel, roll, plate, blisters: { max: blMax, line: bl, steam },
     peelX: SP.x, ovenX: dr.xOven, wetAtPeel: !LP.dry, hPeel: hF, Xcap: hh.Xcap, profile };
 }
 
@@ -598,7 +617,7 @@ function fmRun(dr, o) {
 function fmCurlOnly(dr, o) {
   const hh = fmHistory(dr, o), F = o.film, n = hh.steps.length, SP = hh.steps[n - 1], LP = fmLayout(hh, n - 1, dr.series[n - 1].h, o);
   const Xroom = Math.min(fmGAB(o.rhRoom, o.gab), hh.Xcap);
-  const lay = (Xv, Tv) => { const out = []; for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + SP.X[k] / F.Xh), Ek = F.Ep * f;
+  const lay = (Xv, Tv) => { const out = []; for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + Xv[k] / F.Xh), Ek = F.Ep * f;
     out.push({ t: LP.tSet(k), z0: LP.z0[k], Q: Ek / (1 - F.nup), en: hh.bornE[k] + F.alphaF * (Tv[k] - hh.bornT[k]) + F.beta * (Xv[k] - hh.bornX[k]) }); } return out; };
   return { atPeel: fmFree(lay(SP.X, SP.T)).kappa, settled: fmFree(lay(new Float64Array(hh.K).fill(Xroom), new Float64Array(hh.K).fill(o.Troom))).kappa };
 }

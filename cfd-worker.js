@@ -171,7 +171,7 @@ onmessage = e => {
       stage = 'the film to the peel'; lastPost = 0; post({ it: 0, residual: NaN, s: 1 });
       const sum = r => ({ crack: r.worst ? r.worst.ratio : 0, spacing: r.spacing ? (r.spacing.lo + r.spacing.hi) / 2 : null, peelHand: r.peel.hand.f,
         peel90: (r.peel.byAngle.find(q => q.deg === 90) || {}).f, tears: r.peel.byAngle.some(q => q.tears), curl: r.curl.settled.kappa, roll: r.roll.sMax,
-        blister: r.blisters.max.ratio, wet: r.wetAtPeel });
+        blister: r.blisters.max.ratio, wet: r.wetAtPeel, size: r.plate ? ((1 + r.plate.eFlatDry) / (1 + r.plate.eFlatCut) - 1) * 100 : NaN });
       const one = where => sum(fmRun(drStrip({ ...o.dry, after: o.film.after, h0: g.Q / o.U, where, history: true }), o.film.fo));
       try { peeled = { top: one('top'), both: one('both') }; }
       catch (e) { peeled = { error: e.message }; }

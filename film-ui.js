@@ -79,7 +79,7 @@ function filmOpts() {
       sigF: v('sigF') * 1e6, GcF: v('GcF'), Gil: v('Gil'), Gi: v('Gi'), setFrac: v('setFrac') },
     web: { Ew: v('Ew') * 1e9, nuw: v('nuw'), alphaW: v('alphaW') * 1e-6, tw: P.tf / 1000, soft: v('soft') },
     gel: { Eg: v('Eg') * 1e3 }, gab: { Xm: d.gabXm.v, C: d.gabC.v, K: d.gabK.v }, rhoS: MAT.slurry.rhoS.v * 1000, rhoL: MAT.slurry.rhoL.v,
-    skinK: d.skinK.v * 1e-12, K: 120, core: OVEN.peel.core / 1000, Troom: d.Troom.v, rhRoom: d.rhRoom.v / 100, P: 101325,
+    skinK: d.skinK.v * 1e-12, K: 120, core: OVEN.peel.core / 1000, Troom: d.Troom.v, rhRoom: d.rhRoom.v / 100, P: 101325, Tdry: OVEN.peel.dryT,
   };
 }
 /** The drying's inputs followed to the peel: the room stretch after the oven. */
@@ -166,6 +166,7 @@ function filmSectionHTML() {
     </div>
     <div id="filmTable"></div>
     <div id="filmMeas"></div>
+    ${typeof sheetSectionHTML === 'function' ? sheetSectionHTML() : ''}
     <p class="fv-note" id="filmNote"></p>
   </section>`;
 }
@@ -178,6 +179,7 @@ function filmRender() {
   const sec = document.getElementById('filmSec');
   if (!sec) return;
   if (!sec.dataset.wired) filmWire(sec);
+  if (typeof sheetRender === 'function') sheetRender();   // (the piece in 3D, GO-4d: after the film, the film shown)
   sec.querySelectorAll('[data-film]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.film === DRY.sel)));
   const st = document.getElementById('filmState');
   if (!dryFilms().length) { st.innerHTML = `<p class="dry-msg">${pill('Waiting for the 1D: the film starts from the wet film', '')}</p>`; filmClear(); return; }
@@ -292,14 +294,18 @@ function filmCharts(rt, rb) {
     s: ways.flatMap(([r, dash]) => [{ p: pts(r, 'float'), c: acc, w: 1.6, dash, dots: true }, { p: pts(r, 'bond'), c: col, w: 1.6, dash, dots: true }]) });
   lg('fm2', [['the skin over the wet film', acc], ['the film on the web', col], ['top and bottom', mut, 'dash']]);
   // 3. the peel force against the angle (the hand's 180°; the winder's not known); measured peel forces
-  const fAt = r => r.peel.byAngle.filter(q => q.deg >= 20).map(q => q.f).filter(Number.isFinite);
-  const meas = (MAT.filmMeas.peel || []).filter(q => q.loc === DRY.sel && Number.isFinite(q.f) && Number.isFinite(q.angle));
-  const fHi = Math.max(1e-3, ...fAt(rt), ...fAt(rb), ...meas.map(q => q.f)) * 1.25;
-  plotChart(cv('fm3'), FILM_ASPECT, { x0: 0, x1: 180, xl: 'peel angle (°)', xticks: [0, 30, 60, 90, 120, 150, 180], xf: v => `${v}`, y0: 0, y1: fHi, yl: 'force per width (N/m)', yd: 1,
+  const meas = (MAT.filmMeas.peel || []).filter(q => q.loc === DRY.sel && Number.isFinite(q.f) && Number.isFinite(q.angle) && q.f > 0);
+  const okF = q => Number.isFinite(q.f) && q.f > 0, allF = [...ways.flatMap(([r]) => r.peel.byAngle.filter(okF).map(q => q.f)), ...meas.map(q => q.f)];
+  if (!allF.length) allF.push(1, 10);   // (nothing to show: an axis from 1 to 10 N/m)
+  const lgf = v => Math.log10(v), fLo = lgf(Math.min(...allF) / 1.4), fHi = lgf(Math.max(...allF) * 1.4), dec = fHi - fLo;
+  const mults = dec > 2.5 ? [1] : dec > 1.2 ? [1, 3] : [1, 2, 5], fTicks = [];
+  for (let k = Math.floor(fLo); k <= Math.ceil(fHi); k++) for (const mm of mults) { const v = lgf(mm) + k; if (v >= fLo && v <= fHi) fTicks.push(v); }
+  plotChart(cv('fm3'), FILM_ASPECT, { x0: 0, x1: 180, xl: 'peel angle (°)', xticks: [0, 30, 60, 90, 120, 150, 180], xf: v => `${v}`, y0: fLo, y1: fHi, yticks: fTicks,
+    yf: v => { const f = 10 ** v; return f >= 10 ? f.toFixed(0) : String(+f.toPrecision(2)); }, yl: 'force per width (N/m, log scale)',
     vl: [{ x: 180, c: mut, t: 'by hand' }],
-    s: [...ways.map(([r, dash]) => ({ p: r.peel.byAngle.filter(q => Number.isFinite(q.f)).map(q => [q.deg, q.f]), c: col, w: 2, dash })),
-      ...ways.map(([r]) => ({ p: r.peel.byAngle.filter(q => q.tears && Number.isFinite(q.f)).map(q => [q.deg, q.f]), c: bad, line: false, dots: true })).filter(s => s.p.length),
-      ...(meas.length ? [{ p: meas.map(q => [q.angle, q.f]), c: okc, line: false, dots: true }] : [])] });
+    s: [...ways.map(([r, dash]) => ({ p: r.peel.byAngle.filter(okF).map(q => [q.deg, lgf(q.f)]), c: col, w: 2, dash })),
+      ...ways.map(([r]) => ({ p: r.peel.byAngle.filter(q => q.tears && okF(q)).map(q => [q.deg, lgf(q.f)]), c: bad, line: false, dots: true })).filter(s => s.p.length),
+      ...(meas.length ? [{ p: meas.map(q => [q.angle, lgf(q.f)]), c: okc, line: false, dots: true }] : [])] });
   lg('fm3', [[dryFilmName(DRY.sel), col], ['top and bottom', col, 'dash'], ...(ways.some(([r]) => r.peel.byAngle.some(q => q.tears)) ? [['tears', bad, 'dot']] : []), ...(meas.length ? [['measured', okc, 'dot']] : [])]);
   // 4. through the film at the peel: each set layer's stress against its height over the web
   const prof = r => r.profile.cells.flatMap(c => [[c.sig / 1e6, c.z0 * 1e6], [c.sig / 1e6, (c.z0 + c.t) * 1e6]]);
@@ -500,7 +506,12 @@ function filmPeelTreeHTML(prop) {
     ${prop(`${OVEN_PEEL_FIELDS[0][1]}${pl.lenSet ? '' : ' <small>assumed</small>'}`, 'ovzPeelLen', `min="${OVEN_PEEL_FIELDS[0][3]}" max="${OVEN_PEEL_FIELDS[0][4]}" step="${OVEN_PEEL_FIELDS[0][5]}" value="${pl.len}" data-ovpeel="len"`, OVEN_PEEL_FIELDS[0][2])}
     <div class="ovz-pic ovz-roll">${filmPicRoll()}</div>
     ${prop(`${OVEN_PEEL_FIELDS[1][1]}${pl.coreSet ? '' : ' <small>assumed</small>'}`, 'ovzPeelCore', `min="${OVEN_PEEL_FIELDS[1][3]}" max="${OVEN_PEEL_FIELDS[1][4]}" step="${OVEN_PEEL_FIELDS[1][5]}" value="${pl.core}" data-ovpeel="core"`, OVEN_PEEL_FIELDS[1][2])}
-    <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p></div>`;
+    <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>
+    <div class="ovz-pic">${filmPicCut()}</div>
+    ${[2, 3].map(i => { const f = OVEN_PEEL_FIELDS[i]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, i === 2 ? 'ovzPieceL' : 'ovzPieceW', `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); }).join('')}
+    <div class="ovz-pic">${filmPicDryStack()}</div>
+    ${(() => { const f = OVEN_PEEL_FIELDS[4]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, 'ovzDryT', `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); })()}
+    <p class="prop-note">The pieces are cut from the roll later, then stacked 20 at a time under an aluminium plate and dried 1–2 h (the 3D piece in the film's section).</p></div>`;
 }
 function wireFilmPeel(changed) {
   document.querySelectorAll('#setupExtra input[data-ovpeel]').forEach(el => {

@@ -685,6 +685,61 @@ GO-4d decisions (the 3D sheet; user, with pictures):
 - Q68/Q69: measured on a piece: its length and width, pressed flat, some time after it is cut (how much it shrank or
   grew with its water).
 - Q70: the pieces are cut from the roll later (the roll kept, then unwound and cut).
+- The route after cutting (the user): the pieces are stacked and dried in an oven to drive off the water; then stacked
+  alternately with graphite paper and heated in a furnace to 2800 °C: graphene film (GO-5).
+- Q71: a piece's length and width (pressed flat) are measured three times: before the drying oven (as cut), after it,
+  after the furnace.
+- Q72–Q74: the drying oven is at about 100 °C, the stacks in it 1–2 h, pressed.
+- Q75: out of the pressed drying the pieces have wrinkles and waviness (the user can send photos: Q76).
+- Q77: 20 pieces directly on each other, then an aluminium plate; Q78: a light plate (about 1 kPa); Q79: the waves are
+  in photos only.
+
+GO-4d design (the 3D sheet):
+- A cut piece as a thin plate (von Kármán: large deflection, moderate rotation), in-plane isotropic, about its
+  neutral plane (all layers share one Poisson's ratio, so its stretch and bend do not couple there). Its natural
+  curvature: the settled free film's (film.js's layers, their water at the room's humidity) both ways, plus along the
+  line the share of the roll's bend the roll sets (the Film card). Its stiffness per width and bending stiffness from
+  the same layers. Its weight per area from its thickness, the GO's density at the packing and its water.
+- Two states (Q67 not known): free (held up: no weight across it) and lying on a table with its curl up (resting on
+  its middle; the table pushes back where it would go under). A large piece with the same curvature both ways cannot
+  keep a bowl (that would stretch it): past a size it rolls into a tube one way; which way is decided by small
+  differences -- the roll's set is along the line; with none, a tiny preference along the line is used and said.
+- Finite elements: Bogner–Fox–Schmit rectangles (bicubic Hermite for u, v, w), 4×4 Gauss, a quarter of the piece with
+  its two mirror lines; the energy minimised by Newton with a Levenberg–Marquardt shift and a line search (a stable
+  shape, never a saddle), the curvature raised in steps.
+- The piece as cut: on the roll its water evens out through it but stays in (the turns seal each other; only the
+  roll's ends breathe), at the room's temperature; its curl and shape from that state.
+- Its size pressed flat (Q68/69/71): its length is the layers' stiffness-weighted natural strain. After the drying oven
+  (dried through: its air the room's heated, the isotherm's water there; measured cooled): after / as cut =
+  (1 + ε_dry) / (1 + ε_cut). Measured after the oven against before it (or the size cut) reads back as the β it
+  implies (linear in β), with Use; after the furnace kept for GO-5. How far 1–2 h in the pressed stack dries a piece
+  (its water can leave only through the stack's edges) and the waviness it comes out with: the next step (GO-4f),
+  from the user's photos.
+- Checks (sheet.validate.js): the element reproduces a bicubic; the gradient and stiffness against finite
+  differences; one-way curvature gives an exact cylinder; a small piece a spherical cap; a large piece a tube whose
+  curvature tends to (1 + ν) κ̄ (κ̄ with ν = 0); the shape scales with κ̄L²/h; the heavy strip on a table against its
+  closed forms (lift-off κ̄ℓ²/4 with ℓ = √(2Dκ̄/p); resting on its middle κ̄l²/2 − pl⁴/(8D)); the mesh converged; the
+  layers' curvature and flat strain as film.js's free film's.
+
+GO-4d built:
+- sheet.js as designed: an 8 × 8 quarter (972 dofs, band 132), the curvature raised in 8 steps with a 2 % preference
+  along the line, then a last pass without it; about 3 s a shape in the browser (four per film shown: free and on a
+  table, both ways), in cfd-sheet-worker.js. sheet.validate.js: 14 checks, all passing (the element exact to 1e-15;
+  the gradient and stiffness to 2e-9; the cylinder exact; the cap 0.04 %; the tube 0.9155 → 0.9536 toward 0.96,
+  0.8035 with ν = 0; the similarity exact; the heavy strip 0.679 vs 0.680 mm and 4.815 vs 4.810 mm; the mesh 1e-4).
+- film.js: the settled layers now stiffened at the settled water (they were at the peel's: the settled curl changes
+  a little); the plate a cut piece is (its stiffnesses, natural curvature, the roll's set, its weight; its flat strain
+  as cut and settled, and their parts per unit β).
+- UI (sheet-ui.js): in the film's section, "A piece cut from the roll, in 3D": the picture of the roll cut into
+  pieces, which way the water left (top only / top and bottom), the piece held up and on a table drawn from above and
+  the front (heights exaggerated, said), which way it rolls and how high its corners, ends and sides lift, its size
+  pressed flat after the drying oven against as cut, and a warning when it curls past moderate slopes; measured sizes
+  before the drying oven, after it and after the furnace, after against before read back as β with Use. The inputs
+  bar: the pieces' length and width (300 × 300 mm, from you) with the roll-and-scissors picture, and the drying oven
+  (100 °C, from you) with the stack's picture. The DOE: the piece's size change in the drying oven, both ways. The report, help, the guide, projects (old ones get
+  300 × 300 mm), undo.
+- Also: the peel force against the angle on a log scale (near 0° it grows without bound and squeezed the angles that
+  matter); the report dialog names the film and the Materials cards.
 
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
