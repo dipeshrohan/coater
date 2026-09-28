@@ -64,9 +64,9 @@ function filmPicCut(sc = 1) {
 
 /** Q72–Q77: 20 pieces stacked under an aluminium plate in the drying oven. */
 function filmPicDryStack(sc = 1) {
-  const w = 190, h = 96;
-  let st = ''; for (let k = 0; k < 10; k++) st += `<rect x="62" y="${76 - k * 5}" width="66" height="3" fill="#e8590c"/>`;
-  return filmSvg(w, h, 'The pieces stacked 20 at a time under an aluminium plate in the drying oven', `<rect x="30" y="14" width="130" height="74" rx="6" fill="none" stroke="#c92a2a" stroke-width="2"/><text x="95" y="10" font-size="9" text-anchor="middle" fill="#c92a2a">drying oven</text>${st}<rect x="58" y="${76 - 10 * 5 - 5}" width="74" height="6" fill="#adb5bd" stroke="#868e96"/><text x="95" y="${76 - 10 * 5 - 9}" font-size="8" text-anchor="middle" fill="var(--muted)">aluminium plate</text>`, sc);
+  const w = 190, h = 106, b = 86;
+  let st = ''; for (let k = 0; k < 10; k++) st += `<rect x="62" y="${b - k * 5}" width="66" height="3" fill="#e8590c"/>`;
+  return filmSvg(w, h, 'The pieces stacked 20 at a time under an aluminium plate in the drying oven', `<rect x="30" y="14" width="130" height="84" rx="6" fill="none" stroke="#c92a2a" stroke-width="2"/><text x="95" y="10" font-size="9" text-anchor="middle" fill="#c92a2a">drying oven</text>${st}<rect x="58" y="${b - 10 * 5 - 5}" width="74" height="6" fill="#adb5bd" stroke="#868e96"/><text x="95" y="${b - 10 * 5 - 9}" font-size="8" text-anchor="middle" fill="var(--muted)">aluminium plate</text>`, sc);
 }
 
 // ---- the drawing: the piece in a view from above and the front, its heights exaggerated (said) ----
