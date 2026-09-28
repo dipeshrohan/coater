@@ -173,6 +173,11 @@ const rel = (a, b) => Math.abs(a - b) / Math.abs(b);
       check(`the curl is linear in β: from β = 0 and 1, exactly (${tag})`, e < 1e-9, `${e.toExponential(1)}; κ at the peel ${kb.atPeel.toFixed(4)} 1/m`); }
     // the app's crack mesh against a finer one at the worst place
     const r = F.fmRun(dr, o);
+    // (GO-4f: the plate by water for the stack -- linear between its rows to 1e-3 of the plate there; its rows at the cut
+    //  and the oven's water the plate's own at them)
+    { const P = r.plate, at = X => { if (X <= P.tab[0][0]) return P.tab[0]; for (let i = 0; i < P.tab.length - 1; i++) if (X <= P.tab[i + 1][0]) { const f = (X - P.tab[i][0]) / (P.tab[i + 1][0] - P.tab[i][0]); return P.tab[i].map((v, c) => v + f * (P.tab[i + 1][c] - v)); } return P.tab[P.tab.length - 1]; };
+      const c = at(P.Xcut), d = at(P.Xdry), e = Math.max(rel(c[1], P.A), rel(c[2], P.D), Math.abs(c[3] - P.eFlatCut) / Math.abs(P.eFlatDry - P.eFlatCut), Math.abs(d[3] - P.eFlatDry) / Math.abs(P.eFlatDry - P.eFlatCut), rel(c[4], P.kS));
+      check(`the plate by water: linear between its rows within 1e-3, as the plate at the cut and the oven's water (${tag})`, P.tabErr < 1e-3 && e < 1e-3 && P.tab.length === 21, `rows ${P.tab.length}, halfway ${P.tabErr.toExponential(1)}, at the ends ${e.toExponential(1)}`); }
     if (r.worst) {
       const i = r.worst.i, L = F.fmLayout(hh, i, dr.series[i].h, o);
       const fine = F.fmCrack(L, r.worst.which, { ...o, fem: { nx: 24, nz: 24, div: 200, ratio: 1.5, nzCrack: 10 } });

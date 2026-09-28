@@ -741,6 +741,73 @@ GO-4d built:
 - Also: the peel force against the angle on a log scale (near 0° it grows without bound and squeezed the angles that
   matter); the report dialog names the film and the Materials cards.
 
+GO-4f decisions (the pressed stack and the waves; user, with pictures):
+- Q80: the waves are looked at and photographed hours after the drying oven (not straight out).
+- Q81: a day later the waves look the same: they stay.
+- Q82: out of the oven a piece is dry all over (its middle too).
+- Q83: its length and width after the drying oven are measured hours later.
+- Q84: until then the stack stays as it was, under the aluminium plate.
+- Q85: the pieces come out of the stack, to be looked at and measured, 1–2 hours after the oven.
+- The photos of the waves (Q76) are awaited: they decide the creep time (below), assumed until then.
+- Q86: a piece's length 1–2 h after the drying oven is about the same as before it.
+
+GO-4f design (the pressed stack):
+- The pieces lie flat in the stack, each held flat by the plate but free in its plane (friction under a light plate is
+  about 45 N/m against the drying's several kN/m). Their water moves along them to the stack's edges (press.js, a quarter
+  with its mirror lines, cell-centred finite volumes graded to the edges): ρ ∂X/∂t = ∇·(K p_sat ∇a), the activity a the
+  isotherm's (GAB) up to the pieces' pore cap, the edges at the air's. Crank–Nicolson after four implicit Euler steps;
+  Newton on the activity itself (the fluxes linear in it, the capacity each cell's own: an exact, symmetric Jacobian).
+- Two stages: the drying oven (its temperature, the room's air heated; 1.5 h, Q73) and then under the plate in the room
+  (the room's air; 1.5 h, Q84/Q85). The in-plane permeability K is not known: 3 × 10⁻⁷ kg/(m s Pa) is the least that
+  fits the answers -- dry all over out of the oven (Q82: the middle dry within 1 h), its size back to as cut 1–2 h later
+  (Q86: the pieces take the room's water back under the plate, their pores' cap about the water they were cut with) and
+  the waves the same a day later (Q81: the water even when they come out).
+- Held flat, each piece's stretch alone (sheet.js, the plate's stretch at once): its natural stretch the water's (the
+  film's layers at that water, as rows by water from film.js), its stiffness the water's. The stress eased by creep: each
+  point a Maxwell body whose rate goes as its water (wet GO creeps, dry does not), the curvature alike (pressed flat,
+  the curl eases). The creep time (at the as-cut water) is not known: assumed 10 min until the photos. The creep is off
+  under the plate in the room.
+- Let go (sheet.js): out of the stack (its water as it is then, the creep the stack left) and a day later (the room's
+  water all through), held up and on a table: the natural stretch and curvature as fields, raised geometrically (the
+  shape past buckling grows as the root of the field's excess), a small seeded disturbance to leave the flat saddle, a
+  fresh one whenever it settles on a saddle; shapes even about both middle lines (the quarter). A thin piece has many
+  shapes of near the same energy: this is the one reached letting go gradually.
+- Shown: the water across a piece through time, when its middle is dry, the edges' pull held flat against the film's
+  strength, the water back under the plate, the size out of the stack and a day later, the piece let go both times with
+  its heights and the crests along its ends and sides. A measured size after the oven now reads back β at the water the
+  stack model gives then (the size measured 1–2 h later).
+- Checks (press.validate.js; sheet.validate.js 10–15): the isotherm turned round; a constant diffusivity against the
+  exact series (converging) and balanced; drying and taking water back balanced; time steps converged; a long strip held
+  flat (Nx = A (ē − e), Ny = 0); a held stress relaxing as e^(−t/τ); the creep's rate with the water; no creep, no
+  change; the stiffness per point; the flat solve against the energy's minimum; the simply supported plate's buckling
+  (2π² D / ((1 + ν) A a²)); which way it buckles (odd two half-waves k = 4, even three k = 4.694); a curvature as a
+  field as given whole; the whole piece against the quarter.
+
+GO-4f built:
+- press.js: the water in a pressed piece (prDry: Newton on the activity, graded cells, the pore cap; 3–5 iterations a
+  step), the stack's stages with the stress held flat and the water-driven creep (prPress), the plate at a water from
+  the film's rows. sheet.js: per-point stiffness, the stretch held flat solved at once (shFlat), the strains at the Gauss
+  points, a seeded disturbance, the piece let go (shRelease: fields, symmetry classes on the quarter or the whole piece,
+  geometric raising, a fresh disturbance off a saddle). film.js: the plate's rows by water (21, halfway within 1.5e-4),
+  the room's water, the GO per film volume, the isotherm and its cap.
+- cfd-sheet-worker.js: a 'stack' message -- the stack for one way, then the piece let go out of the stack and a day
+  later, held up and on a table; the two ways in two workers side by side (about 15 s in all).
+- UI (sheet-ui.js): over the piece's drawings a switch As cut / Out of the stack / A day later; under them "In the
+  pressed stack, and out of it": the pictures (the stack in the oven; under the plate in the room, the water coming
+  back at its edges), the line (the times, the permeability and why, the creep time assumed), six tiles both ways
+  (when the middle is dry, the largest pull held flat, the water when taken out, the size out of the stack and a day
+  later, the highest on a table), the water across a piece through time and the pull held flat against the strength.
+  A measured size after the oven reads back β at the water the stack gives then; when it has its water back, it says
+  its size tells little. Inputs bar › After the oven: the time in the drying oven and under the plate after (1.5 h
+  each, from you) with the picture. Film card: the stack's permeability (3 × 10⁻⁷) and the creep time (10 min),
+  assumed. Help, the guide, the report (the stack, its tiles and charts, the piece out of the stack and a day later in
+  words and drawn; After the oven lists every value now), projects (old ones get 1.5 h, 1.5 h and the card's values),
+  undo. Not in the DOE (a stack takes about 15 s a run).
+- At the defaults (the web's film): the middle dry in the oven after 3.3 min; the drying edges pull 88 MPa at the
+  start (the strength 100 MPa); taken out the water is back to 8.3 % (as cut 8.2 %); the size out of the stack and a day
+  later within 0.01 % of as cut (Q86); the curl eased from a radius of 1210 mm to 2800 mm; on a table out of the stack
+  its edges' middles lift about 2–3 mm. The waves in the user's photos will set the creep time.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

@@ -1765,6 +1765,9 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .sheet-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
 .sheet-head .fv-why { flex: 1 1 320px; margin: 0; }
 .sheet-head .film-pic { border-radius: 8px; }
+.sheet-when { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 2px 0 6px; }
+.sheet-when .fv-why { margin: 0; }
+.stack-sec { margin-top: 14px; }
 @media (max-width: 640px) {
   .film-checks { grid-template-columns: 1fr; }
   .film-check { flex-direction: column; }

@@ -590,8 +590,17 @@ function fmRun(dr, o) {
   const Tdry = Number.isFinite(o.Tdry) ? o.Tdry : 100, rhDry = Math.min(1, o.rhRoom * psat(o.Troom) / psat(Tdry));
   const Xdry = Math.min(fmGAB(rhDry, o.gab), hh.Xcap), XdryA = new Float64Array(hh.K).fill(Xdry);
   const pC = plateOf(layers(enAt(XcutA, TroomA), XcutA), XcutA), pD = plateOf(layers(enAt(XdryA, TroomA), XdryA), XdryA), phiM = 1 / (1 + dr.history.em);
+  // (GO-4f, the pieces in the pressed stack: the plate at a uniform water from the oven's dry to the room's, as rows
+  //  [X, A, D, eFlat, κ, eX] (press.js goes linearly between them; tabErr the worst of that halfway between rows); the
+  //  GO's mass per film volume, the isotherm and its cap, the room's water)
+  const plateAt = X => { const XA = new Float64Array(hh.K).fill(X), q = plateOf(layers(enAt(XA, TroomA), XA), XA); return [X, q.A, q.D, q.eFlat, q.kappa, q.eX]; };
+  const Xlo = Math.min(Xdry, Xroom, Xcut), Xhi = Math.max(Xdry, Xroom, Xcut), tab = [];
+  for (let i = 0; i <= 20; i++) tab.push(plateAt(Xlo + (Xhi - Xlo) * i / 20));
+  let tabErr = 0;
+  for (let i = 0; i < 20; i++) { const mid = plateAt((tab[i][0] + tab[i + 1][0]) / 2); for (const c of [1, 2, 3, 4, 5]) tabErr = Math.max(tabErr, Math.abs((tab[i][c] + tab[i + 1][c]) / 2 - mid[c]) / Math.max(1e-30, Math.abs(c === 3 || c === 5 ? tab[20][c] - tab[0][c] : mid[c]) || 1e-30)); }
   const plate = { A: pC.A, D: pC.D, nu: F.nup, h: hF, kS: pC.kappa, kSet: roll.set, p: o.rhoS * phiM * (1 + Xcut) * 9.81 * hF,
-    eFlatCut: pC.eFlat, eFlatDry: pD.eFlat, eXCut: pC.eX, eXDry: pD.eX, kDry: pD.kappa, Xcut, Xdry, Tdry, rhDry };
+    eFlatCut: pC.eFlat, eFlatDry: pD.eFlat, eXCut: pC.eX, eXDry: pD.eX, kDry: pD.kappa, Xcut, Xdry, Tdry, rhDry,
+    tab, tabErr, Xroom, rhoG: o.rhoS * phiM, gab: o.gab, Xcap: hh.Xcap, Troom: o.Troom, rhRoom: o.rhRoom };
   // blisters: the bonded film compressed on the web buckles off it (buckle-delamination: the most a straight blister
   // releases, (1 − ν²) σ² h / (2E), against the interface's toughness; the narrowest that can buckle), and steam under a skin
   const bl = line.map(Lr => {

@@ -102,5 +102,83 @@ const E = 20e9, h = 4e-4, A = E * h, D = E * h ** 3 / 12, L = 0.3;
   check('pressed flat, its size is its layers\' stiffness-weighted natural strain', rel(P.eFlat, An) < 1e-12, `${(P.eFlat * 100).toFixed(4)} %`);
 }
 
+// ---- GO-4f: the piece held flat in the stack, and let go ----
+
+// 10. the stiffness per point: sA = c, sD = c' everywhere is the same plate with c A and c' D (energy, gradient)
+{
+  const m = S.shMesh(0.2, 0.16, 3, 2), ng = S.shGaussXY(m).length, o = { A, D, nu: 0.25, kx: 0.7, ky: -0.3, p: 7, table: true, kc: 1e7 };
+  const d = new Float64Array(m.ndof).map((_, i) => m.fixed[i] ? 0 : (Math.sin(i * 1.7) * 2e-4));
+  const a = S.shEnergy(m, d, { ...o, sA: new Float64Array(ng).fill(1.7), sD: new Float64Array(ng).fill(0.6) }, false), b = S.shEnergy(m, d, { ...o, A: 1.7 * A, D: 0.6 * D }, false);
+  let e = 0, gm = 0; for (let i = 0; i < m.ndof; i++) { e = Math.max(e, Math.abs(a.g[i] - b.g[i])); gm = Math.max(gm, Math.abs(b.g[i])); }
+  check('the stiffness per point: uniform, the same plate as stiffer', rel(a.E, b.E) < 1e-13 && e < 1e-12 * gm, `energy ${rel(a.E, b.E).toExponential(1)}, gradient ${(e / gm).toExponential(1)}`);
+}
+
+// 11. held flat, its stretch alone solved at once: the same as minimising the whole energy
+{
+  const m = S.shMesh(0.3, 0.2, 8, 8, { grade: 3, flat: true }), G = S.shGaussXY(m), ng = G.length;
+  const eb = new Float64Array(3 * ng), sA = new Float64Array(ng);
+  G.forEach(([x, y], g) => { eb[3 * g] = 1e-3 * Math.cos(9 * x) * (1 + 40 * y * y); eb[3 * g + 1] = -1.5e-2 * x * x + 2e-4 * Math.sin(20 * y); eb[3 * g + 2] = 3e-4 * Math.sin(10 * x) * Math.sin(12 * y); sA[g] = 1 + 0.5 * Math.sin(7 * x + 3 * y) ** 2; });
+  const o = { A, D, nu: 0.2, kx: 0, ky: 0, p: 0, eb, sA }, F = S.shFlat(m, o), d = new Float64Array(m.ndof);
+  S.shMinimise(m, d, o, { tol: 1e-13 });
+  let big = 0, err = 0; for (let i = 0; i < m.ndof; i++) { big = Math.max(big, Math.abs(d[i])); err = Math.max(err, Math.abs(d[i] - F.d[i])); }
+  check('held flat: the stretch solved at once is the energy\'s minimum', err < 1e-9 * big, `dofs agree to ${(err / big).toExponential(1)} of the largest`);
+}
+
+// 12. buckling: a simply supported square plate, its edges held in its plane, wanting to grow by e0 both ways loses
+//     its flatness at e0 = 2π² D / ((1 + ν) A a²) -- the natural stretch per point and the stress's stiffness
+const stableAt = (m, e0) => { const ng = S.shGaussXY(m).length; return S.shStable(m, new Float64Array(m.ndof), { A, D, nu: m.nuT, kx: 0, ky: 0, p: 0, eb: Float64Array.from({ length: 3 * ng }, (_, i) => e0[i % 3]) }); };
+const critical = (m, dir, hi) => { let lo = 0; for (let k = 0; k < 50; k++) { const mid = (lo + hi) / 2; if (stableAt(m, dir.map(v => v * mid))) lo = mid; else hi = mid; } return lo; };
+const simply = m => {   // (edges x = a/2 and y = b/2: u, v held along them, w = 0 with its slope along the edge)
+  for (let j = 0; j <= m.ny; j++) { const k = m.id(m.nx, j) * 12; for (const c of [0, 2, 4, 6, 8, 10]) m.fixed[k + c] = 1; }
+  for (let i = 0; i <= m.nx; i++) { const k = m.id(i, m.ny) * 12; for (const c of [0, 1, 4, 5, 8, 9]) m.fixed[k + c] = 1; }
+  return m;
+};
+{
+  const a = 0.3, nu = 0.3, exact = 2 * Math.PI ** 2 * D / ((1 + nu) * A * a * a);
+  const out = [[6, 1], [6, 3], [8, 1]].map(([n, grade]) => { const m = simply(S.shMesh(a, a, n, n, { grade })); m.nuT = nu; return critical(m, [1, 1, 0], 3 * exact); });
+  check('buckling: a square plate wanting to grow, simply supported', out.every(v => rel(v, exact) < 1e-4), `e0 ${out.map(v => v.toExponential(6)).join(', ')} (exact ${exact.toExponential(6)})`);
+}
+
+// 13. which way it buckles: a plate twice as long as wide pressed along its length buckles in two half-waves (odd about
+//     its middle, k = 4); among the shapes even about it, three (k = 4.694) -- the quarter with w odd or even across x = 0
+{
+  const a = 0.4, b = 0.2, nu = 0.3, kOf = mm => (mm * b / a + a / (mm * b)) ** 2, eOf = k => k * Math.PI ** 2 * D / ((1 - nu * nu) * A * b * b);
+  const out = [['oe', 2], ['ee', 3]].map(([sym, mm]) => { const m = simply(S.shMesh(a, b, 10, 10, { sym })); m.nuT = nu; const ex = eOf(kOf(mm)); return { sym, v: critical(m, [1, -nu, 0], 3 * ex), ex }; });
+  check('which way it buckles: odd about the middle two half-waves, even three', out.every(q => rel(q.v, q.ex) < 1e-4), out.map(q => `${q.sym} ${q.v.toExponential(5)} (${q.ex.toExponential(5)})`).join('; '));
+}
+
+// 14. let go with a natural curvature as a field: the same shape as a natural curvature given whole
+{
+  const k = 0.8, o = { Lx: L, Ly: L, A, D, nu: 0.2, p: 0, table: false, n: 6 };
+  const a = S.shRun({ ...o, kx: k, ky: k, bias: 0 }), b = S.shRelease({ ...o, sym: 'ee', fields: () => ({ e: [0, 0, 0], k: [k, k, 0] }) });
+  const liftA = [a.corner, a.edgeX, a.edgeY], nb = b.W.length - 1, mid = nb / 2, liftB = [Math.abs(b.W[0][0] - b.wMid), Math.abs(b.W[mid][0] - b.wMid), Math.abs(b.W[0][mid] - b.wMid)];
+  check('let go: a curvature as a field shapes it as the curvature given whole', rel(b.E, a.E) < 1e-6 && Math.abs(liftB[0] - liftA[0]) < 1e-3 * liftA[0], `energy ${a.E.toExponential(6)} vs ${b.E.toExponential(6)}; corner ${(liftA[0] * 1e3).toFixed(4)} vs ${(liftB[0] * 1e3).toFixed(4)} mm`);
+}
+
+// 15. the whole piece against the quarter: a rim that wants to be longer than the middle (a stretch field), let go
+//     held up. The quarter's shape mirrored onto the whole piece: four times its energy, and balanced there too; the
+//     whole piece, free of the mirrors, settles at least as low
+{
+  const Lp = 0.3, rimField = (x, y) => { const r = Math.max(Math.abs(x) / (Lp / 2), Math.abs(y) / (Lp / 2)), e = 4e-4 * Math.max(0, (r - 0.7) / 0.3) ** 2; return { e: [e, e, 0], k: [0, 0, 0] }; };
+  const o = { Lx: Lp, Ly: Lp, A, D, nu: 0.3, p: 0, table: false, n: 5, fields: rimField };
+  const q = S.shRelease({ ...o, sym: 'ee' }), f = S.shRelease({ ...o, sym: 'full' });
+  // (mirroring a dof: a field even (+1) or odd (−1) across x = 0 keeps or flips its value, flips or keeps its x-slope,
+  //  keeps or flips its y-slope, flips or keeps its twist; across y = 0 alike. u odd across x, v odd across y, w even)
+  const par = [[-1, 1], [1, -1], [1, 1]], n = 5, dm = new Float64Array(f.m.ndof);
+  for (let j = 0; j <= 2 * n; j++) for (let i = 0; i <= 2 * n; i++) {
+    const iq = Math.abs(i - n), jq = Math.abs(j - n), mx = i < n, my = j < n;
+    for (let fld = 0; fld < 3; fld++) {
+      const [px, py] = par[fld], sgn = [[px, -px, px, -px], [py, py, -py, -py]];
+      for (let c = 0; c < 4; c++) dm[f.m.id(i, j) * 12 + 4 * fld + c] = q.d[q.m.id(iq, jq) * 12 + 4 * fld + c] * (mx ? sgn[0][c] : 1) * (my ? sgn[1][c] : 1);
+    }
+  }
+  const at = S.shEnergy(f.m, dm, { A, D, nu: 0.3, kx: 0, ky: 0, p: 0, ...f.gp }, false);
+  const gq = Math.hypot(...S.shEnergy(q.m, q.d, { A, D, nu: 0.3, kx: 0, ky: 0, p: 0, ...q.gp }, false).g), gf = Math.hypot(...at.g);
+  const flat = S.shEnergy(q.m, S.shFlat(q.m, { A, nu: 0.3, eb: q.gp.eb, sA: q.gp.sA }).d, { A, D, nu: 0.3, kx: 0, ky: 0, p: 0, ...q.gp }, false).E;
+  check('the whole piece: the quarter\'s shape mirrored has four times its energy and is balanced', rel(at.E, 4 * q.E) < 1e-10 && gf < 1e-6 * Math.max(1, Math.hypot(...f.gp.eb) * A), `${at.E.toExponential(9)} vs 4 × ${q.E.toExponential(9)}; out of balance ${gf.toExponential(1)} (the quarter ${gq.toExponential(1)})`);
+  check('a longer rim buckles below its flat state; the whole piece settles at least as low as the quarter', q.E < flat && q.stable && f.stable && f.E <= 4 * q.E * (1 + 1e-9),
+    `quarter ${q.E.toExponential(4)} (flat ${flat.toExponential(4)}), height ${(q.high * 1e3).toFixed(3)} mm; whole ${f.E.toExponential(4)} (4 × ${(4 * q.E).toExponential(4)}), height ${(f.high * 1e3).toFixed(3)} mm`);
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;
