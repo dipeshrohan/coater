@@ -638,6 +638,54 @@ GO-4 design (the slice; the sheet follows):
   shooting solution); the moisture diffusion against its exact solution (constant diffusivity); layers born
   stress-free; mesh convergence.
 
+GO-4 built (the slice; the sheet is GO-4d, asked next):
+- drying.js: `after` (the room stretch to the peel: still air above and below at the room's temperature and
+  humidity) and `history` (at every step the fronts, the surfaces' temperatures and vapour pressures, the
+  temperatures through the film). Without them its output is identical to before.
+- film.js: 120 layers fixed in ζ (faces clustered at both ends); a layer is born when a front passes it, at the
+  water the isotherm gives at saturation (capped at the packing's pores); the set layers' water by vapour diffusion
+  (Newton, tridiagonal: saturated at a front, the air's vapour pressure at a surface, sealed at the web when only the
+  top dries). Natural strain = born strain + α(T − T_born) + β(X − X_born); stiffness E_p / (1 + X / X_h). Two
+  groups: the bonded film and the web share one strain from their force balance; the floating skin its own (N = 0);
+  when they join, the skin keeps its stress. The FEM: plane strain, 9-node isoparametric, 3×3 Gauss, banded
+  Cholesky with diagonal scaling, planes snapped at 1e-6 of the stack's height, graded to the crack's ends; the app's
+  mesh (8 × 8, grading 2) about 2 % from converged. Crack spacing by a doubling ladder of half-cell lengths (extended
+  up to 12 rungs while the risk stays above 1). The peel, the front's moment (elastica), tears and bits, self-peel;
+  the curl right after and settled; the roll (κ = 2 / core, its top out) and the curl it sets (unwound: settled +
+  the card's share of the roll's bend); blisters; steam under a skin flagged from the drying's boiling.
+- film.validate.js (22 checks, all passing, about 5 s): the stiffness inversion; the patch test; Stoney; Timoshenko;
+  the channel crack Z = 1.9700 converged, 1.9661 on the app's mesh (Beuth 1.976); a buried crack 0.7834 / 0.7813
+  (π/4 = 0.7854); the spacing monotone; Kendall's peel; the pre-strained lap; the elastica bracket; the diffusion
+  against Crank's series; layers born stress-free; the forces balance; the join (β = 0: every strain change equal);
+  the curl linear in β; the app's mesh against a finer one on real stacks (53.78 vs 53.44; 39.65 vs 39.02 J/m²).
+- At the defaults (the web's film, 1.72 mm wet; the peel 2 m after the oven): not dry at the peel (46 % water top
+  only, 12 % top and bottom); the skin floating on the wet film cracks just after the oven (1.35× its toughness top
+  only, 5.4–10.7 mm apart; 1.09×, 9.1–18.2 mm top and bottom); by hand 5.0 N/m (Gi / 2), at 90° 10 N/m, no tears;
+  settled curl radius 1.2 m (top only) and 1.9 m, away from its top; on the 76 mm core 96 MPa (holds) and 188 MPa
+  (cracks: over 100 MPa) top and bottom; no blisters. All of the Film card is assumed until measured.
+- UI (film-ui.js, cfd-film-worker.js): Process › 5 · The film, peeled off -- which film (with the drying's), After
+  the oven (opens the inputs bar), the warnings, six checks each with its picture (cracks, peeling, tears or bits,
+  curl, the roll with the curl unwound, blisters) for both ways, eight tiles, six charts (the top's stress with the
+  strength; the crack risk; the peel force against the angle with tears and the measured; through the film at the
+  peel; the blister risk; the peeled sheet on a table with its heights exaggerated and said), a table of every
+  film, CSV; the measured (curl -- right after, settled or unwound from the roll --, cracks, peel force) each read
+  back as the card value it implies with Use (the hold on the web from a peel force, β from a curl, the fracture
+  energy from a spacing, the roll's share from a curl unwound). The inputs bar: After the oven (the stretch to the
+  peel, the winder's core; pictures of the place and the roll; assumed until set). Materials: the Film card (18
+  values, what follows). About 15 s for the 10 strips in the worker. DOE: 10 outputs (crack risk, peel by hand,
+  settled curl, stress on the roll, blister risk; both ways), the same numbers as the Process tab for the same run.
+  The report (Process: the film's checks, tiles, table, measured and what it implies, after the oven, the note and
+  its six charts; Materials: the card), help cards (every new control, the card's rows, the outputs), the guide;
+  projects (old ones get the defaults; bad values fall back), undo (the card, the measured, the peel inputs).
+
+GO-4d decisions (the 3D sheet; user, with pictures):
+- Q65: the pieces cut from the film are 30 × 30 cm.
+- Q66: how a cut piece curls (rolls along the line, across it, its corners lift) is not known: computed.
+- Q67: where the curl is looked at (on a table, held up) is not known: both shown (its weight on a table, and free).
+- Q68/Q69: measured on a piece: its length and width, pressed flat, some time after it is cut (how much it shrank or
+  grew with its water).
+- Q70: the pieces are cut from the roll later (the roll kept, then unwound and cut).
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

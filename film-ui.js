@@ -136,9 +136,9 @@ const FILM_WHEN = { settled: 'settled', peel: 'right after peeling', roll: 'unwo
 // ---- the chain's line ----
 function filmStage() {
   if (FILM.busy) return { st: 'busy', s: 'the film from the drying to the peel…' };
-  if (!filmCurrent()) return FILM.error && FILM.key === filmKeyNow() ? { st: 'failed', s: FILM.error } : { st: 'part', s: 'its stress, cracks, the peel and its curl (below)' };
+  if (!filmCurrent()) return FILM.error && FILM.key === filmKeyNow() ? { st: 'failed', s: FILM.error } : { st: 'todo', s: 'its stress, cracks, the peel and its curl (below)' };
   const [t, b] = filmRuns('web');
-  if (!t || !b) return { st: 'part', s: 'its stress, cracks, the peel and its curl (below)' };
+  if (!t || !b) return { st: 'todo', s: 'its stress, cracks, the peel and its curl (below)' };
   const cr = [t, b].some(r => r.worst && r.worst.ratio >= 1), wet = [t, b].some(r => r.wetAtPeel);
   return { st: 'solved', s: `the web: ${wet ? 'not dry at the peel; ' : ''}${cr ? 'cracks' : 'no cracks'}; peel by hand ${filmN(t.peel.hand.f)} · ${filmN(b.peel.hand.f)} N/m; curl ${filmCurlText(t.curl.settled.kappa)}` };
 }
