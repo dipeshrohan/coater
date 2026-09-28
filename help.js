@@ -297,6 +297,16 @@ const HELP_RESULTS = {
   'SEM spread, cut along the web': 'The standard deviation of the flakes\' angles to the web in a cut along the web\'s motion, at the oven.',
   'SEM spread, cut across the web': 'The same in a cut across the web.',
   'Structure λ leaving the edge': 'The structure (0 broken down, 1 built up) flux weighted where the film leaves the metering edge, and the flows the 2D took with it fed back.',
+  'Crack risk, top only': 'This run\'s film followed to the peel, its water leaving from the top only: the most a crack through it frees, over its fracture energy (the Film card). 1 and above: it cracks.',
+  'Crack risk, top and bottom': 'The same, the water leaving from the top and the bottom.',
+  'Peel by hand (180°), top only': 'The force per width to peel this run\'s film off the web folded back (180°), its water leaving from the top only.',
+  'Peel by hand (180°), top and bottom': 'The same, the water leaving from the top and the bottom.',
+  'Curl settled, top only': 'How this run\'s peeled film curls once settled in the room: 1 / its radius, positive curling away from its top, negative toward it (0 flat). Its water leaving from the top only.',
+  'Curl settled, top and bottom': 'The same, the water leaving from the top and the bottom.',
+  'Stress on the roll, top only': 'The most stress in this run\'s film wound on the winder\'s core, its top out; above its strength (the Film card) it cracks on the roll. Its water leaving from the top only.',
+  'Stress on the roll, top and bottom': 'The same, the water leaving from the top and the bottom.',
+  'Blister risk, top only': 'The most a patch of this run\'s film squeezed on the web frees by lifting off it, over its hold on the web. 1 and above: it blisters or wrinkles. Its water leaving from the top only.',
+  'Blister risk, top and bottom': 'The same, the water leaving from the top and the bottom.',
 };
 
 // ---- attaching: by id, by selector, by label ----

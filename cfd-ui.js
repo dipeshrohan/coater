@@ -527,7 +527,7 @@ const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, 
  * What a worker is sent to solve a location (solver: its settings, or others for a mesh study). withOrient: the flakes'
  * alignment too, when it is on (the location's run and the DOE; not the mesh's studies, previews, measured-data
  * solves or the 3D, which need the flow only). withDry: the drying of its film too (the DOE: GO-3; drying-ui.js's
- * inputs, at this run's line speed).
+ * inputs, at this run's line speed), and the film followed on to the peel (GO-4: film-ui.js's room stretch and card).
  */
 const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false, withDry = false) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
@@ -538,6 +538,7 @@ const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false, withDry 
   ...(geo.struct ? { struct: geo.struct } : {}),
   ...(withOrient && geo.orient ? { orient: geo.orient } : {}),
   ...(withDry ? { dry: { ...dryBase(), U: geo.U / Math.cos(skewRad()) } } : {}),
+  ...(withDry && typeof filmOpts === 'function' ? { film: { after: filmBase().after, fo: filmOpts() } } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 /** The alignment's own inputs (its model and the way to the oven): not the flow's, so a change needs only the alignment redone. */

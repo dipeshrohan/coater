@@ -59,6 +59,17 @@ const DOE_OUTPUTS = [
   { k: 'waterBoth', l: 'Water left at the oven\'s exit, top and bottom', u: '% of the GO', g: 'Drying (oven)', d: 1 },
   { k: 'dryAtTop', l: 'Dry at, top only', u: 'm into the oven (— not dry)', g: 'Drying (oven)', d: 2 },
   { k: 'dryAtBoth', l: 'Dry at, top and bottom', u: 'm into the oven (— not dry)', g: 'Drying (oven)', d: 2 },
+  // (the film followed on to the peel, GO-4: this run's film, both ways the water leaves)
+  { k: 'crackTop', l: 'Crack risk, top only', u: '× its toughness (1 and above: cracks)', g: 'Film (peeled off)', d: 2 },
+  { k: 'crackBoth', l: 'Crack risk, top and bottom', u: '× its toughness (1 and above: cracks)', g: 'Film (peeled off)', d: 2 },
+  { k: 'peelTop', l: 'Peel by hand (180°), top only', u: 'N/m', g: 'Film (peeled off)', d: 2 },
+  { k: 'peelBoth', l: 'Peel by hand (180°), top and bottom', u: 'N/m', g: 'Film (peeled off)', d: 2 },
+  { k: 'curlTop', l: 'Curl settled, top only', u: '1/m (+ away from its top, − toward it)', g: 'Film (peeled off)', d: 2 },
+  { k: 'curlBoth', l: 'Curl settled, top and bottom', u: '1/m (+ away from its top, − toward it)', g: 'Film (peeled off)', d: 2 },
+  { k: 'rollTop', l: 'Stress on the roll, top only', u: 'MPa', g: 'Film (peeled off)', d: 0 },
+  { k: 'rollBoth', l: 'Stress on the roll, top and bottom', u: 'MPa', g: 'Film (peeled off)', d: 0 },
+  { k: 'blisterTop', l: 'Blister risk, top only', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
+  { k: 'blisterBoth', l: 'Blister risk, top and bottom', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
 ];
 const DOE = {
   loc: 0,
@@ -134,6 +145,10 @@ function doeOutputs(r, geo) {
     mdSpreadD: r.orient && r.orient.cuts.dried ? r.orient.cuts.dried.md.spread : NaN, cdSpreadD: r.orient && r.orient.cuts.dried ? r.orient.cuts.dried.cd.spread : NaN,
     ...(() => { const d = r.drying && !r.drying.error ? r.drying : null, at = q => q && q.dry ? q.dryAt : NaN;
       return { waterTop: d ? d.top.waterPct : NaN, waterBoth: d ? d.both.waterPct : NaN, dryAtTop: d ? at(d.top) : NaN, dryAtBoth: d ? at(d.both) : NaN }; })(),
+    ...(() => { const m = r.peeled && !r.peeled.error ? r.peeled : null, v = (w, f) => m ? f(m[w]) : NaN;
+      return { crackTop: v('top', q => q.crack), crackBoth: v('both', q => q.crack), peelTop: v('top', q => q.peelHand), peelBoth: v('both', q => q.peelHand),
+        curlTop: v('top', q => q.curl), curlBoth: v('both', q => q.curl), rollTop: v('top', q => q.roll / 1e6), rollBoth: v('both', q => q.roll / 1e6),
+        blisterTop: v('top', q => q.blister), blisterBoth: v('both', q => q.blister) }; })(),
   };
 }
 
