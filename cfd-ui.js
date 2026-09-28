@@ -223,14 +223,35 @@ function ovenZonesTree() {
   return `${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
       <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
       ${OVEN_ZONE_FIELDS.map(([k, l, u, lo, hi, step]) => prop(l, ovenZoneId(i, k), `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
+      ${ovenTopHTML(z, i, prop)}
     </div>`).join('')}
     <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="ovzAdd"${OVEN.zones.length >= OVEN_MAX_ZONES ? ' disabled' : ''}>${uiIco('plus')}Add zone</button></div>
     <p class="prop-note" id="ovzNote">${ovenNote()}</p>`;
 }
+/**
+ * A zone's top (Q52): what is above the film -- nothing blown, hot air through slot nozzles, IR heaters, or both --
+ * with the picture it was asked with, and the inputs that choice needs (the jets', the IR's).
+ */
+function ovenTopHTML(z, i, prop) {
+  const kind = z.top || 'none', air = kind === 'air' || kind === 'air+ir', ir = kind === 'ir' || kind === 'air+ir';
+  return `<div class="prop ovz-top"><label class="prop-l" for="ovz${i + 1}_top">Above the film</label><span class="prop-v"><select id="ovz${i + 1}_top" data-ovz="${i}" data-ovtop="1">${Object.entries(OVEN_TOPS).map(([k, l]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${l}</option>`).join('')}</select></span></div>
+    <div class="ovz-pic" aria-hidden="false">${dryTopSketch(kind)}</div>
+    ${OVEN_TOP_FIELDS.filter(f => f[7] === 'air' ? air : ir).map(([k, l, u, lo, hi, step]) => prop(l, `ovz${i + 1}_${k}`, `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
+    ${air ? `<p class="prop-note">${ovenJetNote(z)}</p>` : ''}`;
+}
+/** The jets' heat transfer (Martin's correlation) as set, and whether it is within its ranges. */
+function ovenJetNote(z) {
+  const j = drJets({ U: z.jetU, T: z.jetT, B: z.jetB / 1000, H: z.jetH / 1000, S: z.jetS / 1000 }, 101325);
+  return `The jets give ${j.h.toFixed(0)} W/(m²·K) on the film (slot nozzles, Martin; Re ${j.Re.toFixed(0)})${j.valid ? '' : ' <span class="warn-text">— outside the correlation\'s tested ranges (Re 1500–40000, slot width / pitch 0.008 to 2.5 × its optimum, height 1–40 × twice the slot width)</span>'}. They use the zone's air humidity.`;
+}
 /** Wire the zones' inputs: after a value, `changed` (the page's own redraw); after a zone added or removed, `redraw` (the page and the bar). A new zone starts as the last one. */
 function wireOvenZones(changed, redraw) {
+  document.querySelectorAll('#setupExtra select[data-ovtop]').forEach(el => el.addEventListener('change', () => {
+    OVEN.zones[+el.dataset.ovz].top = el.value in OVEN_TOPS ? el.value : 'none';
+    redraw();
+  }));
   document.querySelectorAll('#setupExtra input[data-ovk]').forEach(el => {
-    const i = +el.dataset.ovz, k = el.dataset.ovk, [, l, u, lo, hi] = OVEN_ZONE_FIELDS.find(f => f[0] === k);
+    const i = +el.dataset.ovz, k = el.dataset.ovk, [, l, u, lo, hi] = OVEN_ZONE_FIELDS.find(f => f[0] === k) || OVEN_TOP_FIELDS.find(f => f[0] === k);
     el.addEventListener('change', () => {
       guardNumber(el, { label: `Oven zone ${i + 1}: ${l.toLowerCase()}`, lo, hi, unit: u }, v => { OVEN.zones[i][k] = v; });
       el.value = OVEN.zones[i][k];
@@ -504,9 +525,10 @@ const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, 
 /**
  * What a worker is sent to solve a location (solver: its settings, or others for a mesh study). withOrient: the flakes'
  * alignment too, when it is on (the location's run and the DOE; not the mesh's studies, previews, measured-data
- * solves or the 3D, which need the flow only).
+ * solves or the 3D, which need the flow only). withDry: the drying of its film too (the DOE: GO-3; drying-ui.js's
+ * inputs, at this run's line speed).
  */
-const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false) => ({
+const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false, withDry = false) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
   U: geo.U, Pup: geo.Pup, rho: geo.rho, muRef: geo.muRef, ty: geo.ty, n: geo.n, muRep: geo.muRep,
   gamma: geo.gamma, g: geo.g, ovenDistance: geo.ovenDistance, solver,
@@ -514,6 +536,7 @@ const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false) => ({
   ...(geo.rheoX ? { rheoX: geo.rheoX } : {}),
   ...(geo.struct ? { struct: geo.struct } : {}),
   ...(withOrient && geo.orient ? { orient: geo.orient } : {}),
+  ...(withDry ? { dry: { ...dryBase(), U: geo.U / Math.cos(skewRad()) } } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 /** The alignment's own inputs (its model and the way to the oven): not the flow's, so a change needs only the alignment redone. */

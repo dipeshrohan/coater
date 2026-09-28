@@ -30,7 +30,7 @@ function reportSections() {
   const solved = cfdRuns.filter(r => r.field).length, stale = CFD_LOCS.filter((_, i) => cfdIsStale(i)).length;
   return [
     { k: 'inputs', l: 'Inputs', note: 'the sidebar inputs every module uses' },
-    { k: 'proc', l: TABS[12], note: `the chain, the mass balance, the oven's ${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}` },
+    { k: 'proc', l: TABS[12], note: `the chain, the drying in the oven, the mass balance, the oven's ${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}` },
     { k: 'mat', l: TABS[13], note: 'the slurry card, how it flows, the fibre web' },
     { k: 'm0', l: TABS[0], note: 'scenario, results, plots, checks' },
     { k: 'm1', l: TABS[1], note: 'results, plots, checks' },
@@ -129,14 +129,31 @@ async function repModule(m, statsTitle = 'Results') {
 /** Process: the chain and where each stage stands, the answers, the plot, the mass balance at each location, the oven's zones. */
 async function repProcess() {
   await oneDWait(true);   // (the wet film across the web: the 1D, for the inputs as they are)
+  await dryWait();        // (the drying in the oven, GO-3: every film, both ways the water may leave)
   let html = await repModule(12);
   const chain = [...document.querySelectorAll('.chain li')].map(li => [repEsc(cleanText(li.querySelector('.ch-t'))), repEsc(cleanText(li.querySelector('.ch-st'))), repEsc(cleanText(li.querySelector('.ch-s')))]);
   const t = document.querySelector('.proc-mb'), note = document.querySelector('#procTable .fv-note');
-  const zones = OVEN.zones.map((z, i) => [`Zone ${i + 1}`, ...OVEN_ZONE_FIELDS.map(([k, , u, , , , d]) => repEsc(repUnit(repNum(z[k], d), u)))]);
+  // (each zone's top, GO-3: what is above the film and its values)
+  const topText = z => { const k = z.top || 'none', air = k === 'air' || k === 'air+ir', ir = k === 'ir' || k === 'air+ir';
+    return [OVEN_TOPS[k], ...OVEN_TOP_FIELDS.filter(f => f[7] === 'air' ? air : ir).map(([kk, l, u, , , , d]) => `${l.toLowerCase()} ${repNum(z[kk], d)} ${u}`)].join('; '); };
+  const zones = OVEN.zones.map((z, i) => [`Zone ${i + 1}`, ...OVEN_ZONE_FIELDS.map(([k, , u, , , , d]) => repEsc(repUnit(repNum(z[k], d), u))), repEsc(topText(z))]);
   const o = ovenTime(P.U / 60);
+  // the drying (GO-3): its checks, its numbers for the film shown, the table of every film, the measured, its note
+  const dt = document.querySelector('.dry-table'), dNote = document.getElementById('dryNote');
+  const dPills = [...document.querySelectorAll('#dryState .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
+  const dStats = [...document.querySelectorAll('#dryStats .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
+  const m = MAT.dryMeas || { temps: [], exit: [] };
+  const mRows = [...m.temps.map(q => [repEsc(q.name), 'temperatures in the oven', `${q.rows.length} readings`]),
+    ...m.exit.map(q => [q.loc === 'web' ? 'The web' : q.loc, 'at the oven\'s exit', repEsc([Number.isFinite(q.water) ? `${q.water} % water left` : '', Number.isFinite(q.h) ? `dry film ${q.h} µm` : '', Number.isFinite(q.dryAt) ? `dry at ${q.dryAt} m` : ''].filter(Boolean).join(', '))])];
+  const drying = '<h3>Drying in the oven</h3>' + (dPills.length ? `<ul class="checks">${dPills.join('')}</ul>` : '')
+    + (dStats.length ? repRows(dStats, [`${repEsc(dryFilmName(DRY.sel))}`, 'Top only · top and bottom']) : '')
+    + (dt ? repTable(dt, { max: 12 }) : '<p class="lede">The drying could not be solved for these inputs.</p>')
+    + (mRows.length ? '<h4>Measured drying</h4>' + repRows(mRows, ['Measured', 'What', '']) : '')
+    + (dNote && cleanText(dNote) ? `<p class="lede">${repEsc(cleanText(dNote))}</p>` : '');
   return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
+    + drying
     + (t ? '<h3>The mass balance at each location</h3>' + repTable(t) + (note ? `<p class="lede">${repEsc(cleanText(note))}</p>` : '') : '')
-    + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1]))]) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min. Assumed values.`)}</p>`;
+    + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1])), 'Above the film']) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min. Assumed values.`)}</p>`;
 }
 /** Materials: the slurry card (each value, where it is from and its source), what follows from it, and the other two cards as they are. */
 async function repMaterials() {
@@ -169,6 +186,7 @@ async function repMaterials() {
     + '<h3>Slurry: how it flows</h3>' + repRows(ro(matRheoRows()), head)
     + '<h3>Flakes: how they line up</h3>' + repRows(ro(orCardRows()), head)
     + (semRows.length ? '<h4>Measured: SEM cross-sections and angle tables</h4>' + repRows(semRows, ['Measured', 'Cut', 'Angles', '']) : '')
+    + '<h3>Drying: the film in the oven</h3>' + repRows([...ro(dryCardRows()), ...[...document.querySelectorAll('#matDryDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))])], head)
     + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');

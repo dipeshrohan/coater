@@ -285,7 +285,8 @@ function imageTargets() {
     const panes = () => [...document.querySelectorAll('#view .pane canvas[role="img"]')];
     panes().forEach((cv, n) => out.push({
       id: 'pane:' + n, slug: `plot-${n + 1}`, label: `Plot: ${chartName(cv, `${mod} ${n + 1}`)}`,
-      canvases: () => [panes()[n]].filter(Boolean), legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => captionText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
+      // (a pane's own legend under it when it has one -- the drying's charts -- else the module's)
+      canvases: () => [panes()[n]].filter(Boolean), legend: () => { const own = panes()[n] && panes()[n].closest('figure').querySelectorAll('.pane-legend .lg'); return own && own.length ? own : document.querySelectorAll('#view .mod-legend .lg'); }, title: () => captionText(panes()[n].closest('figure').querySelector('figcaption')), subtitle: () => '',
     }));
     if (panes().length > 1) out.push({ id: 'panes', slug: 'plots', label: `All plots of “${mod}”`, canvases: panes, legend: () => document.querySelectorAll('#view .mod-legend .lg'), title: () => '', subtitle: () => '', captions: true });
     // (Materials: the rheometer test shown, GO-1)

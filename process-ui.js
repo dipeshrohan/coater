@@ -36,6 +36,7 @@ const um0 = v => (v * 1e6).toFixed(0), gm2 = v => v.toFixed(0);
 
 // ---- the chain ----
 const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'] };
+// (the drying stage, go 'dry': scrolls to its section under the chain; 'oven' kept for the zones in the inputs bar)
 function processStages() {
   const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length;
   const two = CFD_LOCS.map((_, i) => twoDAt(i)), n2 = two.filter(t => t && !t.stale).length, s2 = two.filter(t => t && t.stale).length;
@@ -47,8 +48,8 @@ function processStages() {
       s: [one ? 'wet film from the 1D' : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
     (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
       return { k: 'align', t: 'Flake alignment', go: 4, st: !MAT.orient.on ? 'set' : o.length ? 'solved' : 'wait',
-        s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].toLowerCase()}: computed with each 2D run` }; })(),
-    { k: 'dry', t: 'Drying in the oven', go: 'oven', st: 'part', s: `${OVEN.zones.length} zone${OVEN.zones.length === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m: the water to take out; the drying itself GO-3` },
+        s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')}${o.every(q => q.film.dried) ? `, dried ${o.map(q => q.film.dried.Sy.toFixed(2)).join(', ')}` : ''} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].charAt(0).toLowerCase() + OR_MODELS[MAT.orient.model].slice(1)}: computed with each 2D run` }; })(),
+    { k: 'dry', t: 'Drying in the oven', go: 'dry', ...dryStage() },
     { k: 'film', t: 'Film, peeled off', st: 'part', s: 'its dry thickness and weight; stress, cracks and peel GO-4' },
     { k: 'props', t: 'Properties', st: 'later', s: 'the GO film, reduced and graphene film (GO-5)' },
   ];
@@ -57,7 +58,7 @@ const STAGE_ICON = { slurry: 'drop', coat: 8, align: 'fibre', dry: 'oven', film:
 function processChainHTML() {
   return `<ol class="chain" aria-label="The process, stage by stage">${processStages().map((g, i) => {
     const [stT, stC] = STAGE_ST[g.st], inner = `<span class="ch-n">${i + 1}</span><span class="ch-t">${uiBadge(STAGE_ICON[g.k])}${g.t}</span><span class="ch-st ch-${stC}">${stT}</span><span class="ch-s">${g.s}</span>`;
-    return `<li class="ch-${g.st}">${g.go != null ? `<button type="button" class="ch-b" data-chain="${g.go}" title="${g.go === 'oven' ? 'The oven\'s zones, in the inputs bar' : `Open ${TABS[g.go]}`}">${inner}</button>` : `<div class="ch-b">${inner}</div>`}</li>`;
+    return `<li class="ch-${g.st}">${g.go != null ? `<button type="button" class="ch-b" data-chain="${g.go}" title="${g.go === 'oven' ? 'The oven\'s zones, in the inputs bar' : g.go === 'dry' ? 'The drying, below the chain' : `Open ${TABS[g.go]}`}">${inner}</button>` : `<div class="ch-b">${inner}</div>`}</li>`;
   }).join('')}</ol>`;
 }
 
@@ -91,7 +92,7 @@ function processPageBody() {
   oneDRequest(true);
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   view.innerHTML = moduleFrame({
-    top: processChainHTML(),
+    top: processChainHTML() + drySectionHTML(),
     panes: [{ id: 'pr1', icon: 'film', title: 'Wet and dry film across the web', aria: 'Wet film and dry film against position across the web',
       legend: oneDLegend([['wet film (1D)', mut, 'dash'], ['dry film (mass balance)', acc]]),
       note: 'The wet film is the 1D gap flow at every position across the web (Flow › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
@@ -103,7 +104,8 @@ function processPageBody() {
       const b = e.target.closest && e.target.closest('[data-chain]');
       if (!b || tab !== 12) return;
       const go = b.dataset.chain;
-      if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
+      if (go === 'dry') { const sec = document.getElementById('drySec'); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      else if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else { tab = +go; render(); }
     });
   }
@@ -112,7 +114,7 @@ function processPageBody() {
   // (the web: the 1D across it; until it is solved, the four locations' mean)
   const locs = CFD_LOCS.map((_, i) => processFilmAt(i));
   const known = locs.filter(Boolean), hWeb = web ? web.mean : known.length ? known.reduce((a, q) => a + q.h, 0) / known.length : null;
-  if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', ''); ss.innerHTML = ''; drawProcessTable(locs, web); return; }
+  if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', ''); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); return; }
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
   let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film`, '');
   pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${ACROSS_W} mm web at ${P.U} m/min`, '');
@@ -139,6 +141,7 @@ function processPageBody() {
       s: [{ p: z.map((x, k) => [x, wet[k]]), c: mut, w: 1.6, dash: [6, 4] }, { p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }] });
   } else { const cx = setupCanvas(cv, fitAspect(cv, 0.4)); cx.c.fillStyle = mut; cx.c.font = '13px ' + cssVar('--sans'); cx.c.fillText('Solving the 1D across the web…', 16, 28); }
   drawProcessTable(locs, web);
+  dryRender();
 }
 /** Per location: the wet film (and which model it is from), and what the mass balance makes of it; the web's mean beside them. */
 function drawProcessTable(locs, web) {
@@ -157,7 +160,7 @@ function drawProcessTable(locs, web) {
     <tr><th>Quantity</th>${cols.map(c => `<th>${c.head}</th>`).join('')}</tr>
     ${rows.map(([t, u, f]) => `<tr><th scope="row">${t} <small>${u}</small></th>${cols.map(c => c.h != null ? `<td>${f(c.h)}</td>` : '<td class="na" title="solving">—</td>').join('')}</tr>`).join('')}
   </table></div>
-  <p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The flakes' alignment, the drying itself, the film's stresses and peel, and its properties come in the next phases.</p>`;
+  <p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is above (4 · Drying in the oven); the film's stresses and peel, and its properties come in the next phases.</p>`;
 }
 
 // ---- Materials ----
@@ -239,6 +242,7 @@ function viewMaterials() {
         <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matRheoReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matRheoCount"></span></div>
       </section>
       ${orCardHTML()}
+      ${dryCardHTML()}
       ${rtCardHTML()}
       <section class="mat-card" aria-labelledby="matFibreH">
         <header><h3 id="matFibreH">${uiBadge('fibre')}Fibre web: what it is coated onto</h3><button type="button" class="linkish" id="matFibreEdit">Edit in Flow › 2D</button></header>
@@ -284,6 +288,7 @@ function viewMaterials() {
   matDerived();
   matRheoDerived();
   orWire();
+  dryWireCard();
   rtDraw();
 }
 /** The rheology card's counts and warnings (in place). */

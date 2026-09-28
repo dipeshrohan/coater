@@ -498,6 +498,87 @@ GO-2 built:
   and at the oven, the two cuts' spread); the report (the card, the measured sets, each location's panel);
   projects, session, undo (the SEM images' pixels kept aside by id), help cards and the guide.
 
+GO-3 decisions (user, with pictures):
+- Already decided (GO-0, item 14), not asked again: the oven's zones (each its length, air speed up into the fibre,
+  air temperature, plenum, humidity); the drying air blown up from below into the fibre web.
+- Q52: what is above the film: "Everything should be there as an option" -- each zone: nothing blown (the oven's
+  still air), hot air blown onto the top (slot nozzles: speed, temperature, slot width, height, pitch), IR heaters
+  (power reaching the film), or air and IR. Default: nothing blown on top (the line as described so far).
+- Q53: where the water leaves: not known, so both are computed and shown side by side -- from the top only, and
+  from the top and the bottom (into the air flowing through the fibre).
+- Q54: measured drying data: temperatures in the oven (film, web or air, along the oven) and at the oven's exit
+  (water left, dry thickness, where along the oven it looks dry); compared with the computed.
+- Q55: the drying results on the Process tab, under the chain (no new tab).
+- Standing (user): make things self-explanatory -- where the app offers a choice, show the pictures used to ask
+  about it (the top's options, the water's two ways out, the oven drawn with its zones).
+
+GO-3 design:
+- A strip of film on its web through the oven (time = distance / line speed), 1D through the thickness, at each
+  location (its wet film: 3D, else 2D, else 1D, as the mass balance) and the web's mean.
+- Water: in the GO's own coordinate (GO volume per area below a point: fixed while the film shrinks), the water per
+  GO volume e; the flakes' collective diffusion D(φ) = D0 (1 − φ)^6.55 d(φZ)/dφ (Routh–Russel; Z Carnahan–
+  Starling up to the packing), D0 = kT / (12 μ R) (a thin disc of the flakes' mean radius R; water's viscosity at the film's
+  temperature). A skin: where the solids reach the dry film's packing φ_m at a surface, the flakes stop and the
+  water leaves as vapour through the packed skin (the plan's "vapour through the skin": effective diffusivity
+  D_v (1 − φ_m) / τ, τ assumed); the wet region between the skins tracked by its fronts (front-fixing), fluxes
+  exponentially fitted (thin compaction layers at high drying Peclet held on a coarse grid).
+- Heat: 1D through the film and the web below it: the web heated by the air up through it (the air leaves at the
+  web's temperature: ρ c_p u); the top by the oven's still air (natural convection, cooled or heated plate facing
+  up; walls at the air's temperature radiating), slot-nozzle jets (Martin's correlation) and IR; evaporation's
+  heat taken where the water leaves. Evaporation: Stefan diffusion (log form) through the gas side and the skin in
+  series; at the bottom the air carries the vapour away (it leaves saturated at most). Near boiling the rate is
+  held by the heat; boiling under a skin is flagged (blisters).
+- Bound water: the dry GO holds water by its sorption isotherm (GAB, assumed for GO) at the last zone's humidity:
+  the water left at the exit.
+- Consolidation: the film collapses by φ0 / φ_m as it dries (it cannot shrink along the web): each flake from GO-2
+  at the oven is flattened by that collapse (affine), giving the dried film's alignment.
+- Checks: water properties (IAPWS saturation pressure, latent heat, viscosity) against tables; the constant-rate
+  period against the wet-bulb rate solved on its own; water and energy conserved; constant diffusivity against the
+  exact series solution; the high-Peclet skin (front speed E / e0, skin growth with its resistance: exact); the
+  low-Peclet limit (uniform compaction, skin when the whole film reaches φ_m); the surface's early build-up at high
+  Peclet; grid and time step converged; top and bottom symmetric when their conditions are.
+
+GO-3 built:
+- drying.js: the strip as designed above -- water in the GO's own coordinate on a front-fixing grid clustered at
+  both ends (its thinnest cell a hundredth of the thinnest compaction layer the drying Peclet numbers make),
+  Scharfetter–Gummel fluxes, the skins' fronts from their Stefan conditions, Newton with a bordered tridiagonal
+  solve; heat on a fixed grid through the film (the web in its bottom cell), the surfaces' heat and evaporation
+  linearised, Picard between the two; implicit steps sized by the film's water (1 %), any cell's solids, the fronts
+  and 2 K, at least 150 along the line. Condensation (the cold film into the humid oven) and a skin re-wetted kept;
+  water exactly conserved. IAPWS-IF97 saturation, a heat-of-evaporation fit, Vogel's viscosity, Sutherland air;
+  natural convection by the density difference (heat and vapour), Martin's slot jets, Stefan's log law; the skin's
+  permeability (Nair 2012: about 1e-12 kg/(m s Pa)); GAB bound water. The flakes' diffusion is Carnahan–Starling up
+  to the packing (a law diverging at it made the surface creep toward packed without reaching it). About 0.2–0.7 s a
+  strip; 10 strips (4 locations and the web, both ways) in a worker (cfd-dry-worker.js) in about 3 s.
+- drying.validate.js (27 checks, all passing): IF97's own check values; latent heat, viscosity and air against
+  tables; natural convection's regimes and the vapour's buoyancy; Martin computed apart; the skin's flux balance;
+  the wet-bulb under jets against adiabatic saturation (62.2 vs 62.5 °C); the strip's wet plateau against its
+  steady state; water (1e-12) and energy (0.2 %) conserved; constant diffusivity against Crank's series (5e-4);
+  the high-Peclet surface fall; the skin's front against its own ODE (0.1 %); the low-Peclet skin and dry times;
+  dry: thickness and water left; top and bottom symmetric; grid and step converged; the cold entry condenses;
+  strong IR boils under the skin; jets dry faster.
+- At the defaults (1.72 mm wet, 40 vol%, 0.28 m/min, three 2 m zones at 100 °C and 20 % humidity, nothing blown on
+  top): a skin forms in the room before the oven (drying Peclet about 6000), water condenses on the film at the
+  oven's entry (the air's dew point 60 °C), and at the exit about 47 % water is left (top only) or 14 % (top and
+  bottom): not dry. The skin's permeability decides most (10× it: dry, 5 % left, the isotherm's) -- to be fitted to
+  the measured exit.
+- Consolidation (cfd-orient.js orCollapse): each flake at the oven flattened by φ0 / φ_m (sent with the alignment's
+  inputs: a new packing marks it out of date); dried statistics, cuts and histograms; checked exactly (normals,
+  traces tan θ' = λ tan θ, ⟨p_y²⟩ from random against its closed form) and on the coating flow. Flow › 2D › Flakes:
+  flatness dried, the SEM cuts and histograms compared dried (the film an SEM sees), the drawn cross-sections dried,
+  the table and CSV with them; the chain's line.
+- UI (drying-ui.js): Process, under the chain -- which film (L1–L4, the web), the two ways out with their pictures,
+  the checks (condensation, boiling under the skin, not dry, swelling, the fibre's limit), the oven drawn (zones with
+  what is above each, the film to scale in two lanes, its skin, where it is dry; click to look through it), the
+  numbers (dry at, water left, skin forms, film at the exit, hottest, Peclet), five charts (water; temperatures with
+  the air and the measured; evaporation; the film and its skin; solids through the film), a table of every film,
+  CSV, an Oven zones button (the chain's card now scrolls to the drying); the measured (temperatures pasted or
+  imported: dots and the RMS difference; exit values: in the table and over the water). The inputs bar: each zone's
+  "Above the film" with its picture and the jets' or IR's inputs (the jets' h and Martin's ranges said). Materials:
+  the Drying card (12 values, what follows). DOE outputs: water left and dry at, both ways; flatness and SEM spreads
+  dried. The report (Process: the drying, the zones' tops; Materials: the card), help cards, the guide; projects,
+  undo (the card, the measured, the zones' tops); a pane's own legend in its image export.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

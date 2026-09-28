@@ -104,6 +104,14 @@ function applyMaterials(m) {
   }
   const sem = m && m.sem;
   if (sem) MAT.sem = { images: Array.isArray(sem.images) ? sem.images.filter(q => q && q.id && typeof q.url === 'string') : [], tables: Array.isArray(sem.tables) ? sem.tables.filter(q => q && q.id && Array.isArray(q.rows)) : [] };
+  // (the drying card and the drying measured, GO-3: a project from before has none -- the defaults)
+  const d = m && m.dry;
+  if (d) for (const k of Object.keys(MAT.dry)) if (d[k] && Number.isFinite(d[k].v)) MAT.dry[k] = { ...MAT.dry[k], ...d[k] };
+  const dm = m && m.dryMeas, fin = v => typeof v === 'number' && Number.isFinite(v) ? v : NaN;
+  if (dm) MAT.dryMeas = {
+    temps: Array.isArray(dm.temps) ? dm.temps.filter(t => t && Array.isArray(t.rows)).map(t => ({ name: String(t.name || 'temperatures'), rows: t.rows.filter(q => q && Number.isFinite(q.x) && Number.isFinite(q.T)).map(q => ({ x: q.x, T: q.T, kind: ['top', 'web', 'air'].includes(q.kind) ? q.kind : 'top', loc: /^L[1-4]$/.test(q.loc) ? q.loc : 'web' })) })) : [],
+    exit: Array.isArray(dm.exit) ? dm.exit.filter(q => q && (q.loc === 'web' || /^L[1-4]$/.test(q.loc))).map(q => ({ loc: q.loc, water: fin(q.water), h: fin(q.h), dryAt: fin(q.dryAt) })) : [],
+  };
 }
 /** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
 function applyOven(o, cfdSetup) {

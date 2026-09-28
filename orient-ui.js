@@ -97,7 +97,7 @@ function orCardRows() {
 // ---- the 2D's alignment: its state, the log line, redoing it alone ----
 function orientLogText(o) {
   const f = o.film, turn = o.lines.filter(l => l.start.turning).length;
-  return `flake alignment (${o.model.kind === 'ft' ? 'Folgar–Tucker' : 'Doi–Hess'}): flatness ${f.out.Sy.toFixed(2)} leaving the blade, ${f.oven.Sy.toFixed(2)} at the oven; SEM spread ${o.cuts.md.spread.toFixed(0)}° along the web, ${o.cuts.cd.spread.toFixed(0)}° across; ${o.lines.length} streamlines${turn ? `, ${turn} turning over where they enter` : ''}, ${(o.ms / 1000).toFixed(1)} s`;
+  return `flake alignment (${o.model.kind === 'ft' ? 'Folgar–Tucker' : 'Doi–Hess'}): flatness ${f.out.Sy.toFixed(2)} leaving the blade, ${f.oven.Sy.toFixed(2)} at the oven${f.dried ? `, ${f.dried.Sy.toFixed(2)} dried` : ''}; SEM spread ${orSeen(o).cuts.md.spread.toFixed(0)}° along the web, ${orSeen(o).cuts.cd.spread.toFixed(0)}° across; ${o.lines.length} streamlines${turn ? `, ${turn} turning over where they enter` : ''}, ${(o.ms / 1000).toFixed(1)} s`;
 }
 /** A location's alignment: 'busy' (redone now), 'noflow', 'off', 'missing' (the flow solved without it), 'stale', 'ok'. */
 function orStatus(i) {
@@ -254,7 +254,9 @@ function orReadAuto(id) {
 }
 
 // ---- the panel ----
-const OR_COL = () => ({ out: cssVar('--accent'), oven: cssVar('--warn'), md: locColor(0), cd: locColor(2), meas: cssVar('--ink'), mut: cssVar('--muted') });
+const OR_COL = () => ({ out: cssVar('--accent'), oven: cssVar('--warn'), dried: cssVar('--ok'), md: locColor(0), cd: locColor(2), meas: cssVar('--ink'), mut: cssVar('--muted') });
+/** The film an SEM sees: dried (GO-3: the flakes flattened as the film collapsed) when the alignment has it, else at the oven. */
+const orSeen = o => o.cuts.dried ? { dried: true, cuts: o.cuts.dried, line: l => ({ md: l.mdD, cd: l.cdD }) } : { dried: false, cuts: o.cuts, line: l => ({ md: l.md, cd: l.cd }) };
 const orAsp = cv => (cv.parentElement.clientWidth || 400) < 420 ? 0.75 : 0.55;
 /** The measured angles binned through the film: [[depth mid, ⟨cos 2θ⟩, n]] for the depths known. */
 function orBinned(m, nb = 8) {
@@ -273,7 +275,7 @@ function renderFlakes() {
     stale: 'The alignment\'s values changed since it was computed: redo it (the flow stays as solved).', ok: '',
   };
   const mdM = orMeasured('md'), cdM = orMeasured('cd'), sem = MAT.sem || { images: [], tables: [] };
-  const tRest = o ? o.tRest : null;
+  const tRest = o ? o.tRest : null, seen = o ? orSeen(o) : null;
   host.innerHTML = `<div class="fv-bar">
       <span class="fv-ctl"><b>${title}</b></span>
       <button class="btn btn-secondary btn-sm" type="button" id="orRedo"${run && run.field && cur && !OR.redo[i] ? '' : ' disabled'}>${uiIco('restart')}Redo alignment</button>
@@ -283,21 +285,22 @@ function renderFlakes() {
     </div>
     ${o ? `<div class="stats or-stats">${[
       ['Flatness leaving the blade', o.film.out.Sy.toFixed(2)], ['Flatness at the oven', o.film.oven.Sy.toFixed(2)],
-      ['SEM along the web: spread', `${o.cuts.md.spread.toFixed(0)}°`], ['SEM across the web: spread', `${o.cuts.cd.spread.toFixed(0)}°`],
+      ...(o.film.dried ? [['Flatness dried', o.film.dried.Sy.toFixed(2)]] : []),
+      [`SEM along the web: spread${seen.dried ? ', dried' : ''}`, `${seen.cuts.md.spread.toFixed(0)}°`], [`SEM across the web: spread${seen.dried ? ', dried' : ''}`, `${seen.cuts.cd.spread.toFixed(0)}°`],
       ['Director from the web\'s normal', `${o.film.oven.angle.toFixed(1)}°`],
       ...(mdM.angles.length ? [['Measured along: spread', `${orCutStatsSafe(mdM).spread.toFixed(0)}°`]] : []), ...(cdM.angles.length ? [['Measured across: spread', `${orCutStatsSafe(cdM).spread.toFixed(0)}°`]] : []),
     ].map(([l, v]) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge('fibre')}${l}</span><strong>${v}</strong></div>`).join('')}</div>
     <div class="or-grid">
       <figure class="or-fig"><figcaption>Flatness through the film</figcaption><div class="xl-chart"><canvas id="orFlat" role="img" aria-label="Flatness against depth, leaving the blade and at the oven"></canvas></div></figure>
-      <figure class="or-fig"><figcaption>SEM cuts: order through the film <small>⟨cos 2θ⟩, at the oven</small></figcaption><div class="xl-chart"><canvas id="orCutS" role="img" aria-label="Order of the flakes' traces in the two cuts against depth"></canvas></div></figure>
+      <figure class="or-fig"><figcaption>SEM cuts: order through the film <small>⟨cos 2θ⟩, ${seen.dried ? 'the dried film' : 'at the oven'}</small></figcaption><div class="xl-chart"><canvas id="orCutS" role="img" aria-label="Order of the flakes' traces in the two cuts against depth"></canvas></div></figure>
       <figure class="or-fig"><figcaption>SEM cut along the web: flakes' angles</figcaption><div class="xl-chart"><canvas id="orHmd" role="img" aria-label="Histogram of the flakes' angles in a cut along the web"></canvas></div></figure>
       <figure class="or-fig"><figcaption>SEM cut across the web: flakes' angles</figcaption><div class="xl-chart"><canvas id="orHcd" role="img" aria-label="Histogram of the flakes' angles in a cut across the web"></canvas></div></figure>
-      <figure class="or-fig"><figcaption>Drawn cross-section, along the web <small>from the flakes at the oven</small></figcaption><div class="xl-chart"><canvas id="orXmd" role="img" aria-label="A cross-section along the web drawn from the computed flakes"></canvas></div></figure>
+      <figure class="or-fig"><figcaption>Drawn cross-section, along the web <small>from the flakes, ${seen.dried ? 'dried' : 'at the oven'}</small></figcaption><div class="xl-chart"><canvas id="orXmd" role="img" aria-label="A cross-section along the web drawn from the computed flakes"></canvas></div></figure>
       <figure class="or-fig"><figcaption>Drawn cross-section, across the web</figcaption><div class="xl-chart"><canvas id="orXcd" role="img" aria-label="A cross-section across the web drawn from the computed flakes"></canvas></div></figure>
     </div>
     <details class="or-table"${FV.orTable ? ' open' : ''}><summary>By streamline (${o.lines.length})</summary><div class="oned-scroll"><table class="cfd-table">
-      <tr><th>Depth</th><th>Flatness leaving</th><th>at the oven</th><th>Order S</th><th>Director °</th><th>Along: spread °</th><th>Across: spread °</th><th>Where it entered</th></tr>
-      ${o.lines.slice().reverse().map(l => `<tr><td>${l.depth.toFixed(2)}</td><td>${l.out.Sy.toFixed(3)}</td><td>${l.oven.Sy.toFixed(3)}</td><td>${l.oven.S.toFixed(3)}</td><td>${l.oven.angle.toFixed(1)}</td><td>${l.md.spread.toFixed(1)}</td><td>${l.cd.spread.toFixed(1)}</td><td>${l.how === 'inlet' ? '' : l.how === 'still' ? 'a still corner' : 'traced too long'}${l.start.turning ? `${l.how === 'inlet' ? '' : '; '}turning over (${l.start.groups} moments mixed)` : ''}</td></tr>`).join('')}
+      <tr><th>Depth</th><th>Flatness leaving</th><th>at the oven</th>${o.film.dried ? '<th>dried</th>' : ''}<th>Order S</th><th>Director °</th><th>Along: spread °${seen.dried ? ' <small>dried</small>' : ''}</th><th>Across: spread °</th><th>Where it entered</th></tr>
+      ${o.lines.slice().reverse().map(l => `<tr><td>${l.depth.toFixed(2)}</td><td>${l.out.Sy.toFixed(3)}</td><td>${l.oven.Sy.toFixed(3)}</td>${l.dried ? `<td>${l.dried.Sy.toFixed(3)}</td>` : ''}<td>${l.oven.S.toFixed(3)}</td><td>${l.oven.angle.toFixed(1)}</td><td>${seen.line(l).md.spread.toFixed(1)}</td><td>${seen.line(l).cd.spread.toFixed(1)}</td><td>${l.how === 'inlet' ? '' : l.how === 'still' ? 'a still corner' : 'traced too long'}${l.start.turning ? `${l.how === 'inlet' ? '' : '; '}turning over (${l.start.groups} moments mixed)` : ''}</td></tr>`).join('')}
     </table></div></details>` : ''}
     <h3 class="dock-h">Measured: SEM cross-sections</h3>
     <div class="fv-bar">
@@ -312,7 +315,7 @@ function renderFlakes() {
       ${sem.tables.map(t => { const md = t.rows.filter(r => r[0] === 'md').length, cd = t.rows.length - md; return `<tr><td>${orEsc(t.name)} <small>(table)</small></td><td>${md ? `along ${md}` : ''}${md && cd ? ', ' : ''}${cd ? `across ${cd}` : ''}</td><td>${t.rows.length}</td><td>—</td><td><button type="button" class="linkish" data-or-del="tables:${t.id}">Remove</button></td></tr>`; }).join('')}
     </table>` : '<p class="fv-note">No measurements yet: add an SEM image of the dried film\'s cross-section (then mark it and read it), or a table of flake angles.</p>'}
     <div id="orImgTool"></div>
-    <p class="fv-note">The flakes' normals (their ensemble on each of ${cur ? cur.nLines : MAT.orient.nLines.v} streamlines, each an equal share of the film's flow) are carried through the 2D's velocity gradient from where the slurry enters to the film (${MAT.orient.model === 'ft' ? 'Folgar–Tucker: Jeffery\'s rotation and rotary diffusion C_i × the shear rate' : 'Doi–Hess: Jeffery\'s rotation, rotary diffusion and the flakes lining up with each other (their mean field)'}), then left at rest on the web until the oven. Flatness: (3⟨p_y²⟩ − 1) / 2 of the normals p: 1 all flat on the web, 0 random. A cut shows each flake as a line (its trace), its angle to the web; its order ⟨cos 2θ⟩ (1 all level) and spread (the angles' standard deviation) compare with an SEM image's. Measured depths: 0 at the web, 1 at the film's top (the dried film: the model's depths are the wet film's, shrunk alike). ${o && o.lines.some(l => l.start.turning) ? 'Where the slurry enters in a slow shear the liquid crystal keeps turning over: those lines start as all moments of the turn mixed (as different spots across the web would be).' : ''}</p>`;
+    <p class="fv-note">The flakes' normals (their ensemble on each of ${cur ? cur.nLines : MAT.orient.nLines.v} streamlines, each an equal share of the film's flow) are carried through the 2D's velocity gradient from where the slurry enters to the film (${MAT.orient.model === 'ft' ? 'Folgar–Tucker: Jeffery\'s rotation and rotary diffusion C_i × the shear rate' : 'Doi–Hess: Jeffery\'s rotation, rotary diffusion and the flakes lining up with each other (their mean field)'}), then left at rest on the web until the oven. Flatness: (3⟨p_y²⟩ − 1) / 2 of the normals p: 1 all flat on the web, 0 random. A cut shows each flake as a line (its trace), its angle to the web; its order ⟨cos 2θ⟩ (1 all level) and spread (the angles' standard deviation) compare with an SEM image's. Measured depths: 0 at the web, 1 at the film's top (the dried film: the model's depths are the wet film's, shrunk alike). ${o && o.collapse ? `Dried: as the film dries it collapses through its thickness to ${o.collapse.toFixed(2)} of it (the solids ${MAT.slurry.phi.v} vol% packed to ${MAT.slurry.phiDry.v}; it cannot shrink along the web), flattening every flake alike: this is the film an SEM sees, so the cuts and the measured are compared dried.` : ''} ${o && o.lines.some(l => l.start.turning) ? 'Where the slurry enters in a slow shear the liquid crystal keeps turning over: those lines start as all moments of the turn mixed (as different spots across the web would be).' : ''}</p>`;
   const wire = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   wire('orRedo', () => orRedo(i));
   wire('orCsv', () => orExportCSV(i));
@@ -341,18 +344,19 @@ function orImagePoints(im) {
   return out;
 }
 function orDrawCharts(o, mdM, cdM) {
-  const C = OR_COL(), yt = [0, 0.25, 0.5, 0.75, 1];
+  const C = OR_COL(), yt = [0, 0.25, 0.5, 0.75, 1], seen = orSeen(o);
   // flatness through the film: leaving, at the oven
   const cv1 = document.getElementById('orFlat');
   if (cv1) plotChart(cv1, orAsp(cv1), { x0: -0.2, x1: 1, y0: 0, y1: 1, xl: 'flatness (1 flat, 0 random)', yl: 'depth (0 web, 1 top)', xd: 1, yd: 2, yticks: yt,
-    s: [{ p: o.lines.map(l => [l.out.Sy, l.depth]), c: C.out, w: 2 }, { p: o.lines.map(l => [l.oven.Sy, l.depth]), c: C.oven, w: 2, dash: [6, 4] }] });
-  orLegend(cv1, [['leaving the blade', C.out], ['at the oven', C.oven, 'dash']]);
+    s: [{ p: o.lines.map(l => [l.out.Sy, l.depth]), c: C.out, w: 2 }, { p: o.lines.map(l => [l.oven.Sy, l.depth]), c: C.oven, w: 2, dash: [6, 4] },
+      ...(o.film.dried ? [{ p: o.lines.map(l => [l.dried.Sy, l.depth]), c: C.dried, w: 2 }] : [])] });
+  orLegend(cv1, [['leaving the blade', C.out], ['at the oven', C.oven, 'dash'], ...(o.film.dried ? [['dried', C.dried]] : [])]);
   // the cuts' order through the film, with the measured, binned
   const cv2 = document.getElementById('orCutS');
   if (cv2) {
     const bm = orBinned(mdM), bc = orBinned(cdM);
     const map = plotChart(cv2, orAsp(cv2), { x0: -0.2, x1: 1, y0: 0, y1: 1, xl: '⟨cos 2θ⟩ in the cut (1 all level)', yl: 'depth (0 web, 1 top)', xd: 1, yd: 2, yticks: yt,
-      s: [{ p: o.lines.map(l => [l.md.S2, l.depth]), c: C.md, w: 2 }, { p: o.lines.map(l => [l.cd.S2, l.depth]), c: C.cd, w: 2 }] });
+      s: [{ p: o.lines.map(l => [seen.line(l).md.S2, l.depth]), c: C.md, w: 2 }, { p: o.lines.map(l => [seen.line(l).cd.S2, l.depth]), c: C.cd, w: 2 }] });
     const cx = cv2.getContext('2d');
     for (const [b, col] of [[bm, C.md], [bc, C.cd]]) for (const [d, s2] of b) { cx.beginPath(); cx.arc(map.X(Math.max(-0.2, s2)), map.Y(d), 4.5, 0, 7); cx.fillStyle = col; cx.fill(); cx.lineWidth = 1.5; cx.strokeStyle = C.meas; cx.stroke(); }
     orLegend(cv2, [['along the web', C.md], ['across', C.cd], ...(bm.length || bc.length ? [['measured (dots)', C.meas]] : [])]);
@@ -361,7 +365,7 @@ function orDrawCharts(o, mdM, cdM) {
   for (const [id, cut, M, col] of [['orHmd', 'md', mdM, C.md], ['orHcd', 'cd', cdM, C.cd]]) {
     const cv = document.getElementById(id);
     if (!cv) continue;
-    const H = cut === 'md' ? o.cuts.mdHist : o.cuts.cdHist, nb = H.length, w = 180 / nb;
+    const H = cut === 'md' ? seen.cuts.mdHist : seen.cuts.cdHist, nb = H.length, w = 180 / nb;
     const Hm = M.angles.length ? Array.from(orHist(M.angles, M.weights, nb)) : null;
     const top = Math.max(...H, ...(Hm || [0])) / w * 1.15;
     const step = h => { const p = []; h.forEach((v, k) => { p.push([-90 + k * w, v / w], [-90 + (k + 1) * w, v / w]); }); return p; };
@@ -370,8 +374,8 @@ function orDrawCharts(o, mdM, cdM) {
     const cx = cv.getContext('2d'); cx.globalAlpha = 0.18; cx.fillStyle = col;
     H.forEach((v, k) => { const x0 = map.X(-90 + k * w), x1 = map.X(-90 + (k + 1) * w), y = map.Y(v / w); cx.fillRect(x0, y, x1 - x0, map.Y(0) - y); });
     cx.globalAlpha = 1;
-    const sm = cut === 'md' ? o.cuts.md : o.cuts.cd, ms = orCutStatsSafe(M);
-    orLegend(cv, [[`model: spread ${sm.spread.toFixed(1)}°, mean ${sm.mean.toFixed(1)}°`, col], ...(Hm ? [[`measured: spread ${ms.spread.toFixed(1)}°, mean ${ms.mean.toFixed(1)}° (${M.angles.length})`, C.meas, 'dash']] : [])]);
+    const sm = cut === 'md' ? seen.cuts.md : seen.cuts.cd, ms = orCutStatsSafe(M);
+    orLegend(cv, [[`model${seen.dried ? ', dried' : ''}: spread ${sm.spread.toFixed(1)}°, mean ${sm.mean.toFixed(1)}°`, col], ...(Hm ? [[`measured: spread ${ms.spread.toFixed(1)}°, mean ${ms.mean.toFixed(1)}° (${M.angles.length})`, C.meas, 'dash']] : [])]);
   }
   // drawn cross-sections: each streamline's sampled flakes at its depth, at their angles (a fixed seed: the same each time)
   for (const [id, cut] of [['orXmd', 'md'], ['orXcd', 'cd']]) {
@@ -386,7 +390,9 @@ function orDrawCharts(o, mdM, cdM) {
       for (let k = 0; k < Math.min(per, s.angles.length); k++) {
         // (a flake is cut in proportion to its weight: the thin ones seen edge-on more often)
         if (rnd() > s.weights[k]) continue;
-        const a = s.angles[k] * Math.PI / 180, x = pad + rnd() * (w - 2 * pad), yy = y + (rnd() - 0.5) * (h - 2 * pad) / o.lines.length;
+        // (dried: each trace flattened as the film collapsed, tan θ' = λ tan θ)
+        const a0 = s.angles[k] * Math.PI / 180, a = seen.dried ? Math.atan(o.collapse * Math.tan(a0)) : a0;
+        const x = pad + rnd() * (w - 2 * pad), yy = y + (rnd() - 0.5) * (h - 2 * pad) / o.lines.length;
         c.beginPath(); c.moveTo(x - L * Math.cos(a), yy + L * Math.sin(a)); c.lineTo(x + L * Math.cos(a), yy - L * Math.sin(a));
         c.strokeStyle = 'rgba(225,228,232,0.9)'; c.lineWidth = 1.3; c.lineCap = 'round'; c.stroke();
       }
@@ -406,9 +412,12 @@ function orLegend(cv, items) {
 /** The per-streamline table and each cut's histogram, as CSV. */
 function orExportCSV(i) {
   const o = cfdRuns[i].result.orient;
-  const rows = [['streamline', 'depth', 'flatness_leaving', 'flatness_oven', 'S_oven', 'director_deg', 'md_S2', 'md_mean_deg', 'md_spread_deg', 'cd_S2', 'cd_mean_deg', 'cd_spread_deg', 'turning_where_entered'],
-    ...o.lines.map((l, k) => [k + 1, l.depth, l.out.Sy, l.oven.Sy, l.oven.S, l.oven.angle, l.md.S2, l.md.mean, l.md.spread, l.cd.S2, l.cd.mean, l.cd.spread, l.start.turning ? 'yes' : 'no']),
-    [], ['angle_bin_deg', 'md_share', 'cd_share'], ...o.cuts.mdHist.map((v, k) => [-90 + (k + 0.5) * 180 / o.cuts.mdHist.length, v, o.cuts.cdHist[k]])];
+  const d = !!o.cuts.dried;
+  const rows = [['streamline', 'depth', 'flatness_leaving', 'flatness_oven', 'S_oven', 'director_deg', 'md_S2', 'md_mean_deg', 'md_spread_deg', 'cd_S2', 'cd_mean_deg', 'cd_spread_deg', 'turning_where_entered',
+      ...(d ? ['flatness_dried', 'md_S2_dried', 'md_spread_deg_dried', 'cd_S2_dried', 'cd_spread_deg_dried'] : [])],
+    ...o.lines.map((l, k) => [k + 1, l.depth, l.out.Sy, l.oven.Sy, l.oven.S, l.oven.angle, l.md.S2, l.md.mean, l.md.spread, l.cd.S2, l.cd.mean, l.cd.spread, l.start.turning ? 'yes' : 'no',
+      ...(d ? [l.dried.Sy, l.mdD.S2, l.mdD.spread, l.cdD.S2, l.cdD.spread] : [])]),
+    [], ['angle_bin_deg', 'md_share', 'cd_share', ...(d ? ['md_share_dried', 'cd_share_dried'] : [])], ...o.cuts.mdHist.map((v, k) => [-90 + (k + 0.5) * 180 / o.cuts.mdHist.length, v, o.cuts.cdHist[k], ...(d ? [o.cuts.dried.mdHist[k], o.cuts.dried.cdHist[k]] : [])])];
   downloadCSV(`flakes_L${i + 1}_${csvStamp()}.csv`, rows);
 }
 

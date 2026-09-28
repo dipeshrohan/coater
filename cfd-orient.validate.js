@@ -8,9 +8,12 @@
  *  3. The coating flow (the app's defaults, flat land and the round entry): the lines reach the inlet; the film
  *     leaves more aligned than it came (the flakes flat in the film's plane); the ensemble's size and the trace's
  *     step converged; the time it takes.
+ *  4. Dried (GO-3): the film collapsing through its thickness flattens each flake exactly (a normal at α from the
+ *     film's normal to tan α' = λ tan α; a trace in a cut to tan θ' = λ tan θ); from random, ⟨p_y²⟩ against its
+ *     closed form; λ = 1 changes nothing; the coating flow's dried film flatter than at the oven.
  */
 const O = require('./orient.js');
-const { orientAlong, orientRest, orientStart, orientFromGrid } = require('./cfd-orient.js');
+const { orientAlong, orientRest, orientStart, orientFromGrid, orientCompact, orCollapse } = require('./cfd-orient.js');
 let fails = 0;
 const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); };
 
@@ -129,6 +132,25 @@ function couette(NC, NR, Lx, H, Uw, mu) {
     check('  below a shear of 2 D_r: taken at 2 D_r (the same groups)', a.Es.every((E, k) => E.p.every((v, i) => v === b.Es[k].p[i])) && a.turn === b.turn, `turn ${a.turn} strain units`);
   }
 }
+// dried: the film's collapse
+{
+  const lam = 0.4 / 0.85, rng = O.orRng(5), E = O.orEnsemble(20000, rng), Ed = orCollapse(E, lam);
+  // each normal: in the (x, y) plane at α from y it goes to tan α' = λ tan α; in general (x, y / λ, z) renormalised
+  let worst = 0, worstT = 0;
+  const md = O.orTraces(E, 'md'), mdD = O.orTraces(Ed, 'md');
+  for (let k = 0; k < E.n; k++) {
+    const x = E.p[3 * k], y = E.p[3 * k + 1], z = E.p[3 * k + 2], s = Math.hypot(x, y / lam, z);
+    worst = Math.max(worst, Math.abs(Ed.p[3 * k] - x / s), Math.abs(Ed.p[3 * k + 1] - y / lam / s), Math.abs(Ed.p[3 * k + 2] - z / s));
+  }
+  md.angles.forEach((a, i) => { const want = Math.atan(lam * Math.tan(a * Math.PI / 180)) * 180 / Math.PI; worstT = Math.max(worstT, Math.abs(mdD.angles[i] - want)); });
+  // from random: ⟨p_y²⟩ = (1 + a)/a (1 − atan(√a)/√a), a = 1/λ² − 1
+  const a = 1 / (lam * lam) - 1, want = (1 + a) / a * (1 - Math.atan(Math.sqrt(a)) / Math.sqrt(a));
+  let m = 0, m2 = 0; for (let k = 0; k < Ed.n; k++) { const v = Ed.p[3 * k + 1] ** 2; m += v; m2 += v * v; }
+  m /= Ed.n; const se = Math.sqrt((m2 / Ed.n - m * m) / Ed.n);
+  const same = orCollapse(E, 1).p.every((v, i) => Math.abs(v - E.p[i]) < 1e-15);
+  check('dried: each flake flattened exactly (normals, and traces in a cut tan θ\' = λ tan θ); from random, ⟨p_y²⟩ within 3 standard errors of its closed form; λ = 1 nothing',
+    worst < 1e-15 && worstT < 1e-9 && Math.abs(m - want) < 3 * se && same, `λ ${lam.toFixed(4)}: ⟨p_y²⟩ ${m.toFixed(4)} vs ${want.toFixed(4)} (±${se.toExponential(1)}), 1/3 before`);
+}
 // the coating flow
 {
   const gap = require('./cfd-gap-solver.js');
@@ -145,18 +167,24 @@ function couette(NC, NR, Lx, H, Uw, mu) {
     const fo = { ...f2, faceDeg: 90, contactDeg: 35, U, Pup: 720, rho: 1360, g: 9.81, gamma: 0.07, mu, gdMin: 1e-3 * U / H, Ld: Math.max(12e-3, 8 * H), nEf: 6, nEs: 24, nEy: 6 };
     const r = FEM.solveCoaterFEM(fo);
     for (const M of [{ kind: 'ft', beta: O.orBeta(1e-3 / 5), Ci: 0.01 }, { kind: 'dh', beta: O.orBeta(1e-3 / 5), Dr: 0.025, U: 8 }]) {
-      const t0 = Date.now(), a = orientAlong(r, M, { nLines: 24, n: 1000, seed: 1, tRest: 100 }), ta = Date.now() - t0;
+      const t0 = Date.now(), a = orientAlong(r, M, { nLines: 24, n: 1000, seed: 1, tRest: 100, collapse: 0.4 / 0.85 }), ta = Date.now() - t0;
       const b = orientAlong(r, M, { nLines: 24, n: 4000, seed: 2, tRest: 100 }), c = orientAlong(r, M, { nLines: 24, n: 1000, seed: 1, tRest: 100, h: 0.125 });
       const sIn = a.lines.reduce((s, l) => s + l.start.Sy, 0) / a.lines.length;
       if (M.kind === 'ft') {
         // redone later on the stored result (the app's grid, cfd-fem.js's coaterGrid): the fields back exactly, the same alignment
         const g = FEM.coaterGrid(r, { xe: f2.xe, H, faceDeg: 90, contactDeg: 35, U }), rb = orientFromGrid(g);
         const same = ['x', 'y', 'u', 'v', 'psi', 'mu', 'tauXX', 'tauXY', 'tauYY', 'omega'].every(k => rb[k].every((v, i) => v === r[k][i]));
-        const a2 = orientAlong(rb, M, { nLines: 24, n: 1000, seed: 1, tRest: 100 });
+        const a2 = orientAlong(rb, M, { nLines: 24, n: 1000, seed: 1, tRest: 100, collapse: 0.4 / 0.85 });
         check('  redone from the stored result\'s grid: the flow\'s fields back exactly, the same alignment', same && rb.NC === r.NC && rb.NR === r.NR && JSON.stringify(a2.film) === JSON.stringify(a.film), `${r.NC} × ${r.NR} nodes`);
       }
       check(`${name}, ${M.kind === 'ft' ? 'Folgar–Tucker' : 'Doi–Hess'}: every line traced to the inlet`, a.lines.every(l => l.how === 'inlet'),
         `S_y entering ${sIn.toFixed(3)}, leaving ${a.film.out.Sy.toFixed(3)} (director ${a.film.out.angle.toFixed(1)}° from the web's normal), at the oven ${a.film.oven.Sy.toFixed(3)}; cuts: along ${a.cuts.md.S2.toFixed(3)} (spread ${a.cuts.md.spread.toFixed(1)}°), across ${a.cuts.cd.S2.toFixed(3)} (${a.cuts.cd.spread.toFixed(1)}°); ${ta} ms, ${a.stats.steps} steps`);
+      // dried: flatter than at the oven, both cuts more ordered; the compact result carries it
+      const cmp = orientCompact(a);
+      check('  dried (collapsed to 0.4 / 0.85 of its thickness): flatter than at the oven, both cuts more ordered, every line flatter; carried by the compact result',
+        a.film.dried.Sy > a.film.oven.Sy && a.cuts.dried.md.S2 > a.cuts.md.S2 && a.cuts.dried.cd.S2 > a.cuts.cd.S2 && a.lines.every(l => l.dried.Sy >= l.oven.Sy - 1e-12)
+          && cmp.film.dried && cmp.cuts.dried && cmp.lines.every(l => l.dried && l.mdD && l.cdD) && cmp.collapse > 0,
+        `S_y at the oven ${a.film.oven.Sy.toFixed(3)} -> dried ${a.film.dried.Sy.toFixed(3)}; along ${a.cuts.md.S2.toFixed(3)} -> ${a.cuts.dried.md.S2.toFixed(3)} (spread ${a.cuts.md.spread.toFixed(1)}° -> ${a.cuts.dried.md.spread.toFixed(1)}°), across ${a.cuts.cd.S2.toFixed(3)} -> ${a.cuts.dried.cd.S2.toFixed(3)}`);
       check('  1000 flakes a line within 0.02 of 4000; the trace\'s step halved within 0.02', Math.abs(a.film.out.Sy - b.film.out.Sy) < 0.02 && Math.abs(a.film.out.Sy - c.film.out.Sy) < 0.02,
         `S_y ${a.film.out.Sy.toFixed(4)}, ${b.film.out.Sy.toFixed(4)} (4000), ${c.film.out.Sy.toFixed(4)} (half step)`);
       if (M.kind === 'ft' && name === 'flat land') {
