@@ -606,11 +606,16 @@ GO-4 design (the slice; the sheet follows):
   the isotherm, capped at the packing's pores as in GO-3), saturated at a wet front, at the air's (or the skin's
   outer face's) activity at a surface. Stiffness: GO paper transversely isotropic (in-plane E_p, through E_t, G_pt,
   ν), softer with water; the wet film under a skin a soft gel; the web an orthotropic layer (in-plane E_w).
-- Stress on the line (held flat): a laminate at each place along the line (the layers' natural strains, the web's,
-  force balance); where the film is in tension, channel cracks: the steady-state energy release rate of a crack
-  through the set layers from a 2D plane-strain FEM (quadratic elements, the layers as they are: skin, gel, web;
-  G = (1/2h)∫σδ over the crack's faces, Beuth) against the film's fracture energy; the crack spacing where cracks
-  stop forming (a crack midway between two at spacing s: G(s) = [2∫σu(s/2) − ∫σu(s)]/h, against the toughness).
+- Stress on the line (held flat): the web and the film set on it (the set layers from the web up; all of them once
+  dry) share one strain from their force balance. A skin over wet film floats: the wet film under it is a paste
+  (yield stress a few Pa) that cannot hold it to the web's length, so the skin balances its own force -- its layers'
+  stresses self-equilibrated (a layer that dried more pulls on one that dried less). When the fronts meet the skin
+  joins the bonded film keeping its stress. Channel cracks through each part's tension zone (from its exposed face
+  inward): the steady-state energy release rate from a 2D plane-strain FEM of the layers as they are (9-node
+  isoparametric, graded to the crack's ends; the skin over the wet film, or the bonded film on the web;
+  G = (1/2h)∫σδ over the crack's faces, Beuth) against the film's fracture energy, at the places along the line where
+  an estimate peaks; the crack spacing where cracks stop forming (a crack midway between two at spacing s:
+  G(s) = [2∫σu(s/4) − ∫σu(s/2)]/h over half-cells, against the toughness).
 - The peel: steady peel of the film at angle θ (0–180°) with its residual strain, by the energy balance (exact for
   an elastic arm, bending included: G = (F/b)(1 − (1+ε_b) cos θ) + (F/b)²/(2E h) + h u_b) against the interface's
   toughness: the force needed against the angle (the winder's, not known) and at 180° (the hand start). Tear: the
@@ -620,10 +625,9 @@ GO-4 design (the slice; the sheet follows):
   settled in the room (water at the room's humidity): radius, and an edge's lift for a sheet of given length.
   Winding (top out, the core's diameter an input): the surface's strain on the roll against the film's failure
   strain; the curl it sets (a fraction, assumed 0 until measured).
-- Wrinkles and blisters: a skin compressed over the soft wet film (wrinkling stress and wavelength: the gel as a
-  thick substrate); the dry film compressed on the web (buckle-delamination: the blister's energy release against
-  the interface's toughness, the smallest width that buckles); steam under the skin (GO-3's boiling under the
-  skin: the overpressure lifts it).
+- Blisters (wrinkles, ridges): the bonded film compressed on the web buckles off it (buckle-delamination: the most
+  a straight blister releases, (1 − ν²) σ² h / (2E), against the interface's toughness; the narrowest that can
+  buckle); steam under a skin (GO-3's boiling under the skin: the overpressure lifts it).
 - Measured beside computed: the curl (radius, or an edge's lift with the sheet's length), the cracks (spacing,
   width, where seen), the peel force (at its angle); each read back as the value it implies (the interface's
   toughness from the peel force, the swelling coefficient from the curl, the fracture energy from the spacing),
