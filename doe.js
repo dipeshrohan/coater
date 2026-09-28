@@ -50,6 +50,15 @@ const DOE_OUTPUTS = [
   { k: 'flatOven', l: 'Flake flatness at the oven', u: '1 flat, 0 random', g: 'Flakes (alignment)', d: 3 },
   { k: 'mdSpread', l: 'SEM spread, cut along the web', u: '°', g: 'Flakes (alignment)', d: 1 },
   { k: 'cdSpread', l: 'SEM spread, cut across the web', u: '°', g: 'Flakes (alignment)', d: 1 },
+  // (dried: the film collapsed as it dries, GO-3 -- the film an SEM sees)
+  { k: 'flatDried', l: 'Flake flatness, dried film', u: '1 flat, 0 random', g: 'Flakes (alignment)', d: 3 },
+  { k: 'mdSpreadD', l: 'SEM spread along the web, dried film', u: '°', g: 'Flakes (alignment)', d: 1 },
+  { k: 'cdSpreadD', l: 'SEM spread across the web, dried film', u: '°', g: 'Flakes (alignment)', d: 1 },
+  // (the drying in the oven, GO-3: this run's film, the water leaving from the top only and from the top and the bottom)
+  { k: 'waterTop', l: 'Water left at the oven\'s exit, top only', u: '% of the GO', g: 'Drying (oven)', d: 1 },
+  { k: 'waterBoth', l: 'Water left at the oven\'s exit, top and bottom', u: '% of the GO', g: 'Drying (oven)', d: 1 },
+  { k: 'dryAtTop', l: 'Dry at, top only', u: 'm into the oven (— not dry)', g: 'Drying (oven)', d: 2 },
+  { k: 'dryAtBoth', l: 'Dry at, top and bottom', u: 'm into the oven (— not dry)', g: 'Drying (oven)', d: 2 },
 ];
 const DOE = {
   loc: 0,
@@ -121,6 +130,10 @@ function doeOutputs(r, geo) {
     rev: m.reverseFraction * 100, recirc: m.recircArea * 1e6, stag: m.stagnation.length, tres: res.n ? res.mean : NaN,
     flatOut: r.orient ? r.orient.film.out.Sy : NaN, flatOven: r.orient ? r.orient.film.oven.Sy : NaN,
     mdSpread: r.orient ? r.orient.cuts.md.spread : NaN, cdSpread: r.orient ? r.orient.cuts.cd.spread : NaN,
+    flatDried: r.orient && r.orient.film.dried ? r.orient.film.dried.Sy : NaN,
+    mdSpreadD: r.orient && r.orient.cuts.dried ? r.orient.cuts.dried.md.spread : NaN, cdSpreadD: r.orient && r.orient.cuts.dried ? r.orient.cuts.dried.cd.spread : NaN,
+    ...(() => { const d = r.drying && !r.drying.error ? r.drying : null, at = q => q && q.dry ? q.dryAt : NaN;
+      return { waterTop: d ? d.top.waterPct : NaN, waterBoth: d ? d.both.waterPct : NaN, dryAtTop: d ? at(d.top) : NaN, dryAtBoth: d ? at(d.both) : NaN }; })(),
   };
 }
 
@@ -192,7 +205,7 @@ function doeStart(run) {
     w1.postMessage({ id: 1, locs: [], across: G.across, ripple: G.ripple });
   };
   w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); settle(); };
-  w.postMessage(cfdWorkerMessage(geo, geo.solver, true));
+  w.postMessage(cfdWorkerMessage(geo, geo.solver, true, true));
 }
 function stopDOE() {
   if (DOE.status !== 'running') return;

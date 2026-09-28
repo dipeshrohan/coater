@@ -182,15 +182,32 @@ function orientStart(L, M, n, seed, rng, { wMax = 60, dStrain = 0.25, peMin = OR
 }
 
 /**
+ * The flakes flattened as the film collapses to lam of its thickness while it dries (GO-3: it cannot shrink along the
+ * web, so the collapse is through the thickness, y): affine, a disc's normal goes as F^-T n with F = diag(1, lam, 1),
+ * so (x, y, z) -> (x, y / lam, z), renormalised. A trace in a cut then turns as tan θ' = lam tan θ.
+ */
+function orCollapse(E, lam) {
+  const p = Float64Array.from(E.p);
+  for (let k = 0; k < E.n; k++) {
+    const x = p[3 * k], y = p[3 * k + 1] / lam, z = p[3 * k + 2], s = Math.hypot(x, y, z);
+    p[3 * k] = x / s; p[3 * k + 1] = y / s; p[3 * k + 2] = z / s;
+  }
+  return { n: E.n, p };
+}
+
+/**
  * The orientation along r's through-flow to the film and on to the oven. M: orient.js's model. opts: nLines (24),
  * n (flakes per line, 1000), seed, start ('steady' | 'random' | a function (L, j, rng) -> an ensemble or an array
  * of them: groups each with its own mean field), tRest (s on the web to the oven; 0: none), samples (per line along
- * the path, 16), h (trace step, cells: 0.25), maxSteps (per line, 40000).
+ * the path, 16), h (trace step, cells: 0.25), maxSteps (per line, 40000), collapse (the dried film's thickness over the
+ * wet one, φ0 / φ_m: below 1, the dried state too).
  * Returns { lines: [{ f, yOut, depth, how, start (+ turning, turn, groups, settled, gd), nFlakes, out, oven, tPath, tRested,
- *   samples, traces: { md, cd } (at the oven) }], film: { out, oven } (their mean), cuts, hFilm, stats: { steps } }.
+ *   samples, traces: { md, cd } (at the oven), dried, tracesDried }], film: { out, oven, dried } (their mean), cuts (+ dried),
+ *   hFilm, stats: { steps } }.
  */
 function orientAlong(r, M, opts = {}) {
-  const { nLines = 24, n = 1000, seed = 1, start = 'steady', tRest = 0, samples = 16, h = 0.25, maxSteps = 40000, onLine = null, peMin = OR_PE_MIN } = opts;
+  const { nLines = 24, n = 1000, seed = 1, start = 'steady', tRest = 0, samples = 16, h = 0.25, maxSteps = 40000, onLine = null, peMin = OR_PE_MIN, collapse = null } = opts;
+  const lam = collapse > 0 && collapse < 1 ? collapse : null;
   const { lines, at, yWeb, hFilm } = orientPaths(r, { nLines, h, maxSteps });
   const out = { lines: [], stats: { steps: 0 } };
   lines.forEach(({ f, P, T, how }, j) => {
@@ -217,17 +234,24 @@ function orientAlong(r, M, opts = {}) {
     // on the web to the oven, at rest
     const tRested = orientRest(Es, tRest, M, rng);
     const E = orMerge(Es), oven = CO_O.orStats(E), md = CO_O.orTraces(E, 'md'), cd = CO_O.orTraces(E, 'cd');
-    out.lines.push({ f, yOut, depth: (yOut - yWeb) / hFilm, how, start: startStats, nFlakes: nFl, out: outStats, oven, tPath, tRested, samples: smp,
-      traces: { md: { angles: md.angles, weights: md.weights }, cd: { angles: cd.angles, weights: cd.weights } } });
+    const line = { f, yOut, depth: (yOut - yWeb) / hFilm, how, start: startStats, nFlakes: nFl, out: outStats, oven, tPath, tRested, samples: smp,
+      traces: { md: { angles: md.angles, weights: md.weights }, cd: { angles: cd.angles, weights: cd.weights } } };
+    // dried: the film collapsed through its thickness (its lines keep their share of the depth)
+    if (lam) { const Ed = orCollapse(E, lam), mdD = CO_O.orTraces(Ed, 'md'), cdD = CO_O.orTraces(Ed, 'cd');
+      line.dried = CO_O.orStats(Ed); line.tracesDried = { md: { angles: mdD.angles, weights: mdD.weights }, cd: { angles: cdD.angles, weights: cdD.weights } }; }
+    out.lines.push(line);
     if (onLine) onLine(j + 1, lines.length);
   });
   // the film's orientation, flux weighted (each line an equal share: their mean)
   const mean = key => { const Am = new Float64Array(9); for (const l of out.lines) for (let i = 0; i < 9; i++) Am[i] += l[key].A[i] / out.lines.length; return Am; };
   out.film = { out: statsOfA(mean('out')), oven: statsOfA(mean('oven')) };
+  if (lam) out.film.dried = statsOfA(mean('dried'));
   // the whole film's traces (all lines together, each line its equal share whatever its flakes' number) and their cut statistics
-  const all = cut => { const a = [], w = []; for (const l of out.lines) { a.push(...l.traces[cut].angles); for (const x of l.traces[cut].weights) w.push(x / l.nFlakes); } return { angles: a, weights: w }; };
-  out.cuts = { md: CO_O.orCutStats(all('md').angles, all('md').weights), cd: CO_O.orCutStats(all('cd').angles, all('cd').weights),
-    mdHist: Array.from(CO_O.orHist(all('md').angles, all('md').weights)), cdHist: Array.from(CO_O.orHist(all('cd').angles, all('cd').weights)) };
+  const all = (cut, key = 'traces') => { const a = [], w = []; for (const l of out.lines) { a.push(...l[key][cut].angles); for (const x of l[key][cut].weights) w.push(x / l.nFlakes); } return { angles: a, weights: w }; };
+  const cuts = key => { const m = all('md', key), c = all('cd', key);
+    return { md: CO_O.orCutStats(m.angles, m.weights), cd: CO_O.orCutStats(c.angles, c.weights), mdHist: Array.from(CO_O.orHist(m.angles, m.weights)), cdHist: Array.from(CO_O.orHist(c.angles, c.weights)) }; };
+  out.cuts = cuts('traces');
+  if (lam) { out.cuts.dried = cuts('tracesDried'); out.collapse = lam; }
   out.hFilm = hFilm;
   return out;
 }
@@ -253,13 +277,17 @@ function orientCompact(res, { nSample = 200 } = {}) {
   const cut = t => ({ ...cs(CO_O.orCutStats(t.angles, t.weights)), hist: Array.from(CO_O.orHist(t.angles, t.weights), p5),
     sample: { angles: Array.from(t.angles.slice(0, nSample), r2), weights: Array.from(t.weights.slice(0, nSample), x => Math.round(x * 1000) / 1000) } });
   const fs = s => ({ ...st(s), n: Array.from(s.n, r4), eig: Array.from(s.eig, r4) });
+  // (dried: its statistics and histograms; its drawn traces follow from the oven's sample, tan θ' = lam tan θ)
+  const cutD = t => ({ ...cs(CO_O.orCutStats(t.angles, t.weights)), hist: Array.from(CO_O.orHist(t.angles, t.weights), p5) });
+  const cutsOf = c => ({ md: cs(c.md), cd: cs(c.cd), mdHist: c.mdHist.map(p5), cdHist: c.cdHist.map(p5) });
   return {
     lines: res.lines.map(l => ({ f: l.f, yOut: p6(l.yOut), depth: r4(l.depth), how: l.how, nFlakes: l.nFlakes, tPath: p5(l.tPath), tRested: p5(l.tRested),
       start: { ...st(l.start), turning: l.start.turning, turn: l.start.turn, groups: l.start.groups, settled: l.start.settled, gd: p5(l.start.gd) },
-      out: st(l.out), oven: st(l.oven), samples: l.samples.map(q => ({ x: p6(q.x), y: p6(q.y), A: q.A.map(r4) })), md: cut(l.traces.md), cd: cut(l.traces.cd) })),
-    film: { out: fs(res.film.out), oven: fs(res.film.oven) },
-    cuts: { md: cs(res.cuts.md), cd: cs(res.cuts.cd), mdHist: res.cuts.mdHist.map(p5), cdHist: res.cuts.cdHist.map(p5) },
-    hFilm: p6(res.hFilm), stats: res.stats,
+      out: st(l.out), oven: st(l.oven), samples: l.samples.map(q => ({ x: p6(q.x), y: p6(q.y), A: q.A.map(r4) })), md: cut(l.traces.md), cd: cut(l.traces.cd),
+      ...(l.dried ? { dried: st(l.dried), mdD: cutD(l.tracesDried.md), cdD: cutD(l.tracesDried.cd) } : {}) })),
+    film: { out: fs(res.film.out), oven: fs(res.film.oven), ...(res.film.dried ? { dried: fs(res.film.dried) } : {}) },
+    cuts: { ...cutsOf(res.cuts), ...(res.cuts.dried ? { dried: cutsOf(res.cuts.dried) } : {}) },
+    hFilm: p6(res.hFilm), stats: res.stats, ...(res.collapse ? { collapse: r4(res.collapse) } : {}),
   };
 }
 /** orStats from a second moment A alone (the film's mean). */
@@ -268,4 +296,4 @@ function statsOfA(A) {
   return { A: Array.from(A), S: (3 * e.values[0] - 1) / 2, n: nv.map(x => x * sgn), angle: Math.atan2(sgn * nv[0], sgn * nv[1]) * 180 / Math.PI, Sy: (3 * A[4] - 1) / 2, eig: e.values };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { orientGradients, orientPaths, orMerge, orientRest, orientStart, orientAlong, orientCompact, orientFromGrid };
+if (typeof module !== 'undefined' && module.exports) module.exports = { orientGradients, orientPaths, orMerge, orientRest, orientStart, orientAlong, orientCompact, orientFromGrid, orCollapse };

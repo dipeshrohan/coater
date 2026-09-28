@@ -1695,3 +1695,48 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .or-tool { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; }
 .or-canvas { overflow: auto; max-height: 70vh; }
 .or-canvas canvas { display: block; cursor: crosshair; }
+
+/* GO-3: the drying in the oven (Process, under the chain) and each zone's top (the inputs bar) */
+.dry-sec { margin: 16px 0 6px; padding: 12px 14px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--card-shadow, var(--shadow-sm)); min-width: 0; }
+.dry-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.dry-head h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.dry-ways { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; margin: 10px 0 4px; }
+.dry-way { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.dry-way span { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.dry-way b { color: var(--ink); font-weight: 600; }
+.dry-way .lg-ln { width: 26px; }
+.dry-ways .fv-why { flex: 1 1 260px; margin: 0; }
+.dry-pic { display: block; flex: none; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 8px; }
+.dry-msg { margin: 8px 0; }
+.dry-warn { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.dry-oven { margin: 8px 0; }
+.dry-oven canvas { cursor: crosshair; }
+.dry-oven .fv-why { font-weight: 400; }
+.dry-sec .stat small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--muted); }
+.dry-sec .stat strong { font-size: 15px; }
+.dry-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px 16px; margin: 8px 0; }
+.dry-table tr.sel th, .dry-table tr.sel td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.dry-table tr.meas td { color: var(--muted); font-style: italic; }
+.dry-table small { color: var(--muted); font-weight: 400; }
+.dry-table tbody th { width: auto; min-width: 140px; }
+.dry-table td { white-space: nowrap; }
+.dry-meas { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 22px; margin: 6px 0 10px; }
+.dry-mcol h4 { margin: 4px 0 6px; font-size: 12.5px; }
+.dry-list { margin: 6px 0; padding-left: 18px; font-size: 12.5px; }
+.dry-list li { margin: 2px 0; }
+.dry-cmp { margin: 6px 0; padding-left: 18px; font-size: 12.5px; color: var(--ink); }
+.dry-exit-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; font-size: 12px; color: var(--muted); }
+.dry-exit-form label { display: flex; flex-direction: column; gap: 3px; }
+.dry-exit-form input { width: 86px; }
+.ovz-pic { padding: 2px 16px 4px; }
+.ovz-pic .dry-pic { width: 100%; max-width: 220px; height: auto; }
+.ovz-top select { max-width: 100%; }
+@media (max-width: 640px) {
+  .dry-sec { padding: 10px; }
+  .dry-grid { grid-template-columns: 1fr; }
+  .dry-way { flex: 1 1 100%; }
+}
+.dry-where { grid-column: 1 / -1; margin: -4px 0 0; }
+.prop.ovz-top { display: block; }
+.prop.ovz-top .prop-v { display: block; margin-top: 4px; }
+.prop.ovz-top select { width: 100%; }

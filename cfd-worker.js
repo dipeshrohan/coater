@@ -26,7 +26,7 @@
  *   used: index in solves of the solve whose solution is the result.
  */
 // (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
-importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js', 'orient.js', 'cfd-orient.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js', 'orient.js', 'cfd-orient.js', 'drying.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {
@@ -58,7 +58,7 @@ onmessage = e => {
     // the alignment alone, on a flow solved before (its grid): { orientOnly: true, grid, orient, tRest }
     if (o.orientOnly) {
       const t0 = Date.now();
-      const res = orientAlong(orientFromGrid(o.grid), o.orient.model, { nLines: o.orient.nLines, n: o.orient.n, seed: o.orient.seed, tRest: o.tRest,
+      const res = orientAlong(orientFromGrid(o.grid), o.orient.model, { nLines: o.orient.nLines, n: o.orient.n, seed: o.orient.seed, tRest: o.tRest, collapse: o.orient.collapse,
         onLine: (k, N) => postMessage({ progress: { it: 0, residual: NaN, s: k / N, stage: `flake alignment: line ${k} of ${N}` } }) });
       postMessage({ ok: true, orient: { ...orientCompact(res), model: o.orient.model, tRest: o.tRest, ms: Date.now() - t0 } });
       return;
@@ -143,18 +143,29 @@ onmessage = e => {
       nx: 200, maxSteps: 150000, tol: 1e-8,
     }) : { error: 'the oven is inside the 2D domain' };
 
-    // The flakes' alignment (o.orient: { model: orient.js's model, nLines, n, seed }; cfd-orient.js): along the
-    // flow to the film, then at rest on the web from the domain's end to the oven (at the web's speed)
+    // The flakes' alignment (o.orient: { model: orient.js's model, nLines, n, seed, collapse }; cfd-orient.js): along the
+    // flow to the film, then at rest on the web from the domain's end to the oven (at the web's speed); and dried, the
+    // film collapsed to collapse (φ0 / φ_m) of its thickness
     let orient = null;
     if (o.orient) {
       const tRest = Math.max(0, (o.ovenDistance - filmStart) / o.U), t0 = Date.now();
       stage = 'flake alignment'; lastPost = 0; post({ it: 0, residual: NaN, s: 1 });
-      const res = orientAlong(r, o.orient.model, { nLines: o.orient.nLines, n: o.orient.n, seed: o.orient.seed, tRest,
+      const res = orientAlong(r, o.orient.model, { nLines: o.orient.nLines, n: o.orient.n, seed: o.orient.seed, tRest, collapse: o.orient.collapse,
         onLine: (k, N) => { stage = `flake alignment: line ${k} of ${N}`; lastPost = 0; post({ it: 0, residual: NaN, s: k / N }); } });
       orient = { ...orientCompact(res), model: o.orient.model, tRest, ms: Date.now() - t0 };
     }
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...(orient ? { orient } : {}), ...shapedOut(shape.profile, r) } });
+    // The drying of this film in the oven (o.dry: drying.js's inputs without the film; the DOE), both ways the water
+    // may leave: its summary
+    let drying = null;
+    if (o.dry) {
+      stage = 'drying in the oven'; lastPost = 0; post({ it: 0, residual: NaN, s: 1 });
+      const sum = rr => ({ waterPct: rr.exit.waterPct, dry: rr.exit.dry, dryAt: rr.exit.dry ? rr.events.dry : null, skinAt: rr.events.skinTop, hExit: rr.exit.h, Tmax: Math.max(...rr.series.map(q => Math.max(q.Ts, q.Tb))), boil: rr.events.boil });
+      try { drying = { h0: g.Q / o.U, top: sum(drStrip({ ...o.dry, h0: g.Q / o.U, where: 'top' })), both: sum(drStrip({ ...o.dry, h0: g.Q / o.U, where: 'both' })) }; }
+      catch (e) { drying = { error: e.message }; }
+    }
+
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...(orient ? { orient } : {}), ...(drying ? { drying } : {}), ...shapedOut(shape.profile, r) } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

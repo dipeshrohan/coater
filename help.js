@@ -113,7 +113,21 @@ const HELP = {
   'oven.airU': { t: 'Air speed up into the fibre', d: 'Speed of this oven zone\'s drying air driven up through the fibre. Assumed.', r: 'Range 0 to 50 m/s', u: 'CFD fibre results (drying air)' },
   'oven.airT': { t: 'Air temperature', d: 'Temperature of this oven zone\'s drying air (sets its viscosity and density). Assumed.', r: 'Range 0 to 400 °C', e: 'Above the fibre\'s continuous use temperature: a warning in the fibre results.', u: 'CFD fibre results (drying air)' },
   'oven.plenum': { t: 'Plenum length', d: 'Length of the air plenum under the fibre in this oven zone, along the line. Assumed.', r: 'Range 1 to 5000 mm', u: 'CFD fibre results (drying air)' },
-  'oven.rh': { t: 'Air humidity', d: 'Relative humidity of this oven zone\'s drying air. Assumed.', r: 'Range 0 to 100 %', u: 'Drying (next phases)' },
+  'oven.rh': { t: 'Air humidity', d: 'Relative humidity of this oven zone\'s drying air, at its temperature (the air blown up and, when there are, the jets on top). It sets how much vapour the air can take and the water the dry film keeps. Assumed.', r: 'Range 0 to 100 %', u: 'Process › Drying in the oven' },
+  'oven.top': { t: 'Above the film', d: 'What is above the film in this zone (the air blown up into the fibre from below is there in every zone): nothing blown (the oven\'s still air: natural convection, the walls\' radiation), hot air blown on the top through slot nozzles, IR heaters, or air and IR. The picture under it shows the choice.', r: 'Nothing blown by default (assumed)', u: 'Process › Drying in the oven' },
+  'oven.jetU': { t: 'Jet speed at the nozzles', d: 'The speed of the air leaving the slot nozzles above the film. The heat and vapour it carries off follow Martin\'s correlation for arrays of slot nozzles.', r: 'Range 0.5 to 150 m/s · 10 by default (assumed)', u: 'Process › Drying in the oven' },
+  'oven.jetT': { t: 'Jet air temperature', d: 'The temperature of the air blown on the top. Its humidity is the zone\'s air humidity (the same air).', r: 'Range 0 to 400 °C · 100 by default (assumed)', u: 'Process › Drying in the oven' },
+  'oven.jetB': { t: 'Slot width', d: 'The width of each slot nozzle (across the line its length is the web\'s width).', r: 'Range 0.5 to 50 mm · 5 by default (assumed)', u: 'Process › Drying in the oven' },
+  'oven.jetH': { t: 'Nozzles above the film', d: 'The nozzles\' height above the film. Martin\'s correlation holds from 1 to 40 × twice the slot width.', r: 'Range 1 to 500 mm · 20 by default (assumed)', u: 'Process › Drying in the oven' },
+  'oven.jetS': { t: 'Slot pitch along the line', d: 'The distance between neighbouring slots along the line.', r: 'Range 5 to 1000 mm · 100 by default (assumed)', u: 'Process › Drying in the oven' },
+  'oven.ir': { t: 'IR power reaching the film', d: 'The IR heaters\' power per area arriving at the film; the film takes the share set on the Drying card (IR absorbed by the film).', r: 'Range 0 to 200 kW/m² · 5 by default (assumed)', u: 'Process › Drying in the oven' },
+  'dry.film': { t: 'Which film', d: 'The drying of the wet film at a location (its most detailed solution: 3D, else 2D, else 1D) or of the web\'s mean (the 1D across the web). The table below has them all.', u: 'Process › Drying in the oven' },
+  'dry.oven': { t: 'The film through the oven', d: 'The line drawn to scale: the room before the oven and each zone (what is above the film under its label), and the film on its web in two lanes -- the water leaving from the top only, and from the top and the bottom -- its thickness to scale, its skin darker, where the skin forms, where it is dry. Click to look through the film there.', u: 'Process › Drying in the oven' },
+  'dry.zones': { t: 'Oven zones', d: 'Opens the oven\'s zones in the inputs bar: each zone\'s length, the air blown up into the fibre (speed, temperature, plenum, humidity) and what is above the film.', u: 'Process' },
+  'dry.csv': { t: 'Export CSV', d: 'Every film\'s drying along the line, both ways: the top and bottom temperatures, the evaporation from the top and the bottom, the water, the film\'s and its skins\' thickness.', u: 'Process › Drying in the oven' },
+  'dry.temps': { t: 'Measured temperatures', d: 'Temperatures read in the oven, as a text table (CSV, tab or semicolon separated) with a header row: position along the oven (m; or time in the oven, s), temperature (°C), what (film top, web or air), location (L1–L4 or web). Drawn over the computed temperatures, with how far apart they are.', u: 'Process › Drying in the oven, the report' },
+  'dry.exit': { t: 'Measured at the exit', d: 'What you measured on the film leaving the oven: the water left (% of the dry GO\'s mass: water / GO, as the table gives it), the dry film\'s thickness (µm), where along the oven it looks dry (m). Any of them; shown in the table beside the computed and over the water in the film.', u: 'Process › Drying in the oven, the report' },
+  'matd.reset': { t: 'Defaults', d: 'The drying card\'s values back to their first values (with Undo to go back).', u: 'Materials' },
   'oven.add': { t: 'Add zone', d: 'Adds an oven zone after the last one, starting with the last zone\'s values. Up to 8 zones; Remove takes a zone out.', u: 'The oven' },
   // CFD: solver and mesh
   'sol.mesh': { t: 'Mesh', d: 'Density of the finite-element mesh: Coarse, Medium (default) and Fine scale the element counts by 1/1.5, 1 and 1.5; Custom takes counts you set.', e: 'Finer: more accurate near the edge and the meniscus, but slower (Fine takes about ten times as long).', u: 'CFD, mesh study, the DOE' },
@@ -252,7 +266,7 @@ const HELP_RESULTS = {
 const HELP_BY_ID = {
   cfdR: 'cfd.R', cfdPool: 'cfd.pool', cfdExit: 'cfd.exit', cfdModel: 'cfd.model', cfdFibreSel: 'cfd.fibre', cfdGsm: 'cfd.gsm', cfdRhoF: 'cfd.rhoF',
   cfdDFrom: 'cfd.dFrom', cfdDen: 'cfd.den', cfdNf: 'cfd.nf', cfdAirPerm: 'cfd.airPerm', cfdAirDP: 'cfd.airDP', cfdKoz: 'cfd.koz', cfdAirFrac: 'cfd.airFrac',
-  ovzAdd: 'oven.add', matReset: 'mat.reset', matModel: 'cfd.model', matStructOn: 'matr.structOn', matRheoReset: 'matr.reset', rtImport: 'rt.import', matOrOn: 'mato.on', matOrModel: 'mato.model', matOrReset: 'mato.reset', orRedo: 'or.redo', orCsv: 'or.csv', orAddImg: 'or.addImg', orAddTab: 'or.addTab', orPaste: 'or.paste', orImRead: 'or.read', orImWin: 'or.win', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
+  ovzAdd: 'oven.add', dryZones: 'dry.zones', dryCsv: 'dry.csv', dryOven: 'dry.oven', dryTImport: 'dry.temps', dryTPaste: 'dry.temps', dryTOk: 'dry.temps', dryEAdd: 'dry.exit', dryELoc: 'dry.exit', dryEWater: 'dry.exit', dryEH: 'dry.exit', dryEAt: 'dry.exit', matDryReset: 'matd.reset', matReset: 'mat.reset', matModel: 'cfd.model', matStructOn: 'matr.structOn', matRheoReset: 'matr.reset', rtImport: 'rt.import', matOrOn: 'mato.on', matOrModel: 'mato.model', matOrReset: 'mato.reset', orRedo: 'or.redo', orCsv: 'or.csv', orAddImg: 'or.addImg', orAddTab: 'or.addTab', orPaste: 'or.paste', orImRead: 'or.read', orImWin: 'or.win', cfdMesh: 'sol.mesh', cfdTol: 'sol.tol', cfdSolverReset: 'sol.reset', cfdStudyOpen: 'sol.study', cfdZonesOpen: 'sol.zones', zoneAddBand: 'sol.band', stepMeshAcc: 'sol.acc', accRun: 'sol.acc', acc3Run: 'sol.acc',
   cfdShape: 'cfd.shape', cfd_bevelDeg: 'cfd.bevelDeg', cfd_bevelLen: 'cfd.bevelLen', cfd_edgeR: 'cfd.edgeR', cfd_inletGap: 'cfd.inletGap', cfd_land1: 'cfd.land1', cfd_stepH: 'cfd.stepH', cfd_riserDeg: 'cfd.riserDeg', cfdClModel: 'cfd.clModel', cfdEditCustom: 'cfd.custom', cfdRunAll: 'tb.run', cfdCancel: 'tb.stop', cfdViewSeg: 'tb.view', fvBase: 'tb.field', fvStream: 'tb.stream', fvVec: 'tb.vec',
   fvContours: 'tb.contours', fvFlakes: 'tb.flakes', cfdCutPlace: 'tb.cut', cfdProbePlace: 'tb.probe', imgBtn: 'tb.image', themeBtn: 'tb.theme',
   fvScale: 'dp.scale', fvContourField: 'dp.contourField', fvMesh: 'dp.mesh', fvMeshQ: 'dp.meshQ', fvDensity: 'dp.density', fvSeedMode: 'dp.seeds',
@@ -274,6 +288,7 @@ const HELP_BY_SELECTOR = [
   ['#cfdLocs input[data-i]', 'loc.z'], ['#cfdLocs [data-edit]', 'loc.own'], ['#cfdLocs [data-run]', 'loc.run'], ['#cfdLocs [data-pick]', 'loc.pick'],
   ['#doe-design [data-fk]', 'doe.factor'], ['#doe-design [data-fmin]', 'doe.from'], ['#doe-design [data-fmax]', 'doe.to'], ['#doe-design [data-fn]', 'doe.levels'],
   ['#measFit [data-grp]', 'meas.grp'], ['#measFit [data-lo]', 'meas.range'], ['#measFit [data-hi]', 'meas.range'],
+  ['select[data-ovtop]', 'oven.top'], ['#drySel [data-dry]', 'dry.film'],
   ['#doeAdd', 'doe.add'], ['#doePlotSeg [data-p="response"]', 'doe.response'], ['#doePlotSeg [data-p="map"]', 'doe.map'], ['#doePlotSeg [data-p="effects"]', 'doe.effects'],
 ];
 /** The help of a key: title, the parts, the range line (the sidebar's inputs: from CFG). */
@@ -338,7 +353,7 @@ function applyHelp() {
 /** The (i) button of a model-tree row (for touch; hover and focus show the card too). */
 function addInfo(row, key) {
   const lab = row && row.querySelector('.prop-l');
-  if (!lab || lab.querySelector('.help-i')) return;
+  if (!lab || lab.querySelector('.help-i') || !helpOf(key)) return;
   const b = document.createElement('span');
   b.className = 'help-i'; b.setAttribute('role', 'button'); b.tabIndex = -1; b.dataset.help = key; b.dataset.pin = '1';
   b.setAttribute('aria-label', `About ${helpOf(key).t}`); b.textContent = 'i';

@@ -39,8 +39,11 @@ function ovenUndoLabel(a, b) {
   a = a || []; b = b || [];
   if (b.length > a.length) return `Add oven zone ${b.length}`;
   if (b.length < a.length) { const i = a.findIndex((z, j) => JSON.stringify(z) !== JSON.stringify(b[j])); return `Remove oven zone ${(i < 0 ? a.length - 1 : i) + 1}`; }
-  for (let i = 0; i < b.length; i++) for (const [k, l, u, , , , d] of OVEN_ZONE_FIELDS)
-    if (a[i][k] !== b[i][k]) return undoChange(`Oven zone ${i + 1} ${l.toLowerCase()}`, a[i][k], b[i][k], v => undoNum(v, d), u);
+  for (let i = 0; i < b.length; i++) {
+    for (const [k, l, u, , , , d] of [...OVEN_ZONE_FIELDS, ...OVEN_TOP_FIELDS])
+      if (a[i][k] !== b[i][k]) return undoChange(`Oven zone ${i + 1} ${l.toLowerCase()}`, a[i][k], b[i][k], v => undoNum(v, d), u);
+    if (a[i].top !== b[i].top) return `Oven zone ${i + 1} above the film: ${OVEN_TOPS[b[i].top] || b[i].top}`;
+  }
   return 'Oven zones';
 }
 /** A change to a slurry card value: its number, flag or source. */
@@ -157,6 +160,10 @@ const UNDO_UNITS = (() => {
   u.push({ id: 'mat.sem', get: () => ({ images: (MAT.sem.images || []).map(({ url, ...q }) => { OR_URLS.set(q.id, url); return q; }), tables: MAT.sem.tables || [] }),
     set: v => { MAT.sem = v ? { images: (v.images || []).map(q => ({ ...q, url: OR_URLS.get(q.id) || '' })).filter(q => q.url), tables: JSON.parse(JSON.stringify(v.tables || [])) } : { images: [], tables: [] }; },
     label: (a, b) => { const n = x => ((x && x.images) || []).length + ((x && x.tables) || []).length; return n(b) > n(a) ? 'Add a measurement of the flakes' : n(b) < n(a) ? 'Remove a measurement of the flakes' : 'Marks on an SEM image'; } });
+  // (the drying card and the drying measured, GO-3)
+  for (const [k] of MAT_DRY) u.push({ id: 'matd.' + k, get: () => MAT.dry[k], set: v => { MAT.dry[k] = v ? { ...v } : matDefaults().dry[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_DRY) });
+  u.push({ id: 'mat.dryMeas', get: () => MAT.dryMeas || { temps: [], exit: [] }, set: v => { MAT.dryMeas = v ? JSON.parse(JSON.stringify(v)) : { temps: [], exit: [] }; },
+    label: (a, b) => { a = a || { temps: [], exit: [] }; b = b || { temps: [], exit: [] }; return b.temps.length !== a.temps.length ? (b.temps.length > a.temps.length ? `Import temperatures ${b.temps[b.temps.length - 1].name}` : 'Remove measured temperatures') : b.exit.length > a.exit.length ? 'Add a measured exit value' : 'Remove a measured exit value'; } });
   u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });
