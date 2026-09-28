@@ -26,7 +26,7 @@
  *   used: index in solves of the solve whose solution is the result.
  */
 // (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
-importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js', 'orient.js', 'cfd-orient.js', 'drying.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js', 'orient.js', 'cfd-orient.js', 'drying.js', 'film.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {
@@ -164,8 +164,20 @@ onmessage = e => {
       try { drying = { h0: g.Q / o.U, top: sum(drStrip({ ...o.dry, h0: g.Q / o.U, where: 'top' })), both: sum(drStrip({ ...o.dry, h0: g.Q / o.U, where: 'both' })) }; }
       catch (e) { drying = { error: e.message }; }
     }
+    // The film followed on to the peel (o.film: the room stretch after the oven and film.js's properties; the DOE, GO-4),
+    // both ways: its summary
+    let peeled = null;
+    if (o.dry && o.film) {
+      stage = 'the film to the peel'; lastPost = 0; post({ it: 0, residual: NaN, s: 1 });
+      const sum = r => ({ crack: r.worst ? r.worst.ratio : 0, spacing: r.spacing ? (r.spacing.lo + r.spacing.hi) / 2 : null, peelHand: r.peel.hand.f,
+        peel90: (r.peel.byAngle.find(q => q.deg === 90) || {}).f, tears: r.peel.byAngle.some(q => q.tears), curl: r.curl.settled.kappa, roll: r.roll.sMax,
+        blister: r.blisters.max.ratio, wet: r.wetAtPeel });
+      const one = where => sum(fmRun(drStrip({ ...o.dry, after: o.film.after, h0: g.Q / o.U, where, history: true }), o.film.fo));
+      try { peeled = { top: one('top'), both: one('both') }; }
+      catch (e) { peeled = { error: e.message }; }
+    }
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...(orient ? { orient } : {}), ...(drying ? { drying } : {}), ...shapedOut(shape.profile, r) } });
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...(orient ? { orient } : {}), ...(drying ? { drying } : {}), ...(peeled ? { peeled } : {}), ...shapedOut(shape.profile, r) } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

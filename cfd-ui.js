@@ -218,7 +218,7 @@ function airProps(Tc) {
 const ovenZoneId = (i, k) => i === 0 && OVEN_ZONE_LEGACY_ID[k] ? OVEN_ZONE_LEGACY_ID[k] : `ovz${i + 1}_${k}`;
 const OVEN_ZONE_LEGACY_ID = { airU: 'cfdAirU', airT: 'cfdAirT', plenum: 'cfdPlenum' };
 /** The oven's zones in the inputs bar (the 2D setup's and the Process tab's): each zone's inputs, Add zone, the note. */
-function ovenZonesTree() {
+function ovenZonesTree(opts = {}) {
   const prop = (label, id, attrs, unit) => `<div class="prop"><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><input type="number" id="${id}" ${attrs}><span class="prop-u">${unit}</span></span></div>`;
   return `${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
       <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
@@ -226,7 +226,7 @@ function ovenZonesTree() {
       ${ovenTopHTML(z, i, prop)}
     </div>`).join('')}
     <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="ovzAdd"${OVEN.zones.length >= OVEN_MAX_ZONES ? ' disabled' : ''}>${uiIco('plus')}Add zone</button></div>
-    <p class="prop-note" id="ovzNote">${ovenNote()}</p>`;
+    <p class="prop-note" id="ovzNote">${ovenNote()}</p>${opts.peel && typeof filmPeelTreeHTML === 'function' ? filmPeelTreeHTML(prop) : ''}`;
 }
 /**
  * A zone's top (Q52): what is above the film -- nothing blown, hot air through slot nozzles, IR heaters, or both --
@@ -262,6 +262,7 @@ function wireOvenZones(changed, redraw) {
   const add = document.getElementById('ovzAdd');
   if (add) add.onclick = () => { if (OVEN.zones.length < OVEN_MAX_ZONES) { OVEN.zones.push({ ...OVEN.zones[OVEN.zones.length - 1] }); redraw(); } };
   document.querySelectorAll('#setupExtra [data-ovz-del]').forEach(b => { b.onclick = () => { if (OVEN.zones.length > 1) { OVEN.zones.splice(+b.dataset.ovzDel, 1); redraw(); } }; });
+  if (typeof wireFilmPeel === 'function') wireFilmPeel(changed);
 }
 /** The oven under the zones: its length and the time the film spends in it at the web speed. */
 function ovenNote() {
@@ -526,7 +527,7 @@ const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, 
  * What a worker is sent to solve a location (solver: its settings, or others for a mesh study). withOrient: the flakes'
  * alignment too, when it is on (the location's run and the DOE; not the mesh's studies, previews, measured-data
  * solves or the 3D, which need the flow only). withDry: the drying of its film too (the DOE: GO-3; drying-ui.js's
- * inputs, at this run's line speed).
+ * inputs, at this run's line speed), and the film followed on to the peel (GO-4: film-ui.js's room stretch and card).
  */
 const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false, withDry = false) => ({
   geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, exitAngle: geo.exitAngle, contactDeg: geo.contactDeg, webSlip: geo.webSlip,
@@ -537,6 +538,7 @@ const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false, withDry 
   ...(geo.struct ? { struct: geo.struct } : {}),
   ...(withOrient && geo.orient ? { orient: geo.orient } : {}),
   ...(withDry ? { dry: { ...dryBase(), U: geo.U / Math.cos(skewRad()) } } : {}),
+  ...(withDry && typeof filmOpts === 'function' ? { film: { after: filmBase().after, fo: filmOpts() } } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 /** The alignment's own inputs (its model and the way to the oven): not the flow's, so a change needs only the alignment redone. */
