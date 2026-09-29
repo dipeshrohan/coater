@@ -200,13 +200,19 @@ function fuPaperGrid(lx, ly, m, nP, nM) {
 }
 /** The matrix with the cells in `fixed` held (Dirichlet), lower band; dg (optional) added to the free cells' diagonal. */
 function fuPaperMatrix(g, fixed, dg) {
+  const a = fuPaperBand(g, fixed), w = g.bw + 1;
+  if (dg) for (let k = 0; k < g.n; k++) if (!(fixed && fixed[k])) a[k * w] += dg[k];
+  return fuFactor(g.n, g.bw, a);
+}
+/** The matrix's lower band, unfactored. */
+function fuPaperBand(g, fixed) {
   const w = g.bw + 1, a = new Float64Array(g.n * w);
-  for (let k = 0; k < g.n; k++) a[k * w] = fixed && fixed[k] ? 1 : g.edge[k] + (dg ? dg[k] : 0);
+  for (let k = 0; k < g.n; k++) a[k * w] = fixed && fixed[k] ? 1 : g.edge[k];
   for (const [p, q, c] of g.faces) {
     if (fixed && (fixed[p] || fixed[q])) { if (!(fixed && fixed[p])) a[p * w] += c; if (!(fixed && fixed[q])) a[q * w] += c; continue; }
     a[p * w] += c; a[q * w] += c; a[q * w + (q - p)] -= c;
   }
-  return fuFactor(g.n, g.bw, a);
+  return a;
 }
 /**
  * The gas under the paper above its surroundings' pressure (Pa): κ·(matrix) u = the sources (mol/s per cell), u ≤ the
@@ -229,7 +235,16 @@ function fuPaperSolve(g, cache, src, kap, cap, gam) {
   const { nbS, nbJ, nbC } = g, rhs = new Float64Array(g.n);
   for (let it = 0; it < 60; it++) {
     let F;
-    if (dg) F = fuPaperMatrix(g, fixed, dg);   // (the exchange changes every step: factored afresh, not kept)
+    if (dg) {
+      // (the exchange changes every step: the held set's band kept, the exchange added to it and factored afresh)
+      // (its key made once per held set, not every step: the join was most of the time)
+      if (cache.keyOf !== fixed) { cache.keyOf = fixed; cache.key = fixed.join(''); }
+      const band = cache.band || (cache.band = new Map()), key = cache.key;
+      let b = band.get(key); if (!b) { b = fuPaperBand(g, fixed); if (band.size >= 512) band.delete(band.keys().next().value); band.set(key, b); }
+      const a = Float64Array.from(b), w = g.bw + 1;
+      for (let k = 0; k < g.n; k++) if (!fixed[k]) a[k * w] += dg[k];
+      F = fuFactor(g.n, g.bw, a);
+    }
     else if (!cache.F || cache.fixed !== fixed) {
       const key = fixed.join('');
       let F = fac.get(key);
@@ -447,7 +462,7 @@ function fuRun(o) {
       //  squeezed stack was 1 % off at 1 K steps, first order; so, 0.006 %)
       const VSt = pos.length === 1 ? Float64Array.from(pos[0].V) : new Float64Array(g.n);
       if (pos.length > 1) for (const q of pos) for (let k = 0; k < g.n; k++) VSt[k] += q.w * q.V[k] / wSum;
-      const aOf = v => a * (1 + Math.pow(v / (S.hc * es), 3));
+      const inv = 1 / (S.hc * es), aOf = v => { const x = v * inv; return a * (1 + x * x * x); }, daOf = v => { const x = v * inv; return 3 * a * x * x * inv; };
       for (const q of pos) {
         const { n, V, u, cache } = q, Ws = WsOf(q, S);
         const nOld = Float64Array.from(n), VOld = Float64Array.from(V);
@@ -475,11 +490,21 @@ function fuRun(o) {
             else if (f(Vk) < 0) {
               let lo = Vk, hi = Math.max(Vk * 2, (nk + G * dt) * RT / base + Vk + 1e-12);
               while (f(hi) < 0) hi *= 2;
-              for (let i = 0; i < 100 && hi - lo > 1e-13 * hi; i++) { const m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
+              // (Newton inside the bracket, halving when it would leave it; f rises with V: its slope pH + V pH' + (a'(pH − p_f) + a pH') dt R T)
+              let x = hi, fx = f(x);
+              for (let i = 0; i < 100 && hi - lo > 1e-13 * hi; i++) {
+                const pH = pHof(x), dpH = x > g0 ? kP : 0, df = pH + x * dpH + (daOf(x) * (pH - pf) + aOf(x) * dpH) * dt * RT;
+                let xn = x - fx / df;
+                if (!(xn > lo && xn < hi)) xn = (lo + hi) / 2;
+                const fn = f(xn), step = Math.abs(xn - x);
+                if (fn < 0) lo = xn; else hi = xn;
+                x = xn; fx = fn;
+                if (step <= 1e-13 * hi) break;
+              }
               Vk = hi; nk = Vk * pHof(Vk) / RT; idx[k] = 1;
               // (parting: what leaves it is a(V)(pH − p_f), its opening V rising with p_f too: linearized exactly about
               //  this p_f (Newton), its slope a (pH + V pH') / (pH + V pH' + (a'(pH − p_f) + a pH') dt R T), in (0, a])
-              const aV = aOf(Vk), pH = pHof(Vk), dpH = Vk > g0 ? kP : 0, da = a * 3 * Vk * Vk / Math.pow(S.hc * es, 3);
+              const aV = aOf(Vk), pH = pHof(Vk), dpH = Vk > g0 ? kP : 0, da = daOf(Vk);
               const X = (da * (pH - pf) + aV * dpH) * dt * RT, gE = aV * (pH + Vk * dpH) / (pH + Vk * dpH + X);
               gam[k] = gE * Ak; s0[k] = aV * (pH - pf) * Ak + gam[k] * u[k];
             } else {

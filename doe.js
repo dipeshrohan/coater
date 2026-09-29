@@ -108,7 +108,9 @@ const DOE_FURN_FACTORS = [
   { k: 'plateW', l: 'A plate resting on the stack', u: 'kg', kind: 'fstack', g: 'The stack in its holder', d: 1, lo: 0, hi: 1000 },
   { k: 'gap', l: 'Gap above the stack', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 0, lo: 0, hi: 1000 },
   { k: 'paperT', l: 'Graphite paper\'s thickness', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 2, lo: 0.01, hi: 10 },
-  ...['sigZ', 'es', 'Dgal', 'bO', 'bG', 'mu', 'Tst', 'tauB'].map(k => { const q = MAT_FURN.find(r => r[0] === k); return { k: 'c_' + k, card: k, l: q[1], u: q[2], kind: 'fcard', g: 'The Furnace card', d: q[6], lo: q[3], hi: q[4] }; }),
+  // (the card's rows that follow on from the one above them, "…", named whole here; the pressure it sticks from, GO-7c)
+  ...['sigZ', 'es', 'Dgal', 'bO', 'bG', 'mu', 'Tst', 'pSt', 'tauB'].map(k => { const q = MAT_FURN.find(r => r[0] === k), whole = { bG: 'Shrinks along it as its layers order into graphite', pSt: 'It sticks where pressed at least' };
+    return { k: 'c_' + k, card: k, l: whole[k] || q[1], u: q[2], kind: 'fcard', g: 'The Furnace card', d: q[6], lo: q[3], hi: q[4] }; }),
 ];
 /** The DOE shown: the coating's (the 2D CFD at a location) or the furnace's; the other's design and runs kept aside. */
 const DOE_STASH = { coat: null, furn: null };

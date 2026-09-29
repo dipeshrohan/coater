@@ -4,7 +4,8 @@
  * thickness; the galleries' gas-tightness from the first run not puffing).
  *
  * Message in:  { id, kind: 'run', o } (o: fuRun's options)
- *              or { id, kind: 'fit', what: 'es' | 'Dgal', o, target (es: the thickness, m) }
+ *              or { id, kind: 'fit', what: 'es' | 'Dgal' | 'pSt', o, target (es: the thickness, m; pSt: the first
+ *              piece stuck from the top, 1 for the top) }
  * Message out: { id, progress: { k, n } } while it works, then { id, ok: true, res, ms } (a fit: { value, res }) or
  *              { id, ok: false, error }.
  */
@@ -15,6 +16,8 @@ function furnCompact(r, o) {
   const top = furnPieceCompact(r, r, o);
   top.pos = (r.pos || [r]).map(q => ({ m: q.m || 0, w: q.w == null ? 1 : q.w, load: q.load, ...furnPieceCompact(q, r, o) }));
   top.batch = r.batch || { hMean: r.hMean, hSD: r.hSD, faces: 1 };   // (over the stacks too, when the load's spread was given)
+  // (the holder's squeeze once the stack fills its room: MPa, from when, °C; GO-7c)
+  top.squeeze = r.squeeze ? { max: r.squeeze.max / 1e6, from: r.squeeze.from ? { run: r.squeeze.from.run, T: r.squeeze.from.T - FU_K0 } : null } : null;
   return top;
 }
 /** A piece's result, compact: its history thinned (each run's highest gas kept), the thickness across it; r the run's shared parts. */
@@ -52,7 +55,7 @@ function planeCompact(pl) {
     h.forEach((q, i) => { if (i % step && i !== h.length - 1 && i !== a && i !== b) return;
       hist.push({ run, t: p(q.t / 3600), T: p(q.T - K0), eps: p(q.eps * 100), s1: p(q.s1 / 1e6), s2: p(q.s2 / 1e6), sc: p(q.sc / 1e6), sw: p(q.sw / 1e6), ratio: p(q.ratio * 100), wave: p(q.wave * 100), stuck: p(q.stuck * 100) }); });
   }
-  return { hist, ratioMax: pl.ratioMax, where: at(pl.where), first: pl.first ? { ...at(pl.first), sc: pl.first.sc / 1e6, h: pl.first.h } : null, stuckAt: at(pl.stuckAt), stuckFrac: pl.stuckFrac,
+  return { hist, ratioMax: pl.ratioMax, where: at(pl.where), pcHalf: pl.pcHalf / 1e3, pcHotMax: pl.pcHotMax / 1e3, first: pl.first ? { ...at(pl.first), sc: pl.first.sc / 1e6, h: pl.first.h } : null, stuckAt: at(pl.stuckAt), stuckFrac: pl.stuckFrac,
     spacing: pl.spacing, waveMax: pl.waveMax, waveAt: pl.waveAt ? { ...at(pl.waveAt), lambda: pl.waveAt.lambda } : null, compMin: pl.compMin / 1e6, size: pl.size, R: pl.R,
     rings: { rm: pl.rings.rm.map(v => p(v / pl.R)), sr: pl.rings.sr.map(v => p(v / 1e6)), st: pl.rings.st.map(v => p(v / 1e6)) } };
 }
@@ -92,9 +95,29 @@ onmessage = e => {
         if (peak(Math.exp(hi)) >= 1) throw new Error('the first run puffs however open its layers are: its gas comes faster than the film can let it out');
         for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (peak(Math.exp(m)) >= 1) lo = m; else hi = m; }
         value = Math.exp(hi);
+      } else if (what === 'pSt') {
+        // (the pressure a piece sticks from, from the first piece found stuck from the top (GO-7c): a run with that piece
+        //  and the one above it followed too (no share in the batch); each's pressure once hot over half its area --
+        //  sticking does not act back on the gas, so one run gives them -- and any pressure between them sticks that
+        //  piece and not the one above: the middle of the two)
+        const nth = Math.round(e.data.target), N = Math.max(1, Math.round(o.N || 1)), ord = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'));
+        if (!(nth >= 1 && nth <= N)) throw new Error(`the piece ${nth} is not in a stack of ${N}`);
+        if (nth === 1) value = 0;   // (the top stuck: every piece is, wherever pressed)
+        else {
+          tick();
+          const P = o.positions || [{ m: 0, w: 1 }], r = fuRun({ ...o, positions: [...P, { m: nth - 2, w: 0 }, { m: nth - 1, w: 0 }] });
+          const [a, b] = r.pos.slice(-2).map(q => q.plane.pcHalf), [wa, wb] = r.pos.slice(-2).map(q => q.load);
+          // (the two pressed apart by at least half the one piece's weight between them: less, and what presses them --
+          //  the holder squeezing the stack -- drowns it, and no pressure found would mean anything)
+          if (!(b - a > 0.5 * (wb - wa))) throw new Error(r.squeeze && r.squeeze.max > 0
+            ? `the stack fills its room and the holder squeezes every piece alike (${(r.squeeze.max / 1e6).toFixed(2)} MPa): no pressure sticks the ${ord(nth)} and not the one above it: is there a gap left above your stack?`
+            : `the ${ord(nth)} piece is pressed no harder than the one above it once hot: no pressure sticks it and not that one`);
+          value = (a + b) / 2;
+          e.data.range = [a, b];
+        }
       } else throw new Error('unknown fit');
-      const r = fuRun(what === 'es' ? { ...o, es: value } : { ...o, Dgal: value });
-      postMessage({ id, ok: true, value, res: furnCompact(r, o), ms: Date.now() - t0 });
+      const r = fuRun(what === 'es' ? { ...o, es: value } : what === 'pSt' ? { ...o, plane: { ...o.plane, pStick: value } } : { ...o, Dgal: value });
+      postMessage({ id, ok: true, value, range: e.data.range || null, res: furnCompact(r, o), ms: Date.now() - t0 });
       return;
     }
     postMessage({ id, progress: { k: 0, n: o.loadSpread > 0 ? 3 : 1 } });
