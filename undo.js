@@ -47,6 +47,20 @@ function ovenUndoLabel(a, b) {
   return 'Oven zones';
 }
 /** A change to a slurry card value: its number, flag or source. */
+/** A change to the furnace's inputs: a run's step, its cooling or its file, or the stack's. */
+function furnUndoLabel(a, b) {
+  a = a || furnDefaults(); b = b || furnDefaults();
+  for (const [k, l, u, , , , d] of FURN_FIELDS) if (a[k] !== b[k]) return undoChange(l, a[k], b[k], v => undoNum(v, d), u);
+  if (a.room !== b.room) return `Above the stack: ${b.room === 'plates' ? 'the plates on it' : 'a gap'}`;
+  for (let r = 0; r < 2; r++) {
+    const ra = a.runs[r], rb = b.runs[r], n = `Run ${r + 1}`;
+    if (!!ra.file !== !!rb.file || (ra.file && rb.file && ra.file.name !== rb.file.name)) return rb.file ? `${n}: the cycle from ${rb.file.name}` : `${n}: steps instead of the file`;
+    if (ra.steps.length !== rb.steps.length) return rb.steps.length > ra.steps.length ? `${n}: add a step` : `${n}: remove a step`;
+    for (let i = 0; i < ra.steps.length; i++) for (const [k, l, u] of [['rate', 'heating rate', '°C/min'], ['to', 'temperature', '°C'], ['hold', 'hold', 'min']]) if (ra.steps[i][k] !== rb.steps[i][k]) return undoChange(`${n}, step ${i + 1}: ${l}`, ra.steps[i][k], rb.steps[i][k], v => undoNum(v), u);
+    if (ra.cool !== rb.cool) return undoChange(`${n}: cooling rate`, ra.cool, rb.cool, v => undoNum(v), '°C/min');
+  }
+  return 'The furnace';
+}
 function matUndoLabel(k, a, b, rows = MAT_SLURRY) {
   const [, l, u, , , , d] = rows.find(q => q[0] === k);
   if (a && b && a.v !== b.v) return undoChange(l, a.v, b.v, v => undoNum(v, d), u);
@@ -172,6 +186,11 @@ const UNDO_UNITS = (() => {
       return 'Film measured'; } });
   u.push({ id: 'oven.peel', get: () => OVEN.peel || { ...OVEN_PEEL_DEFAULT }, set: v => { OVEN.peel = v ? { ...v } : { ...OVEN_PEEL_DEFAULT }; },
     label: (a, b) => { a = a || OVEN_PEEL_DEFAULT; b = b || OVEN_PEEL_DEFAULT; for (const [k, l, u2, , , , d] of OVEN_PEEL_FIELDS) if (a[k] !== b[k]) return undoChange(l, a[k], b[k], v => undoNum(v, d), u2); return 'After the oven'; } });
+  // (the furnace's card, the graphene film measured and the furnace's inputs, GO-5)
+  for (const [k] of MAT_FURN) u.push({ id: 'matu.' + k, get: () => MAT.furn[k], set: v => { MAT.furn[k] = v ? { ...v } : matDefaults().furn[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_FURN) });
+  u.push({ id: 'mat.furnMeas', get: () => MAT.furnMeas || { out: [] }, set: v => { MAT.furnMeas = v ? JSON.parse(JSON.stringify(v)) : { out: [] }; },
+    label: (a, b) => { const na = ((a || {}).out || []).length, nb = ((b || {}).out || []).length; return nb > na ? 'Add a measured graphene film' : nb < na ? 'Remove a measured graphene film' : 'Graphene film measured'; } });
+  u.push({ id: 'oven.furn', get: () => OVEN.furn || furnDefaults(), set: v => { OVEN.furn = v ? JSON.parse(JSON.stringify(v)) : furnDefaults(); }, label: furnUndoLabel });
   u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });

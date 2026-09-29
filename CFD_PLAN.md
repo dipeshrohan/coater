@@ -808,6 +808,89 @@ GO-4f built:
   later within 0.01 % of as cut (Q86); the curl eased from a radius of 1210 mm to 2800 mm; on a table out of the stack
   its edges' middles lift about 2–3 mm. The waves in the user's photos will set the creep time.
 
+GO-5 decisions (the furnace and the graphene film; user, with pictures):
+- The route (the user): the pieces, dried in the pressed stack, are stacked alternately with graphite paper and heated in
+  a furnace to 2800 °C: graphene film.
+- Q87: two runs -- first to about 1000 °C (carbonising), then in another run to 2800 °C. Q88: a run takes 12–48 h from
+  loading to taking out. Q91: argon.
+- Q89: one GO piece between each two graphite papers. Q104: the paper is bigger than the piece. Q105: a paper is 0.3–1 mm.
+- Q103: the pieces in one stack depend on the product (an input). Q106: the stack is in a graphite holder, "horizontal
+  plates and vertical screw rods holding the fixture together". Q107: snug (its plates just touch the stack). Q108: a gap
+  above the stack, or the plates on it: both, by the product (an input).
+- Q90: the film is used as it comes out (not rolled or pressed).
+- Q92: measured on the graphene film: its thickness, its size and weight (so its density), its conductivity.
+- Q93: in the furnace it can puff up or blister, crack, come out wavy or wrinkled, stick to the graphite paper.
+- Q94: what matters most: heat along it, bending without cracking, flat with an even thickness.
+- Q95: the graphene film is 50–200 µm or more, by the product. Q99: a dried GO piece going in is typically 60–120 µm.
+  Q100: the graphene film comes out thicker than the GO piece (it puffs up as a whole). Q109: by how much: not known.
+  Q110: after the first run thicker or thinner: not known.
+- Q101: it puffs up or blisters in the second run. Q102 (the user's words): "Depending on pressure distribution, it can be
+  on sides or throughout depending on the root cause".
+- Q96: its heat conductivity is not known yet. Q97: the furnace programs the user gives later; the cycle is uploaded
+  (time and temperature) in the app.
+- For the next step (GO-5b: the piece along itself on the paper): Q111 its size after the furnace against the GO piece:
+  not known; Q112 found stuck to the graphite paper after the second run; Q113 it cracks straight across the piece;
+  Q114 out of the furnace it has new waves (not the drying stack's).
+- Q98 (asked again with a real screenshot): the furnace becomes step 6 of the Process tab, "The furnace and the graphene
+  film", its own section as the drying's and the film's: the four checks, the tiles (thickness, density, heat along it,
+  C/O), the runs drawn, the gas against its hold; your measured values beside the computed.
+
+GO-5 design (GO-5a: the runs, the gas and the puffing, the graphene film; cracks, waves and sticking next):
+- The runs: each a program of steps (heat at a rate to a temperature, hold) from the room and its cooling, or a cycle
+  from a file (time and temperature; its time's unit from its header, else chosen: never guessed). Until yours (Q97)
+  assumed, 12–48 h (Q88): run 1 1 °C/min to 300 °C, 3 °C/min to 1000 °C, 1 h, cooling 5 °C/min (12.7 h); run 2 10 °C/min
+  to 1000 °C, 5 to 2000, 2 to 2800, 1 h, cooling 10 °C/min (17.3 h). One temperature through the stack (the stack's lag
+  estimated at a few kelvin: its graphite papers conduct well along it).
+- The chemistry (furnace.js): the dry GO from its C/O (the slurry card) and H/C; stages, each first order with a Gaussian
+  spread of activation energies (a distributed activation energy model; the energy from where it peaks at 10 °C/min by
+  Kissinger's condition, the prefactor 10¹³ /s): its water, the labile oxygen (a share of it, out as CO₂, CO and water as
+  far as the hydrogen goes), the stable oxygen (CO, CO₂), the last oxygen and the hydrogen (CO, H₂); graphitizing alike.
+  Integrated exactly over each straight piece of a program (the temperature integral, by the exponential integral). The
+  weight, C/O and the gas made (mol) follow; the layers' spacing from the water and oxygen left, then graphitizing
+  (0.344 → 0.3354 nm); the piece's own thickness as its spacing; La geometric between its two sizes.
+- The gas: through the piece to its faces by Knudsen diffusion in the galleries between its layers, the diffusivity going
+  as the square of their opening and the root of the temperature, down to a floor (defects); at the middle it is
+  G R T h / (8 D) above the faces. Then along the graphite paper to the paper's edges: ∇·(κ ∇p) + G = 0 on a quarter
+  (finite volumes), the paper lifting where the gas under it beats the load on it (an obstacle problem, active sets).
+- Puffing: where the gas in the middle beats the layers' hold (their cohesion and the load on them) they part; the gas
+  there held at the hold, its volume the growth, kept (the layers do not close again); its way out grows with the opening
+  as 1 + (growth / (e_s h))³ -- the piece's own limit (without it one runaway: from 38 µm to 2.6 mm across a tiny change).
+  With the holder's plates on the stack (or once its growth fills the gap above), the papers give as it grows: the load
+  E_p (N V − gap) / ((N + 1) t_p). The top piece (the least load). Q102: the gas pressure across the piece is computed;
+  where it is highest against the hold is where it puffs most.
+- Not measured, from the answers: the open galleries' gas-tightness the least that keeps the first run from puffing
+  (Q101): 5.6 × 10⁻¹⁰ m²/s; the growth's e_s fits 125 µm from 90 µm (the middles of Q95 and Q99): 1.04; graphitizing
+  peaks at 2650 °C (93 % after 1 h at 2800 °C, 3.36 Å); the hold 200 kPa, the paper's values: assumed. The user's
+  measured thickness fits e_s, the first run not puffing (with the user's programs) the galleries', the heat conduction ℓ.
+- The graphene film: its thickness (the layers' plus the growth), density, weight kept, C/O, La, and its heat along it as
+  a correlation: graphite's (2000 W/(m·K)) × ρ/2.26 × La / (La + ℓ).
+- Checks (furnace.validate.js): E₁ against its tables; the temperature integral against Simpson; one energy peaking
+  where set; held, 1 − e^(−kt); a spread of energies against its fine integral; the chemistry's balances; the gas made =
+  out + held, = the stages'; across the film against a finite-difference solve; the paper's square against its series,
+  converging; the paper lifting (the obstacle problem's conditions); a piece puffing at one temperature against its ODE;
+  1 K against 0.25 K steps; the programs and a cycle's file.
+
+GO-5a built:
+- furnace.js as designed; cfd-furnace-worker.js (a run, about 3 s in the browser; fits: the thickness → e_s, the first run
+  → the galleries', bisections in the worker). furnace.validate.js: 14 checks, all passing.
+- UI (furnace-ui.js): step 6 of the chain and its section: the holder and the gas pictured, the line (the piece going in,
+  the runs, the stack), warnings (the programs, the stack, the room above assumed; puffing in the first run, with the
+  piece's thickness against Q99), the four checks with their pictures (puffing computed: each run, the film out and how
+  even; cracks, waves and sticking: the next step), six tiles (thickness, density, heat along it, C/O, weight kept,
+  graphitized), six charts (the runs, the weight, C/O on a log scale, the thickness at the middle and near the edge and
+  the layers' own, the gas against its hold, the graphene film across the piece), a CSV; measured graphene film
+  (thickness, weight kept, heat conduction) with what they mean, Fit (e_s; the galleries') and Use (ℓ). Inputs bar › The
+  furnace: the runs' steps (add, remove), cooling, a cycle's file per run (its unit asked when not named), the pieces in
+  a stack, the paper's thickness and margin, a gap above or the plates on it. Materials: the Furnace card (27 values in
+  four groups; what follows: the weight kept and C/O after each stage, the labile oxygen's gas, a dense film's heat
+  conduction). The DOE: the graphene film's thickness, over the GO piece, density, heat along it, the gas against its
+  hold in each run, the thickness spread. Help on every control, the guide (a method entry), the report (the section,
+  the card), projects (old ones get the defaults), undo.
+- At the defaults the app's own piece is 371 µm (the set layers at the peel; the chain's coating is thicker than the
+  user's pieces): it puffs in the first run from 65 °C (its water: Δp goes as h²), and comes out 1105 µm (2.98×),
+  0.22 g/cm³, 145 W/(m·K). At 90 µm (the user's typical): the first run 97.5 % of its hold, the second puffs from
+  1142 °C, 125 µm (1.38×), 0.47 g/cm³, 311 W/(m·K).
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,
@@ -817,7 +900,7 @@ Asked at the start of each phase (with options, not assumed now):
 - GO-2: orientation model; measured alignment (XRD, SEM).
 - GO-3: oven type (air from above, below, IR); measured drying data.
 - GO-4: cross-section only or a 3D sheet; measured curl, cracks, peel.
-- GO-5: reduction route; target properties; measured values.
+- GO-5: reduction route; target properties; measured values. (Asked: Q87–Q110.)
 
 Not claimed: molecular-level prediction (no molecular dynamics); graphene
 film properties beyond calibrated correlations.

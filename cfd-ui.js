@@ -539,6 +539,7 @@ const cfdWorkerMessage = (geo, solver = geo.solver, withOrient = false, withDry 
   ...(withOrient && geo.orient ? { orient: geo.orient } : {}),
   ...(withDry ? { dry: { ...dryBase(), U: geo.U / Math.cos(skewRad()) } } : {}),
   ...(withDry && typeof filmOpts === 'function' ? { film: { after: filmBase().after, fo: filmOpts() } } : {}),
+  ...(withDry && typeof furnDoeOpts === 'function' ? { furn: furnDoeOpts() } : {}),
 });
 const cfdIsStale = i => cfdRuns[i].field && cfdRuns[i].key !== cfdInputsKey(cfdGeometry(i));
 /** The alignment's own inputs (its model and the way to the oven): not the flow's, so a change needs only the alignment redone. */

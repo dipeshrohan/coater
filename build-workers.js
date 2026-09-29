@@ -1,5 +1,5 @@
 /*
- * build-workers.js — writes workers-src.js: the solvers' worker scripts (cfd-worker.js, cfd-1d-worker.js, cfd-dry-worker.js, cfd-film-worker.js,
+ * build-workers.js — writes workers-src.js: the solvers' worker scripts (cfd-worker.js, cfd-1d-worker.js, cfd-dry-worker.js, cfd-film-worker.js, cfd-furnace-worker.js,
  * cfd-3d-worker.js) and the scripts they import, as text. Opened as a file (file://), the browser refuses a
  * worker from a file and a worker can't load a file either; makeWorker() (cfd-ui.js) then builds each worker
  * in memory from this text. Run it after changing any of those scripts:
@@ -9,7 +9,7 @@
  */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const DIR = __dirname, OUT = path.join(DIR, 'workers-src.js');
-const WORKERS = ['cfd-worker.js', 'cfd-1d-worker.js', 'cfd-3d-worker.js', 'cfd-dry-worker.js', 'cfd-film-worker.js', 'cfd-sheet-worker.js'];
+const WORKERS = ['cfd-worker.js', 'cfd-1d-worker.js', 'cfd-3d-worker.js', 'cfd-dry-worker.js', 'cfd-film-worker.js', 'cfd-sheet-worker.js', 'cfd-furnace-worker.js'];
 
 const read = f => fs.readFileSync(path.join(DIR, f), 'utf8');
 /** The scripts a worker imports, in order (its importScripts call). */

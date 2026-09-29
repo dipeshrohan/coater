@@ -122,6 +122,29 @@ function applyMaterials(m) {
     peel: arr(fm.peel).filter(locOk).map(q => ({ loc: q.loc, f: fin(q.f), angle: fin(q.angle) })),
     size: arr(fm.size).filter(locOk).map(q => ({ loc: q.loc, L: fin(q.L), W: fin(q.W), when: ['cut', 'dry', 'furnace'].includes(q.when) ? q.when : 'dry' })).filter(q => Number.isFinite(q.L) || Number.isFinite(q.W)),
   };
+  // (the furnace's card and the graphene film measured, GO-5: a project from before has none -- the defaults)
+  const uc = m && m.furn;
+  if (uc) for (const k of Object.keys(MAT.furn)) if (uc[k] && Number.isFinite(uc[k].v)) MAT.furn[k] = { ...MAT.furn[k], ...uc[k] };
+  const um = m && m.furnMeas;
+  if (um) MAT.furnMeas = { out: arr(um.out).filter(locOk).map(q => ({ loc: q.loc, h: fin(q.h), kept: fin(q.kept), kappa: fin(q.kappa) })).filter(q => [q.h, q.kept, q.kappa].some(Number.isFinite)) };
+}
+/** The furnace's inputs of a project (GO-5): its runs (steps or a file's cycle) and the stack; none: the defaults. */
+function applyFurn(f) {
+  const out = furnDefaults();
+  if (!f || typeof f !== 'object') return out;
+  for (const [k, , , lo, hi, , , flag] of FURN_FIELDS) { if (Number.isFinite(f[k]) && f[k] >= lo && f[k] <= hi) out[k] = f[k]; if (typeof f[flag] === 'boolean') out[flag] = f[flag]; }
+  if (f.room === 'gap' || f.room === 'plates') out.room = f.room;
+  if (typeof f.runsSet === 'boolean') out.runsSet = f.runsSet;
+  const inR = (v, [lo, hi]) => Number.isFinite(v) && v >= lo && v <= hi;
+  if (Array.isArray(f.runs)) out.runs = out.runs.map((d, r) => {
+    const q = f.runs[r];
+    if (!q || typeof q !== 'object') return d;
+    const steps = Array.isArray(q.steps) ? q.steps.filter(s => s && inR(s.rate, FURN_STEP_LIMITS.rate) && inR(s.to, FURN_STEP_LIMITS.to) && inR(s.hold, FURN_STEP_LIMITS.hold)).map(s => ({ rate: s.rate, to: s.to, hold: s.hold })) : [];
+    const file = q.file && Array.isArray(q.file.pts) && q.file.pts.length > 1 && q.file.pts.every(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+      ? { name: String(q.file.name || 'cycle'), unit: ['h', 'min', 's'].includes(q.file.unit) ? q.file.unit : 'h', pts: q.file.pts.map(p => [p[0], p[1]]) } : null;
+    return { steps: steps.length ? steps : d.steps, cool: inR(q.cool, FURN_STEP_LIMITS.cool) ? q.cool : d.cool, file };
+  });
+  return out;
 }
 /** The oven's zones of a project; one from before the zones: its single drying-air setting (cfdSetup's) in every zone. */
 function applyOven(o, cfdSetup) {
@@ -129,6 +152,8 @@ function applyOven(o, cfdSetup) {
   // (after the oven, to the peel and the winder, GO-4: a project from before has none -- the defaults, assumed)
   const pl = o && o.peel;
   if (pl) for (const [k, , , lo, hi, , , flag] of OVEN_PEEL_FIELDS) { if (Number.isFinite(pl[k]) && pl[k] >= lo && pl[k] <= hi) OVEN.peel[k] = pl[k]; OVEN.peel[flag] = typeof pl[flag] === 'boolean' ? pl[flag] : OVEN_PEEL_DEFAULT[flag]; }
+  // (the furnace, GO-5: a project from before has none -- the defaults, assumed)
+  OVEN.furn = applyFurn(o && o.furn);
   if (o && Array.isArray(o.zones) && o.zones.length) { OVEN.zones = o.zones.slice(0, OVEN_MAX_ZONES).map(z => ({ ...OVEN_ZONE_DEFAULT, ...z })); return; }
   const c = cfdSetup || {};
   for (const z of OVEN.zones) for (const k of ['airU', 'airT', 'plenum']) if (Number.isFinite(c[k])) z[k] = c[k];

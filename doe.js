@@ -72,6 +72,14 @@ const DOE_OUTPUTS = [
   { k: 'blisterBoth', l: 'Blister risk, top and bottom', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
   { k: 'sizeTop', l: 'A piece\'s size change in the drying oven, top only', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
   { k: 'sizeBoth', l: 'A piece\'s size change in the drying oven, top and bottom', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
+  // (the furnace, GO-5: this run's film's piece, its water leaving from the top only, through both runs)
+  { k: 'furnH', l: 'Graphene film\'s thickness', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
+  { k: 'furnRatio', l: 'Graphene film over the GO piece, thickness', u: '×', g: 'Furnace (graphene film)', d: 2 },
+  { k: 'furnRho', l: 'Graphene film\'s density', u: 'g/cm³', g: 'Furnace (graphene film)', d: 2 },
+  { k: 'furnKappa', l: 'Graphene film\'s heat along it', u: 'W/(m·K)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnGas1', l: 'Gas against its hold, run 1', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnGas2', l: 'Gas against its hold, run 2', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnEven', l: 'Graphene film\'s thickness spread across the piece', u: '% of its mean', g: 'Furnace (graphene film)', d: 1 },
 ];
 const DOE = {
   loc: 0,
@@ -151,6 +159,8 @@ function doeOutputs(r, geo) {
       return { crackTop: v('top', q => q.crack), crackBoth: v('both', q => q.crack), peelTop: v('top', q => q.peelHand), peelBoth: v('both', q => q.peelHand),
         curlTop: v('top', q => q.curl), curlBoth: v('both', q => q.curl), rollTop: v('top', q => q.roll / 1e6), rollBoth: v('both', q => q.roll / 1e6),
         blisterTop: v('top', q => q.blister), blisterBoth: v('both', q => q.blister), sizeTop: v('top', q => q.size), sizeBoth: v('both', q => q.size) }; })(),
+    ...(() => { const f = r.furn && !r.furn.error ? r.furn : null, v = k => f ? f[k] : NaN;
+      return { furnH: v('h'), furnRatio: v('ratio'), furnRho: v('rho'), furnKappa: v('kappa'), furnGas1: v('gas1'), furnGas2: v('gas2'), furnEven: v('even') }; })(),
   };
 }
 
