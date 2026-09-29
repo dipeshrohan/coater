@@ -259,13 +259,13 @@ function measPump() {
     job.worker = w; MQ.active.add(job);
     const end = (r, err) => { w.terminate(); MQ.active.delete(job); try { job.onDone(r, err); } finally { measPump(); } };
     w.onmessage = e => {
-      if (e.data.progress) return;
+      if (!MQ.active.has(job) || e.data.progress) return;   // (dropped or stopped: its late events ignored)
       const r = e.data.ok ? e.data.result : null;
       if (!r) end(null, e.data.error || 'no solution');
       else if (!r.converged && !(r.stalled && r.residual < 1e-4)) end(null, `did not converge (residual ${r.residual.toExponential(1)})`);
       else end(r, null);
     };
-    w.onerror = e => end(null, e.message || 'worker error');
+    w.onerror = e => { if (MQ.active.has(job)) end(null, e.message || 'worker error'); };
     w.postMessage(cfdWorkerMessage(job.geo));
   }
 }

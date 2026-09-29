@@ -163,13 +163,13 @@ function doeStartFurn(run) {
   DOE.active.add(run);
   const end = () => { w.terminate(); run.worker = null; DOE.active.delete(run); run.ms = performance.now() - t0; };
   w.onmessage = e => {
-    if (e.data.progress) return;
+    if (run.worker !== w || e.data.progress) return;   // (stopped: its late events ignored)
     end();
     if (!e.data.ok) Object.assign(run, { status: 'error', error: e.data.error });
     else Object.assign(run, { status: 'done', out: doeFurnOutputs(e.data.res, q.P) });
     doePump(); renderDOE();
   };
-  w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); doePump(); renderDOE(); };
+  w.onerror = e => { if (run.worker !== w) return; end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); doePump(); renderDOE(); };
   w.postMessage({ id: 1, kind: 'run', o });
 }
 /** A factor can be varied with the current model and blade shape. */
@@ -299,6 +299,7 @@ function doeStart(run) {
   const end = () => { w.terminate(); run.worker = null; DOE.active.delete(run); run.ms = performance.now() - t0; };
   const settle = () => { doePump(); renderDOE(); };
   w.onmessage = e => {
+    if (run.worker !== w) return;   // (stopped: its late events ignored)
     if (e.data.progress) { run.progress = e.data.progress; liveAdd(run.live, run.progress); doeStatusLine(); drawDOELive(); return; }
     const r = e.data.ok ? e.data.result : null;
     if (!r) { end(); Object.assign(run, { status: 'error', error: e.data.error }); settle(); return; }
@@ -310,17 +311,18 @@ function doeStart(run) {
     const w1 = makeWorker('cfd-1d-worker.js');
     run.worker = w1;
     w1.onmessage = e1 => {
+      if (run.worker !== w1) return;
       end1();
       const A = e1.data.ok && e1.data.across;
       out.filmAcross = A ? (Math.max(...A.map(q => q.film)) - Math.min(...A.map(q => q.film))) * 1e6 : NaN;
       Object.assign(run, { status: 'done', out });
       settle();
     };
-    w1.onerror = () => { end1(); Object.assign(run, { status: 'done', out: { ...out, filmAcross: NaN } }); settle(); };
+    w1.onerror = () => { if (run.worker !== w1) return; end1(); Object.assign(run, { status: 'done', out: { ...out, filmAcross: NaN } }); settle(); };
     const end1 = () => { w1.terminate(); run.worker = null; DOE.active.delete(run); run.ms = performance.now() - t0; };
     w1.postMessage({ id: 1, locs: [], across: G.across, ripple: G.ripple });
   };
-  w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); settle(); };
+  w.onerror = e => { if (run.worker !== w) return; end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); settle(); };
   w.postMessage(cfdWorkerMessage(geo, geo.solver, true, true));
 }
 function stopDOE() {
