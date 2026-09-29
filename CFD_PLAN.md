@@ -973,6 +973,8 @@ GO-7 decisions (the user):
   both papers (below and above it). The furnace load's heating spread: not known (an input, shown as not known until
   given). Photos of a cracked and a waved piece with a ruler: to come (they set the crack spacing and the wavelength;
   nothing is assumed for them).
+- Where in the stack: the cracked pieces mostly near the bottom (the most weight on them), but they can be anywhere;
+  the waved pieces near the top (the least weight). The waves are not checked after run 1 (seen after run 2).
 
 GO-7 built (7a: held by both papers; 7b: the stack's pieces and the batch):
 - 7a: its papers' friction and its bond on both faces (the springs' limit and stiffness doubled): stuck and cracked,
