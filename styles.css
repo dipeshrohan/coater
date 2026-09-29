@@ -1812,3 +1812,97 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .furn-size { margin: 6px 2px 0; }
 @media (max-width: 700px) { .furn-light-d { flex-direction: column; } }
 .ovz-furn .ovz-pic .dry-pic { max-width: 100%; }
+
+/* the Process tab, one stage at a time (GO-6, Q115–Q118): the chain as tabs, the stage's line and its steps */
+.proc-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 12px; background: var(--seg); margin: 0 0 10px; }
+.proc-tabs .pt { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 6px; border: 0; border-radius: 9px; background: none; color: var(--muted); font: 500 13px var(--sans); cursor: pointer; white-space: nowrap; }
+.proc-tabs .pt b { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 600 11px var(--sans); background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.proc-tabs .pt .badge, .proc-tabs .pt .ui-badge { transform: scale(.85); }
+.proc-tabs .pt:hover { color: var(--ink); }
+.proc-tabs .pt[aria-selected=true] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 1px 1px rgba(16, 24, 40, .04); }
+.proc-tabs .pt[aria-selected=true] b { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.proc-tabs .pt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pt-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .6; }
+.pt-dot.pt-ok { background: var(--ok); opacity: 1; }
+.pt-dot.pt-bad { background: var(--bad); opacity: 1; }
+.pt-dot.pt-accent { background: var(--accent); opacity: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.proc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0 12px; }
+.proc-h { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; }
+.proc-line { flex: 1 1 320px; color: var(--muted); font-size: 12.5px; min-width: 0; }
+.proc-steps { margin-left: auto; }
+.proc-steps .step-sep { color: var(--muted); padding: 0 1px; }
+.proc-card { padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); max-width: 760px; }
+.proc-kv { border-collapse: collapse; font-size: 13px; margin-bottom: 6px; }
+.proc-kv th, .proc-kv td { text-align: left; padding: 4px 16px 4px 0; border-bottom: 1px solid var(--line-soft); }
+.proc-kv th { font-weight: 500; color: var(--muted); }
+.proc-kv td { font-family: var(--mono); }
+.proc-stage[hidden] { display: none !important; }
+.proc-stage > .dry-sec { margin-top: 0; }
+.proc-stage .dry-head > h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.proc-stage[data-step="setup"] [data-pstep]:not([data-pstep~="setup"]),
+.proc-stage[data-step="solve"] [data-pstep]:not([data-pstep~="solve"]),
+.proc-stage[data-step="results"] [data-pstep]:not([data-pstep~="results"]) { display: none !important; }
+#modWb[data-proc-stage="dry"] .verdict, #modWb[data-proc-stage="dry"] .mod-results,
+#modWb[data-proc-stage="film"] .verdict, #modWb[data-proc-stage="film"] .mod-results,
+#modWb[data-proc-stage="furn"] .verdict, #modWb[data-proc-stage="furn"] .mod-results { display: none; }
+
+/* the furnace stage (GO-6): Setup's blocks, the program table and drawing side by side, the holder; Solve; Results'
+   one chart beside the piece */
+.furn-block { margin: 14px 0; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
+.furn-block h4 { margin: 0 0 8px; font-size: 13.5px; }
+.furn-bh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; }
+.furn-bh h4 { margin: 0; }
+.furn-prog { display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 1.3fr); gap: 14px; align-items: start; }
+.furn-ptab { border-collapse: collapse; font-size: 12.5px; }
+.furn-ptab th { font-weight: 500; color: var(--muted); text-align: left; padding: 2px 6px 4px; }
+.furn-ptab th small { display: block; font-size: 10.5px; }
+.furn-ptab td { padding: 2px 6px; }
+.furn-ptab input { width: 84px; font: inherit; font-family: var(--mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); text-align: right; }
+.furn-ptab .furn-sn { color: var(--muted); font: 12px var(--mono); }
+.furn-holder { display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 14px; align-items: start; }
+.furn-holder-pic svg { width: 100%; height: auto; }
+.furn-fields { display: grid; gap: 6px; max-width: 460px; }
+.furn-fields h5 { margin: 8px 0 0; font-size: 12.5px; }
+.furn-f { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.furn-f .prop-v input { width: 90px; }
+.furn-solve { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
+.furn-solve h4 { margin: 4px 0 6px; font-size: 13px; }
+.furn-answer { margin: 0 0 6px; font-size: 14px; }
+.furn-warn { margin: 0 0 8px; }
+.furn-warn > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--accent); font-size: 12.5px; }
+.furn-res { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 14px; align-items: start; }
+.furn-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.furn-chips .chip { padding: 4px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font: 500 12.5px var(--sans); cursor: pointer; }
+.furn-chips .chip[aria-selected=true] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-weight: 600; }
+.furn-one { grid-template-columns: 1fr !important; }
+.furn-one figure[hidden] { display: none; }
+/* (the report's Process section: every stage drawn open, its charts two to a row as the one long page had them) */
+#modWb.proc-all .furn-one { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)) !important; }
+#modWb.proc-all .furn-res { grid-template-columns: 1fr; }
+#modWb.proc-all .furn-piece-fig { max-width: 505px; }
+.furn-piece-fig figcaption { display: flex; align-items: center; gap: 8px; }
+.furn-piece-fig figcaption .seg { margin-left: auto; margin-right: 34px; }
+.furn-piece-fig canvas { touch-action: none; }
+#furnProgCv { touch-action: none; }
+@media (max-width: 1100px) { .furn-res, .furn-prog, .furn-holder, .furn-solve { grid-template-columns: 1fr; } }
+
+.furn-cool input, .furn-block .furn-cool input { width: 70px; font: inherit; font-family: var(--mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); text-align: right; }
+#modWb[data-proc-stage="dry"] .proc-line, #modWb[data-proc-stage="film"] .proc-line, #modWb[data-proc-stage="furn"] .proc-line { display: none; }
+
+.proc-grid th small { display: block; font-weight: 400; font-size: 10.5px; }
+.proc-grid td, .proc-grid th { padding-right: 18px; }
+.proc-zones td { padding: 3px 12px 3px 0; }
+.proc-zones input { width: 76px; font: inherit; font-family: var(--mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); text-align: right; }
+.proc-zones select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); max-width: 300px; }
+.proc-zones input:focus-visible, .proc-zones select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.proc-zones-wrap { overflow-x: auto; }
+@media (max-width: 720px) { .furn-block .prop-actions { flex-wrap: wrap; padding-left: 0; } .furn-block .prop-actions .btn { flex: 0 1 auto; min-width: 0; white-space: normal; text-align: left; height: auto; } }
+
+/* the film stage's Results, one view at a time (the film peeled off, a piece in 3D, the pressed stack) */
+.film-views { margin: 0 0 10px; }
+.proc-stage[data-step="results"] .film-sec[data-fview="film"] [data-fview]:not([data-fview="film"]),
+.proc-stage[data-step="results"] .film-sec[data-fview="piece"] [data-fview]:not([data-fview="piece"]),
+.proc-stage[data-step="results"] .film-sec[data-fview="stack"] [data-fview]:not([data-fview="stack"]) { display: none !important; }
+.film-sec[data-fview="stack"] .sheet-sec > [data-fview="stack"] { margin-top: 0; }
+.proc-go { margin: 10px 0 4px; flex-wrap: wrap; }

@@ -92,12 +92,88 @@ const DOE = {
   factors: null,                 // the design being edited: [{ k, min, max, n } | { k, vals }]
   design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, active: new Set(),
   plot: 'response', out: 'film', x: 0, mx: 0, my: 1, dock: 'design', dockH: null,
+  mode: 'coat',                  // 'coat': the coating's DOE (the 2D CFD); 'furn': the furnace's (GO-6)
 };
-const doeFactor = k => DOE_FACTORS.find(f => f.k === k);
+/**
+ * The furnace's DOE (GO-6, Q122): the furnace's settings and its card's uncertain values varied for the film's piece as
+ * it is (the flow not solved again): each run a furnace run, a few seconds. kind: 'fx' the run's heating rates times a
+ * factor, 'ftop' / 'fhold' run 2's last step, 'fstack' the stack in its holder, 'fcard' a Furnace card value.
+ */
+const DOE_FURN_FACTORS = [
+  { k: 'r1x', l: 'Run 1: its heating rates ×', u: '', kind: 'fx', run: 0, g: 'The runs', d: 2, lo: 0.05, hi: 20 },
+  { k: 'r2x', l: 'Run 2: its heating rates ×', u: '', kind: 'fx', run: 1, g: 'The runs', d: 2, lo: 0.05, hi: 20 },
+  { k: 'r2top', l: 'Run 2: its top temperature', u: '°C', kind: 'ftop', run: 1, g: 'The runs', d: 0, lo: 1000, hi: 3300 },
+  { k: 'r2hold', l: 'Run 2: its hold at the top', u: 'min', kind: 'fhold', run: 1, g: 'The runs', d: 0, lo: 0, hi: 2000 },
+  { k: 'N', l: 'Pieces in a stack', u: '', kind: 'fstack', g: 'The stack in its holder', d: 0, lo: 1, hi: 1000 },
+  { k: 'plateW', l: 'A plate resting on the stack', u: 'kg', kind: 'fstack', g: 'The stack in its holder', d: 1, lo: 0, hi: 1000 },
+  { k: 'gap', l: 'Gap above the stack', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 0, lo: 0, hi: 1000 },
+  { k: 'paperT', l: 'Graphite paper\'s thickness', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 2, lo: 0.01, hi: 10 },
+  ...['sigZ', 'es', 'Dgal', 'bO', 'bG', 'mu', 'Tst', 'tauB'].map(k => { const q = MAT_FURN.find(r => r[0] === k); return { k: 'c_' + k, card: k, l: q[1], u: q[2], kind: 'fcard', g: 'The Furnace card', d: q[6], lo: q[3], hi: q[4] }; }),
+];
+/** The DOE shown: the coating's (the 2D CFD at a location) or the furnace's; the other's design and runs kept aside. */
+const DOE_STASH = { coat: null, furn: null };
+const DOE_KEEP = ['factors', 'design', 'runs', 'status', 'key', 't0', 't1', 'out', 'x', 'mx', 'my'];
+const doeFactors = () => DOE.mode === 'furn' ? DOE_FURN_FACTORS : DOE_FACTORS;
+const doeOutputsNow = () => DOE.mode === 'furn' ? DOE_OUTPUTS.filter(o => o.g === 'Furnace (graphene film)') : DOE_OUTPUTS;
+const doeFactor = k => doeFactors().find(f => f.k === k) || DOE_FACTORS.find(f => f.k === k) || DOE_FURN_FACTORS.find(f => f.k === k);
+function doeSetMode(m) {
+  if (m === DOE.mode || DOE.status === 'running' || !['coat', 'furn'].includes(m)) return;
+  DOE_STASH[DOE.mode] = Object.fromEntries(DOE_KEEP.map(k => [k, DOE[k]]));
+  const back = DOE_STASH[m];
+  if (back) DOE_KEEP.forEach(k => { DOE[k] = back[k]; });
+  else Object.assign(DOE, { factors: null, design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, out: m === 'furn' ? 'furnH' : 'film', x: 0, mx: 0, my: 1 });
+  DOE.mode = m;
+  render();
+}
+/** The key of what the DOE's base case is, as the inputs are (its results go stale when it changes). */
+const doeBaseKey = () => DOE.mode === 'furn' ? (typeof furnKeyNow === 'function' ? furnKeyNow() : null) : cfdInputsKey(cfdGeometry(DOE.loc));
+/** The furnace's options for a run of its DOE: the settings as they are, the run's factors set. */
+function doeFurnOpts(set) {
+  const q = furnInputs();
+  if (!q) return null;
+  const keepF = OVEN.furn, keepM = MAT.furn, fu = JSON.parse(JSON.stringify(OVEN.furn)), card = { ...MAT.furn }, L = FURN_STEP_LIMITS;
+  for (const { f, v } of set) {
+    if (f.kind === 'fx') fu.runs[f.run].steps.forEach(st => { st.rate = Math.min(L.rate[1], Math.max(L.rate[0], st.rate * v)); });
+    else if (f.kind === 'ftop') fu.runs[f.run].steps[fu.runs[f.run].steps.length - 1].to = v;
+    else if (f.kind === 'fhold') fu.runs[f.run].steps[fu.runs[f.run].steps.length - 1].hold = v;
+    else if (f.kind === 'fstack') { fu[f.k] = f.k === 'N' ? Math.round(v) : v; if (f.k === 'gap' && v > 0) fu.room = 'gap'; }
+    else if (f.kind === 'fcard') card[f.card] = { ...card[f.card], v };
+  }
+  try { OVEN.furn = fu; MAT = { ...MAT, furn: card }; return furnOpts(q.P, q.o.Lx, q.o.Ly); }
+  finally { OVEN.furn = keepF; MAT = { ...MAT, furn: keepM }; }
+}
+/** A furnace run's outputs (as the DOE lists them). */
+function doeFurnOutputs(res, P) {
+  const e = res.end, pl = res.plane;
+  return { furnH: e.h * 1e6, furnRatio: e.h / P.h, furnRho: e.rho / 1000, furnKappa: e.kappa, furnGas1: res.runs[0].peak.idx * 100, furnGas2: res.runs[1] ? res.runs[1].peak.idx * 100 : NaN,
+    furnEven: (e.hMax - e.hMin) / e.h * 100, furnSD: e.hSD * 1e6, furnCrack: pl ? pl.ratioMax * 100 : NaN, furnWave: pl ? pl.waveMax * 100 : NaN, furnStuck: pl ? pl.stuckFrac * 100 : NaN, furnSize: pl ? pl.size.free * 100 : NaN };
+}
+function doeStartFurn(run) {
+  const o = doeFurnOpts(DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] }))), q = furnInputs();
+  if (!o || !q) { Object.assign(run, { status: 'error', error: 'the furnace needs the film\'s piece solved (Process › Film)', ms: 0 }); return; }
+  const w = makeWorker('cfd-furnace-worker.js'), t0 = performance.now();
+  const used = new Set([...DOE.active].map(r => r.slot));
+  Object.assign(run, { status: 'running', worker: w, progress: null, slot: [0, 1, 2, 3, 4, 5, 6, 7].find(k => !used.has(k)) ?? 0, live: null });
+  DOE.active.add(run);
+  const end = () => { w.terminate(); run.worker = null; DOE.active.delete(run); run.ms = performance.now() - t0; };
+  w.onmessage = e => {
+    if (e.data.progress) return;
+    end();
+    if (!e.data.ok) Object.assign(run, { status: 'error', error: e.data.error });
+    else Object.assign(run, { status: 'done', out: doeFurnOutputs(e.data.res, q.P) });
+    doePump(); renderDOE();
+  };
+  w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); doePump(); renderDOE(); };
+  w.postMessage({ id: 1, kind: 'run', o });
+}
 /** A factor can be varied with the current model and blade shape. */
-const doeAvailable = f => (!f.shape || (Array.isArray(f.shape) ? f.shape.includes(CFDG.shape) : f.shape === CFDG.shape)) && (!f.uses || RHEO_MODELS[CFDG.model].uses.includes(f.uses));
+const doeAvailable = f => f.kind && f.kind[0] === 'f' && f.kind !== 'fcard' && f.kind !== 'fstack' ? !(OVEN.furn.runs[f.run] && OVEN.furn.runs[f.run].file) : (!f.shape || (Array.isArray(f.shape) ? f.shape.includes(CFDG.shape) : f.shape === CFDG.shape)) && (!f.uses || RHEO_MODELS[CFDG.model].uses.includes(f.uses));
 /** A factor's value in the base case at location i. */
 function doeBase(f, i) {
+  if (f.kind === 'fx') return 1;
+  if (f.kind === 'ftop' || f.kind === 'fhold') { const st = OVEN.furn.runs[f.run].steps; return st[st.length - 1][f.kind === 'ftop' ? 'to' : 'hold']; }
+  if (f.kind === 'fstack') return OVEN.furn[f.k];
+  if (f.kind === 'fcard') return MAT.furn[f.card].v;
   if (f.kind === 'loc') return locInput(i, f.k);
   if (f.kind === 'geo') return CFDG[f.k];
   if (f.kind === 'land') return P.L;
@@ -181,7 +257,7 @@ function runDOE() {
   let combos = [[]];
   for (const d of design) combos = combos.flatMap(c => d.levels.map((_, j) => [...c, j]));
   Object.assign(DOE, {
-    design, key: cfdInputsKey(cfdGeometry(DOE.loc)), status: 'running', t0: Date.now(), t1: 0, active: new Set(),
+    design, key: doeBaseKey(), status: 'running', t0: Date.now(), t1: 0, active: new Set(),
     runs: combos.map((idx, n) => ({ n, idx, vals: idx.map((j, m) => design[m].levels[j]), status: 'pending' })),
   });
   DOE.x = Math.min(DOE.x, design.length - 1); DOE.mx = 0; DOE.my = Math.min(1, design.length - 1);
@@ -204,6 +280,7 @@ function doePump() {
   }
 }
 function doeStart(run) {
+  if (DOE.mode === 'furn') { doeStartFurn(run); return; }
   const G = doeGeometry(DOE.loc, DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] })), true), geo = G.geo;
   // (inputs outside what the solver can do: the run is not solved)
   const errs = checkGeometry(geo, null).filter(p => p.level === 'error');
@@ -252,14 +329,14 @@ function stopDOE() {
 }
 const doeClock = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`; };
 /** A run's time here: the locations' last solves, else 9 s. */
-const doeRunSeconds = () => { const t = cfdRuns.filter(r => r.elapsedMs).map(r => r.elapsedMs / 1000); return t.length ? t.reduce((a, b) => a + b, 0) / t.length : 9; };
+const doeRunSeconds = () => { if (DOE.mode === 'furn') return typeof FURN !== 'undefined' && FURN.ms ? FURN.ms / 1000 : 5; const t = cfdRuns.filter(r => r.elapsedMs).map(r => r.elapsedMs / 1000); return t.length ? t.reduce((a, b) => a + b, 0) / t.length : 9; };
 
 // ---------------------------------------------------------------------
 // The module: base case in the model tree; toolbar, plots in the viewport, design and runs in the dock
 // ---------------------------------------------------------------------
 function viewDOE() {
   // (the first visit makes the default design: not an unsaved change)
-  if (!DOE.factors) { const clean = PROJ.savedKey != null && !projDirty(); DOE.factors = [doeNewFactor('U', DOE.loc), doeNewFactor('mu', DOE.loc)]; if (clean) PROJ.savedKey = projKey(); }
+  if (!DOE.factors) { const clean = PROJ.savedKey != null && !projDirty(); DOE.factors = DOE.mode === 'furn' ? [doeNewFactor('r2x', DOE.loc), doeNewFactor('plateW', DOE.loc)] : [doeNewFactor('U', DOE.loc), doeNewFactor('mu', DOE.loc)]; if (clean) PROJ.savedKey = projKey(); }
   const i = DOE.loc, s = solverOf(i), own = Object.keys(CFD_LOCS[i].over);
   const row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
   document.getElementById('setupExtra').innerHTML = `
@@ -277,6 +354,20 @@ function viewDOE() {
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">${uiIco(4)}Edit in 2D CFD</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
+  if (DOE.mode === 'furn') {
+    // (the furnace's base case: the film's piece, the runs and the stack as set on Process, the Furnace card)
+    const q = typeof furnInputs === 'function' ? furnInputs() : null, fu = OVEN.furn;
+    document.getElementById('setupExtra').innerHTML = `<div class="tree-sep">DOE base case</div>
+      <details class="grp cfd-grp" open><summary>From the furnace</summary>
+        ${row('The piece', q ? `${dryFilmName(q.key).replace(/^the /, '')}, ${(q.P.h * 1e6).toFixed(0)} µm` : 'not solved yet (Process › Film)')}
+        ${[0, 1].map(r => row(FURN_RUNS[r], fu.runs[r].file ? `your file ${dryEsc(fu.runs[r].file.name)}` : fu.runs[r].steps.map(st => `${st.rate} °C/min to ${st.to} °C`).join(', '))).join('')}
+        ${row('The stack', `${fu.N} pieces, ${fu.plateW} kg on it, ${fu.room === 'gap' ? `${fu.gap} mm gap` : 'the plate above on it'}`)}
+        <p class="prop-note">Every run is the furnace for the film's piece as it is (the flow is not solved again), its factors set; everything else as on Process › Furnace and the Furnace card.</p>
+        <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToFurn">${uiIco(12)}Open the furnace</button></div>
+      </details>`;
+    document.getElementById('doeToFurn').onclick = () => processGo('furn', 'setup');
+    const tn = document.getElementById('treeNote'); if (tn) tn.textContent = 'The furnace\'s DOE starts from the furnace as set on Process › Furnace (its base case) and varies the factors of its Design tab, for the film\'s piece as it is.';
+  }
   const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${uiIco(DOCK_ICON[k])}${t}${['problems', 'history', 'msgs'].includes(k) ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   view.innerHTML = `
     <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${dockHCss(DOE.dockH)}">
@@ -284,7 +375,8 @@ function viewDOE() {
         <button id="doeRun" class="btn btn-primary btn-sm tool-run" type="button" title="Solve every combination of the factor levels"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run DOE</button>
         <button id="doeStop" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
         <span class="vp-sep" aria-hidden="true"></span>
-        <label class="vp-ctl">Location <select id="doeLoc">${CFD_LOCS.map((l, k) => `<option value="${k}"${k === DOE.loc ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('')}</select></label>
+        <div class="seg seg-sm" role="tablist" aria-label="Which DOE" id="doeMode">${[['coat', 'Coating DOE'], ['furn', 'Furnace DOE']].map(([k, t]) => `<button type="button" role="tab" data-doemode="${k}" aria-selected="${k === DOE.mode}">${t}</button>`).join('')}</div>
+        <label class="vp-ctl"${DOE.mode === 'furn' ? ' hidden' : ''}>Location <select id="doeLoc">${CFD_LOCS.map((l, k) => `<option value="${k}"${k === DOE.loc ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('')}</select></label>
         <label class="vp-ctl" title="Runs solved at the same time (each uses one processor core)">At a time <select id="doeWorkers">${[1, 2, 3, 4, 6, 8].map(n => `<option value="${n}"${n === DOE.workers ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
         <span class="doe-status" id="doeStatus" role="status"></span>
         <span class="vp-spacer"></span>
@@ -312,6 +404,7 @@ function viewDOE() {
   document.getElementById('doeRun').onclick = runDOE;
   document.getElementById('doeStop').onclick = stopDOE;
   document.getElementById('doeLoc').onchange = e => { DOE.loc = +e.target.value; viewDOE(); };
+  document.querySelectorAll('#doeMode [data-doemode]').forEach(b => { b.onclick = () => doeSetMode(b.dataset.doemode); });
   document.getElementById('doeWorkers').onchange = e => { DOE.workers = +e.target.value; doePump(); renderDOE(); };
   document.getElementById('doeCsv').onclick = exportDOE;
   document.querySelectorAll('#doeWb .dock-tabs button').forEach(b => {
@@ -356,7 +449,7 @@ function doeStatusLine() {
   const el = document.getElementById('doeStatus');
   if (!el) return;
   const n = DOE.runs.length, done = DOE.runs.filter(r => r.status === 'done').length, bad = DOE.runs.filter(r => r.status === 'error').length;
-  const stale = DOE.key && DOE.key !== cfdInputsKey(cfdGeometry(DOE.loc));
+  const stale = DOE.key && DOE.key !== doeBaseKey();
   if (DOE.status === 'running') {
     const el0 = Date.now() - DOE.t0, per = done + bad ? el0 / (done + bad) : doeRunSeconds() * 1000 / DOE.workers;
     el.innerHTML = `<i class="spin" aria-hidden="true"></i>${done + bad} of ${n} runs · ${DOE.active.size} solving${bad ? ` · <span class="warn-text">${bad} failed</span>` : ''} · ${doeClock(el0)}, about ${doeClock(per * (n - done - bad))} left`;
@@ -373,8 +466,8 @@ function renderDOEDesign() {
   const host = document.getElementById('doe-design');
   if (!host) return;
   const running = DOE.status === 'running', used = new Set(DOE.factors.map(fs => fs.k));
-  const groups = [...new Set(DOE_FACTORS.map(f => f.g))];
-  const pickOpts = cur => groups.map(g => `<optgroup label="${g}">${DOE_FACTORS.filter(f => f.g === g).map(f => `<option value="${f.k}"${f.k === cur ? ' selected' : ''}${(f.k !== cur && used.has(f.k)) || !doeAvailable(f) ? ' disabled' : ''}>${f.l}${f.u ? ` (${f.u})` : ''}${doeAvailable(f) ? '' : ' — not used now'}</option>`).join('')}</optgroup>`).join('');
+  const FS = doeFactors(), groups = [...new Set(FS.map(f => f.g))];
+  const pickOpts = cur => groups.map(g => `<optgroup label="${g}">${FS.filter(f => f.g === g).map(f => `<option value="${f.k}"${f.k === cur ? ' selected' : ''}${(f.k !== cur && used.has(f.k)) || !doeAvailable(f) ? ' disabled' : ''}>${f.l}${f.u ? ` (${f.u})` : ''}${doeAvailable(f) ? '' : ' — not used now'}</option>`).join('')}</optgroup>`).join('');
   const rows = DOE.factors.map((fs, m) => {
     const f = doeFactor(fs.k), off = !doeAvailable(f), dis = running ? ' disabled' : '';
     const levels = doeLevels(fs).map(v => doeFmt(f, v)).join(' · ');
@@ -390,7 +483,7 @@ function renderDOEDesign() {
   const N = doeRunCount(), t = doeRunSeconds(), est = N * t / Math.min(DOE.workers, N) * (DOE.workers > 1 ? 1.25 : 1);
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table doe-ftable"><thead><tr><th>Factor</th><th>From</th><th>To</th><th>Levels</th><th>Values</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="fv-bar doe-addbar"><button type="button" class="btn btn-secondary btn-sm" id="doeAdd"${DOE.factors.length >= 3 || running ? ' disabled' : ''}>${uiIco('plus')}Add factor</button>
-      <span class="fv-why"><b>${N} runs</b> (every combination) at location ${DOE.loc + 1}: about ${doeClock(est * 1000)} with ${DOE.workers} at a time, a run taking about ${t.toFixed(0)} s here. Up to three factors, 2 to 5 levels each, evenly spaced.</span></div>`;
+      <span class="fv-why"><b>${N} runs</b> (every combination) ${DOE.mode === 'furn' ? 'of the furnace, for the film\'s piece as it is' : `at location ${DOE.loc + 1}`}: about ${doeClock(est * 1000)} with ${DOE.workers} at a time, a run taking about ${t.toFixed(0)} s here. Up to three factors, 2 to 5 levels each, evenly spaced.</span></div>`;
   host.querySelectorAll('[data-fk]').forEach(el => el.addEventListener('change', () => { DOE.factors[+el.dataset.fk] = doeNewFactor(el.value, DOE.loc); renderDOE(); }));
   const num = (sel, key) => host.querySelectorAll(sel).forEach(el => el.addEventListener('change', () => {
     const fs = DOE.factors[+el.dataset[key]], f = doeFactor(fs.k);
@@ -409,7 +502,7 @@ function renderDOEDesign() {
   host.querySelectorAll('[data-fdel]').forEach(b => { b.onclick = () => { DOE.factors.splice(+b.dataset.fdel, 1); renderDOE(); }; });
   const add = host.querySelector('#doeAdd');
   if (add) add.onclick = () => {
-    const f = DOE_FACTORS.find(x => doeAvailable(x) && !DOE.factors.some(fs => fs.k === x.k));
+    const f = doeFactors().find(x => doeAvailable(x) && !DOE.factors.some(fs => fs.k === x.k));
     if (f) { DOE.factors.push(doeNewFactor(f.k, DOE.loc)); renderDOE(); }
   };
 }
@@ -419,16 +512,16 @@ function renderDOERuns() {
   if (!host) return;
   if (!DOE.runs.length) { host.innerHTML = '<p class="cap">No runs yet: set the factors in Design, then Run DOE.</p>'; return; }
   const d = DOE.design;
-  host.innerHTML = `<div class="table-wrap"><table class="cfd-table doe-rtable"><thead><tr><th>Run</th>${d.map(x => `<th>${x.f.l}${x.f.u ? `<small>${x.f.u}</small>` : ''}</th>`).join('')}${DOE_OUTPUTS.map(o => `<th>${o.l}${o.u ? `<small>${o.u}</small>` : ''}</th>`).join('')}<th>Status</th></tr></thead><tbody>
-    ${DOE.runs.map(r => `<tr><th scope="row">${r.n + 1}</th>${r.vals.map((v, m) => `<td>${doeFmt(d[m].f, v)}</td>`).join('')}${DOE_OUTPUTS.map(o => `<td>${r.out && Number.isFinite(r.out[o.k]) ? r.out[o.k].toFixed(o.d) : '—'}</td>`).join('')}<td data-rs="${r.n}"${r.status === 'error' ? ' class="warn-text"' : ''}>${doeRunState(r)}</td></tr>`).join('')}
+  host.innerHTML = `<div class="table-wrap"><table class="cfd-table doe-rtable"><thead><tr><th>Run</th>${d.map(x => `<th>${x.f.l}${x.f.u ? `<small>${x.f.u}</small>` : ''}</th>`).join('')}${doeOutputsNow().map(o => `<th>${o.l}${o.u ? `<small>${o.u}</small>` : ''}</th>`).join('')}<th>Status</th></tr></thead><tbody>
+    ${DOE.runs.map(r => `<tr><th scope="row">${r.n + 1}</th>${r.vals.map((v, m) => `<td>${doeFmt(d[m].f, v)}</td>`).join('')}${doeOutputsNow().map(o => `<td>${r.out && Number.isFinite(r.out[o.k]) ? r.out[o.k].toFixed(o.d) : '—'}</td>`).join('')}<td data-rs="${r.n}"${r.status === 'error' ? ' class="warn-text"' : ''}>${doeRunState(r)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function exportDOE() {
   if (!DOE.runs.length) return;
   const d = DOE.design, unit = u => u ? `_${u.replace(/[^A-Za-z0-9]+/g, '_')}` : '';
-  const rows = [['run', ...d.map(x => x.f.k + unit(x.f.u)), ...DOE_OUTPUTS.map(o => o.k + unit(o.u)), 'status', 'seconds']];
-  for (const r of DOE.runs) rows.push([r.n + 1, ...r.vals, ...DOE_OUTPUTS.map(o => r.out ? r.out[o.k] : ''), r.status === 'error' ? `failed: ${r.error}` : r.status, r.ms ? r.ms / 1000 : '']);
-  downloadCSV(`doe-L${DOE.loc + 1}-${csvStamp()}.csv`, rows);
+  const OS = doeOutputsNow(), rows = [['run', ...d.map(x => x.f.k + unit(x.f.u)), ...OS.map(o => o.k + unit(o.u)), 'status', 'seconds']];
+  for (const r of DOE.runs) rows.push([r.n + 1, ...r.vals, ...OS.map(o => r.out ? r.out[o.k] : ''), r.status === 'error' ? `failed: ${r.error}` : r.status, r.ms ? r.ms / 1000 : '']);
+  downloadCSV(`doe-${DOE.mode === 'furn' ? 'furnace' : `L${DOE.loc + 1}`}-${csvStamp()}.csv`, rows);
 }
 
 // ---------------------------------------------------------------------
@@ -439,9 +532,11 @@ function renderDOEPlots() {
   const bar = document.getElementById('doePlotBar'), host = document.getElementById('doePlots'), lg = document.getElementById('doeLegend');
   if (!bar) return;
   const d = DOE.design, done = DOE.runs.filter(r => r.status === 'done');
-  const o = DOE_OUTPUTS.find(x => x.k === DOE.out);
+  const OS = doeOutputsNow();
+  if (!OS.some(x => x.k === DOE.out)) DOE.out = OS[0].k;
+  const o = OS.find(x => x.k === DOE.out);
   const opt = (v, t, cur) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${t}</option>`;
-  const outSel = `<label class="fv-ctl">Output <select id="doeOut">${[...new Set(DOE_OUTPUTS.map(x => x.g))].map(g => `<optgroup label="${g}">${DOE_OUTPUTS.filter(x => x.g === g).map(x => opt(x.k, x.l, DOE.out)).join('')}</optgroup>`).join('')}</select></label>`;
+  const outSel = `<label class="fv-ctl">Output <select id="doeOut">${[...new Set(OS.map(x => x.g))].map(g => `<optgroup label="${g}">${OS.filter(x => x.g === g).map(x => opt(x.k, x.l, DOE.out)).join('')}</optgroup>`).join('')}</select></label>`;
   const seg = `<div class="seg" role="tablist" aria-label="Plot" id="doePlotSeg">${[['response', 'Response'], ['map', 'Response map'], ['effects', 'Main effects']].map(([k, t]) => `<button type="button" role="tab" data-p="${k}" aria-selected="${DOE.plot === k}"${k === 'map' && d && d.length < 2 ? ' disabled title="needs two factors"' : ''}>${t}</button>`).join('')}</div>`;
   const facSel = (id, cur, label) => d ? `<label class="fv-ctl">${label} <select id="${id}">${d.map((x, m) => opt(m, x.f.l, cur)).join('')}</select></label>` : '';
   if (DOE.plot === 'map' && d && d.length < 2) DOE.plot = 'response';
@@ -454,7 +549,7 @@ function renderDOEPlots() {
   drawDOELive();
   if (!d || !done.length) {
     host.innerHTML = DOE.status === 'running' ? '' : emptyHint('No DOE results yet',
-      `Choose 1 to 3 factors and their levels in the Design tab below: every combination is solved in the CFD at location ${DOE.loc + 1} (${doeRunCount()} runs now, a few seconds each, ${DOE.workers} at a time).`,
+      `Choose 1 to 3 factors and their levels in the Design tab below: every combination is solved ${DOE.mode === 'furn' ? 'in the furnace, for the film\'s piece as it is' : `in the CFD at location ${DOE.loc + 1}`} (${doeRunCount()} runs now, a few seconds each, ${DOE.workers} at a time).`,
       `<button type="button" class="btn btn-primary btn-sm" data-hint-doe>${uiIco('play')}Run DOE</button><button type="button" class="btn btn-secondary btn-sm" data-hint-design>${uiIco('doe')}Open the design</button>`);
     const r = host.querySelector('[data-hint-doe]'); if (r) r.onclick = runDOE;
     const g = host.querySelector('[data-hint-design]'); if (g) g.onclick = () => { DOE.dock = 'design'; setPanelHidden('dock', false); };

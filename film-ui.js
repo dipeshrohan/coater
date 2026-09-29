@@ -144,19 +144,26 @@ function filmStage() {
 }
 
 // ---- the Process tab's section ----
+/** The film stage's Results, one at a time: the film peeled off, a piece cut from it in 3D, the pieces in the pressed stack. */
+const FILM_VIEWS = { film: 'The film, peeled off', piece: 'A piece in 3D', stack: 'In the pressed stack' };
 function filmSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
   const pane = (id, icon, title, aria) => `<figure class="pane dry-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
-  return `<section class="dry-sec film-sec" id="filmSec" aria-labelledby="filmH">
+  return `<section class="dry-sec film-sec" id="filmSec" aria-labelledby="filmH" data-fview="${FILM.view || 'film'}">
     <header class="dry-head"><h3 id="filmH">${uiBadge('film')}5 · The film, peeled off</h3>
       <div class="seg" role="tablist" aria-label="Which film" id="filmSel">${seg.map(([k, t]) => `<button type="button" role="tab" data-film="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="filmPeelBtn" data-chain="peel" title="After the oven: the stretch to the peel and the winder's core, in the inputs bar">${uiIco('oven')}After the oven</button><button type="button" class="btn btn-secondary btn-sm" id="filmCsv">Export CSV</button></header>
-    <div class="dry-ways">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
+    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>After the oven</h4></div>
+      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td><td class="fv-why">${OVEN.peel[flag] ? 'from you' : 'assumed'}</td></tr>`).join('')}</tbody></table>
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="peel">${uiIco('oven')}Change them (inputs bar)</button></div></div>
+    <div class="dry-ways" data-pstep="setup">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">As the drying: where the water leaves decides when each layer of the film sets and how wet it is, so both are followed to the peel.</p></div>
-    <div id="filmState"></div>
-    <div class="film-checks" id="filmChecks"></div>
-    <div class="stats" id="filmStats"></div>
-    <div class="dry-grid">
+    <div class="seg film-views" role="tablist" aria-label="Which of the film" id="filmView" data-pstep="results">${Object.entries(FILM_VIEWS).map(([k, t]) => `<button type="button" role="tab" data-filmview="${k}" aria-selected="${k === (FILM.view || 'film')}">${t}</button>`).join('')}</div>
+    <div id="filmState" data-pstep="solve results" data-fview="film"></div>
+    <div class="film-checks" id="filmChecks" data-pstep="results" data-fview="film"></div>
+    <div class="stats" id="filmStats" data-pstep="results" data-fview="film"></div>
+    <div data-pstep="results" data-fview="film">${procChipsHTML('film')}</div>
+    <div class="dry-grid furn-one" data-pstep="results" data-fview="film">
       ${pane('fm1', 'film', 'Stress at the film\'s top', 'The stress in the film\'s top against position along the line')}
       ${pane('fm2', 'cut', 'Crack risk', 'A crack\'s energy against the film\'s fracture energy along the line')}
       ${pane('fm3', 'shear', 'Peel force against the angle', 'The force per width to peel the film off the web against the peel angle, with measured peel forces')}
@@ -164,10 +171,10 @@ function filmSectionHTML() {
       ${pane('fm5', 'wave', 'Blister risk', 'A blister\'s energy against the film\'s hold on the web along the line')}
       ${pane('fm6', 'radius', 'The peeled film on a table', 'The peeled sheet drawn curled as computed, right after peeling and settled in the room')}
     </div>
-    <div id="filmTable"></div>
-    <div id="filmMeas"></div>
-    ${typeof sheetSectionHTML === 'function' ? sheetSectionHTML() : ''}
-    <p class="fv-note" id="filmNote"></p>
+    <div id="filmTable" data-pstep="results" data-fview="film"></div>
+    <div id="filmMeas" data-pstep="results" data-fview="film"></div>
+    <div data-pstep="results">${typeof sheetSectionHTML === 'function' ? sheetSectionHTML() : ''}</div>
+    <p class="fv-note" id="filmNote" data-pstep="solve"></p>
   </section>`;
 }
 function filmStatusPaint() {
@@ -193,10 +200,11 @@ function filmRender() {
   if (!FILM.res.runs.some(r => r.key === DRY.sel)) { filmClear(); return; }
   const [rt, rb] = filmRuns(DRY.sel);
   if (!rt || !rb) { filmClear(); return; }
-  st.insertAdjacentHTML('beforeend', filmWarnings(rt, rb));
+  st.insertAdjacentHTML('beforeend', procAnswerHTML(filmStage().s, filmWarnings(rt, rb)));
   filmChecks(rt, rb);
   filmStats(rt, rb);
   filmCharts(rt, rb);
+  procShowChart('film');
   filmTable();
   filmMeasured(rt, rb);
   document.getElementById('filmNote').innerHTML = filmNoteText();
@@ -209,6 +217,8 @@ function filmClear() {
 function filmWire(sec) {
   sec.dataset.wired = '1';
   sec.addEventListener('click', e => {
+    const v = e.target.closest && e.target.closest('[data-filmview]');
+    if (v) { FILM.view = v.dataset.filmview; render(); return; }
     const b = e.target.closest && e.target.closest('[data-film]');
     if (b) { DRY.sel = b.dataset.film; if (typeof dryRender === 'function') dryRender(); filmRender(); return; }
     const del = e.target.closest && e.target.closest('[data-filmdel]');
@@ -551,7 +561,7 @@ function filmWireCard() {
   }));
   view.querySelectorAll('input.mat-src[data-mfl]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfl; MAT.film[k] = { ...MAT.film[k], src: el.value.trim() }; }));
   document.getElementById('matFilmReset').onclick = () => { undoHint('Film values back to their defaults'); MAT = { ...MAT, film: matDefaults().film }; render(); };
-  document.getElementById('matFilmSee').onclick = () => { tab = 12; render(); setTimeout(() => { const s = document.getElementById('filmSec'); if (s) s.scrollIntoView({ block: 'start' }); }, 0); };
+  document.getElementById('matFilmSee').onclick = () => processGo('film', 'results');
   filmDerived();
 }
 /** What follows from the Film card: in place. */

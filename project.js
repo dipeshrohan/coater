@@ -13,7 +13,13 @@ const PROJ = { name: 'Untitled', handle: null, savedKey: null };
 // (the defaults, for New: taken before anything is changed)
 const CFDG_DEFAULTS = JSON.parse(JSON.stringify(CFDG));
 const FV_DEFAULTS = JSON.parse(JSON.stringify(FV));
-const DOE_DEFAULTS = { loc: DOE.loc, workers: DOE.workers, plot: DOE.plot, out: DOE.out, x: 0, mx: 0, my: 1, dock: DOE.dock, dockH: DOE.dockH };
+const DOE_DEFAULTS = { loc: DOE.loc, workers: DOE.workers, plot: DOE.plot, out: DOE.out, x: 0, mx: 0, my: 1, dock: DOE.dock, dockH: DOE.dockH, mode: 'coat' };
+/** A DOE's design and runs as a project keeps them (the one shown, or the other kept aside: GO-6). */
+const doeSnapOut = q => q ? { factors: q.factors, out: q.out, x: q.x, mx: q.mx, my: q.my, status: q.status === 'running' ? 'stopped' : q.status, key: q.key, t0: q.t0, t1: q.t1 || Date.now(),
+  design: q.design ? q.design.map(d => ({ k: d.k, min: d.min, max: d.max, n: d.n, vals: d.vals, levels: d.levels })) : null,
+  runs: (q.runs || []).map(r => ({ n: r.n, idx: r.idx, vals: r.vals, status: r.status === 'running' || r.status === 'pending' ? 'stopped' : r.status, out: r.out, error: r.error, ms: r.ms })) } : null;
+const doeSnapIn = q => q ? { factors: q.factors || null, out: q.out, x: q.x || 0, mx: q.mx || 0, my: q.my ?? 1, design: q.design ? q.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null,
+  runs: q.runs || [], status: q.runs && q.runs.length ? (q.status || 'done') : 'idle', key: q.key || null, t0: q.t0 || 0, t1: q.t1 || 0 } : null;
 const LOC_Z_DEFAULTS = CFD_LOCS.map(l => l.z);
 const projUseFS = () => typeof window.showSaveFilePicker === 'function' && typeof window.showOpenFilePicker === 'function' && !window.PROJ_NO_FS;
 const PROJ_TYPES = [{ description: 'Blade Coat Defect Lab project', accept: { 'application/json': ['.bcdl', '.json'] } }];
@@ -56,6 +62,7 @@ function projectData() {
       status: DOE.status === 'running' ? 'stopped' : DOE.status, key: DOE.key, t0: DOE.t0, t1: DOE.t1 || Date.now(),
       design: DOE.design ? DOE.design.map(d => ({ k: d.k, min: d.min, max: d.max, n: d.n, vals: d.vals, levels: d.levels })) : null,
       runs: DOE.runs.map(r => ({ n: r.n, idx: r.idx, vals: r.vals, status: r.status === 'running' || r.status === 'pending' ? 'stopped' : r.status, out: r.out, error: r.error, ms: r.ms })),
+      mode: DOE.mode, other: doeSnapOut(DOE_STASH[DOE.mode === 'furn' ? 'coat' : 'furn']),
     },
     results: cfdRuns.map(runOut),
     meshStudy: meshStudy ? { loc: meshStudy.loc, key: meshStudy.key, status: meshStudy.status === 'running' ? 'cancelled' : meshStudy.status, runs: meshStudy.runs.map(r => ({ name: r.name, f: r.f, solver: r.solver, status: r.status === 'running' ? 'cancelled' : r.status, r: r.r, ms: r.ms, error: r.error, reused: r.reused })) } : null,
@@ -197,8 +204,11 @@ function applyProject(p) {
   });
   cfdAutoStarted = cfdRuns.some(r => r.field);
   meshStudy = p.meshStudy ? { ...p.meshStudy, runs: p.meshStudy.runs.map(r => ({ ...r, metrics: r.r ? flowMetrics(makeFlowField(r.r, { rho: cfdGeometry(p.meshStudy.loc).rho, ty: cfdGeometry(p.meshStudy.loc).ty })) : null })) } : null;
-  const d = p.doe || {};
-  Object.assign(DOE, DOE_DEFAULTS, { loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: dockHSaved(d.dockH),
+  const d = p.doe || {}, mode = d.mode === 'furn' ? 'furn' : 'coat';
+  DOE.mode = mode;   // (the factors below are looked up in the DOE shown)
+  DOE_STASH.coat = null; DOE_STASH.furn = null;
+  DOE_STASH[mode === 'furn' ? 'coat' : 'furn'] = doeSnapIn(d.other);
+  Object.assign(DOE, DOE_DEFAULTS, { mode, loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: dockHSaved(d.dockH),
     design: d.design ? d.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null, runs: d.runs || [], status: d.runs && d.runs.length ? (d.status || 'done') : 'idle', key: d.key || null, t0: d.t0 || 0, t1: d.t1 || 0, active: new Set() });
   cfdLog.length = 0; for (const m of p.messages || []) cfdLog.push({ ...m, t: new Date(m.t) });
   applyMeasured(p.measured);
@@ -222,6 +232,7 @@ async function newProject() {
   Object.assign(FV, JSON.parse(JSON.stringify(FV_DEFAULTS)));
   cfdRuns.forEach(r => { for (const k of Object.keys(r)) delete r[k]; r.status = 'idle'; });
   cfdAutoStarted = false; meshStudy = null;
+  DOE_STASH.coat = null; DOE_STASH.furn = null;
   Object.assign(DOE, DOE_DEFAULTS, { factors: null, design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, active: new Set() });
   cfdLog.length = 0;
   applyMeasured(null);
