@@ -230,7 +230,7 @@ function sheetRender() {
     sec.dataset.wired = '1';
     sec.addEventListener('click', e => {
       const b = e.target.closest && e.target.closest('[data-sheetway]');
-      if (b) { SHEET.way = b.dataset.sheetway; sheetRender(); return; }
+      if (b) { SHEET.way = b.dataset.sheetway; sheetRender(); if (typeof furnRender === 'function') furnRender(); return; }
       const wn = e.target.closest && e.target.closest('[data-sheetwhen]');
       if (wn) { SHEET.state = wn.dataset.sheetwhen; sheetRender(); return; }
       const del = e.target.closest && e.target.closest('[data-sheetdel]');
@@ -376,7 +376,7 @@ function sheetMeasured() {
       const flat = !Number.isFinite(bt) && !Number.isFinite(bb);
       imp.push(`<li>Your piece after the drying oven, ${txt(q)} (${((ratio - 1) * 100).toFixed(2)} % from ${cut ? 'your size before it' : `the ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm cut`}), ${flat ? `${state}: it has taken back about the water it was cut with, so its size says little about how the film swells.` : `means the film swells <b>${f(bt)}</b> per kg/kg (top only) or <b>${f(bb)}</b> (top and bottom), ${state}.${use(bt, 'top only\'s')}${use(bb, 'top and bottom\'s')}`}</li>`);
     }
-    if (here.some(q => q.when === 'furnace')) imp.push('<li>After the furnace: kept for the next phase (the graphene film).</li>');
+    if (here.some(q => q.when === 'furnace')) imp.push('<li>After the furnace: kept for the furnace\'s next step (the piece shrinking or growing along itself); its thickness, weight and heat conduction: the furnace\'s section below.</li>');
   }
   const num = (id, l, u) => `<label>${l} <span class="prop-v"><input type="number" id="${id}" min="1" max="100000" step="0.1" placeholder="—"><span class="prop-u">${u}</span></span></label>`;
   host.innerHTML = `<div class="dry-meas film-meas"><div class="dry-mcol"><h4>Measured: a piece's size pressed flat</h4>

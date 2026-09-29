@@ -92,6 +92,42 @@ const MAT_FILM = [
   ['stackK', 'Water along the pieces in the pressed stack', '×10⁻⁷ kg/(m·s·Pa)', 1e-4, 1e6, 0.1, 3, 3, 'assumed', 'not measured: 3 is the least that fits your answers -- dry all over out of the drying oven, the size back to as cut 1–2 h later, the same a day later'],
   ['creepTau', 'Its creep time wet (as cut), in the drying oven', 'min', 0.1, 1e5, 1, 1, 10, 'assumed', 'GO paper creeps, the more so with water (Su et al. 2012); not known: the waves in your photos will give it'],
 ];
+/**
+ * The furnace (GO-5; furnace.js), the same shape plus its group: the GO's chemistry as it heats (each stage's share of
+ * its oxygen, where it leaves heated at 10 °C/min, its spread, the gas it leaves as), its layers ordering into graphite,
+ * the gas through the film and what holds its layers, the graphite paper. All assumed until measured (your measured
+ * thickness and heat conduction give some).
+ */
+const MAT_FURN = [
+  ['Tw', 'Its water leaves around', '°C at 10 °C/min', 40, 250, 1, 0, 100, 'assumed', 'the water a piece holds from the room', 'chem'],
+  ['hc', 'Its hydrogen, H/C', 'per C', 0, 1, 0.01, 2, 0.3, 'assumed', 'GO about 0.2–0.4 H per C (its hydroxyl and carboxyl groups); its C/O is the slurry card\'s', 'chem'],
+  ['s1', 'Labile oxygen (epoxide, hydroxyl)', 'share of its O', 0, 1, 0.01, 2, 0.6, 'assumed', 'most of GO\'s oxygen leaves at 150–300 °C: a sharp step of about a third of its weight', 'chem'],
+  ['T1', '… leaves around', '°C at 10 °C/min', 100, 600, 1, 0, 210, 'assumed', 'GO\'s sharp step, 200–230 °C heated at 10 °C/min', 'chem'],
+  ['w1', '… its spread', 'kJ/mol', 0, 100, 0.5, 1, 5, 'assumed', 'a sharp step: a few tens of degrees', 'chem'],
+  ['c1CO2', '… out as CO₂', 'share', 0, 1, 0.01, 2, 0.3, 'assumed', 'GO heated gives off CO₂, CO and water; the rest as water, as far as its hydrogen goes (then CO)', 'chem'],
+  ['c1CO', '… out as CO', 'share', 0, 1, 0.01, 2, 0.3, 'assumed', 'the same', 'chem'],
+  ['s2', 'Stable oxygen (carbonyl, ether)', 'share of its O', 0, 1, 0.01, 2, 0.3, 'assumed', 'leaves slowly over 300–1000 °C: GO films reach C/O about 10–15 by 1000 °C', 'chem'],
+  ['T2', '… leaves around', '°C at 10 °C/min', 200, 1500, 5, 0, 600, 'assumed', 'a broad loss', 'chem'],
+  ['w2', '… its spread', 'kJ/mol', 0, 200, 1, 0, 40, 'assumed', 'broad: over 300–1000 °C', 'chem'],
+  ['c2CO', '… out as CO', 'share', 0, 1, 0.01, 2, 0.7, 'assumed', 'the rest as CO₂', 'chem'],
+  ['T3', 'The last oxygen and the hydrogen leave around', '°C at 10 °C/min', 800, 2800, 10, 0, 1500, 'assumed', 'the rest of its oxygen (as CO) and its hydrogen (as H₂) over 1000–2500 °C: C/O over 100 by 2000 °C', 'chem'],
+  ['w3', '… its spread', 'kJ/mol', 0, 300, 1, 0, 80, 'assumed', 'broad', 'chem'],
+  ['Tg', 'Its layers order into graphite around', '°C at 10 °C/min', 1500, 3300, 10, 0, 2650, 'assumed', 'GO films 1 h at 2800 °C: layer spacing about 3.36 Å, 93 % graphitized; these give it', 'graph'],
+  ['wg', '… its spread', 'kJ/mol', 0, 300, 1, 0, 80, 'assumed', 'graphitizing goes on over 2000–2800 °C', 'graph'],
+  ['dIn', 'Its layers\' spacing going in', 'nm', 0.4, 1.5, 0.01, 2, 0.8, 'assumed', 'GO 0.7–0.9 nm with a little water; 0.344 nm with its oxygen gone, graphite 0.3354 nm', 'graph'],
+  ['La0', 'Crystallites before graphitizing, La', 'nm', 1, 1000, 1, 0, 10, 'assumed', 'reduced GO about 10 nm', 'graph'],
+  ['La1', 'Crystallites graphitized, La', 'nm', 10, 10000, 10, 0, 1000, 'assumed', 'GO films at 2800–3000 °C: several hundred nm to a few µm', 'graph'],
+  ['kG', 'Graphite\'s heat conduction along its layers', 'W/(m·K)', 100, 5000, 10, 0, 2000, 'assumed', 'perfect graphite (highly oriented pyrolytic) about 2000 W/(m·K)', 'graph'],
+  ['ell', 'Crystallites\' size that halves it, ℓ', 'nm', 1, 10000, 10, 0, 250, 'assumed', 'their boundaries scatter the heat: × La / (La + ℓ); your measured heat conduction gives it', 'graph'],
+  ['Dgal', 'Gas through its layers, open (GO)', '×10⁻¹⁰ m²/s', 0.001, 1e6, 0.1, 2, 5.6, 'assumed', 'not measured: the least that keeps the first run from puffing (Q101), with the programs as they came (your cycles may give another)', 'gas'],
+  ['Dmin', '… through its defects, closed', '×10⁻¹³ m²/s', 0, 1e6, 0.1, 2, 1, 'assumed', 'the way left when its layers close up: small (it hardly changes the thickness)', 'gas'],
+  ['es', 'Puffed: its gas way out doubles at', '× its thickness', 0.01, 100, 0.01, 2, 1.04, 'assumed', 'not measured: fits a 125 µm graphene film from a 90 µm GO piece (the middles of Q95 and Q99); your measured thickness gives it', 'gas'],
+  ['sigZ', 'Its layers\' hold (their cohesion)', 'kPa', 1, 1e5, 10, 0, 200, 'assumed', 'the layers held by van der Waals: not known', 'gas'],
+  ['rhoP', 'Graphite paper\'s density', 'g/cm³', 0.1, 2.3, 0.05, 2, 1, 'assumed', 'flexible graphite paper 0.7–1.3 g/cm³', 'paper'],
+  ['Dp', 'Gas along the paper', '×10⁻⁶ m²/s', 0.0001, 1e6, 0.1, 2, 1, 'assumed', 'not known: under a light paper the gas lifts it and gets by anyway', 'paper'],
+  ['Ez', 'Paper\'s stiffness through it', 'MPa', 0.1, 1e4, 1, 1, 10, 'assumed', 'flexible graphite gives easily through its thickness: with the holder\'s plates on the stack', 'paper'],
+];
+const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
@@ -99,10 +135,11 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // (orient: the flakes' alignment card, on or off, its model 'dh' (Doi–Hess, the default: Q49) or 'ft' (Folgar–Tucker);
 // sem: the measured alignment -- SEM images and tables of flake angles, orient-ui.js;
 // dry: the drying card; dryMeas: the drying measured -- temperatures in the oven and values at its exit, drying-ui.js;
-// film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js)
+// film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js;
+// furn: the furnace's card; furnMeas: the graphene film measured -- its thickness, weight and heat conduction, furnace-ui.js)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] } });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] } });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;
@@ -170,7 +207,21 @@ const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 
   ['pieceL', 'Piece\'s length (along the line)', 'mm', 10, 2000, 1, 0, 'pieceSet'], ['pieceW', 'Piece\'s width', 'mm', 10, 2000, 1, 0, 'pieceSet'],
   ['dryT', 'Drying oven for the pieces', '°C', 20, 300, 1, 0, 'drySet'], ['tOven', 'Time in the drying oven', 'h', 0.05, 48, 0.1, 2, 'stackSet'],
   ['tRest', 'Under the plate after, until taken out', 'h', 0, 72, 0.1, 2, 'stackSet']];
-const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT } });
+// (furn: the furnace, GO-5 -- Q87: two runs, to about 1000 °C then to 2800 °C, in argon (Q91); each a program of steps
+// (heat at a rate to a temperature, hold) and its cooling, or a cycle from your file (Q97: yours to come; these assumed,
+// 12–48 h a run, Q88); Q89: one piece between two graphite papers, bigger than it (Q104: by how much not known), 0.3–1 mm
+// thick (Q105); Q103: the pieces in a stack depend on the product (20 assumed, as the drying stack); the graphite holder
+// snug (Q106/Q107) with a gap above the stack or its plates on it, by the product (Q108))
+const FURN_RUNS_DEFAULT = [
+  { steps: [{ rate: 1, to: 300, hold: 0 }, { rate: 3, to: 1000, hold: 60 }], cool: 5, file: null },
+  { steps: [{ rate: 10, to: 1000, hold: 0 }, { rate: 5, to: 2000, hold: 0 }, { rate: 2, to: 2800, hold: 60 }], cool: 10, file: null },
+];
+const FURN_DEFAULT = { N: 20, paperT: 0.5, margin: 20, room: 'gap', gap: 50, runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false };
+const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['paperT', 'Graphite paper\'s thickness', 'mm', 0.01, 10, 0.05, 2, 'paperSet'],
+  ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet']];
+const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
+const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
+const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults() });
 let OVEN = ovenDefaults();
 const OVEN_MAX_ZONES = 8;
 /** The oven's length (m) and the time the film spends in it at the line speed U (m/s). */
@@ -179,4 +230,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
