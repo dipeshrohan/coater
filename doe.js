@@ -80,6 +80,11 @@ const DOE_OUTPUTS = [
   { k: 'furnGas1', l: 'Gas against its hold, run 1', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnGas2', l: 'Gas against its hold, run 2', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnEven', l: 'Graphene film\'s thickness spread across the piece', u: '% of its mean', g: 'Furnace (graphene film)', d: 1 },
+  { k: 'furnSD', l: 'Graphene film\'s thickness, standard deviation across the piece', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
+  { k: 'furnCrack', l: 'Its pull against its strength, the most', u: '% (100: cracks)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnWave', l: 'Its squeeze against what buckles it, the most', u: '% (100: waves)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnStuck', l: 'Stuck to its paper', u: '% of the piece', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnSize', l: 'Its size after the furnace, free', u: '% (along itself)', g: 'Furnace (graphene film)', d: 2 },
 ];
 const DOE = {
   loc: 0,
@@ -160,7 +165,8 @@ function doeOutputs(r, geo) {
         curlTop: v('top', q => q.curl), curlBoth: v('both', q => q.curl), rollTop: v('top', q => q.roll / 1e6), rollBoth: v('both', q => q.roll / 1e6),
         blisterTop: v('top', q => q.blister), blisterBoth: v('both', q => q.blister), sizeTop: v('top', q => q.size), sizeBoth: v('both', q => q.size) }; })(),
     ...(() => { const f = r.furn && !r.furn.error ? r.furn : null, v = k => f ? f[k] : NaN;
-      return { furnH: v('h'), furnRatio: v('ratio'), furnRho: v('rho'), furnKappa: v('kappa'), furnGas1: v('gas1'), furnGas2: v('gas2'), furnEven: v('even') }; })(),
+      return { furnH: v('h'), furnRatio: v('ratio'), furnRho: v('rho'), furnKappa: v('kappa'), furnGas1: v('gas1'), furnGas2: v('gas2'), furnEven: v('even'),
+        furnSD: v('sd'), furnCrack: v('crack'), furnWave: v('wave'), furnStuck: v('stuck'), furnSize: v('size') }; })(),
   };
 }
 

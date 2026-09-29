@@ -57,6 +57,10 @@ function outlinedText(c, text, x, y, color) {
 function plotChart(cv, aspectRatio, opts) {
   const { c, w, h } = setupCanvas(cv, aspectRatio);
   const margin = { l: 52, r: 16, t: 26, b: 36 };
+  // (the left margin grows to the widest y tick label, so a long one is not cut off at the canvas's edge)
+  const yticks = opts.yticks || [0, 1, 2, 3, 4].map(i => opts.y0 + (opts.y1 - opts.y0) * i / 4), yfmt = v => opts.yf ? opts.yf(v) : v.toFixed(opts.yd ?? 1);
+  c.font = '12px ' + cssVar('--mono');
+  margin.l = Math.max(margin.l, Math.ceil(Math.max(0, ...yticks.map(v => c.measureText(String(yfmt(v))).width))) + 8);   // (6 px to the axis, 2 px from the edge)
   const plotW = w - margin.l - margin.r;
   const plotH = h - margin.t - margin.b;
   const X = x => margin.l + (x - opts.x0) / (opts.x1 - opts.x0) * plotW;
@@ -76,10 +80,10 @@ function plotChart(cv, aspectRatio, opts) {
   c.fillStyle = muted;
 
   // gridlines + axis ticks (opts.yf: tick label formatter; opts.yticks: their positions, else four equal steps)
-  for (const v of opts.yticks || [0, 1, 2, 3, 4].map(i => opts.y0 + (opts.y1 - opts.y0) * i / 4)) {
+  for (const v of yticks) {
     const y = Y(v);
     c.beginPath(); c.moveTo(margin.l, y); c.lineTo(w - margin.r, y); c.stroke();
-    c.textAlign = 'right'; c.fillText(opts.yf ? opts.yf(v) : v.toFixed(opts.yd ?? 1), margin.l - 6, y + 4);
+    c.textAlign = 'right'; c.fillText(yfmt(v), margin.l - 6, y + 4);
   }
   // (opts.xticks: tick positions, e.g. a factor's levels; opts.xf: their labels)
   for (const v of opts.xticks || [0, 1, 2, 3, 4].map(i => opts.x0 + (opts.x1 - opts.x0) * i / 4)) {

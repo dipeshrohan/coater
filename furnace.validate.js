@@ -206,6 +206,34 @@ const r = F.fuRun(base());
     `es ${a.ok ? a.value.toPrecision(5) : a.error} (${es0}); Dgal ${b.ok ? b.value.toExponential(3) : b.error}: run 1 at ${b.ok ? (idx(b.value) * 100).toFixed(2) : '-'} % of its hold; 5 mm: "${c.error}"`);
 }
 
+// 15. the piece along itself on its paper (GO-5b): a disc in rings, shrunk, held by friction everywhere slipping --
+//     against the exact disc under a uniform outward pull f = τ/h: σr = f (2+ν)(R−r)/3, σθ = f ((2+ν)R − (1+2ν) r)/3,
+//     converging as the rings double; stuck all over: far from its edge −E ε/(1−ν) exactly
+{
+  const R = 0.15, h = 1e-4, E = 1e10, nu = 0.2, eps = -0.01, t = 100, fb = t / h, s0 = fb * (2 + nu) * R / 3, errs = [];
+  for (const n of [24, 48, 96]) {
+    const r = F.fuPlaneMesh(R, 2 * h, n), P = F.fuPlaneState(r), s = F.fuPlaneStep(P, eps, h, E, nu, 1e14, new Float64Array(r.length).fill(t));
+    let e = 0; for (let k = 0; k < s.rm.length; k++) { const m = s.rm[k]; e = Math.max(e, Math.abs(s.sr[k] - fb * (2 + nu) * (R - m) / 3), Math.abs(s.st[k] - fb * ((2 + nu) * R - (1 + 2 * nu) * m) / 3)); }
+    errs.push(e / s0);
+  }
+  const r = F.fuPlaneMesh(R, 2 * h, 48), P = F.fuPlaneState(r), sb = F.fuPlaneStep(P, eps, h, E, nu, E / (1 - nu) / (4 * h), new Float64Array(r.length).fill(Infinity));
+  const eb = Math.abs(sb.sr[0] / (-E * eps / (1 - nu)) - 1);
+  check('the piece on its paper: slipping against the exact disc, stuck exactly', errs[1] < 1e-2 && errs[2] < errs[1] * 0.7 && eb < 1e-12,
+    `slipping ${errs.map(v => v.toExponential(1)).join(' → ')} (24, 48, 96 rings); stuck ${eb.toExponential(1)}`);
+}
+
+// 16. through the runs: its natural strain at the end is its water, oxygen and graphitizing's own (the size it would
+//     take free); it sticks the step it reaches the temperature set, where pressed; with no hold it carries no pull
+{
+  const pl = { Ep: 20e9, nu: 0.2, sigF: 100e6, bw: 0.08, bO: 0.03, bG: 0.005, mu: 0.15, Tstick: 2200 + 273.15, tauB: 1e6, am: 0 };
+  const o = base({ dT: 2 }), a = F.fuRun({ ...o, plane: pl }), c = F.fuChem(o.chem);
+  const epsX = -(pl.bw * o.Xin * a.alpha[0] + pl.bO * (1 - a.O / c.O0) + pl.bG * a.g);
+  const h2 = a.hist.filter(q => q.run === 1), first = a.plane.hist.findIndex(q => q.stuck > 0), pre = a.plane.hist[first - 1], at = a.plane.hist[first];
+  const b = F.fuRun({ ...o, plane: { ...pl, mu: 0, Tstick: 1e9 } }), bMax = Math.max(...b.plane.hist.map(q => Math.abs(q.s1)));
+  check('through the runs: its size free, when it sticks, no hold no pull', Math.abs(a.plane.size.free - epsX) < 1e-12 && pre.T < pl.Tstick && at.T >= pl.Tstick && a.plane.stuckFrac > 0 && bMax < 1e-9 * pl.Ep * Math.abs(epsX) && h2.length > 0,
+    `free ${(a.plane.size.free * 100).toFixed(3)} % (${(epsX * 100).toFixed(3)} %); stuck from ${(at.T - 273.15).toFixed(1)} °C (${(pre.T - 273.15).toFixed(1)} before), ${(a.plane.stuckFrac * 100).toFixed(0)} % of it; no hold: ${bMax.toExponential(1)} Pa (${(bMax / (pl.Ep * Math.abs(epsX))).toExponential(1)} of E ε)`);
+}
+
 console.log(`the defaults: run 1 the gas at ${(r.runs[0].peak.idx * 100).toFixed(1)} % of its hold; run 2 puffs from ${(r.runs[1].puffAt.T - 273.15).toFixed(0)} °C; ${(r.hMean * 1e6).toFixed(1)} µm (${(r.hMean / 90e-6).toFixed(3)}×), ${r.rho.toFixed(0)} kg/m³, ${(r.kept * 100).toFixed(1)} % kept, g ${r.g.toFixed(3)}, La ${r.La.toFixed(0)} nm, ${r.kappa.toFixed(0)} W/(m K)`);
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;

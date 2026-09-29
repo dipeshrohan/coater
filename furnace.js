@@ -238,6 +238,99 @@ function fuPaperSolve(g, cache, src, kap, cap) {
 }
 
 /**
+ * The piece along itself on its paper (GO-5b): a disc of the piece's area in rings (axisymmetric plane stress,
+ * linear elements), from its middle (r 0) to its edge (R); uniform, then graded to ell/2 at the edge (the length over
+ * which a stuck film's stress falls to its free edge, about 2 h).
+ */
+function fuPlaneMesh(R, ell, n = 48) {
+  const nU = Math.round(n / 2), nG = n - nU, zone = Math.min(R / 2, 30 * ell), a0 = ell / 2, r = [0];
+  for (let i = 1; i <= nU; i++) r.push((R - zone) * i / nU);
+  let sz;
+  if (a0 * nG >= zone) sz = new Array(nG).fill(zone / nG);
+  else {
+    // (sizes growing from the edge inward by q, summing to the zone)
+    let lo = 1 + 1e-12, hi = 4;
+    while (a0 * (Math.pow(hi, nG) - 1) / (hi - 1) < zone) hi *= 2;
+    for (let k = 0; k < 200; k++) { const q = (lo + hi) / 2; if (a0 * (Math.pow(q, nG) - 1) / (q - 1) > zone) hi = q; else lo = q; }
+    const q = (lo + hi) / 2; sz = []; for (let k = 0; k < nG; k++) sz.push(a0 * Math.pow(q, k));
+  }
+  let x = R - zone;
+  for (let k = nG - 1; k >= 0; k--) { x += sz[k]; r.push(x); }
+  r[r.length - 1] = R;
+  return r;
+}
+/** The rings' state: displacement u (m, outward), the paper's hold's slip reference up, stuck or not, per node. */
+function fuPlaneState(r) {
+  const n = r.length, A = new Float64Array(n);
+  for (let e = 0; e + 1 < n; e++) { const a = r[e], b = r[e + 1], L = b - a; A[e] += 2 * Math.PI * L * (2 * a + b) / 6; A[e + 1] += 2 * Math.PI * L * (a + 2 * b) / 6; }
+  return { r, n, A, u: new Float64Array(n), up: new Float64Array(n), stuck: new Uint8Array(n), tau: new Float64Array(n) };
+}
+const FU_GP = [0.5 - 0.5 / Math.sqrt(3), 0.5 + 0.5 / Math.sqrt(3)];
+/**
+ * One step of the piece on its paper: its natural strain eps (uniform), thickness h, stiffness E and Poisson's
+ * ratio nu; the paper holds each ring by a spring kt (Pa/m) up to tmax[i] (Pa: friction, mu times the load pressing
+ * it; stuck, the bond's strength), beyond which it slips (the slip kept). Newton on the rings' displacement (the
+ * springs' active set; tridiagonal). Returns the stresses at the elements' middles and the middle's.
+ */
+function fuPlaneStep(P, eps, h, E, nu, kt, tmax) {
+  const { r, n, A, u, up } = P, c = E / (1 - nu * nu);
+  // (the film's stiffness and its natural strain's load: fixed over the step)
+  const Kd = new Float64Array(n), Ko = new Float64Array(n), f = new Float64Array(n);
+  for (let e = 0; e + 1 < n; e++) {
+    const a = r[e], b = r[e + 1], L = b - a;
+    for (const xi of FU_GP) {
+      const rr = a + xi * L, w = L / 2 * 2 * Math.PI * rr * h, Na = 1 - xi, Nb = xi, dNa = -1 / L, dNb = 1 / L;
+      const B = [[dNa, dNb], [Na / rr, Nb / rr]];
+      for (let i = 0; i < 2; i++) {
+        const DBi = [c * (B[0][i] + nu * B[1][i]), c * (nu * B[0][i] + B[1][i])];
+        for (let j = 0; j < 2; j++) {
+          const v = (DBi[0] * B[0][j] + DBi[1] * B[1][j]) * w;
+          if (i === j) Kd[e + i] += v; else if (i === 0) Ko[e] += v;
+        }
+        f[e + i] += (DBi[0] + DBi[1]) * eps * w;
+      }
+    }
+  }
+  // (Newton: the springs that hold are stiff, those that slip give their limit; node 0 is the middle, u = 0)
+  const d = new Float64Array(n), rhs = new Float64Array(n), cp = new Float64Array(n), dp = new Float64Array(n), x = new Float64Array(n), hold = new Uint8Array(n);
+  let it = 0;
+  for (; it < 60; it++) {
+    for (let i = 0; i < n; i++) {
+      const tr = kt * (u[i] - up[i]);
+      hold[i] = Math.abs(tr) <= tmax[i] ? 1 : 0;
+      P.tau[i] = hold[i] ? tr : Math.sign(tr) * tmax[i];
+      d[i] = Kd[i] + (hold[i] ? A[i] * kt : 0);
+      rhs[i] = f[i] - Kd[i] * u[i] - (i > 0 ? Ko[i - 1] * u[i - 1] : 0) - (i + 1 < n ? Ko[i] * u[i + 1] : 0) - A[i] * P.tau[i];
+    }
+    // (row 0: the middle stays put; the tridiagonal by Thomas, its lower band Ko[i-1], its upper Ko[i])
+    cp[0] = 0; dp[0] = -u[0];
+    for (let i = 1; i < n; i++) {
+      const m = d[i] - Ko[i - 1] * cp[i - 1];
+      cp[i] = i + 1 < n ? Ko[i] / m : 0; dp[i] = (rhs[i] - Ko[i - 1] * dp[i - 1]) / m;
+    }
+    x[n - 1] = dp[n - 1];
+    for (let i = n - 2; i >= 0; i--) x[i] = dp[i] - cp[i] * x[i + 1];
+    let du = 0;
+    for (let i = 0; i < n; i++) { u[i] += x[i]; du = Math.max(du, Math.abs(x[i])); }
+    if (du <= 1e-13 * r[n - 1]) {
+      // (settled when the springs that hold are still those that hold)
+      let same = true;
+      for (let i = 0; i < n; i++) if ((Math.abs(kt * (u[i] - up[i])) <= tmax[i] * (1 + 1e-12) ? 1 : 0) !== hold[i]) { same = false; break; }
+      if (same) break;
+    }
+  }
+  // (the slip kept where the paper let it go)
+  for (let i = 0; i < n; i++) { const tr = kt * (u[i] - up[i]); if (Math.abs(tr) > tmax[i]) { P.tau[i] = Math.sign(tr) * tmax[i]; up[i] = u[i] - P.tau[i] / kt; } else P.tau[i] = tr; }
+  // the stresses at the elements' middles (and at the middle of the piece: equal, from the first element)
+  const sr = new Float64Array(n - 1), st = new Float64Array(n - 1), rm = new Float64Array(n - 1);
+  for (let e = 0; e + 1 < n; e++) {
+    const a = r[e], b = r[e + 1], m = (a + b) / 2, er = (u[e + 1] - u[e]) / (b - a), et = (u[e] + u[e + 1]) / 2 / m;
+    rm[e] = m; sr[e] = c * (er - eps + nu * (et - eps)); st[e] = c * (et - eps + nu * (er - eps));
+  }
+  return { sr, st, rm, it };
+}
+
+/**
  * The pieces through the furnace's runs. o: {
  *   runs: [pts, ...] (each a program, [t s, T K]); Lx, Ly (m, the piece); margin (m, the paper bigger by, each side);
  *   h0 (m, the GO piece going in), rhoG (kg of GO per m³ of it), Xin (its water, kg/kg), Tin (K, the room's);
@@ -258,10 +351,24 @@ function fuRun(o) {
   const ST = ['water', 'labile', 'stable', 'last'].map(k => fuStage(o.stages[k])), GR = fuStage(o.stages.graph);
   const spacerAll = Xin + chem.O0 * FU_M.O * perKg / 1000;
   // (the holder: the top piece -- the least load -- under one paper; with the plates on the stack, the papers pressed as it grows)
-  const Ws = o.paper.rho * FU_G * o.paper.t, N = Math.max(1, o.N || 1);
+  const Ws = o.paper.rho * FU_G * o.paper.t + (o.plateP || 0), N = Math.max(1, o.N || 1);
   const kP = o.room === 'plates' || o.room === 'gap' ? o.paper.Ez * N / ((N + 1) * o.paper.t) : 0, g0 = o.room === 'gap' ? (o.gap || 0) / N : 0;
   const n = new Float64Array(g.n), V = new Float64Array(g.n), u = new Float64Array(g.n), cache = {};
   const hist = [], runs = [];
+  // (the piece along itself on its paper, GO-5b: a disc of its area in rings; its stiffness and strength with its
+  //  density, from the GO piece's going in; the paper's hold a stiff spring, the stuck film's shear-lag about 2 h)
+  const pl = o.plane, Rd = Math.sqrt(o.Lx * o.Ly / Math.PI), P = pl ? fuPlaneState(fuPlaneMesh(Rd, 2 * o.h0, pl.n || 48)) : null;
+  const ktP = pl ? pl.Ep / (1 - pl.nu) / (4 * o.h0) : 0, tmaxP = pl ? new Float64Array(P.n) : null;
+  const plane = pl ? { first: null, stuckAt: null, ratioMax: 0, where: null, compMin: 0, waveMax: 0, waveAt: null, hist: [] } : null;
+  const pcAt = (cap, uu, ri) => {
+    // (the load pressing the piece to its paper at a ring: along the middle line, the ring's radius over the disc's
+    //  as x over the half-width; lifted by the gas, nothing)
+    const x = ri / Rd * o.Lx / 2; let k = 0;
+    while (k + 1 < g.nx && g.cx[k + 1] <= x) k++;
+    const k1 = Math.min(k + 1, g.nx - 1), w = k1 > k ? Math.min(1, Math.max(0, (x - g.cx[k]) / (g.cx[k1] - g.cx[k]))) : 0;
+    const p0 = Math.max(0, cap[g.id(k, 0)] - uu[g.id(k, 0)]), p1 = Math.max(0, cap[g.id(k1, 0)] - uu[g.id(k1, 0)]);
+    return p0 + (p1 - p0) * w;
+  };
   let t0 = 0, alpha = new Float64Array(ST.length), gdeg = 0;
   const state = () => {
     const O = chem.O0 * (1 - alpha.slice(1).reduce((s, a, i) => s + a * chem.stages[i].O, 0) / chem.O0);
@@ -328,6 +435,37 @@ function fuRun(o) {
         let du = 0; for (let k = 0; k < g.n; k++) { du = Math.max(du, Math.abs(un[k] - u[k])); u[k] = un[k]; }
         if (du < 1e-6 * (1 + Math.max(...cap))) break;
       }
+      // the piece along itself: its natural strain (its water, its oxygen gone, graphitizing, heat against the
+      // paper's), held by its paper; stuck above its temperature where pressed; cracks where its pull beats its strength
+      if (pl) {
+        let vS = 0, aS = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) { vS += V[k] * g.area[k]; aS += g.area[k]; }
+        const hP = S.hc + vS / aS, rhoP = mA * S.kept / hP, dens = rhoP / o.rhoG;
+        const fO = 1 - S.O / chem.O0, X = Xin * (1 - alpha[0]);
+        const eps = -(pl.bw || 0) * (Xin - X) - pl.bO * fO - pl.bG * gdeg + (pl.am || 0) * (T - (o.Tin || 293.15));
+        const E = pl.Ep * dens * dens, sc = pl.sigF * Math.pow(dens, 1.5);
+        let nStuck = 0, aStuck = 0, aAll = 0;
+        for (let i = 0; i < P.n; i++) {
+          const pc = pcAt(cap, u, P.r[i]);
+          if (!P.stuck[i] && T >= pl.Tstick && pc > 0) P.stuck[i] = 1;
+          tmaxP[i] = P.stuck[i] ? pl.tauB : pl.mu * pc;
+          aAll += P.A[i]; if (P.stuck[i]) { nStuck++; aStuck += P.A[i]; }
+        }
+        if (nStuck && !plane.stuckAt) plane.stuckAt = { run: r, t: t0 + tb, T };
+        const ps = fuPlaneStep(P, eps, hP, E, pl.nu, ktP, tmaxP);
+        let s1 = -Infinity, e1 = 0, s2 = Infinity;
+        for (let e = 0; e < ps.sr.length; e++) { const a = Math.max(ps.sr[e], ps.st[e]), b = Math.min(ps.sr[e], ps.st[e]); if (a > s1) { s1 = a; e1 = e; } if (b < s2) s2 = b; }
+        const ratio = s1 / sc;
+        if (ratio > plane.ratioMax) { plane.ratioMax = ratio; plane.where = { run: r, t: t0 + tb, T, r: ps.rm[e1] / Rd }; }
+        if (ratio >= 1 && !plane.first) plane.first = { run: r, t: t0 + tb, T, r: ps.rm[e1] / Rd, sc, h: hP };
+        plane.compMin = Math.min(plane.compMin, s2);
+        // (squeezed along itself it buckles into waves between its papers when the squeeze beats a plate's on the
+        //  papers' give through their thickness, both sides: σ = 2 √(D k) / h, its wavelength 2π (D/k)^¼)
+        const D = E * hP * hP * hP / (12 * (1 - pl.nu * pl.nu)), kF = 2 * o.paper.Ez / o.paper.t, sw = 2 * Math.sqrt(D * kF) / hP;
+        const wr = s2 < 0 ? -s2 / sw : 0;
+        if (wr > (plane.waveMax || 0)) plane.waveMax = wr, plane.waveAt = { run: r, t: t0 + tb, T, lambda: 2 * Math.PI * Math.pow(D / kF, 0.25), sw };
+        plane.hist.push({ run: r, t: t0 + tb, T, eps, sMid: ps.sr[0], s1, s2, sc, sw, ratio, wave: wr, stuck: aStuck / aAll, E, h: hP });
+        plane.last = { eps, sr: ps.sr, st: ps.st, rm: ps.rm, sc, h: hP, E, uEdge: P.u[P.n - 1] / Rd };
+      }
       // (the gas made and what left the film, per area of the piece: made = out + the change held)
       made += G * dt; for (let k = 0; k < g.n; k++) out += src[k] * dt / areaP;
       let iMax = 0, kMax = 0; for (let k = 0; k < g.n; k++) if (g.inside[k] && idx[k] > iMax) { iMax = idx[k]; kMax = k; }
@@ -353,12 +491,25 @@ function fuRun(o) {
   const thick = new Float64Array(g.n);
   for (let k = 0; k < g.n; k++) if (g.inside[k]) { const h = S.hc + V[k]; thick[k] = h; aSum += g.area[k]; hSum += h * g.area[k]; hMin = Math.min(hMin, h); hMax = Math.max(hMax, h); }
   const hMean = hSum / aSum, mEnd = mA * S.kept, rho = mEnd / hMean;
+  let vSum = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) vSum += Math.pow(thick[k] - hMean, 2) * g.area[k];
+  const hSD = Math.sqrt(vSum / aSum);
   const kappa = o.kG * (rho / 2260) * La / (La + o.ell);
-  return { hist, runs, grid: g, thick, V: Float64Array.from(V), chem, alpha: Array.from(alpha), g: gdeg, d: S.d, La, kept: S.kept, CO: S.C / Math.max(1e-30, S.O),
-    O: S.O, C: S.C, hc: S.hc, hMean, hMin, hMax, rho, kappa, mA, mEnd, stages: ST.map(s => ({ E0: s.E0, sig: s.sig })), graph: { E0: GR.E0, sig: GR.sig } };
+  if (plane) {
+    // (stuck all over and cracked, it breaks into cells: the pull the bond passes on over half a cell reaches its
+    //  strength, s = 2 σc h / τb -- the cracks' spacing when they have all formed)
+    const L = plane.last;
+    plane.stuckFrac = P.stuck.reduce((s_, v, i) => s_ + (v ? P.A[i] : 0), 0) / P.A.reduce((s_, v) => s_ + v, 0);
+    plane.spacing = plane.first && plane.stuckFrac > 0 ? 2 * L.sc * L.h / pl.tauB : null;
+    plane.size = { free: L.eps, held: L.uEdge };
+    plane.R = Rd; plane.rings = { r: Array.from(P.r), sr: Array.from(L.sr), st: Array.from(L.st), rm: Array.from(L.rm), stuck: Array.from(P.stuck) };
+    delete plane.last;
+  }
+  return { plane, hist, runs, grid: g, thick, V: Float64Array.from(V), chem, alpha: Array.from(alpha), g: gdeg, d: S.d, La, kept: S.kept, CO: S.C / Math.max(1e-30, S.O),
+    O: S.O, C: S.C, hc: S.hc, hMean, hMin, hMax, hSD, rho, kappa, mA, mEnd, stages: ST.map(s => ({ E0: s.E0, sig: s.sig })), graph: { E0: GR.E0, sig: GR.sig } };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
+  fuPlaneMesh, fuPlaneState, fuPlaneStep,
   FU_R, FU_K0, FU_M, fuProgram, fuTempAt, fuParseCycle, fuExE1, fuPq, fuArrInt, fuE0, fuStage, fuConv, fuAdvance, fuChem,
   fuFactor, fuSolve, fuPaperGrid, fuPaperMatrix, fuPaperSolve, fuRun,
 };

@@ -126,8 +126,14 @@ const MAT_FURN = [
   ['rhoP', 'Graphite paper\'s density', 'g/cm³', 0.1, 2.3, 0.05, 2, 1, 'assumed', 'flexible graphite paper 0.7–1.3 g/cm³', 'paper'],
   ['Dp', 'Gas along the paper', '×10⁻⁶ m²/s', 0.0001, 1e6, 0.1, 2, 1, 'assumed', 'not known: under a light paper the gas lifts it and gets by anyway', 'paper'],
   ['Ez', 'Paper\'s stiffness through it', 'MPa', 0.1, 1e4, 1, 1, 10, 'assumed', 'flexible graphite gives easily through its thickness: with the holder\'s plates on the stack', 'paper'],
+  ['bO', 'Shrinks along it, all its oxygen gone', '%', 0, 20, 0.1, 1, 3, 'assumed', 'reduced GO films shrink along themselves a few % as their oxygen leaves: your size after the furnace gives it', 'plane'],
+  ['bG', '… as its layers order into graphite', '%', -5, 10, 0.1, 1, 0.5, 'assumed', 'a little more as it graphitizes; below 0, it grows', 'plane'],
+  ['am', 'Its heat expansion along it, less the paper\'s', '×10⁻⁶/K', -10, 10, 0.1, 1, 0, 'assumed', 'both are graphite: about the same', 'plane'],
+  ['mu', 'Friction on the graphite paper', '', 0, 2, 0.01, 2, 0.15, 'assumed', 'graphite on graphite about 0.1–0.2', 'plane'],
+  ['Tst', 'It sticks to the paper from', '°C', 500, 3300, 10, 0, 2200, 'assumed', 'you find it stuck after the second run (Q112), all over (Q125): where between 1000 and 2800 °C is not known', 'plane'],
+  ['tauB', 'Its bond to the paper, stuck', 'MPa', 0.001, 100, 0.01, 3, 1, 'assumed', 'not known: when it is stuck and cracks, the cracks\' spacing gives it', 'plane'],
 ];
-const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper' };
+const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
@@ -216,9 +222,10 @@ const FURN_RUNS_DEFAULT = [
   { steps: [{ rate: 1, to: 300, hold: 0 }, { rate: 3, to: 1000, hold: 60 }], cool: 5, file: null },
   { steps: [{ rate: 10, to: 1000, hold: 0 }, { rate: 5, to: 2000, hold: 0 }, { rate: 2, to: 2800, hold: 60 }], cool: 10, file: null },
 ];
-const FURN_DEFAULT = { N: 20, paperT: 0.5, margin: 20, room: 'gap', gap: 50, runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false };
+const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, sdMax: 30, runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, sdSet: true };
 const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['paperT', 'Graphite paper\'s thickness', 'mm', 0.01, 10, 0.05, 2, 'paperSet'],
-  ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet']];
+  ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet'],
+  ['plateW', 'A plate resting on the stack', 'kg', 0, 1000, 0.5, 1, 'plateSet'], ['sdMax', 'Its thickness may spread (standard deviation)', 'µm', 0.1, 1000, 1, 1, 'sdSet']];
 const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
 const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
 const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults() });
