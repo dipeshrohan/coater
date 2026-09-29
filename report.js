@@ -214,15 +214,19 @@ async function repProcessAll() {
     // (all five checks, not only the one shown: each its word and level, then its sentences)
     const uChecks = FURN.res && furnCurrent() ? furnLights(FURN.res).map(q => { const d = document.createElement('div'); d.innerHTML = furnCheckBody(FURN.res, q.k);
       return [repEsc(q.t), repEsc(`${furnWord(q)}${Number.isFinite(q.v) ? ` (${(q.v * 100).toFixed(0)} % of its limit)` : ''}: ${[...d.querySelectorAll('.film-v')].map(v => cleanText(v)).join('; ')}`)]; }) : [];
+    // (the stack's top, middle and bottom pieces side by side, the batch under them; GO-7)
+    const uPieces = FURN.res && furnCurrent() ? [...document.querySelectorAll('#furnPieces tbody tr:not(.furn-pos-g)')].map(tr => [...tr.children].map(td => repEsc(cleanText(td)))) : [];
+    const uBatch = cleanText(document.querySelector('#furnPieces > p')), uShownQ = FURN.res && furnCurrent() ? furnView(FURN.res).piece : null, uShown = uShownQ && uShownQ.name !== 'only' ? `the ${uShownQ.name} piece` : '';
     const uStats = [...document.querySelectorAll('#furnStats .stat')].map(el => [repEsc(cleanText(el.querySelector('span'))), repEsc(cleanText(el.querySelector('strong'))), repEsc(cleanText(el.querySelector('small')))]);
     const um = (MAT.furnMeas || {}).out || [], uRows = um.map(q => [q.loc === 'web' ? 'The web' : q.loc, repEsc([Number.isFinite(q.h) ? `${q.h} µm thick` : '', Number.isFinite(q.kept) ? `${q.kept} % of its weight kept` : '', Number.isFinite(q.kappa) ? `${q.kappa} W/(m·K) along it` : ''].filter(Boolean).join(', '))]);
     const uImp = [...document.querySelectorAll('#furnMeas .film-imp li')].filter(li => !li.classList.contains('fv-why')).map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*(Use|Fit the [^.]*?(to it|to my first run))\s*/g, ' ').trim())}</li>`);
     const fu = OVEN.furn, runRows = [0, 1].map(r => { const R = fu.runs[r], pts = furnProgram(r); return [FURN_RUNS[r], repEsc(R.file ? `your file ${R.file.name} (${pts.length} points)` : `${R.steps.map(q => `${q.rate} °C/min to ${q.to} °C${q.hold ? `, ${q.hold} min` : ''}`).join('; ')}; cools at ${R.cool} °C/min`), `${(pts[pts.length - 1][0] / 3600).toFixed(1)} h`, fu.runsSet ? 'From you' : 'Assumed']; });
-    const stackRows = [...FURN_FIELDS.filter(f => f[0] !== 'gap' || fu.room === 'gap').map(([k, l, u, , , , d, flag]) => [repEsc(l), repEsc(repUnit(repNum(fu[k], d), u)), '', fu[flag] ? 'From you' : 'Assumed']), ['Above the stack', repEsc(FURN_ROOM[fu.room]), '', fu.roomSet ? 'From you' : 'Assumed']];
+    const stackRows = [...FURN_FIELDS.filter(f => f[0] !== 'gap' || fu.room === 'gap').map(([k, l, u, , , , d, flag]) => [repEsc(l), fu[k] == null ? 'not known' : repEsc(repUnit(repNum(fu[k], d), u)), '', fu[k] == null ? 'Not known' : fu[flag] ? 'From you' : 'Assumed']), ['Above the stack', repEsc(FURN_ROOM[fu.room]), '', fu.roomSet ? 'From you' : 'Assumed']];
     furn = '<h3>The furnace and the graphene film</h3>' + (uPills.length ? `<ul class="checks">${uPills.join('')}</ul>` : '')
       + (uLine ? `<p class="lede">${repEsc(cleanText(uLine))}</p>` : '')
       + (uChecks.length ? repRows(uChecks, [repEsc(dryFilmName(DRY.sel)), 'In the furnace']) : '<p class="lede">The furnace could not be solved for these inputs.</p>')
-      + (uStats.length ? repRows(uStats, ['The graphene film', 'Value', '']) : '')
+      + (uPieces.length ? '<h4>The stack\'s pieces</h4>' + repRows(uPieces, ['', 'Weight on it', 'Thickness', 'Its spread', 'Pull', 'Squeeze', 'Sticks from']) + (uBatch ? `<p class="lede">${repEsc(uBatch)}</p>` : '') : '')
+      + (uStats.length ? repRows(uStats, [uShown ? `The graphene film, ${repEsc(uShown)}` : 'The graphene film', 'Value', '']) : '')
       + (uRows.length ? '<h4>Measured graphene film</h4>' + repRows(uRows, ['Measured', '']) : '') + (uImp.length ? `<ul class="checks">${uImp.join('')}</ul>` : '')
       + '<h4>The furnace as set</h4>' + repRows([...runRows, ...stackRows], ['', 'Value', '', 'From'])
       + (uNote && cleanText(uNote) ? `<p class="lede">${repEsc(cleanText(uNote))}</p>` : '');

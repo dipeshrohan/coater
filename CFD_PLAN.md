@@ -967,6 +967,43 @@ GO-6 built (the Process tab one stage at a time, Q115–Q122 and the choices abo
 - Checked: every control the one long page showed is reached on GO-6 by its stage, step, view or chip (a census by
   clicks), but the chain's six cards, which the stage tabs and each stage's links replace.
 
+GO-7 decisions (the user):
+- The 30 µm standard deviation is across a whole batch. The top, middle and bottom pieces are computed. Cracks and
+  waves come in every batch, on different pieces; waves across the whole piece and near its edges. The piece sticks to
+  both papers (below and above it). The furnace load's heating spread: not known (an input, shown as not known until
+  given). Photos of a cracked and a waved piece with a ruler: to come (they set the crack spacing and the wavelength;
+  nothing is assumed for them).
+
+GO-7 built (7a: held by both papers; 7b: the stack's pieces and the batch):
+- 7a: its papers' friction and its bond on both faces (the springs' limit and stiffness doubled): stuck and cracked,
+  its cells 2 σc h / (2 τb) apart, half as wide as held by one; the pull inside the same.
+- 7b: the stack's top, middle and bottom pieces (the 1st, the middle and the last) go through together: the chemistry
+  and temperatures shared; each under its own load (the plate, the papers and the pieces above it, as they are then:
+  their kept weight), each with its own gas, paper and hold; the stack's growth against the holder theirs together
+  (weighted 1 : 4 : 1). The batch: its mean and standard deviation from each piece's own across it and the pieces'
+  about the stack's (Simpson's rule over the stack). The load's temperature spread (°C, its hottest stack less its
+  coldest), when given: its coldest and hottest stacks solved too (each run's rise above the room in proportion, the
+  top half the spread off), the batch over the stacks (1 : 4 : 1). Not known: every stack as set, and the report,
+  the Solve step and the pieces' table say the stacks' differences are not in the batch.
+- furnace.validate.js: 20 checks (17: two pieces the same are the piece alone, each piece's load exact to 1.5e-14;
+  18: the batch's spread against its sum; 19: both faces, the cells half as wide to 1e-9, the pull the same to 1.2e-6;
+  20: no spread is the stack as set to 1 nm, the coldest and hottest stacks and the batch over them). The paper's
+  factorizations kept by their active set: the same results bit for bit, one piece in 3.1 s (5.4 s before); the three
+  pieces held by both papers 8.2 s (in Node, the defaults, 200 pieces).
+- UI: Results: the pieces side by side (the weight on each, its thickness and spread, pull, squeeze, when it sticks),
+  one picked to show (its tiles, charts and map; arrows along them); the load's stacks in their own group; the batch
+  under the table and in the answer line; the lights at the stack's worst piece (the coldest and hottest stacks'
+  too), named. Setup and the inputs bar: the load's temperature spread (empty: not known; one undo step each way).
+  Solve: the stack and the load's rows; each piece's gas balance. DOE: the batch's outputs, the checks at the worst
+  piece. Report, CSV (each piece's rows, the batch), help, guide, projects (one from before reads not known).
+- At the app's defaults (its 371 µm piece, 200 pieces, 7 kg plate): the weights on the top, middle (101st) and bottom
+  pieces 599, 1275 and 1945 Pa; the batch 621 ± 14.2 µm (47 % of the 30 µm limit); with a 40 °C spread given, the
+  coldest and hottest stacks 618 and 624 µm, the batch ± 14.3 µm. Its pull at most 50 % of its strength (51 % in the hottest stack),
+  never squeezed: the defaults do not yet crack or wave (GO-7c: to be set from the photos and measured sizes).
+- Checked: the GO-5b and GO-6 screen tests (updated for the pieces' gas balance lines), a GO-7 screen test (28 checks:
+  the pieces, the pick and its keys, the load's spread in both places with undo, refused out of range, projects old
+  and new, the report, the CSV, stacks of one and two, help, dark, phone), every validation file, http and file://.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

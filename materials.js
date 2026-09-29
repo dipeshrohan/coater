@@ -222,10 +222,12 @@ const FURN_RUNS_DEFAULT = [
   { steps: [{ rate: 1, to: 300, hold: 0 }, { rate: 3, to: 1000, hold: 60 }], cool: 5, file: null },
   { steps: [{ rate: 10, to: 1000, hold: 0 }, { rate: 5, to: 2000, hold: 0 }, { rate: 2, to: 2800, hold: 60 }], cool: 10, file: null },
 ];
-const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, sdMax: 30, runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, sdSet: true };
+const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, sdMax: 30, dTload: null, runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, sdSet: true, dTSet: false };
 const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['paperT', 'Graphite paper\'s thickness', 'mm', 0.01, 10, 0.05, 2, 'paperSet'],
   ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet'],
-  ['plateW', 'A plate resting on the stack', 'kg', 0, 1000, 0.5, 1, 'plateSet'], ['sdMax', 'Its thickness may spread (standard deviation)', 'µm', 0.1, 1000, 1, 1, 'sdSet']];
+  ['plateW', 'A plate resting on the stack', 'kg', 0, 1000, 0.5, 1, 'plateSet'], ['sdMax', 'Its thickness may spread (standard deviation)', 'µm', 0.1, 1000, 1, 1, 'sdSet'],
+  // (GO-7: the load's temperature spread, its hottest stack less its coldest: not known until you give it -- empty, not assumed)
+  ['dTload', 'The load\'s temperature spread (its hottest stack less its coldest)', '°C', 0, 1000, 5, 0, 'dTSet']];
 const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
 const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
 const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults() });

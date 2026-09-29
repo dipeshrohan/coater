@@ -1906,3 +1906,13 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .proc-stage[data-step="results"] .film-sec[data-fview="stack"] [data-fview]:not([data-fview="stack"]) { display: none !important; }
 .film-sec[data-fview="stack"] .sheet-sec > [data-fview="stack"] { margin-top: 0; }
 .proc-go { margin: 10px 0 4px; flex-wrap: wrap; }
+
+/* the stack's pieces (GO-7): the one shown, and the three side by side */
+.furn-pieces { margin: 10px 0 4px; }
+.furn-pos { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.furn-pos .seg button small { color: var(--muted); font-weight: 400; margin-left: 3px; }
+.furn-pos-t tr.on th, .furn-pos-t tr.on td { background: var(--soft); }
+.furn-pos-t td { white-space: nowrap; }
+.furn-pos .seg button[aria-selected="true"] small { color: inherit; opacity: .85; }
+.furn-pos-t tr.furn-pos-g th { padding-top: 14px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.furn-pos-t tr.furn-pos-g th small { font-weight: 400; margin-left: 6px; }

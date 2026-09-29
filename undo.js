@@ -50,7 +50,8 @@ function ovenUndoLabel(a, b) {
 /** A change to the furnace's inputs: a run's step, its cooling or its file, or the stack's. */
 function furnUndoLabel(a, b) {
   a = a || furnDefaults(); b = b || furnDefaults();
-  for (const [k, l, u, , , , d] of FURN_FIELDS) if (a[k] !== b[k]) return undoChange(l, a[k], b[k], v => undoNum(v, d), u);
+  // (one that can be not known carries its unit on its number: "40 °C → not known")
+  for (const [k, l, u, , , , d] of FURN_FIELDS) if (a[k] !== b[k]) return k === 'dTload' ? undoChange(l, a[k], b[k], v => v == null ? 'not known' : `${undoNum(v, d)} ${u}`) : undoChange(l, a[k], b[k], v => undoNum(v, d), u);
   if (a.room !== b.room) return `Above the stack: ${b.room === 'plates' ? 'the plates on it' : 'a gap'}`;
   for (let r = 0; r < 2; r++) {
     const ra = a.runs[r], rb = b.runs[r], n = `Run ${r + 1}`;

@@ -73,17 +73,17 @@ const DOE_OUTPUTS = [
   { k: 'sizeTop', l: 'A piece\'s size change in the drying oven, top only', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
   { k: 'sizeBoth', l: 'A piece\'s size change in the drying oven, top and bottom', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
   // (the furnace, GO-5: this run's film's piece, its water leaving from the top only, through both runs)
-  { k: 'furnH', l: 'Graphene film\'s thickness', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
+  { k: 'furnH', l: 'Graphene film\'s thickness, the batch\'s mean', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
   { k: 'furnRatio', l: 'Graphene film over the GO piece, thickness', u: '×', g: 'Furnace (graphene film)', d: 2 },
   { k: 'furnRho', l: 'Graphene film\'s density', u: 'g/cm³', g: 'Furnace (graphene film)', d: 2 },
   { k: 'furnKappa', l: 'Graphene film\'s heat along it', u: 'W/(m·K)', g: 'Furnace (graphene film)', d: 0 },
-  { k: 'furnGas1', l: 'Gas against its hold, run 1', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
-  { k: 'furnGas2', l: 'Gas against its hold, run 2', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
-  { k: 'furnEven', l: 'Graphene film\'s thickness spread across the piece', u: '% of its mean', g: 'Furnace (graphene film)', d: 1 },
-  { k: 'furnSD', l: 'Graphene film\'s thickness, standard deviation across the piece', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
-  { k: 'furnCrack', l: 'Its pull against its strength, the most', u: '% (100: cracks)', g: 'Furnace (graphene film)', d: 0 },
-  { k: 'furnWave', l: 'Its squeeze against what buckles it, the most', u: '% (100: waves)', g: 'Furnace (graphene film)', d: 0 },
-  { k: 'furnStuck', l: 'Stuck to its paper', u: '% of the piece', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnGas1', l: 'Gas against its hold, run 1, the stack\'s most', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnGas2', l: 'Gas against its hold, run 2, the stack\'s most', u: '% (100: puffs up)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnEven', l: 'Graphene film\'s thickness range over the stack\'s pieces', u: '% of its mean', g: 'Furnace (graphene film)', d: 1 },
+  { k: 'furnSD', l: 'Graphene film\'s thickness, standard deviation over the batch', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
+  { k: 'furnCrack', l: 'Its pull against its strength, the stack\'s worst piece', u: '% (100: cracks)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnWave', l: 'Its squeeze against what buckles it, the stack\'s worst piece', u: '% (100: waves)', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnStuck', l: 'Stuck to its paper, the stack\'s most', u: '% of the piece', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnSize', l: 'Its size after the furnace, free', u: '% (along itself)', g: 'Furnace (graphene film)', d: 2 },
 ];
 const DOE = {
@@ -144,9 +144,15 @@ function doeFurnOpts(set) {
 }
 /** A furnace run's outputs (as the DOE lists them). */
 function doeFurnOutputs(res, P) {
-  const e = res.end, pl = res.plane;
-  return { furnH: e.h * 1e6, furnRatio: e.h / P.h, furnRho: e.rho / 1000, furnKappa: e.kappa, furnGas1: res.runs[0].peak.idx * 100, furnGas2: res.runs[1] ? res.runs[1].peak.idx * 100 : NaN,
-    furnEven: (e.hMax - e.hMin) / e.h * 100, furnSD: e.hSD * 1e6, furnCrack: pl ? pl.ratioMax * 100 : NaN, furnWave: pl ? pl.waveMax * 100 : NaN, furnStuck: pl ? pl.stuckFrac * 100 : NaN, furnSize: pl ? pl.size.free * 100 : NaN };
+  // (GO-7: the batch's thickness and spread; each check at the stack's worst piece, the coldest and hottest stacks' too)
+  const e = res.end, pl = res.plane, L = res.pos || [res], B = res.batch || { hMean: e.h, hSD: e.hSD }, sp = res.stacks;
+  const S = sp ? [...sp.cold.pos, ...sp.hot.pos] : [];
+  const mx = (f, g) => Math.max(...L.map(f), ...(g ? S.map(g) : []));
+  const hMin = Math.min(...L.map(q => q.end.hMin)), hMax = Math.max(...L.map(q => q.end.hMax));
+  return { furnH: B.hMean * 1e6, furnRatio: B.hMean / P.h, furnRho: e.mEnd / B.hMean / 1000, furnKappa: e.kappa * e.h / B.hMean,
+    furnGas1: mx(q => q.runs[0].peak.idx, p => p.puff[0]) * 100, furnGas2: res.runs[1] ? mx(q => q.runs[1].peak.idx, p => p.puff[1]) * 100 : NaN,
+    furnEven: (hMax - hMin) / B.hMean * 100, furnSD: B.hSD * 1e6, furnCrack: pl ? mx(q => q.plane.ratioMax, p => p.ratioMax) * 100 : NaN, furnWave: pl ? mx(q => q.plane.waveMax, p => p.waveMax) * 100 : NaN,
+    furnStuck: pl ? mx(q => q.plane.stuckFrac, p => p.stuckFrac) * 100 : NaN, furnSize: pl ? pl.size.free * 100 : NaN };
 }
 function doeStartFurn(run) {
   const o = doeFurnOpts(DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] }))), q = furnInputs();

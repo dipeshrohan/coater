@@ -130,11 +130,12 @@ function furnProgWire(cv) {
 // ---- Setup: the stack in its holder, your limits; the piece going in ----
 function furnHolderHTML() {
   const fu = OVEN.furn, as = f => fu[f] ? '' : ' <small>assumed</small>';
-  const field = (k, id) => { const f = FURN_FIELDS.find(q => q[0] === k); return `<label class="furn-f"><span>${f[1]}${as(f[7])}</span><span class="prop-v"><input type="number" id="${id}" min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[k]}" data-furnf="${k}"><span class="prop-u">${f[2]}</span></span></label>`; };
+  const field = (k, id) => { const f = FURN_FIELDS.find(q => q[0] === k), unk = k === 'dTload'; return `<label class="furn-f"><span>${f[1]}${unk ? '' : as(f[7])}</span><span class="prop-v"><input type="number" id="${id}" min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[k] ?? ''}"${unk ? ' placeholder="not known"' : ''} data-furnf="${k}"><span class="prop-u">${f[2]}</span></span></label>`; };
   return `<div class="furn-holder"><div class="furn-holder-pic">${furnPicHolder(1)}</div><div class="furn-fields">
     ${field('N', 'furnSN')}${field('paperT', 'furnSPaperT')}${field('margin', 'furnSMargin')}${field('plateW', 'furnSPlate')}
     <div class="furn-f"><span>Above the stack${as('roomSet')}</span><div class="seg seg-sm" role="tablist" aria-label="Above the stack in the holder" id="furnSRoom">${Object.entries(FURN_ROOM).map(([k, t]) => `<button type="button" role="tab" data-furnroom="${k}" aria-selected="${k === fu.room}">${t}</button>`).join('')}</div></div>
     ${fu.room === 'gap' ? field('gap', 'furnSGap') : ''}
+    ${field('dTload', 'furnSDTload')}
     <h5>Your limits</h5>${field('sdMax', 'furnSSd')}</div></div>`;
 }
 function furnPieceInHTML() {
@@ -166,11 +167,13 @@ function furnSolveRender(r) {
   if (!el) return;
   const st = !furnInputs() ? ['muted', 'Waits for the film and its piece (Film).'] : FURN.busy ? ['accent', 'Solving the two runs…'] : FURN.error ? ['bad', `Could not be solved: ${dryEsc(FURN.error)}`] : r ? ['ok', `Solved in ${(FURN.ms / 1000).toFixed(1)} s. It solves again by itself when an input changes.`] : ['muted', 'Not solved yet.'];
   const rows = [['Temperature steps', 'at most 1 K and 600 s each; the chemistry exact over each (its temperature integral)'], ['The gas along the paper', 'a quarter of the piece, 12 × 12 cells and 2 in the paper\'s margin (finite volumes); where the paper lifts, an obstacle problem'],
-    ['The piece along itself', 'a disc of its area in 48 rings (axisymmetric plane stress), Newton on the paper\'s hold'], ['The top piece', 'the least load on it: the most puffing']];
-  const chk = r ? r.runs.map((q, i) => { const g = q.gas, err = Math.abs(g.made - (g.out + g.held - g.held0)) / Math.max(1e-30, g.made); return `<li class="${err < 1e-6 ? 'ok' : 'bad'}">Run ${i + 1}: the gas made is the gas out plus the gas held, to ${err.toExponential(1)}</li>`; }).join('') : '';
+    ['The piece along itself', 'a disc of its area in 48 rings (axisymmetric plane stress), Newton on the papers\' hold, held by both (below and above it)'],
+    ['The stack', 'its top, middle and bottom pieces followed together, each under its own load (the plate, the papers and the pieces above it), the stack\'s growth theirs together; the batch from them by Simpson\'s rule over the stack (1 : 4 : 1)'],
+    ['The load', OVEN.furn.dTload > 0 ? `its coldest and hottest stacks solved too (${OVEN.furn.dTload} °C apart at the top, each run\'s rise above the room in proportion), the stacks spread evenly between them` : 'every stack as set: its temperature spread is not known']];
+  const chk = r ? furnPieces(r).flatMap(p => p.runs.map((q, i) => { const g = q.gas, err = Math.abs(g.made - (g.out + g.held - g.held0)) / Math.max(1e-30, g.made); return `<li class="${err < 1e-6 ? 'ok' : 'bad'}">${furnPieces(r).length > 1 ? FURN_POS_NAME[p.name] + ', r' : 'R'}un ${i + 1}: the gas made is the gas out plus the gas held, to ${err.toExponential(1)}</li>`; })).join('') : '';
   el.innerHTML = `<p class="dry-msg">${pill(st[1], st[0] === 'bad' ? 'bad' : st[0] === 'ok' ? 'ok' : '')}</p>
     <div class="furn-solve"><div><h4>Solver</h4><table class="proc-kv"><tbody>${rows.map(([a, b]) => `<tr><th>${a}</th><td class="fv-why">${b}</td></tr>`).join('')}</tbody></table></div>
-    <div><h4>Checks</h4><ul class="checks">${chk || '<li>After it is solved.</li>'}<li class="ok">The methods against exact solutions: furnace.validate.js, 17 checks (the guide lists them)</li></ul></div></div>`;
+    <div><h4>Checks</h4><ul class="checks">${chk || '<li>After it is solved.</li>'}<li class="ok">The methods against exact solutions: furnace.validate.js, 20 checks (the guide lists them)</li></ul></div></div>`;
 }
 
 // ---- Results: the answer, the warnings folded; one chart picked by chips; the piece ----
@@ -188,7 +191,8 @@ function furnAnswerHTML(r, warnHTML) {
   const e = r.end, [r1, r2] = r.runs, puff = [r1, r2].map((q, i) => q.puffAt ? `run ${i + 1} from ${q.puffAt.T.toFixed(0)} °C` : '').filter(Boolean);
   const box = document.createElement('div'); box.innerHTML = warnHTML;
   const pills = [...box.querySelectorAll('.pill')], nBad = pills.filter(p => p.classList.contains('bad')).length;
-  return `<p class="furn-answer"><b>The graphene film: ${furnUm(e.h)} µm</b> (${(e.h / r.q.P.h).toFixed(2)}× the GO piece), ${(e.rho / 1000).toFixed(2)} g/cm³, ${e.kappa.toFixed(0)} W/(m·K); ${puff.length ? `puffs up in ${puff.join(', ')}` : 'does not puff up'}.</p>
+  const B = furnBatch(r);
+  return `<p class="furn-answer"><b>The graphene film: ${furnUm(B.h)} µm</b> ± ${(B.sd * 1e6).toFixed(1)} µm over the batch (${(B.h / r.q.P.h).toFixed(2)}× the GO piece), ${(B.rho / 1000).toFixed(2)} g/cm³, ${B.kappa.toFixed(0)} W/(m·K); ${puff.length ? `puffs up in ${puff.join(', ')}` : 'does not puff up'}.</p>
     ${pills.length ? `<details class="furn-warn"><summary>${nBad ? '<i class="pt-dot pt-bad" aria-hidden="true"></i>' : ''}Warnings (${pills.length})</summary>${warnHTML}</details>` : ''}`;
 }
 /** The piece at the end, from above (a colour map, thicker darker) or in 3D (its heights raised), the top piece. */
@@ -275,7 +279,7 @@ function furnStageWire(sec) {
       render();
     } else if (el.dataset.furnf) {
       const k = el.dataset.furnf, [, l, u, lo, hi, , , flag] = FURN_FIELDS.find(f => f[0] === k);
-      guardNumber(el, { label: l, lo, hi, unit: u }, v => { OVEN.furn = { ...fu(), [k]: k === 'N' ? Math.round(v) : v, [flag]: true }; });
+      guardNumber(el, { label: l, lo, hi, unit: u, allowEmpty: k === 'dTload' }, v => { OVEN.furn = { ...fu(), [k]: k === 'N' ? Math.round(v) : v, [flag]: v != null }; });
       render();
     }
   });
