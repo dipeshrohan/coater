@@ -166,14 +166,14 @@ function furnSolveRender(r) {
   const el = document.getElementById('furnSolve');
   if (!el) return;
   const st = !furnInputs() ? ['muted', 'Waits for the film and its piece (Film).'] : FURN.busy ? ['accent', 'Solving the two runs…'] : FURN.error ? ['bad', `Could not be solved: ${dryEsc(FURN.error)}`] : r ? ['ok', `Solved in ${(FURN.ms / 1000).toFixed(1)} s. It solves again by itself when an input changes.`] : ['muted', 'Not solved yet.'];
-  const rows = [['Temperature steps', 'at most 1 K and 600 s each; the chemistry exact over each (its temperature integral)'], ['The gas along the paper', 'a quarter of the piece, 12 × 12 cells and 2 in the paper\'s margin (finite volumes); where the paper lifts, an obstacle problem'],
+  const rows = [['Temperature steps', 'at most 1 K and 600 s each; the chemistry exact over each (its temperature integral)'], ['The gas along the paper', 'a quarter of the piece, 12 × 12 cells and 2 in the paper\'s margin (finite volumes); where the paper lifts, an obstacle problem; the film\'s openings exchanging their gas with it solved together (stable however fast), the holder\'s squeeze from each step\'s end'],
     ['The piece along itself', 'a disc of its area in 48 rings (axisymmetric plane stress), Newton on the papers\' hold, held by both (below and above it)'],
     ['The stack', 'its top, middle and bottom pieces followed together, each under its own load (the plate, the papers and the pieces above it), the stack\'s growth theirs together; the batch from them by Simpson\'s rule over the stack (1 : 4 : 1)'],
     ['The load', OVEN.furn.dTload > 0 ? `its coldest and hottest stacks solved too (${OVEN.furn.dTload} °C apart at the top, each run\'s rise above the room in proportion), the stacks spread evenly between them` : 'every stack as set: its temperature spread is not known']];
   const chk = r ? furnPieces(r).flatMap(p => p.runs.map((q, i) => { const g = q.gas, err = Math.abs(g.made - (g.out + g.held - g.held0)) / Math.max(1e-30, g.made); return `<li class="${err < 1e-6 ? 'ok' : 'bad'}">${furnPieces(r).length > 1 ? FURN_POS_NAME[p.name] + ', r' : 'R'}un ${i + 1}: the gas made is the gas out plus the gas held, to ${err.toExponential(1)}</li>`; })).join('') : '';
   el.innerHTML = `<p class="dry-msg">${pill(st[1], st[0] === 'bad' ? 'bad' : st[0] === 'ok' ? 'ok' : '')}</p>
     <div class="furn-solve"><div><h4>Solver</h4><table class="proc-kv"><tbody>${rows.map(([a, b]) => `<tr><th>${a}</th><td class="fv-why">${b}</td></tr>`).join('')}</tbody></table></div>
-    <div><h4>Checks</h4><ul class="checks">${chk || '<li>After it is solved.</li>'}<li class="ok">The methods against exact solutions: furnace.validate.js, 20 checks (the guide lists them)</li></ul></div></div>`;
+    <div><h4>Checks</h4><ul class="checks">${chk || '<li>After it is solved.</li>'}<li class="ok">The methods against exact solutions: furnace.validate.js, 22 checks (the guide lists them)</li></ul></div></div>`;
 }
 
 // ---- Results: the answer, the warnings folded; one chart picked by chips; the piece ----

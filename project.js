@@ -133,7 +133,9 @@ function applyMaterials(m) {
   const uc = m && m.furn;
   if (uc) for (const k of Object.keys(MAT.furn)) if (uc[k] && Number.isFinite(uc[k].v)) MAT.furn[k] = { ...MAT.furn[k], ...uc[k] };
   const um = m && m.furnMeas;
-  if (um) MAT.furnMeas = { out: arr(um.out).filter(locOk).map(q => ({ loc: q.loc, h: fin(q.h), kept: fin(q.kept), kappa: fin(q.kappa) })).filter(q => [q.h, q.kept, q.kappa].some(Number.isFinite)) };
+  if (um) MAT.furnMeas = { out: arr(um.out).filter(locOk).map(q => ({ loc: q.loc, h: fin(q.h), kept: fin(q.kept), kappa: fin(q.kappa) })).filter(q => [q.h, q.kept, q.kappa].some(Number.isFinite)),
+    // (the first piece found stuck to its papers, from the top, GO-7c)
+    stuckFrom: Number.isFinite(um.stuckFrom) && um.stuckFrom >= 1 && um.stuckFrom <= 10000 ? Math.round(um.stuckFrom) : null };
 }
 /** The furnace's inputs of a project (GO-5): its runs (steps or a file's cycle) and the stack; none: the defaults. */
 function applyFurn(f) {
