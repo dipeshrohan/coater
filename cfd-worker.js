@@ -181,10 +181,9 @@ onmessage = e => {
       if (o.furn && P && P.h > 0) {
         stage = 'the furnace'; lastPost = 0; post({ it: 0, residual: NaN, s: 1 });
         try {
-          const fr = fuRun({ ...o.furn, h0: P.h, rhoG: P.rhoG, Xin: P.Xroom });
-          const pl = fr.plane;
-          furn = { h: fr.hMean * 1e6, ratio: fr.hMean / P.h, rho: fr.rho / 1000, kappa: fr.kappa, gas1: fr.runs[0].peak.idx * 100, gas2: fr.runs[1] ? fr.runs[1].peak.idx * 100 : NaN, even: (fr.hMax - fr.hMin) / fr.hMean * 100,
-            sd: fr.hSD * 1e6, crack: pl ? pl.ratioMax * 100 : NaN, wave: pl ? pl.waveMax * 100 : NaN, stuck: pl ? pl.stuckFrac * 100 : NaN, size: pl ? pl.size.free * 100 : NaN };
+          const fr = fuRunLoad({ ...o.furn, h0: P.h, rhoG: P.rhoG, Xin: P.Xroom });
+          // (the batch's thickness and spread, each check at the stack's worst piece: GO-7)
+          furn = fuOutputs(fr, P.h);
         } catch (e) { furn = { error: e.message }; }
       }
     }

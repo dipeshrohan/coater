@@ -214,24 +214,38 @@ function fuPaperMatrix(g, fixed) {
  */
 function fuPaperSolve(g, cache, src, kap, cap) {
   let fixed = cache.fixed || new Uint8Array(g.n), u;
+  // (each set of held cells factored once and kept: the sets come back again and again as the paper lifts and settles)
+  const fac = cache.fac || (cache.fac = new Map());
+  // (the cells' neighbours as flat arrays, once per grid)
+  if (!g.nbS) {
+    const nbS = new Int32Array(g.n + 1); g.nb.forEach((l, k) => { nbS[k + 1] = nbS[k] + l.length; });
+    const nbJ = new Int32Array(nbS[g.n]), nbC = new Float64Array(nbS[g.n]);
+    g.nb.forEach((l, k) => l.forEach(([j, c], m) => { nbJ[nbS[k] + m] = j; nbC[nbS[k] + m] = c; }));
+    g.nbS = nbS; g.nbJ = nbJ; g.nbC = nbC;
+  }
+  const { nbS, nbJ, nbC } = g, rhs = new Float64Array(g.n);
   for (let it = 0; it < 60; it++) {
-    if (!cache.F || !cache.fixed || cache.fixed.some((v, k) => v !== fixed[k])) { cache.F = fuPaperMatrix(g, fixed); cache.fixed = fixed; }
-    const rhs = new Float64Array(g.n);
+    if (!cache.F || cache.fixed !== fixed) {
+      const key = fixed.join('');
+      let F = fac.get(key);
+      if (!F) { F = fuPaperMatrix(g, fixed); if (fac.size >= 512) fac.delete(fac.keys().next().value); fac.set(key, F); }
+      cache.F = F; cache.fixed = fixed;
+    }
     for (let k = 0; k < g.n; k++) {
       if (fixed[k]) { rhs[k] = cap[k]; continue; }
-      let r = src[k] / kap; for (const [j, c] of g.nb[k]) if (fixed[j]) r += c * cap[j]; rhs[k] = r;
+      let r = src[k] / kap; for (let m = nbS[k]; m < nbS[k + 1]; m++) if (fixed[nbJ[m]]) r += nbC[m] * cap[nbJ[m]]; rhs[k] = r;
     }
     u = fuSolve(cache.F, rhs);
     // (free cells above their cap join the held; a held cell whose gas would drain faster than it comes at its cap --
     //  the paper would settle again -- leaves them)
-    const next = Uint8Array.from(fixed); let changed = false;
-    for (let k = 0; k < g.n; k++) if (!fixed[k] && u[k] > cap[k] * (1 + 1e-12)) { next[k] = 1; changed = true; }
-    if (!changed) for (let k = 0; k < g.n; k++) if (fixed[k]) {
+    let next = null;
+    for (let k = 0; k < g.n; k++) if (!fixed[k] && u[k] > cap[k] * (1 + 1e-12)) { if (!next) next = Uint8Array.from(fixed); next[k] = 1; }
+    if (!next) for (let k = 0; k < g.n; k++) if (fixed[k]) {
       let out = g.edge[k] * cap[k];
-      for (const [j, c] of g.nb[k]) out += c * (cap[k] - u[j]);
-      if (out * kap > src[k] * (1 + 1e-9) + 1e-30) { next[k] = 0; changed = true; }
+      for (let m = nbS[k]; m < nbS[k + 1]; m++) out += nbC[m] * (cap[k] - u[nbJ[m]]);
+      if (out * kap > src[k] * (1 + 1e-9) + 1e-30) { if (!next) next = Uint8Array.from(fixed); next[k] = 0; }
     }
-    if (!changed) break;
+    if (!next) break;
     fixed = next;
   }
   return u;
@@ -338,7 +352,13 @@ function fuPlaneStep(P, eps, h, E, nu, kt, tmax) {
  *   dIn (nm, its layers' spacing going in); Dgal, Dmin (m²/s at 20 °C: the galleries' open, the floor); sigZ (Pa, the
  *   layers' cohesion); paper { t (m), rho (kg/m³), D (m²/s at 20 °C, the gas along it), Ez (Pa, its stiffness through
  *   it) }; N (pieces in the stack), room ('gap' | 'plates'), gap (m, above the stack; with the plates on it, 0);
+ *   plateP (Pa, a plate resting on the stack, over the paper's area); positions [{ m (pieces above it), w (its share
+ *   of the stack) }, ...] (the pieces followed, together: default the top piece alone);
+ *   plane { ..., faces (the paper's faces holding it: 2, both papers) } (the piece along itself, GO-5b);
  *   pa (Pa); La0, La1 (nm), ell (nm), kG (W/(m K)); nP, nM (cells); dT (K, the largest step), dtMax (s) }.
+ * The pieces followed share the chemistry and the temperatures; each has its own load (the plate, the papers and the
+ * pieces above it), gas, paper and hold; the stack's growth against the holder is theirs together (by their shares).
+ * The result is the first piece's, with every piece's in pos and the stack's spread in batch.
  */
 function fuRun(o) {
   const pa = o.pa || 101325, T20 = 293.15, g = fuPaperGrid(o.Lx / 2, o.Ly / 2, o.margin || 0, o.nP || 16, o.margin > 0 ? (o.nM || 2) : 0);
@@ -347,19 +367,25 @@ function fuRun(o) {
   // (per kg of dry GO: each stage's gas (mol), mass (kg), O, C (mol) whole; the water first)
   const nu = [Xin / (FU_M.H2O / 1000), ...chem.stages.map(s => s.gas * perKg)];
   const ms = [Xin, ...chem.stages.map(s => s.mass * perKg / 1000)];
-  const Os = [0, ...chem.stages.map(s => s.O)], Cs = [0, ...chem.stages.map(s => s.C)];
   const ST = ['water', 'labile', 'stable', 'last'].map(k => fuStage(o.stages[k])), GR = fuStage(o.stages.graph);
   const spacerAll = Xin + chem.O0 * FU_M.O * perKg / 1000;
-  // (the holder: the top piece -- the least load -- under one paper; with the plates on the stack, the papers pressed as it grows)
-  const Ws = o.paper.rho * FU_G * o.paper.t + (o.plateP || 0), N = Math.max(1, o.N || 1);
+  // (the holder: each piece under the plate, the papers and the pieces above it; with the plates on the stack, the
+  //  papers pressed as it grows)
+  const N = Math.max(1, o.N || 1), paperW = o.paper.rho * FU_G * o.paper.t;
+  const share = o.Lx * o.Ly / ((o.Lx + 2 * (o.margin || 0)) * (o.Ly + 2 * (o.margin || 0)));
   const kP = o.room === 'plates' || o.room === 'gap' ? o.paper.Ez * N / ((N + 1) * o.paper.t) : 0, g0 = o.room === 'gap' ? (o.gap || 0) / N : 0;
-  const n = new Float64Array(g.n), V = new Float64Array(g.n), u = new Float64Array(g.n), cache = {};
-  const hist = [], runs = [];
+  const pos = (o.positions && o.positions.length ? o.positions : [{ m: 0, w: 1 }]).map(q => ({ m: Math.max(0, Math.min(N - 1, Math.round(q.m || 0))), w: q.w == null ? 1 : q.w }));
+  const wSum = pos.reduce((s, q) => s + q.w, 0);
   // (the piece along itself on its paper, GO-5b: a disc of its area in rings; its stiffness and strength with its
-  //  density, from the GO piece's going in; the paper's hold a stiff spring, the stuck film's shear-lag about 2 h)
-  const pl = o.plane, Rd = Math.sqrt(o.Lx * o.Ly / Math.PI), P = pl ? fuPlaneState(fuPlaneMesh(Rd, 2 * o.h0, pl.n || 48)) : null;
-  const ktP = pl ? pl.Ep / (1 - pl.nu) / (4 * o.h0) : 0, tmaxP = pl ? new Float64Array(P.n) : null;
-  const plane = pl ? { first: null, stuckAt: null, ratioMax: 0, where: null, compMin: 0, waveMax: 0, waveAt: null, hist: [] } : null;
+  //  density, from the GO piece's going in; the paper's hold a stiff spring on each face holding it, the stuck film's
+  //  shear-lag about 2 h)
+  const pl = o.plane, Rd = Math.sqrt(o.Lx * o.Ly / Math.PI), faces = pl ? (pl.faces || 1) : 1;
+  const ktP = pl ? faces * pl.Ep / (1 - pl.nu) / (4 * o.h0) : 0;
+  for (const q of pos) {
+    q.n = new Float64Array(g.n); q.V = new Float64Array(g.n); q.u = new Float64Array(g.n); q.cache = {}; q.hist = []; q.runs = [];
+    q.P = pl ? fuPlaneState(fuPlaneMesh(Rd, 2 * o.h0, pl.n || 48)) : null; q.tmax = pl ? new Float64Array(q.P.n) : null;
+    q.plane = pl ? { first: null, stuckAt: null, ratioMax: 0, where: null, compMin: 0, waveMax: 0, waveAt: null, hist: [] } : null;
+  }
   const pcAt = (cap, uu, ri) => {
     // (the load pressing the piece to its paper at a ring: along the middle line, the ring's radius over the disc's
     //  as x over the half-width; lifted by the gas, nothing)
@@ -378,7 +404,10 @@ function fuRun(o) {
     const d = FU_DG + (FU_DT - FU_DG) * (1 - gdeg) + (o.dIn - FU_DT) * spacer;
     return { O, C, kept, d, hc: o.h0 * d / o.dIn };
   };
+  // (the load on a piece: the plate, the papers above it and its own, the pieces above it as they are now)
+  const WsOf = (q, S) => paperW * (q.m + 1) + (o.plateP || 0) + (q.m ? q.m * mA * (S.kept + Xin * (1 - alpha[0])) * FU_G * share : 0);
   const Dof = (d, T) => (o.Dmin + o.Dgal * Math.pow(Math.max(0, d - FU_DG) / (o.dIn - FU_DG), 2)) * Math.sqrt(T / T20);
+  const areaP = o.Lx * o.Ly / 4, heldOf = q => { let s = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) s += q.n[k] * g.area[k]; return s / areaP; };
   for (let r = 0; r < o.runs.length; r++) {
     const pts = o.runs[r];
     // (the steps: at most dT kelvin and dtMax seconds each)
@@ -387,12 +416,11 @@ function fuRun(o) {
       const [ta, Ta] = pts[i - 1], [tb, Tb] = pts[i], m = Math.max(1, Math.ceil(Math.abs(Tb - Ta) / (o.dT || 1)), Math.ceil((tb - ta) / (o.dtMax || 600)));
       for (let k = 0; k < m; k++) steps.push([ta + (tb - ta) * k / m, Ta + (Tb - Ta) * k / m, ta + (tb - ta) * (k + 1) / m, Ta + (Tb - Ta) * (k + 1) / m]);
     }
-    let peak = { idx: 0, t: 0, T: pts[0][1], where: null }, puffAt = null, gasMax = 0, made = 0, out = 0;
-    const areaP = o.Lx * o.Ly / 4, heldOf = () => { let s = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) s += n[k] * g.area[k]; return s / areaP; }, held0 = heldOf();
+    for (const q of pos) { q.run = { peak: { idx: 0, t: 0, T: pts[0][1], where: null }, puffAt: null, gasMax: 0, made: 0, out: 0, held0: heldOf(q) }; }
     for (const [ta, Ta, tb, Tb] of steps) {
       const dt = tb - ta;
       if (!(dt > 0)) continue;
-      // the chemistry, exact over the step: the gas it makes per area
+      // the chemistry, exact over the step: the gas it makes per area (the same in every piece)
       let dN = 0;
       for (let s = 0; s < ST.length; s++) { const da = fuAdvance(ST[s], Ta, Tb, dt); alpha[s] += da; dN += mA * nu[s] * da; }
       gdeg += fuAdvance(GR, Ta, Tb, dt);
@@ -400,116 +428,174 @@ function fuRun(o) {
       const D = Dof(S.d, T), a = 8 * D / (RT * S.hc), es = o.es || Infinity;
       // the paper's conductance along it (viscous, µ ∝ T^0.7, the gas near the surroundings' pressure; per unit gradient of u)
       const kap = o.paper.D * Math.pow(T20 / T, 0.7) * o.paper.t / RT;
-      const nOld = Float64Array.from(n), VOld = Float64Array.from(V);
-      const src = new Float64Array(g.n), cap = new Float64Array(g.n), idx = new Float64Array(g.n);
-      for (let it = 0; it < 3; it++) {
-        for (let k = 0; k < g.n; k++) {
-          const Wp = kP * Math.max(0, VOld[k] - g0);
-          cap[k] = Ws + (g.inside[k] ? Wp : 0);
-          if (!g.inside[k]) { src[k] = 0; continue; }
-          const base = pa + o.sigZ + Ws, pHof = v => base + kP * Math.max(0, v - g0), pf = pa + u[k];
-          const aOf = v => a * (1 + Math.pow(v / (S.hc * es), 3));
-          let nk = nOld[k], Vk = VOld[k];
-          // (the gas at the step's end held at V1, if its layers part further: V1·pH(V1) = (n + (G − a(V1)(pH(V1) − p_f)) dt) R T,
-          //  rising in V1; > 0 at V: they stay as they are)
-          const f = v => v * pHof(v) - (nk + (G - aOf(v) * (pHof(v) - pf)) * dt) * RT;
-          const pq = G > 0 ? pf + G / a : pf;
-          if (!(Vk > 0) && pq <= pHof(0)) { nk = 0; idx[k] = (pq - pa) / (pHof(0) - pa); }
-          else if (f(Vk) < 0) {
-            let lo = Vk, hi = Math.max(Vk * 2, (nk + G * dt) * RT / base + Vk + 1e-12);
-            while (f(hi) < 0) hi *= 2;
-            for (let i = 0; i < 100 && hi - lo > 1e-13 * hi; i++) { const m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
-            Vk = hi; nk = Vk * pHof(Vk) / RT; idx[k] = 1;
-          } else {
-            // (held where they are: the gas leaks through the film as it comes, e^(−c t) to its balance)
-            const aV = aOf(Vk), c = aV * RT / Vk;
-            if (c > 0) { const neq = (G + aV * pf) / c; nk = neq + (nk - neq) * Math.exp(-c * dt); } else nk += G * dt;
-            idx[k] = (nk * RT / Vk - pa) / (pHof(Vk) - pa);
+      // (the stack's growth over the step's start: the pieces' openings by their shares)
+      const VSt = pos.length === 1 ? Float64Array.from(pos[0].V) : new Float64Array(g.n);
+      if (pos.length > 1) for (const q of pos) for (let k = 0; k < g.n; k++) VSt[k] += q.w * q.V[k] / wSum;
+      const aOf = v => a * (1 + Math.pow(v / (S.hc * es), 3));
+      for (const q of pos) {
+        const { n, V, u, cache } = q, Ws = WsOf(q, S);
+        const nOld = Float64Array.from(n), VOld = Float64Array.from(V);
+        const src = new Float64Array(g.n), cap = new Float64Array(g.n), idx = new Float64Array(g.n);
+        // (the hold on the layers at an opening v: the same for every cell over the step)
+        const base = pa + o.sigZ + Ws, pHof = v => base + kP * Math.max(0, v - g0);
+        for (let it = 0; it < 3; it++) {
+          for (let k = 0; k < g.n; k++) {
+            const Wp = kP * Math.max(0, VSt[k] - g0);
+            cap[k] = Ws + (g.inside[k] ? Wp : 0);
+            if (!g.inside[k]) { src[k] = 0; continue; }
+            const pf = pa + u[k];
+            let nk = nOld[k], Vk = VOld[k];
+            // (the gas at the step's end held at V1, if its layers part further: V1·pH(V1) = (n + (G − a(V1)(pH(V1) − p_f)) dt) R T,
+            //  rising in V1; > 0 at V: they stay as they are)
+            const f = v => v * pHof(v) - (nk + (G - aOf(v) * (pHof(v) - pf)) * dt) * RT;
+            const pq = G > 0 ? pf + G / a : pf;
+            if (!(Vk > 0) && pq <= pHof(0)) { nk = 0; idx[k] = (pq - pa) / (pHof(0) - pa); }
+            else if (f(Vk) < 0) {
+              let lo = Vk, hi = Math.max(Vk * 2, (nk + G * dt) * RT / base + Vk + 1e-12);
+              while (f(hi) < 0) hi *= 2;
+              for (let i = 0; i < 100 && hi - lo > 1e-13 * hi; i++) { const m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
+              Vk = hi; nk = Vk * pHof(Vk) / RT; idx[k] = 1;
+            } else {
+              // (held where they are: the gas leaks through the film as it comes, e^(−c t) to its balance)
+              const aV = aOf(Vk), c = aV * RT / Vk;
+              if (c > 0) { const neq = (G + aV * pf) / c; nk = neq + (nk - neq) * Math.exp(-c * dt); } else nk += G * dt;
+              idx[k] = (nk * RT / Vk - pa) / (pHof(Vk) - pa);
+            }
+            n[k] = nk; V[k] = Vk;
+            // (what leaves the film here goes under the paper: made less held)
+            src[k] = (G - (nk - nOld[k]) / dt) * g.area[k];
           }
-          n[k] = nk; V[k] = Vk;
-          // (what leaves the film here goes under the paper: made less held)
-          src[k] = (G - (nk - nOld[k]) / dt) * g.area[k];
+          if (!src.some(v => v > 0)) { u.fill(0); break; }
+          const un = fuPaperSolve(g, cache, src, kap, cap);
+          let du = 0; for (let k = 0; k < g.n; k++) { du = Math.max(du, Math.abs(un[k] - u[k])); u[k] = un[k]; }
+          if (du < 1e-6 * (1 + Math.max(...cap))) break;
         }
-        if (!src.some(v => v > 0)) { u.fill(0); break; }
-        const un = fuPaperSolve(g, cache, src, kap, cap);
-        let du = 0; for (let k = 0; k < g.n; k++) { du = Math.max(du, Math.abs(un[k] - u[k])); u[k] = un[k]; }
-        if (du < 1e-6 * (1 + Math.max(...cap))) break;
-      }
-      // the piece along itself: its natural strain (its water, its oxygen gone, graphitizing, heat against the
-      // paper's), held by its paper; stuck above its temperature where pressed; cracks where its pull beats its strength
-      if (pl) {
-        let vS = 0, aS = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) { vS += V[k] * g.area[k]; aS += g.area[k]; }
-        const hP = S.hc + vS / aS, rhoP = mA * S.kept / hP, dens = rhoP / o.rhoG;
-        const fO = 1 - S.O / chem.O0, X = Xin * (1 - alpha[0]);
-        const eps = -(pl.bw || 0) * (Xin - X) - pl.bO * fO - pl.bG * gdeg + (pl.am || 0) * (T - (o.Tin || 293.15));
-        const E = pl.Ep * dens * dens, sc = pl.sigF * Math.pow(dens, 1.5);
-        let nStuck = 0, aStuck = 0, aAll = 0;
-        for (let i = 0; i < P.n; i++) {
-          const pc = pcAt(cap, u, P.r[i]);
-          if (!P.stuck[i] && T >= pl.Tstick && pc > 0) P.stuck[i] = 1;
-          tmaxP[i] = P.stuck[i] ? pl.tauB : pl.mu * pc;
-          aAll += P.A[i]; if (P.stuck[i]) { nStuck++; aStuck += P.A[i]; }
+        // the piece along itself: its natural strain (its water, its oxygen gone, graphitizing, heat against the
+        // paper's), held by its papers; stuck above its temperature where pressed; cracks where its pull beats its strength
+        if (pl) {
+          const P = q.P, tmaxP = q.tmax, plane = q.plane;
+          let vS = 0, aS = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) { vS += V[k] * g.area[k]; aS += g.area[k]; }
+          const hP = S.hc + vS / aS, rhoP = mA * S.kept / hP, dens = rhoP / o.rhoG;
+          const fO = 1 - S.O / chem.O0, X = Xin * (1 - alpha[0]);
+          const eps = -(pl.bw || 0) * (Xin - X) - pl.bO * fO - pl.bG * gdeg + (pl.am || 0) * (T - (o.Tin || 293.15));
+          const E = pl.Ep * dens * dens, sc = pl.sigF * Math.pow(dens, 1.5);
+          let nStuck = 0, aStuck = 0, aAll = 0;
+          for (let i = 0; i < P.n; i++) {
+            const pc = pcAt(cap, u, P.r[i]);
+            if (!P.stuck[i] && T >= pl.Tstick && pc > 0) P.stuck[i] = 1;
+            tmaxP[i] = faces * (P.stuck[i] ? pl.tauB : pl.mu * pc);
+            aAll += P.A[i]; if (P.stuck[i]) { nStuck++; aStuck += P.A[i]; }
+          }
+          if (nStuck && !plane.stuckAt) plane.stuckAt = { run: r, t: t0 + tb, T };
+          const ps = fuPlaneStep(P, eps, hP, E, pl.nu, ktP, tmaxP);
+          let s1 = -Infinity, e1 = 0, s2 = Infinity;
+          for (let e = 0; e < ps.sr.length; e++) { const a_ = Math.max(ps.sr[e], ps.st[e]), b_ = Math.min(ps.sr[e], ps.st[e]); if (a_ > s1) { s1 = a_; e1 = e; } if (b_ < s2) s2 = b_; }
+          const ratio = s1 / sc;
+          if (ratio > plane.ratioMax) { plane.ratioMax = ratio; plane.where = { run: r, t: t0 + tb, T, r: ps.rm[e1] / Rd }; }
+          if (ratio >= 1 && !plane.first) plane.first = { run: r, t: t0 + tb, T, r: ps.rm[e1] / Rd, sc, h: hP };
+          plane.compMin = Math.min(plane.compMin, s2);
+          // (squeezed along itself it buckles into waves between its papers when the squeeze beats a plate's on the
+          //  papers' give through their thickness, both sides: σ = 2 √(D k) / h, its wavelength 2π (D/k)^¼)
+          const Db = E * hP * hP * hP / (12 * (1 - pl.nu * pl.nu)), kF = 2 * o.paper.Ez / o.paper.t, sw = 2 * Math.sqrt(Db * kF) / hP;
+          const wr = s2 < 0 ? -s2 / sw : 0;
+          if (wr > (plane.waveMax || 0)) plane.waveMax = wr, plane.waveAt = { run: r, t: t0 + tb, T, lambda: 2 * Math.PI * Math.pow(Db / kF, 0.25), sw };
+          plane.hist.push({ run: r, t: t0 + tb, T, eps, sMid: ps.sr[0], s1, s2, sc, sw, ratio, wave: wr, stuck: aStuck / aAll, E, h: hP });
+          plane.last = { eps, sr: ps.sr, st: ps.st, rm: ps.rm, sc, h: hP, E, uEdge: P.u[P.n - 1] / Rd };
         }
-        if (nStuck && !plane.stuckAt) plane.stuckAt = { run: r, t: t0 + tb, T };
-        const ps = fuPlaneStep(P, eps, hP, E, pl.nu, ktP, tmaxP);
-        let s1 = -Infinity, e1 = 0, s2 = Infinity;
-        for (let e = 0; e < ps.sr.length; e++) { const a = Math.max(ps.sr[e], ps.st[e]), b = Math.min(ps.sr[e], ps.st[e]); if (a > s1) { s1 = a; e1 = e; } if (b < s2) s2 = b; }
-        const ratio = s1 / sc;
-        if (ratio > plane.ratioMax) { plane.ratioMax = ratio; plane.where = { run: r, t: t0 + tb, T, r: ps.rm[e1] / Rd }; }
-        if (ratio >= 1 && !plane.first) plane.first = { run: r, t: t0 + tb, T, r: ps.rm[e1] / Rd, sc, h: hP };
-        plane.compMin = Math.min(plane.compMin, s2);
-        // (squeezed along itself it buckles into waves between its papers when the squeeze beats a plate's on the
-        //  papers' give through their thickness, both sides: σ = 2 √(D k) / h, its wavelength 2π (D/k)^¼)
-        const D = E * hP * hP * hP / (12 * (1 - pl.nu * pl.nu)), kF = 2 * o.paper.Ez / o.paper.t, sw = 2 * Math.sqrt(D * kF) / hP;
-        const wr = s2 < 0 ? -s2 / sw : 0;
-        if (wr > (plane.waveMax || 0)) plane.waveMax = wr, plane.waveAt = { run: r, t: t0 + tb, T, lambda: 2 * Math.PI * Math.pow(D / kF, 0.25), sw };
-        plane.hist.push({ run: r, t: t0 + tb, T, eps, sMid: ps.sr[0], s1, s2, sc, sw, ratio, wave: wr, stuck: aStuck / aAll, E, h: hP });
-        plane.last = { eps, sr: ps.sr, st: ps.st, rm: ps.rm, sc, h: hP, E, uEdge: P.u[P.n - 1] / Rd };
+        // (the gas made and what left the film, per area of the piece: made = out + the change held)
+        const R_ = q.run;
+        R_.made += G * dt; for (let k = 0; k < g.n; k++) R_.out += src[k] * dt / areaP;
+        let iMax = 0, kMax = 0; for (let k = 0; k < g.n; k++) if (g.inside[k] && idx[k] > iMax) { iMax = idx[k]; kMax = k; }
+        if (iMax > R_.peak.idx) R_.peak = { idx: iMax, t: t0 + tb, T: T, k: kMax };
+        if (iMax >= 1 && !R_.puffAt) R_.puffAt = { t: t0 + tb, T };
+        R_.gasMax = Math.max(R_.gasMax, G);
+        const mid = 0, edgeK = g.id(g.nx > (o.nP || 16) ? (o.nP || 16) - 1 : g.nx - 1, 0);
+        q.hist.push({ run: r, t: t0 + tb, T, kept: S.kept, CO: S.C / Math.max(1e-30, S.O), g: gdeg, d: S.d, G, D, idxMid: idx[mid], idxMax: iMax,
+          Vmid: V[mid], Vedge: V[edgeK], uMid: u[mid], hold: o.sigZ + Ws + kP * Math.max(0, V[mid] - g0), hc: S.hc,
+          lifted: cache.fixed ? cache.fixed.reduce((s, v, k) => s + (v && g.inside[k] ? g.area[k] : 0), 0) / (o.Lx * o.Ly / 4) : 0 });
       }
-      // (the gas made and what left the film, per area of the piece: made = out + the change held)
-      made += G * dt; for (let k = 0; k < g.n; k++) out += src[k] * dt / areaP;
-      let iMax = 0, kMax = 0; for (let k = 0; k < g.n; k++) if (g.inside[k] && idx[k] > iMax) { iMax = idx[k]; kMax = k; }
-      if (iMax > peak.idx) peak = { idx: iMax, t: t0 + tb, T: T, k: kMax };
-      if (iMax >= 1 && !puffAt) puffAt = { t: t0 + tb, T };
-      gasMax = Math.max(gasMax, G);
-      const mid = 0, edgeK = g.id(g.nx > (o.nP || 16) ? (o.nP || 16) - 1 : g.nx - 1, 0);
-      hist.push({ run: r, t: t0 + tb, T, kept: S.kept, CO: S.C / Math.max(1e-30, S.O), g: gdeg, d: S.d, G, D, idxMid: idx[mid], idxMax: iMax,
-        Vmid: V[mid], Vedge: V[edgeK], uMid: u[mid], hold: o.sigZ + Ws + kP * Math.max(0, V[mid] - g0), hc: S.hc,
-        lifted: cache.fixed ? cache.fixed.reduce((s, v, k) => s + (v && g.inside[k] ? g.area[k] : 0), 0) / (o.Lx * o.Ly / 4) : 0 });
     }
-    runs.push({ peak, puffAt, gasMax, tEnd: t0 + pts[pts.length - 1][0], gas: { made, out, held0, held: heldOf() } });
+    for (const q of pos) { const R_ = q.run; q.runs.push({ peak: R_.peak, puffAt: R_.puffAt, gasMax: R_.gasMax, tEnd: t0 + pts[pts.length - 1][0], gas: { made: R_.made, out: R_.out, held0: R_.held0, held: heldOf(q) } }); }
     t0 += pts[pts.length - 1][0];
     // (between runs the gas held leaks out as it cools and the gap takes the surroundings' gas: at their pressure;
     //  the gap stays)
     const Tl = pts[pts.length - 1][1];
-    for (let k = 0; k < g.n; k++) n[k] = pa * V[k] / (FU_R * Tl);
-    u.fill(0);
+    for (const q of pos) { for (let k = 0; k < g.n; k++) q.n[k] = pa * q.V[k] / (FU_R * Tl); q.u.fill(0); }
   }
-  // the graphene film
-  const S = state(), La = o.La0 * Math.pow(o.La1 / o.La0, gdeg);
-  let aSum = 0, hSum = 0, hMin = Infinity, hMax = -Infinity;
-  const thick = new Float64Array(g.n);
-  for (let k = 0; k < g.n; k++) if (g.inside[k]) { const h = S.hc + V[k]; thick[k] = h; aSum += g.area[k]; hSum += h * g.area[k]; hMin = Math.min(hMin, h); hMax = Math.max(hMax, h); }
-  const hMean = hSum / aSum, mEnd = mA * S.kept, rho = mEnd / hMean;
-  let vSum = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) vSum += Math.pow(thick[k] - hMean, 2) * g.area[k];
-  const hSD = Math.sqrt(vSum / aSum);
-  const kappa = o.kG * (rho / 2260) * La / (La + o.ell);
-  if (plane) {
-    // (stuck all over and cracked, it breaks into cells: the pull the bond passes on over half a cell reaches its
-    //  strength, s = 2 σc h / τb -- the cracks' spacing when they have all formed)
-    const L = plane.last;
-    plane.stuckFrac = P.stuck.reduce((s_, v, i) => s_ + (v ? P.A[i] : 0), 0) / P.A.reduce((s_, v) => s_ + v, 0);
-    plane.spacing = plane.first && plane.stuckFrac > 0 ? 2 * L.sc * L.h / pl.tauB : null;
-    plane.size = { free: L.eps, held: L.uEdge };
-    plane.R = Rd; plane.rings = { r: Array.from(P.r), sr: Array.from(L.sr), st: Array.from(L.st), rm: Array.from(L.rm), stuck: Array.from(P.stuck) };
-    delete plane.last;
-  }
-  return { plane, hist, runs, grid: g, thick, V: Float64Array.from(V), chem, alpha: Array.from(alpha), g: gdeg, d: S.d, La, kept: S.kept, CO: S.C / Math.max(1e-30, S.O),
-    O: S.O, C: S.C, hc: S.hc, hMean, hMin, hMax, hSD, rho, kappa, mA, mEnd, stages: ST.map(s => ({ E0: s.E0, sig: s.sig })), graph: { E0: GR.E0, sig: GR.sig } };
+  // the graphene film: each piece's
+  const S = state(), La = o.La0 * Math.pow(o.La1 / o.La0, gdeg), mEnd = mA * S.kept;
+  const out = pos.map(q => {
+    const { V } = q;
+    let aSum = 0, hSum = 0, hMin = Infinity, hMax = -Infinity;
+    const thick = new Float64Array(g.n);
+    for (let k = 0; k < g.n; k++) if (g.inside[k]) { const h = S.hc + V[k]; thick[k] = h; aSum += g.area[k]; hSum += h * g.area[k]; hMin = Math.min(hMin, h); hMax = Math.max(hMax, h); }
+    const hMean = hSum / aSum, rho = mEnd / hMean;
+    let vSum = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) vSum += Math.pow(thick[k] - hMean, 2) * g.area[k];
+    const hSD = Math.sqrt(vSum / aSum);
+    const kappa = o.kG * (rho / 2260) * La / (La + o.ell);
+    const plane = q.plane, P = q.P;
+    if (plane) {
+      // (stuck all over and cracked, it breaks into cells: the pull the bond passes on over half a cell, from each
+      //  face holding it, reaches its strength: s = 2 σc h / (faces τb) -- the cracks' spacing when they have all formed)
+      const L = plane.last;
+      plane.stuckFrac = P.stuck.reduce((s_, v, i) => s_ + (v ? P.A[i] : 0), 0) / P.A.reduce((s_, v) => s_ + v, 0);
+      plane.spacing = plane.first && plane.stuckFrac > 0 ? 2 * L.sc * L.h / (faces * pl.tauB) : null;
+      plane.size = { free: L.eps, held: L.uEdge };
+      plane.R = Rd; plane.rings = { r: Array.from(P.r), sr: Array.from(L.sr), st: Array.from(L.st), rm: Array.from(L.rm), stuck: Array.from(P.stuck) };
+      delete plane.last;
+    }
+    // (load: the weight on it at the end -- the plate, the papers and the pieces above it; the holder's squeeze once the
+    //  stack fills its room is on top of it, in hist's hold)
+    return { m: q.m, w: q.w, plane, hist: q.hist, runs: q.runs, thick, V: Float64Array.from(V), hMean, hMin, hMax, hSD, rho, kappa, load: WsOf(q, S) };
+  });
+  // (the stack's spread: every piece's own and the pieces' means about the stack's, by their shares)
+  const bMean = out.reduce((s, q) => s + q.w * q.hMean, 0) / wSum;
+  const bVar = out.reduce((s, q) => s + q.w * (q.hSD * q.hSD + (q.hMean - bMean) * (q.hMean - bMean)), 0) / wSum;
+  const top = out[0];
+  return { plane: top.plane, hist: top.hist, runs: top.runs, grid: g, thick: top.thick, V: top.V, chem, alpha: Array.from(alpha), g: gdeg, d: S.d, La, kept: S.kept, CO: S.C / Math.max(1e-30, S.O),
+    O: S.O, C: S.C, hc: S.hc, hMean: top.hMean, hMin: top.hMin, hMax: top.hMax, hSD: top.hSD, rho: top.rho, kappa: top.kappa, mA, mEnd,
+    stages: ST.map(s => ({ E0: s.E0, sig: s.sig })), graph: { E0: GR.E0, sig: GR.sig },
+    pos: out, batch: { hMean: bMean, hSD: Math.sqrt(bVar), faces } };
+}
+
+/**
+ * The load (GO-7): with its temperature spread given (o.loadSpread, K: its hottest stack less its coldest at the top),
+ * its coldest and hottest stacks are run too -- each run's rise above the room scaled so its top is half the spread
+ * off -- and the batch is over the stacks spread evenly between them (1 : 4 : 1); without it, the stack as set.
+ * Returns the stack as set's run, with stacks { spread, cold, hot } (each its batch and its pieces' checks) and the
+ * batch over them. tick(k, n) as each stack is done.
+ */
+function fuRunLoad(o, tick) {
+  const r = fuRun(o);
+  if (!(o.loadSpread > 0)) return r;
+  const shift = (pts, d) => { const T0 = pts[0][1], Tt = Math.max(...pts.map(q => q[1])); return pts.map(([t, T]) => [t, T + d * (T - T0) / Math.max(1e-9, Tt - T0)]); };
+  const sum = q => ({ m: q.m, hMean: q.hMean, hSD: q.hSD, ratioMax: q.plane ? q.plane.ratioMax : NaN, waveMax: q.plane ? q.plane.waveMax : NaN, stuckFrac: q.plane ? q.plane.stuckFrac : NaN,
+    stuckT: q.plane && q.plane.stuckAt ? q.plane.stuckAt.T : null, puff: q.runs.map(x => x.peak.idx), puffAt: q.runs.map(x => x.puffAt ? x.puffAt.T : null) });
+  const one = d => { const s = fuRun({ ...o, runs: o.runs.map(p => shift(p, d)) }); return { d, hMean: s.batch.hMean, hSD: s.batch.hSD, pos: s.pos.map(sum) }; };
+  if (tick) tick(1, 3);
+  const cold = one(-o.loadSpread / 2);
+  if (tick) tick(2, 3);
+  const hot = one(o.loadSpread / 2), mid = { d: 0, hMean: r.batch.hMean, hSD: r.batch.hSD, pos: r.pos.map(sum) };
+  const S = [[cold, 1], [mid, 4], [hot, 1]], mu = S.reduce((a, [q, w]) => a + w * q.hMean, 0) / 6;
+  const sd = Math.sqrt(S.reduce((a, [q, w]) => a + w * (q.hSD * q.hSD + (q.hMean - mu) * (q.hMean - mu)), 0) / 6);
+  r.stacks = { spread: o.loadSpread, cold, mid, hot };
+  r.batch = { ...r.batch, hMean: mu, hSD: sd, within: r.batch.hSD, stacks: true };
+  return r;
+}
+/** A run's outputs for a DOE (GO-7): the batch's thickness, spread, density and heat conduction (the same GO per area);
+ *  each check at the stack's worst piece; h0 the GO piece going in (m). */
+function fuOutputs(fr, h0) {
+  const L = fr.pos || [fr], B = fr.batch || { hMean: fr.hMean, hSD: fr.hSD }, pl = fr.plane;
+  // (the coldest and hottest stacks' pieces too, when the load's spread was given)
+  const S = fr.stacks ? [...fr.stacks.cold.pos, ...fr.stacks.hot.pos] : [], mx = (f, g) => Math.max(...L.map(f), ...(g ? S.map(g) : []));
+  const hMin = Math.min(...L.map(q => q.hMin)), hMax = Math.max(...L.map(q => q.hMax));
+  return { h: B.hMean * 1e6, ratio: B.hMean / h0, rho: fr.mEnd / B.hMean / 1000, kappa: fr.kappa * fr.hMean / B.hMean,
+    gas1: mx(q => q.runs[0].peak.idx, p => p.puff[0]) * 100, gas2: fr.runs[1] ? mx(q => q.runs[1].peak.idx, p => p.puff[1]) * 100 : NaN, even: (hMax - hMin) / B.hMean * 100, sd: B.hSD * 1e6,
+    crack: pl ? mx(q => q.plane.ratioMax, p => p.ratioMax) * 100 : NaN, wave: pl ? mx(q => q.plane.waveMax, p => p.waveMax) * 100 : NaN, stuck: pl ? mx(q => q.plane.stuckFrac, p => p.stuckFrac) * 100 : NaN, size: pl ? pl.size.free * 100 : NaN };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
-  fuPlaneMesh, fuPlaneState, fuPlaneStep,
+  fuPlaneMesh, fuPlaneState, fuPlaneStep, fuOutputs, fuRunLoad,
   FU_R, FU_K0, FU_M, fuProgram, fuTempAt, fuParseCycle, fuExE1, fuPq, fuArrInt, fuE0, fuStage, fuConv, fuAdvance, fuChem,
   fuFactor, fuSolve, fuPaperGrid, fuPaperMatrix, fuPaperSolve, fuRun,
 };

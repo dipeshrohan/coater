@@ -234,6 +234,51 @@ const r = F.fuRun(base());
     `free ${(a.plane.size.free * 100).toFixed(3)} % (${(epsX * 100).toFixed(3)} %); stuck from ${(at.T - 273.15).toFixed(1)} °C (${(pre.T - 273.15).toFixed(1)} before), ${(a.plane.stuckFrac * 100).toFixed(0)} % of it; no hold: ${bMax.toExponential(1)} Pa (${(bMax / (pl.Ep * Math.abs(epsX))).toExponential(1)} of E ε)`);
 }
 
+// 17. the stack (GO-7): pieces followed together that are the same piece come out as it does alone; each piece's load is
+//     the plate, the papers and the pieces above it (its weight as it is then)
+{
+  const o = base({ dT: 2, plateP: 600 }), one = F.fuRun(o), two = F.fuRun({ ...o, positions: [{ m: 0, w: 1 }, { m: 0, w: 3 }] });
+  const same = two.pos.every(q => rel(q.hMean, one.hMean) < 1e-9 && rel(q.hSD + 1e-9, one.hSD + 1e-9) < 1e-6 && rel(q.hist[q.hist.length - 1].hold, one.hist[one.hist.length - 1].hold) < 1e-12);
+  const N = 20, gN = 9.81, st = F.fuRun({ ...o, N, positions: [{ m: 0 }, { m: 10 }, { m: 19 }] }), paperW = o.paper.rho * gN * o.paper.t, share = o.Lx * o.Ly / ((o.Lx + 2 * o.margin) ** 2);
+  const kP = o.paper.Ez * N / ((N + 1) * o.paper.t), g0 = o.gap / N;
+  let eL = 0;
+  for (const q of st.pos) {
+    const h = q.hist[q.hist.length - 1], want = paperW * (q.m + 1) + 600 + q.m * st.mA * h.kept * gN * share;
+    eL = Math.max(eL, rel(h.hold - o.sigZ - kP * Math.max(0, h.Vmid - g0), want));
+  }
+  check('the stack: the same piece twice is the piece; each carries the plate, the papers and the pieces above it', same && eL < 1e-9,
+    `loads ${st.pos.map(q => { const h = q.hist[q.hist.length - 1]; return (h.hold - o.sigZ).toFixed(1); }).join(', ')} Pa (m 0, 10, 19); worst ${eL.toExponential(1)}`);
+  // 18. the batch's spread: every piece's own and the pieces' means about the stack's, by their shares
+  const w = [1, 4, 1], b = F.fuRun({ ...o, N, room: 'plates', positions: [{ m: 0, w: 1 }, { m: 10, w: 4 }, { m: 19, w: 1 }] });   // (the plates on the stack: its pieces uneven)
+  const g = b.grid, own = b.pos.map(q => { let a = 0, s1 = 0, s2 = 0; for (let k = 0; k < g.n; k++) if (g.inside[k]) { a += g.area[k]; s1 += q.thick[k] * g.area[k]; } const m = s1 / a; for (let k = 0; k < g.n; k++) if (g.inside[k]) s2 += (q.thick[k] - m) ** 2 * g.area[k]; return [m, Math.sqrt(s2 / a)]; });
+  const mu = own.reduce((s, q, i) => s + w[i] * q[0], 0) / 6, sd = Math.sqrt(own.reduce((s, q, i) => s + w[i] * (q[1] ** 2 + (q[0] - mu) ** 2), 0) / 6);
+  check('the batch\'s spread: each piece\'s own and the pieces\' about the stack\'s', rel(b.batch.hSD, sd) < 1e-12 && rel(b.batch.hMean, mu) < 1e-12 && own.every((q, i) => rel(q[1] + 1e-12, b.pos[i].hSD + 1e-12) < 1e-9),
+    `${(b.batch.hMean * 1e6).toFixed(2)} ± ${(b.batch.hSD * 1e6).toFixed(3)} µm; the pieces ${b.pos.map(q => (q.hMean * 1e6).toFixed(2)).join(', ')} µm`);
+}
+
+// 19. held on both faces (GO-7): stuck and cracked, the bond from both papers passes the pull on twice as fast, so the
+//     cells are half as wide (s = 2 σc h / (2 τb)); stuck all over, the pull inside about the same (−E ε/(1−ν) from
+//     where it stuck: only the slip before it stuck differs, by friction on one face or two)
+{
+  const pl = { Ep: 20e9, nu: 0.2, sigF: 100e6, bw: 0.08, bO: 0.03, bG: 0.03, mu: 0.15, Tstick: 2200 + 273.15, tauB: 1e6, am: 0 };
+  const o = base({ dT: 2 }), a1 = F.fuRun({ ...o, plane: { ...pl, faces: 1 } }), a2 = F.fuRun({ ...o, plane: { ...pl, faces: 2 } });
+  const s1 = a1.plane.spacing, s2 = a2.plane.spacing, mid1 = a1.plane.rings.sr[0], mid2 = a2.plane.rings.sr[0];
+  check('held on both faces: the cells half as wide, the pull inside the same', s1 > 0 && s2 > 0 && Math.abs(s2 / s1 - 0.5) < 1e-9 && rel(mid2, mid1) < 1e-2 && a2.batch.faces === 2,
+    `cells ${(s1 * 1e3).toFixed(3)} mm (one face) → ${(s2 * 1e3).toFixed(3)} mm (both); the middle's pull ${(mid1 / 1e6).toFixed(4)} → ${(mid2 / 1e6).toFixed(4)} MPa (${rel(mid2, mid1).toExponential(1)})`);
+}
+
+// 20. the load (GO-7): a spread too small to matter gives back the stack as set (to 1 nm: the steps fall a hair apart); with a spread, the coldest stack comes
+//     out thinner than the hottest (more gas, sooner, in the hotter), and the batch is the stacks' own and their means
+//     about theirs, 1 : 4 : 1
+{
+  const o = base({ dT: 2 }), a = F.fuRun(o), z = F.fuRunLoad({ ...o, loadSpread: 1e-6 }), L = F.fuRunLoad({ ...o, loadSpread: 100 });
+  const S = [[L.stacks.cold, 1], [L.stacks.mid, 4], [L.stacks.hot, 1]], mu = S.reduce((q, [x, w]) => q + w * x.hMean, 0) / 6;
+  const sd = Math.sqrt(S.reduce((q, [x, w]) => q + w * (x.hSD ** 2 + (x.hMean - mu) ** 2), 0) / 6);
+  check('the load: no spread is the stack as set; the coldest and hottest stacks, and the batch over them', Math.abs(z.batch.hMean - a.batch.hMean) < 1e-9 && Math.abs(z.batch.hSD - a.batch.hSD) < 1e-9
+    && L.stacks.cold.hMean < L.stacks.hot.hMean && rel(L.batch.hMean, mu) < 1e-12 && rel(L.batch.hSD, sd) < 1e-12 && L.batch.within === L.stacks.mid.hSD,
+    `coldest ${(L.stacks.cold.hMean * 1e6).toFixed(2)}, as set ${(L.stacks.mid.hMean * 1e6).toFixed(2)}, hottest ${(L.stacks.hot.hMean * 1e6).toFixed(2)} µm; the batch ± ${(L.batch.hSD * 1e6).toFixed(3)} µm (within a stack ± ${(L.batch.within * 1e6).toFixed(3)})`);
+}
+
 console.log(`the defaults: run 1 the gas at ${(r.runs[0].peak.idx * 100).toFixed(1)} % of its hold; run 2 puffs from ${(r.runs[1].puffAt.T - 273.15).toFixed(0)} °C; ${(r.hMean * 1e6).toFixed(1)} µm (${(r.hMean / 90e-6).toFixed(3)}×), ${r.rho.toFixed(0)} kg/m³, ${(r.kept * 100).toFixed(1)} % kept, g ${r.g.toFixed(3)}, La ${r.La.toFixed(0)} nm, ${r.kappa.toFixed(0)} W/(m K)`);
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;
