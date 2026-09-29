@@ -580,6 +580,7 @@ function runLocation(i) {
   logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : geo.shape === 'flat' ? 'flat land' : bladeText()}${geo.clModel === 'simple' ? ' (simple contact-line model)' : ''}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
   worker.onmessage = e => {
+    if (cfdWorkers[i] !== worker) return;   // (stopped: Esc or Stop; its late events ignored)
     if (e.data.progress) {
       run.progress = e.data.progress; liveAdd(run.live, run.progress); prog2DFeed(run.prog, run.progress, run.live);
       if (run.progress.stage && run.progress.stage !== lastStage) { lastStage = run.progress.stage; logCFD(i, lastStage); }
@@ -609,7 +610,8 @@ function runLocation(i) {
     renderCFD();
     stepAfterRuns2D();
   };
-  worker.onerror = e => { finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
+  // (a worker stopped while its scripts load reports their load failing afterwards: not an error of the run)
+  worker.onerror = e => { if (cfdWorkers[i] !== worker) return; finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
   worker.postMessage(cfdWorkerMessage(geo, geo.solver, true));
   renderRunChips();
   renderCFD();
@@ -1328,6 +1330,7 @@ function runMeshStudy(i) {
     run.worker = w;
     const end = () => { w.terminate(); run.worker = null; run.ms = performance.now() - t0; };
     w.onmessage = e => {
+      if (run.worker !== w) return;   // (stopped: its late events ignored)
       if (e.data.progress) { run.progress = e.data.progress; liveAdd(run.live, run.progress); updateStudyStatus(); return; }
       end();
       const r = e.data.ok ? e.data.result : null;
@@ -1336,7 +1339,7 @@ function runMeshStudy(i) {
       else Object.assign(run, { status: 'done', r, metrics: flowMetrics(makeFlowField(r, { rho: geo.rho, ty: geo.ty })) });
       studyRunEnded(study);
     };
-    w.onerror = e => { end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); studyRunEnded(study); };
+    w.onerror = e => { if (run.worker !== w) return; end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); studyRunEnded(study); };
     w.postMessage(cfdWorkerMessage(geo, run.solver));
   }
   studyRunEnded(study);

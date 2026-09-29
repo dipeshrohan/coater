@@ -536,7 +536,7 @@ function c3dRun(stay = false) {
     prog: prog3DStrip(est.NL, est.NL * 1.7, est.secs3, m.msg.solver.tol || TOL_DEFAULT), progZ: CFD_LOCS[C3D.loc].z, progName: `strip at L${C3D.loc + 1}` });
   const done = () => { w.terminate(); if (C3D_RUN.worker === w) C3D_RUN.worker = null; };
   w.onmessage = e => {
-    if (e.data.id !== id) return;
+    if (e.data.id !== id || C3D_RUN.worker !== w) return;
     if (e.data.progress) { C3D_RUN.progress = e.data.progress; prog3DStripFeed(C3D_RUN.prog, e.data.progress); c3dBusy(); return; }
     done();
     const ms = performance.now() - C3D_RUN.t0, r = e.data.ok ? e.data.result : null;
@@ -551,7 +551,7 @@ function c3dRun(stay = false) {
     stepAfterRun3D();
     render();
   };
-  w.onerror = e => { done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; stepAfterRun3D(); render(); };
+  w.onerror = e => { if (C3D_RUN.worker !== w) return; done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; stepAfterRun3D(); render(); };   // (stopped: ignored)
   w.postMessage({ ...m, id });
   render();
 }
@@ -565,7 +565,7 @@ function c3dRunEdge(m, key, est) {
     prog: prog3DEdge(est.NL, est.NL * 1.7, 3 * est.secs3, tol, m.msg.Pup), progZ: rg.zc * 1000, progName: `edge at the ${end} end` });
   const done = () => { w.terminate(); if (C3D_RUN.worker === w) C3D_RUN.worker = null; };
   w.onmessage = e => {
-    if (e.data.id !== id) return;
+    if (e.data.id !== id || C3D_RUN.worker !== w) return;
     if (e.data.step) { C3D_RUN.steps.push(e.data.step); prog3DEdgeStep(C3D_RUN.prog, e.data.step); c3dBusy(); return; }
     if (e.data.progress) { C3D_RUN.progress = e.data.progress; prog3DEdgeFeed(C3D_RUN.prog, e.data.progress); c3dBusy(); return; }
     done();
@@ -580,7 +580,7 @@ function c3dRunEdge(m, key, est) {
     stepAfterRun3D();
     render();
   };
-  w.onerror = e => { done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; stepAfterRun3D(); render(); };
+  w.onerror = e => { if (C3D_RUN.worker !== w) return; done(); C3D_RUN.status = 'error'; C3D_RUN.error = e.message || 'the 3D worker failed'; stepAfterRun3D(); render(); };   // (stopped: ignored)
   w.postMessage({ type: 'edge', ...m, id });
   render();
 }
