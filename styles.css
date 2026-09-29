@@ -1916,3 +1916,48 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .furn-pos .seg button[aria-selected="true"] small { color: inherit; opacity: .85; }
 .furn-pos-t tr.furn-pos-g th { padding-top: 14px; font-weight: 600; border-bottom: 1px solid var(--line); }
 .furn-pos-t tr.furn-pos-g th small { font-weight: 400; margin-left: 6px; }
+
+/* ---- Flow › 3D, the Mesh step's mesh setup, statistics, sections and study (cfd-steps.js, ui-3d.js, cfd-accuracy.js) ---- */
+.seg button:disabled { cursor: default; }
+.seg button:disabled:not([aria-selected=true]):hover { color: var(--muted); background: var(--surface); }
+.m3-grp { border-bottom: 1px solid var(--line-soft); padding: 2px 0 8px; }
+.m3-grp + .m3-grp { margin-top: 6px; }
+.m3-grp > summary { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.m3-grp > summary::after { content: ''; margin-left: auto; width: 0; height: 0; border-left: 4px solid var(--muted); border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent; transition: transform .15s; }
+.m3-grp[open] > summary::after { transform: rotate(90deg); }
+.m3-grp > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.m3-grp .prop-seg { margin: 8px 0; }
+.m3-grp .kv input.zone-in { width: 64px; }
+.m3-sub { margin: 10px 0 4px; font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.m3-probs { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
+.m3-probs li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; align-items: start; font-size: 12px; line-height: 1.4; padding: 6px 8px; border-radius: 8px; border: 1px solid; }
+.m3-probs li .ui-i { width: 14px; height: 14px; margin-top: 1px; }
+.m3-probs li b { margin-right: 4px; }
+.m3-probs .m3-err { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); background: color-mix(in srgb, var(--bad) 7%, transparent); }
+.m3-probs .m3-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.m3-probs li span { color: var(--ink); }
+.m3-probs .m3-err b { color: var(--bad); } .m3-probs .m3-warn b { color: var(--warn); }
+.m3-sec canvas { cursor: crosshair; touch-action: auto; }
+.m3-sec-read { position: absolute; right: 10px; top: 8px; font: 11.5px var(--mono); color: var(--muted); pointer-events: none; background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 1px 5px; border-radius: 4px; }
+.m3-sec-read:empty { display: none; }
+.c3d-mesh .m3-study { grid-column: 1 / -1; }
+.m3-study { padding: 12px 14px; }
+.m3-study > figcaption { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 8px; flex-wrap: wrap; }
+.m3-study .acc3-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.m3s-table td:first-child { font-family: var(--sans); font-size: 12.5px; }
+.m3s-table td.m3s-d, .m3s-table th:nth-last-child(-n+2) { color: var(--muted); }
+.m3-xflow .kv { margin: 4px 0 8px; }
+.m3-preset { margin: 8px 0 6px; }
+.m3-preset .m3-sub { margin-top: 0; }
+.seg.seg-full { display: flex; width: 100%; }
+.seg.seg-full button { flex: 1 1 0; padding-left: 4px; padding-right: 4px; }
+.tb-lbl { font-size: 12px; color: var(--muted); margin-left: 4px; }
+@media (max-width: 1023px) { .c3d-mesh { grid-template-columns: minmax(0, 1fr); } .c3d-mesh .step-side { max-height: none; } }
+/* ---- Flow › 3D Results: the streamline settings, the u_z section ---- */
+.c3d-stream { padding: 12px 14px; margin: 12px 0; }
+.c3d-stream > figcaption, .m3-uz > figcaption { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.c3d-stream .acc3-bar .zone-in { width: 76px; }
+.c3d-pts { width: 100%; font: 12px var(--mono); margin-top: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); box-sizing: border-box; }
+.m3-uz .acc3-bar { margin-bottom: 6px; }
+.m3-uz-host { position: relative; height: 260px; }
+.m3-uz-host canvas { display: block; }

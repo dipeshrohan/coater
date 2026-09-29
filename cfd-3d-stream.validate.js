@@ -10,6 +10,14 @@
  *     the flow returns to its seed, closer as the step shrinks.
  *  5. Open sides (a skewed blade's): a uniform flow crossing the region's side -- the lines that reach it end on it,
  *     still straight; closed (the default without skew), they stay in the region to the outlet.
+ *  6. Cross-flow that grows with height (w = G y): each line leaves its plane at the slope G y / u of its own height;
+ *     with w = 0 the same lines stay in their planes exactly (planar is right when the field is).
+ *  7. A point located in the mesh is where the mesh puts it; points in the blade, under the web, beyond the sides: none.
+ *  8. Seeds: a line across the region from its lowest z to its highest (all inside, their z spread); asked inside the
+ *     blade, left out; up the gap, within the local height; a plane of them.
+ *  9. A slice (a station held) stays in its plane where the volume line leaves it; the slice line follows the velocity
+ *     projected on the plane.
+ * 10. A line through a seed inside the flow: back to the inlet, on to the outlet, through the seed; a length limit stops it.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -17,20 +25,20 @@ global.bandSolve = gap.bandSolve;
 const { solveCoater3D } = require('./cfd-fem3d.js');
 const { coaterGrid } = require('./cfd-fem.js');
 const { makeFlowField, traceStreamline, streamlinePsiDeviation } = require('./cfd-flowviz.js');
-const { streamlines3D, traceLine3D, sample3D, sl3InletSeeds, sl3Eval, sl3Work } = require('./cfd-3d-stream.js');
+const { streamlines3D, traceLine3D, traceThrough3D, locate3D, seeds3D, sample3D, sl3InletSeeds, sl3Eval, sl3Work } = require('./cfd-3d-stream.js');
 
 let fails = 0;
 const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); };
 
 // a mesh of NC x NL x NR nodes whose coordinates are quadratic in each node index (so the elements map it exactly)
-function curvedMesh(nEx, nEz, nEy, vel) {
+function curvedMesh(nEx, nEz, nEy, vel, planar = false) {
   const NC = 2 * nEx + 1, NL = 2 * nEz + 1, NR = 2 * nEy + 1, N = NC * NL * NR;
   const R = { NC, NL, NR, x: new Float64Array(N), y: new Float64Array(N), z: new Float64Array(N), u: new Float64Array(N), v: new Float64Array(N), w: new Float64Array(N) };
   for (let c = 0; c < NC; c++) for (let l = 0; l < NL; l++) for (let k = 0; k < NR; k++) {
     const n = (c * NL + l) * NR + k, s = k / (NR - 1);
     R.x[n] = 1e-3 * c + 0.2e-3 * c * s;                         // spines slanted more downstream
     R.y[n] = (2e-3 + 0.05e-3 * c + 0.004e-3 * c * c) * s;       // the top rising along the flow
-    R.z[n] = 0.5e-3 * l + 0.02e-3 * l * l + 0.01e-3 * c * l;    // stations unevenly spaced, skewed
+    R.z[n] = 0.5e-3 * l + 0.02e-3 * l * l + (planar ? 0 : 0.01e-3 * c * l);    // stations unevenly spaced, skewed (planar: each at its own z, as the 3D solver's)
     const [u, v, w] = vel(R.x[n], R.y[n], R.z[n]); R.u[n] = u; R.v[n] = v; R.w[n] = w;
   }
   return R;
@@ -127,6 +135,66 @@ function curvedMesh(nEx, nEz, nEy, vel) {
   const a = roundTrip(0.05), b = roundTrip(0.015);
   check('gap varying across the strip: a line to the outlet and back returns to its seed', a.back < 5e-3 * H && a.ends.concat(b.ends).every(e => e === 'outlet/inlet'), `largest miss ${(a.back * 1e9).toFixed(0)} nm at the app's step (flow across the strip up to ${(wMax * 1e3).toFixed(3)} mm/s)`);
   check('  closer as the step shrinks', b.back < a.back / 3, `${(b.back * 1e9).toFixed(0)} nm at a step 3.3 times smaller`);
+}
+
+// 6. cross-flow growing with height: w = G y
+{
+  const U0 = 1e-3, G = 0.02, R = curvedMesh(6, 3, 2, (x, y) => [U0, 0, G * y]), R0 = curvedMesh(6, 3, 2, () => [U0, 0, 0]);
+  const L = streamlines3D(R, { across: 2, up: 4 }).lines, L0 = streamlines3D(R0, { across: 2, up: 4 }).lines;
+  let dev = 0, moved = 0, flat = 0;
+  for (const ln of L) { const p = ln.pos, n = p.length / 3, slope = G * p[1] / U0; for (let i = 0; i < n; i++) dev = Math.max(dev, Math.abs(p[3 * i + 2] - p[2] - slope * (p[3 * i] - p[0]))); moved = Math.max(moved, Math.abs(p[p.length - 1] - p[2])); }
+  for (const ln of L0) { const p = ln.pos; for (let i = 2; i < p.length; i += 3) flat = Math.max(flat, Math.abs(p[i] - p[2])); }
+  check('cross-flow growing with height: each line leaves its plane at its own slope G y / u', dev < 1e-6 * moved && moved > 1e-4, `moved up to ${(moved * 1e3).toFixed(3)} mm across, off the slope by ${dev.toExponential(1)} m`);
+  check('  w = 0: the same lines stay in their planes', flat < 1e-9, `largest move across ${flat.toExponential(1)} m`);
+}
+// 7. locating points
+{
+  const R = curvedMesh(6, 3, 2, () => [1e-3, 0, 0]), w = sl3Work();
+  let err = 0, n = 0;
+  for (const [C, L, K] of [[0.3, 0.2, 0.1], [5.5, 3.7, 3.2], [11.9, 5.99, 3.99], [7.25, 1.5, 0.5]]) { sl3Eval(R, C, L, K, w); const q = locate3D(R, w.x, w.y, w.z); err = Math.max(err, Math.abs(q[0] - C), Math.abs(q[1] - L), Math.abs(q[2] - K)); n++; }
+  sl3Eval(R, 6, 3, 4, w); const above = locate3D(R, w.x, w.y * 1.05, w.z), under = locate3D(R, w.x, -1e-5, w.z);
+  sl3Eval(R, 6, 6, 2, w); const beyond = locate3D(R, w.x, w.y, w.z + 1e-4);
+  check('a point located in the mesh is where the mesh puts it; in the blade, under the web or beyond a side: none', err < 1e-9 && above === null && under === null && beyond === null, `${n} points to ${err.toExponential(1)}; above ${above}, under ${under}, beyond ${beyond}`);
+}
+// 8. seeds
+{
+  const R = curvedMesh(6, 3, 2, () => [1e-3, 0, 0]), w = sl3Work();
+  sl3Eval(R, 6, 3, 2, w);
+  const xL = w.x, yL = w.y * 0.5, S = seeds3D(R, { kind: 'zline', x: xL, y: yL, n: 7 }), zs = S.seeds.map(q => { sl3Eval(R, q[0], q[1], q[2], w); return w.z; });
+  // (the region's sides at that x and y: z at its first and last station there)
+  const q0 = locate3D(R, xL, yL, 2e-3); sl3Eval(R, q0[0], 0, q0[2], w); const zMin = w.z; sl3Eval(R, q0[0], R.NL - 1, q0[2], w); const zMax = w.z;
+  check('a seed line across the region: from its side to its side at x and y, every seed inside the flow', S.seeds.length === 7 && S.outside.length === 0 && Math.abs(Math.min(...zs) - zMin) < 1e-8 && Math.abs(Math.max(...zs) - zMax) < 1e-8 && new Set(zs.map(z => z.toFixed(9))).size === 7,
+    `z ${zs.map(z => (z * 1e3).toFixed(3)).join(' ')} mm (region ${(zMin * 1e3).toFixed(3)} to ${(zMax * 1e3).toFixed(3)})`);
+  sl3Eval(R, 6, 3, 4, w);
+  const P = seeds3D(R, { kind: 'point', pts: [[w.x, w.y * 0.5, w.z], [w.x, w.y * 1.2, w.z]] });
+  check('  a point asked inside the blade (above the flow): left out, reported', P.seeds.length === 1 && P.outside.length === 1, `${P.seeds.length} in, ${P.outside.length} outside`);
+  const x0 = w.x, z0 = w.z, Y = seeds3D(R, { kind: 'yline', x: x0, z: z0, n: 5 }), ys = Y.seeds.map(q => { sl3Eval(R, q[0], q[1], q[2], w); return [w.x, w.y, w.z]; });
+  // (the fluid's height at x0, z0: on the top row, where its x is x0)
+  let a = 0, b = R.NC - 1; const L0 = Y.seeds[0][1]; for (let i = 0; i < 60; i++) { const m = (a + b) / 2; sl3Eval(R, m, L0, R.NR - 1, w); if (w.x < x0) a = m; else b = m; } sl3Eval(R, (a + b) / 2, L0, R.NR - 1, w); const top = w.y;
+  check('  up the gap at x, z: 5 seeds evenly within the local height there, all at that x and z', Y.seeds.length === 5 && ys.every((q, i) => Math.abs(q[1] - top * (i + 0.5) / 5) < 1e-9 * top && Math.abs(q[0] - x0) < 1e-12 && Math.abs(q[2] - z0) < 1e-12), ys.map(q => (q[1] * 1e3).toFixed(4)).join(' ') + ` (height ${(top * 1e3).toFixed(4)} mm)`);
+  const Pl = seeds3D(R, { kind: 'plane', plane: 'yz', at: 5e-3, n1: 4, n2: 3 });
+  check('  a Y–Z plane of seeds at x 5 mm: every one inside, on that plane', Pl.seeds.length + Pl.outside.length === 12 && Pl.seeds.length > 0 && Pl.seeds.every(q => { sl3Eval(R, q[0], q[1], q[2], w); return Math.abs(w.x - 5e-3) < 1e-9; }), `${Pl.seeds.length} of 12 inside`);
+}
+// 9. a slice
+{
+  const U0 = 1e-3, R = curvedMesh(6, 3, 2, () => [U0, 0.02e-3, 0.3e-3], true), seed = [1e-3, 3, 2];
+  const vol = traceLine3D(R, seed), sl = traceLine3D(R, seed, { hold: 'L' });
+  let dz = 0, dL = 0, slope = 0;
+  for (let i = 2; i < sl.pos.length; i += 3) dz = Math.max(dz, Math.abs(sl.pos[i] - sl.pos[2]));
+  for (let i = 1; i < sl.cc.length; i += 3) dL = Math.max(dL, Math.abs(sl.cc[i] - 3));
+  const n = sl.pos.length / 3; slope = (sl.pos[3 * (n - 1) + 1] - sl.pos[1]) / (sl.pos[3 * (n - 1)] - sl.pos[0]);
+  const vz = Math.abs(vol.pos[vol.pos.length - 1] - vol.pos[2]);
+  check('an X–Y slice (a station held): stays in its plane where the volume line leaves it', dz < 1e-15 && dL === 0 && vz > 1e-4 && sl.end === 'outlet', `slice ${dz.toExponential(1)} m off its plane; the volume line ${(vz * 1e3).toFixed(3)} mm across`);
+  check('  and follows the velocity projected on it (v / u)', Math.abs(slope - 0.02) < 1e-6, `slope ${slope.toFixed(8)} (0.02)`);
+}
+// 10. through a seed; a length limit
+{
+  const R = curvedMesh(6, 3, 2, () => [1e-3, 0, 0.05e-3]), seed = [6.2, 3, 2], w = sl3Work();
+  const T = traceThrough3D(R, seed); sl3Eval(R, ...seed, w);
+  const sp = [T.pos[3 * T.seedAt], T.pos[3 * T.seedAt + 1], T.pos[3 * T.seedAt + 2]];
+  check('a line through a seed: back to the inlet, on to the outlet, through the seed', T.start === 'inlet' && T.end === 'outlet' && Math.hypot(sp[0] - w.x, sp[1] - w.y, sp[2] - w.z) < 1e-15 && T.cc[0] < 1e-9 && T.cc[T.cc.length - 3] > R.NC - 1 - 1e-9, `${T.pos.length / 3} points`);
+  const S = traceLine3D(R, [1e-3, 3, 2], { maxLength: 3e-3 }); let len = 0; for (let i = 3; i < S.pos.length; i += 3) len += Math.hypot(S.pos[i] - S.pos[i - 3], S.pos[i + 1] - S.pos[i - 2], S.pos[i + 2] - S.pos[i - 1]);
+  check('  a length limit stops a line (3 mm)', S.end === 'length' && len >= 3e-3 && len < 3.5e-3, `${(len * 1e3).toFixed(3)} mm, ${S.end}`);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

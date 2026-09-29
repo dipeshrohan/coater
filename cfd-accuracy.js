@@ -629,3 +629,128 @@ function wireAcc3(host) {
   if (g('acc3Use')) g('acc3Use').onclick = acc3Use;
   if (g('acc3Counts')) g('acc3Counts').onclick = acc3Counts;
 }
+
+// ---- Flow › 3D, Mesh step: the mesh-independence study -- the strip solved on Coarse, Medium and Fine ----
+/**
+ * The strip solved on each preset in turn (C3D_MESH_PRESETS), nothing but the mesh changed: before each solve the physics
+ * -- everything the solve is sent but its mesh (c3dPhysicsKey) -- is checked the same as the first's, or the study stops.
+ * Run through the page's own 3D solve, as meshing to an accuracy runs it (the trial meshes set without undo steps; the
+ * page's own mesh and result back at the end). An adapted mesh (meshing to an accuracy) and its zones' scaling are set
+ * aside for the study -- its counts are the presets' -- while the 2D's zones and the zones across are kept as set (sizes
+ * in mm: the same in the three). A strip only: an edge strip's solve steps the bead pressure, the full width sweeps its
+ * strips (each many times a strip's time).
+ */
+const M3S = { status: 'idle', runs: [], stop: false, abandon: false, error: null, key: null, when: null, region: null, loc: null, width: null, cur: null, tNow: 0, zones: null };
+/** Everything a 3D solve is sent but its mesh (counts, grading, zones, adapted element ends, the stations across). */
+function c3dPhysicsKey() {
+  const m = c3dSolveMessage(false), msg = JSON.parse(JSON.stringify(m.msg)), strip = { ...m.strip };
+  for (const k of ['mesh', 'nEb', 'nEf', 'nEs', 'nEy', 'gradeB', 'gradeS', 'gradeY', 'zones', 'frac']) delete msg.solver[k];
+  delete strip.nEz; delete strip.zs;
+  return JSON.stringify([C3D.region, C3D.loc, C3D.stripW, C3D.source, msg, strip, m.file, m.edge]);
+}
+const m3sCounts = p => Object.fromEntries(C3D_PRESET_KEYS.map(k => [k, C3D_MESH_PRESETS[p][k]]));
+/** One 3D solve of the page's current settings, from the Mesh step: its result (C3D_RES), or null (stopped, failed: M3S says which). */
+function m3sSolve() {
+  return new Promise(done => {
+    c3dRun(true);
+    if (C3D_RUN.status !== 'running') { M3S.status = 'error'; M3S.error = C3D_RUN.error || 'the 3D could not start'; done(null); return; }
+    const t = setInterval(() => {
+      if (C3D_RUN.status === 'running') { m3sStatus(); return; }
+      clearInterval(t);
+      if (C3D_RUN.status === 'done' && C3D_RES) { done(C3D_RES); return; }
+      if (M3S.status === 'running') { const stopped = M3S.stop || C3D_RUN.status === 'cancelled'; M3S.status = stopped ? 'stopped' : 'error'; M3S.error = stopped ? null : C3D_RUN.error || 'the 3D failed'; }
+      done(null);
+    }, 400);
+  });
+}
+async function m3StudyRun() {
+  if (M3S.status === 'running' || C3D_RUN.status === 'running' || ACC3.status === 'running' || C3D.region !== 'strip') return;
+  const orig = acc3Snap(), origRes = C3D_RES, base = { ...orig, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1 };
+  Object.assign(M3S, { status: 'running', runs: [], stop: false, abandon: false, error: null, key: null, when: null, region: 'strip', loc: C3D.loc, width: C3D.stripW, cur: null,
+    zones: zonesText(solverOf(C3D.loc).zones), across: c3dZonesText(C3D.zZones) });
+  render();
+  try {
+    for (const p of Object.keys(C3D_MESH_PRESETS)) {
+      if (M3S.stop) { M3S.status = 'stopped'; break; }
+      await acc3Set({ ...base, ...m3sCounts(p) });
+      const key = c3dPhysicsKey();
+      if (M3S.key == null) M3S.key = key;
+      else if (key !== M3S.key) { M3S.status = 'error'; M3S.error = `the solve for ${C3D_MESH_PRESETS[p].l} would not have the same physics as the first: stopped`; break; }
+      if (c3dEstimate().bytes > C3D_MAX_BYTES) { M3S.status = 'error'; M3S.error = `${C3D_MESH_PRESETS[p].l} needs more memory than a browser gives one page (about ${c3dMem(c3dEstimate().bytes)}): a narrower strip`; break; }
+      M3S.cur = p; M3S.tNow = performance.now(); render();
+      const res = await m3sSolve();
+      if (!res) break;
+      const R = res.result, m = m3StudyMetrics(R), cf = m3CrossFlow(R);
+      M3S.runs.push({ preset: p, counts: m3sCounts(p), cells: ((R.NC - 1) / 2) * ((R.NR - 1) / 2) * ((R.NL - 1) / 2), dims: `${(R.NC - 1) / 2} × ${(R.NR - 1) / 2} × ${(R.NL - 1) / 2}`,
+        ms: res.ms, mode: R.mode, k: R.k ?? null, H: R.H, m: { ...m, ux: cf.ux, uy: cf.uy } });
+    }
+    if (M3S.status === 'running') M3S.status = M3S.runs.length === Object.keys(C3D_MESH_PRESETS).length ? 'done' : 'stopped';
+  } catch (e) { M3S.status = 'error'; M3S.error = e.message; }
+  M3S.cur = null; M3S.when = new Date().toISOString();
+  // (the page back to its own mesh and result -- not when a project was opened meanwhile: it has its own)
+  if (!M3S.abandon) { await acc3Set(orig); C3D_RES = origRes; V3.key = null; }
+  render();
+}
+function m3StudyStop(abandon = false) { if (M3S.status !== 'running') return; M3S.stop = true; if (abandon) M3S.abandon = true; c3dStop(); }
+function m3sStatus() {
+  const el = document.getElementById('m3sNow');
+  if (el && M3S.status === 'running' && M3S.cur) el.textContent = `${C3D_MESH_PRESETS[M3S.cur].l}: ${((performance.now() - (M3S.tNow || performance.now())) / 1000).toFixed(0)} s · solving ≈ ${Math.floor(100 * (c3dProgShare() || 0))} %`;
+}
+/** The study's quantities: key, label, unit and scale (from SI), and whether a change between meshes is to be read as one (see m3StudyHTML). */
+const M3S_ROWS = [['film', 'Wet film', 'µm', 1e6], ['q', 'Flow rate, per width', 'mm²/s', 1e6], ['pMax', 'Pressure, largest', 'Pa', 1], ['pEdge', 'Pressure at the metering edge', 'Pa', 1],
+  ['gdMax', 'Shear rate, largest', '1/s', 1], ['wss', 'Wall shear stress on the web, largest', 'Pa', 1], ['cl', 'Contact line up the exit face', 'mm', 1e3], ['curv', 'Surface curvature at the contact line', '1/mm', 1e-3],
+  ['ux', 'Largest |u_x|, along the web', 'mm/s', 1e3], ['uz', 'Largest |u_z|, across the web', 'mm/s', 1e3]];
+/**
+ * The study's table: { P (the presets), rows: [{ l (label, unit), v: [per preset's run], d: [change from the one before, %] }],
+ * worst: the largest change to the finest ({ d, l }) }. A quantity at the solve's own tolerance -- u_z with nothing driving
+ * it across, below 100 × the Newton tolerance of u_x -- is shown and not compared; a contact line pinned has no height.
+ */
+function m3StudyTable() {
+  const R = M3S.runs, P = Object.keys(C3D_MESH_PRESETS), tol = CFDS.tol || TOL_DEFAULT;
+  const atTol = (run, key) => key === 'uz' && run.m.ux > 0 && run.m.uz / run.m.ux < tol * 100;
+  const cell = (run, key, sc) => { const v = run.m[key]; if (key === 'cl' && run.mode !== 'climbed') return run.k ? `corner ${run.k}` : 'pinned'; return Number.isFinite(v) ? String(+(v * sc).toPrecision(5)) : '—'; };
+  let worst = null;
+  const rows = M3S_ROWS.map(([k, l, u, sc]) => ({ l: `${l}, ${u}`, v: P.map((p, j) => R[j] ? cell(R[j], k, sc) : ''), d: R.slice(1).map((r, j) => {
+    const a = R[j], va = a.m[k], vb = r.m[k];
+    if ((k === 'cl' && (a.mode !== 'climbed' || r.mode !== 'climbed')) || !Number.isFinite(va) || !Number.isFinite(vb) || vb === 0) return '—';
+    if (atTol(a, k) && atTol(r, k)) return 'at tolerance';
+    const d = (vb - va) / Math.abs(vb);
+    if (j === P.length - 2 && (!worst || Math.abs(d) > worst.d)) worst = { d: Math.abs(d), l };
+    return `${d >= 0 ? '+' : ''}${(100 * d).toPrecision(2)} %`;
+  }) }));
+  return { P, rows, worst };
+}
+/** The Mesh step's study: its runs side by side and the changes from one mesh to the next (%). */
+function m3StudyHTML() {
+  const running = M3S.status === 'running', strip = C3D.region === 'strip', busy = C3D_RUN.status === 'running' || ACC3.status === 'running';
+  const est = Object.keys(C3D_MESH_PRESETS).map(p => { const keep = {}; for (const k of C3D_PRESET_KEYS) { keep[k] = C3D[k]; C3D[k] = C3D_MESH_PRESETS[p][k]; } const f3 = C3D.frac3, zf = C3D.zFrac; C3D.frac3 = null; C3D.zFrac = null; try { return c3dEstimate(); } finally { Object.assign(C3D, keep); C3D.frac3 = f3; C3D.zFrac = zf; } });
+  const tot = est.reduce((a, e) => a + e.secs, 0), R = M3S.runs;
+  const stale = M3S.key && !running && (M3S.region !== C3D.region || M3S.loc !== C3D.loc || (strip && (() => { try { return c3dPhysicsKey() !== M3S.key; } catch (e) { return true; } })()));
+  const T = m3StudyTable(), P = T.P, worst = T.worst;
+  const rows = T.rows.map(r => `<tr><td>${r.l}</td>${r.v.map(v => `<td>${v}</td>`).join('')}${P.slice(1).map((p, j) => `<td class="m3s-d">${r.d[j] || ''}</td>`).join('')}</tr>`).join('');
+  const head = `<tr><th>Quantity</th>${P.map(p => `<th>${C3D_MESH_PRESETS[p].l}</th>`).join('')}${P.slice(1).map((p, j) => `<th>${C3D_MESH_PRESETS[P[j]].l} → ${C3D_MESH_PRESETS[p].l}</th>`).join('')}</tr>`;
+  const meta = `<tr><td>Hexahedra (along × up × across)</td>${P.map((p, j) => `<td>${R[j] ? `${R[j].cells.toLocaleString()}<small>${R[j].dims}</small>` : running && M3S.cur === p ? `<span id="m3sNow">${C3D_MESH_PRESETS[p].l}: starting…</span>` : ''}</td>`).join('')}<td></td><td></td></tr>
+    <tr><td>Solve time</td>${P.map((p, j) => `<td>${R[j] ? c3dTime(R[j].ms / 1000) : ''}</td>`).join('')}<td></td><td></td></tr>`;
+  const verdict = M3S.status === 'done' && worst ? `<p class="acc-verdict">Largest change from ${C3D_MESH_PRESETS[P[P.length - 2]].l} to ${C3D_MESH_PRESETS[P[P.length - 1]].l}: <b>${(worst.d * 100).toPrecision(2)} %</b> (${worst.l.toLowerCase()}).</p>`
+    : M3S.status === 'stopped' ? '<p class="acc-verdict">Stopped.</p>' : M3S.status === 'error' ? `<p class="acc-verdict"><span class="warn-text">Failed:</span> ${escAttr(M3S.error || '')}</p>` : '';
+  const btn = running ? `<button type="button" class="btn btn-secondary btn-sm" id="m3sStop">${uiIco('stop')}Stop</button>`
+    : `<button type="button" class="btn btn-primary btn-sm" id="m3sRun"${!strip || busy ? ' disabled' : ''}${!strip ? ' title="A strip only (Inputs › 3D region)"' : ''}>${uiIco('play')}Run the study</button>`;
+  return `<section class="pane m3-study"><figcaption>${uiBadge('tolerance')}Mesh independence: the ${strip ? `strip at L${C3D.loc + 1}` : 'strip'} on Coarse, Medium and Fine${stale ? ' <span class="warn-text">(out of date: the inputs changed since)</span>' : ''}</figcaption>
+    <div class="acc3-bar">${btn}<span class="side-note-i">${strip ? `Three solves, about ${c3dTime(tot)} in all (${P.map((p, j) => `${C3D_MESH_PRESETS[p].l} ${c3dMem(est[j].bytes)}`).join(', ')}). The physics the same in the three (checked before each); only the mesh changes. The adapted mesh, if any, set aside; the zones kept as set (sizes in mm).` : 'A strip only: set the 3D region to Strip (an edge strip steps the bead pressure, the full width sweeps its strips).'}</span></div>
+    ${R.length || running ? `<div class="table-wrap"><table class="cfd-table m3s-table"><thead>${head}</thead><tbody>${meta}${rows}</tbody></table></div>
+    <p class="side-note">${M3S.when && !running ? `Run ${new Date(M3S.when).toLocaleString()} at L${M3S.loc + 1}, ${M3S.width} mm; zones along the flow: ${escAttr(M3S.zones || 'none')}; across: ${escAttr(M3S.across || 'none')}. ` : ''}Middle station: the wet film, the flow rate, the pressure on the blade at the metering edge, the contact line and the surface's curvature there (the circle through the surface's first three nodes); over the strip: the largest pressure, shear rate, wall shear stress on the web (μ γ̇ there) and speeds. Change: from one mesh to the next, over the finer one's value. |u_z| at the solve's tolerance (below 100 × its tolerance of |u_x|) is not compared.</p>` : ''}
+    ${verdict}</section>`;
+}
+/** The study as a project keeps it (a running one as stopped), and back (none: no study). */
+const m3StudyOut = () => M3S.runs.length || M3S.status !== 'idle' ? { status: M3S.status === 'running' ? 'stopped' : M3S.status, runs: M3S.runs, error: M3S.error, key: M3S.key, when: M3S.when,
+  region: M3S.region, loc: M3S.loc, width: M3S.width, zones: M3S.zones, across: M3S.across } : null;
+function m3StudyIn(d) {
+  Object.assign(M3S, { status: 'idle', runs: [], stop: false, abandon: false, error: null, key: null, when: null, region: null, loc: null, width: null, cur: null, zones: null, across: null });
+  if (d && Array.isArray(d.runs)) Object.assign(M3S, { status: d.status || 'done', runs: d.runs, error: d.error || null, key: d.key || null, when: d.when || null, region: d.region || 'strip', loc: d.loc ?? 0, width: d.width ?? null, zones: d.zones || null, across: d.across || null });
+}
+function wireM3Study(host) {
+  if (!host) return;
+  const r = host.querySelector('#m3sRun'), s = host.querySelector('#m3sStop');
+  if (r) r.onclick = () => m3StudyRun();
+  if (s) s.onclick = () => m3StudyStop();
+}

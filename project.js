@@ -72,7 +72,7 @@ function projectData() {
       sel: MEAS.sel, fit: MEAS.fit ? { ...MEAS.fit, cfd: MEAS.fit.cfd ? { ...MEAS.fit.cfd, status: MEAS.fit.cfd.status === 'running' ? 'stopped' : MEAS.fit.cfd.status } : null } : null,
       fitKeys: MEAS.fitKeys, fitRange: MEAS.fitRange, fitSets: MEAS.fitSets, dock: MEAS.dock, dockH: MEAS.dockH,
     },
-    c3d: { ...C3D, file: c3dFileOut(), result: C3D_RES },
+    c3d: { ...C3D, file: c3dFileOut(), result: C3D_RES, study: m3StudyOut() },
   };
 }
 /** Set a sidebar input as its slider does (everything listening updates). */
@@ -81,7 +81,7 @@ function setInput(k, v) {
   if (sl) { sl.value = v; sl.dispatchEvent(new Event('input')); } else P[k] = v;
 }
 /** Stop whatever is solving. */
-function projStopAll() { cancelAllLocations(); stopDOE(); measStopCfd(); c3dStop(); }
+function projStopAll() { cancelAllLocations(); stopDOE(); measStopCfd(); m3StudyStop(true); c3dStop(); }
 /** The measured data of a project (none: empty). */
 function applyMeasured(m) {
   m = m || {};
@@ -177,6 +177,7 @@ function applyC3D(c) {
   for (const k of Object.keys(C3D_DEFAULTS)) if (k in c) C3D[k] = c[k];
   c3dFileIn(c.file);
   C3D_RES = c.result && c.result.result ? c.result : null;
+  m3StudyIn(c.study);
 }
 function applyProject(p) {
   if (!p || p.app !== PROJ_APP) throw new Error('this is not a Blade Coat Defect Lab project');
@@ -392,7 +393,7 @@ function updateProjectTitle() {
 const SESSION = { suspended: true, lastKey: null, timer: 0 };
 /** What has to change for the session to be written again: inputs, view, results (2D and 3D), DOE, mesh study, project. */
 const sessionKey = () => [projKey(), JSON.stringify([tab, FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}:${r.result && r.result.orient ? r.result.orient.ms : ''}`).join(','),
-  DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : '', C3D_RES ? C3D_RES.when : ''].join('|');
+  DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : '', C3D_RES ? C3D_RES.when : '', M3S.status, M3S.when || ''].join('|');
 async function sessionSave(force = false) {
   if (SESSION.suspended || !window.indexedDB) return false;
   const key = sessionKey();
