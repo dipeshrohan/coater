@@ -43,12 +43,13 @@ onmessage = e => {
       const tick = () => postMessage({ id, progress: { k: Math.min(++k, N - 1), n: N } });
       let value;
       if (what === 'es') {
-        // (the puffed film's way out that gives the measured thickness: the thickness falls as it rises; bisection on its log)
+        // (the puffed film's way out that gives the measured thickness: the later its way out opens, the thicker the
+        //  film; its direction from the two ends; bisection on its log)
         const at = es => { tick(); return fuRun({ ...o, es }).hMean; };
         let lo = Math.log(0.01), hi = Math.log(100);
-        const hLo = at(Math.exp(lo)), hHi = at(Math.exp(hi)), target = e.data.target;
-        if (!(target <= hLo && target >= hHi)) throw new Error(`the thickness ${(target * 1e6).toFixed(1)} µm is outside what the puffing gives (${(hHi * 1e6).toFixed(1)}–${(hLo * 1e6).toFixed(1)} µm): not from the way out alone`);
-        for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (at(Math.exp(m)) > target) lo = m; else hi = m; }
+        const hLo = at(Math.exp(lo)), hHi = at(Math.exp(hi)), target = e.data.target, up = hHi > hLo;
+        if (!(target >= Math.min(hLo, hHi) && target <= Math.max(hLo, hHi))) throw new Error(`the thickness ${(target * 1e6).toFixed(1)} µm is outside what the puffing gives (${(Math.min(hLo, hHi) * 1e6).toFixed(1)}–${(Math.max(hLo, hHi) * 1e6).toFixed(1)} µm): not from the way out alone`);
+        for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if ((at(Math.exp(m)) < target) === up) lo = m; else hi = m; }
         value = Math.exp((lo + hi) / 2);
       } else if (what === 'Dgal') {
         // (the least open-layer gas way that keeps the first run from puffing: the first run alone; bisection on its log)

@@ -308,7 +308,7 @@ function furnMeasured(r) {
       if (q.loc !== DRY.sel) continue;
       if (Number.isFinite(q.h)) {
         const tgt = q.h * 1e-6, busy = FURN.fit && FURN.fit.what === 'es';
-        imp.push(`<li>Your graphene film ${q.h} µm thick against the computed ${furnUm(e.h)} µm (${((e.h / tgt - 1) * 100).toFixed(0)} %). ${busy ? pill(FURN.fit.msg || 'Fitting…', '') : `<button type="button" class="linkish" data-furnfit="es|${tgt}|your thickness ${q.h} µm">Fit the puffed film's way out to it</button>`}</li>`);
+        imp.push(`<li>Your graphene film ${q.h} µm thick against the computed ${furnUm(e.h)} µm (${((e.h / tgt - 1) * 100).toFixed(0)} %). ${busy ? `<span id="furnFitMsg">${pill(FURN.fit.msg || 'Fitting…', '')}</span>` : `<button type="button" class="linkish" data-furnfit="es|${tgt}|your thickness ${q.h} µm">Fit the puffed film's way out to it</button>`}</li>`);
       }
       if (Number.isFinite(q.kept)) imp.push(`<li>Your weight kept ${q.kept} % against the computed ${(e.kept / (1 + P.Xroom) * 100).toFixed(1)} % (of the GO piece with its water, ${(P.Xroom * 100).toFixed(1)} %): the Furnace card's oxygen shares and the GO's C/O set it.</li>`);
       if (Number.isFinite(q.kappa)) {
@@ -318,7 +318,7 @@ function furnMeasured(r) {
     }
     if (!(m.out || []).some(q => q.loc === DRY.sel)) imp.push('<li class="fv-why">Nothing measured for this film yet.</li>');
     const f1 = FURN.fit && FURN.fit.what === 'Dgal';
-    imp.push(`<li>The first run does not puff up (Q101): ${f1 ? pill(FURN.fit.msg || 'Fitting…', '') : `<button type="button" class="linkish" data-furnfit="Dgal|0|your first run not puffing">Fit the gas through its open layers to my first run</button>`} (the least that keeps it below its hold, with the first run as set).</li>`);
+    imp.push(`<li>The first run does not puff up (Q101): ${f1 ? `<span id="furnFitMsg">${pill(FURN.fit.msg || 'Fitting…', '')}</span>` : `<button type="button" class="linkish" data-furnfit="Dgal|0|your first run not puffing">Fit the gas through its open layers to my first run</button>`} (the least that keeps it below its hold, with the first run as set).</li>`);
     if (FURN.fit && FURN.fit.error) imp.push(`<li>${pill(`The fit could not be made: ${dryEsc(FURN.fit.error)}`, 'bad')}</li>`);
   }
   const list = (m.out || []).map((q, k) => `<li>${q.loc === 'web' ? 'The web' : q.loc}: ${[Number.isFinite(q.h) ? `${q.h} µm thick` : '', Number.isFinite(q.kept) ? `${q.kept} % of its weight kept` : '', Number.isFinite(q.kappa) ? `${q.kappa} W/(m·K) along it` : ''].filter(Boolean).join(', ')} <button type="button" class="linkish" data-furndel="${k}">Remove</button></li>`).join('') || '<li class="fv-why">None yet.</li>';
@@ -340,6 +340,7 @@ function furnMeasured(r) {
     MAT = { ...MAT, furnMeas: { ...MAT.furnMeas, out: [...(MAT.furnMeas.out || []), q] } };
     render();
   };
+  if (typeof applyHelp === 'function') applyHelp();   // (rebuilt outside render, as a fit goes on: its help again)
 }
 function furnMeasRemove(k) {
   undoHint('Remove a measured graphene film');
@@ -365,7 +366,13 @@ function furnFit(what, target, label) {
   FURN.fitWorker.onmessage = e => {
     const m = e.data;
     if (m.id !== id) return;
-    if (m.progress) { FURN.fit.msg = `Fitting: ${m.progress.k + 1} of ${m.progress.n}…`; if (tab === 12) furnMeasured(FURN.res && furnCurrent() ? FURN.res : null); return; }
+    if (m.progress) {
+      // (only its message changes: the measured form keeps what is being typed in it)
+      FURN.fit.msg = `Fitting: ${m.progress.k + 1} of ${m.progress.n}…`;
+      const el = document.getElementById('furnFitMsg');
+      if (el) el.innerHTML = pill(FURN.fit.msg, ''); else if (tab === 12) furnMeasured(FURN.res && furnCurrent() ? FURN.res : null);
+      return;
+    }
     if (!m.ok) { FURN.fit = { what, error: m.error, done: true }; if (tab === 12) furnRender(); return; }
     FURN.fit = null;
     const card = what === 'es' ? ['es', +m.value.toPrecision(3)] : ['Dgal', +(m.value / 1e-10).toPrecision(3)];

@@ -708,10 +708,25 @@ const work = document.getElementById('work');
 /** The module's verdict pills sit in its toolbar, which may cut them short: their full text on hover. */
 function titleStatus() { const st = document.getElementById('st'); if (st) st.title = [...st.children].map(p => p.textContent).join(' · '); }
 
+let renderLastTab = null;
+/** Where a page is scrolled to: the element with an id at or just above its top, and how far it is from the top. */
+function renderAnchor(vp) {
+  const top = vp.getBoundingClientRect().top;
+  let best = null, bestY = -Infinity;
+  for (const el of vp.querySelectorAll('[id]')) {
+    const y = el.getBoundingClientRect().top - top;
+    if (y <= 1 && y > bestY && el.offsetParent !== null) { best = el; bestY = y; }
+  }
+  return { top: vp.scrollTop, id: best ? best.id : null, dy: bestY };
+}
 function render() {
   // (a redraw keeps the keyboard focus on a sub tab or 1D location button: arrow keys go on working)
   const af = document.activeElement, keepF = af && af.closest && (af.closest('.subtabs [data-view]') || af.closest('[data-l1d]'))
     ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.view ?? af.dataset.l1d);
+  // (a redraw of the same page -- a result arriving, a value changed -- keeps what was at the top of the page there,
+  //  though what is above it may have grown or shrunk: the element with an id nearest the top, and how far above it)
+  const vpOld = document.querySelector('.mod-vp'), keepS = vpOld && renderLastTab === tab && vpOld.scrollTop > 0 ? renderAnchor(vpOld) : null;
+  renderLastTab = tab;
   undoBeforeRender();
   const acrF = acrFocusSave();   // (the blade across the web's panels are drawn anew: the focus goes back to the same control)
   const sec = secOf(tab), grp = groupOfView(tab);
@@ -734,6 +749,10 @@ function render() {
   renderRunChips();
   work.classList.add('fill');
   [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials][tab]();
+  if (keepS) {
+    const vp = document.querySelector('.mod-vp'), el = keepS.id && document.getElementById(keepS.id);
+    if (vp) vp.scrollTop = el && vp.contains(el) ? vp.scrollTop + el.getBoundingClientRect().top - vp.getBoundingClientRect().top - keepS.dy : keepS.top;
+  }
   wireModDock();
   acrossSidebar();
   decorateImageButtons();

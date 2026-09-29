@@ -186,6 +186,26 @@ const r = F.fuRun(base());
   check('the programs and a cycle from a file', ok, `program ${(p[p.length - 1][0] / 3600).toFixed(3)} h; file units ${c1.unit}, ${c2.unit}; no unit: "${c3.err}"`);
 }
 
+// 14. the worker's fits (cfd-furnace-worker.js, run here as the browser runs it): the puffed film's way out back from
+//     the thickness it gave; the least open-layer gas way that keeps the first run from puffing; a thickness the
+//     puffing cannot give is refused
+{
+  const fs = require('fs'), vm = require('vm'), out = [];
+  const ctx = vm.createContext({ Math, Date, Error, JSON, Array, Object, Number, Float64Array, Int32Array, Uint8Array, Map, Set, console, postMessage: m => out.push(m) });
+  ctx.importScripts = f => vm.runInContext(fs.readFileSync(__dirname + '/' + f, 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync(__dirname + '/cfd-furnace-worker.js', 'utf8'), ctx);
+  const send = d => { out.length = 0; ctx.onmessage({ data: d }); return out[out.length - 1]; };
+  const o = base({ dT: 2 }), es0 = 0.4, h0 = F.fuRun({ ...o, es: es0 }).hMean;
+  const a = send({ id: 1, kind: 'fit', what: 'es', o, target: h0 });
+  const hFit = a.ok ? F.fuRun({ ...o, es: a.value }).hMean : NaN;
+  const b = send({ id: 2, kind: 'fit', what: 'Dgal', o });
+  const one = { ...o, runs: o.runs.slice(0, 1) }, idx = D => F.fuRun({ ...one, Dgal: D }).runs[0].peak.idx;
+  const bOk = b.ok && idx(b.value) < 1 && idx(b.value * (1 - 1e-3)) >= 1;
+  const c = send({ id: 3, kind: 'fit', what: 'es', o, target: 5e-3 });
+  check('the worker\'s fits: the way out, the gas-tightness, and a thickness out of reach', a.ok && rel(a.value, es0) < 1e-3 && rel(hFit, h0) < 1e-4 && bOk && !c.ok && /outside/.test(c.error),
+    `es ${a.ok ? a.value.toPrecision(5) : a.error} (${es0}); Dgal ${b.ok ? b.value.toExponential(3) : b.error}: run 1 at ${b.ok ? (idx(b.value) * 100).toFixed(2) : '-'} % of its hold; 5 mm: "${c.error}"`);
+}
+
 console.log(`the defaults: run 1 the gas at ${(r.runs[0].peak.idx * 100).toFixed(1)} % of its hold; run 2 puffs from ${(r.runs[1].puffAt.T - 273.15).toFixed(0)} °C; ${(r.hMean * 1e6).toFixed(1)} µm (${(r.hMean / 90e-6).toFixed(3)}×), ${r.rho.toFixed(0)} kg/m³, ${(r.kept * 100).toFixed(1)} % kept, g ${r.g.toFixed(3)}, La ${r.La.toFixed(0)} nm, ${r.kappa.toFixed(0)} W/(m K)`);
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;
