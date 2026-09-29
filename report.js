@@ -286,6 +286,11 @@ async function rep3D() {
     ['Mesh', repEsc(C3D.frac3 || c3dZAdapted() ? `adapted by meshing to an accuracy: ${c3dCounts().a1} along the flow, ${c3dCounts().ny} across the gap, ${c3dNz()} ${C3D.region === 'strip' ? 'across the strip' : 'across the web'}`
       : `elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${C3D.ny} across the gap, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : eg ? `${C3D.edgeNz} across the strip (${c3dEdgeElemsText()})` : C3D.webEdges === 'open' ? `${C3D.nzFull} across the web between the edge strips, each edge strip ${C3D.edgeW} mm of ${C3D.edgeNz} (${c3dEdgeElemsText()})` : C3D.nzFull + ' across the web'}`)],
     ['Refinement zones', repEsc(`along the flow and up the gap: ${zonesText(C3D.region === 'full' ? CFDS.zones : solverOf(C3D.loc).zones)}${C3D.zoneScale !== 1 ? ` (sizes ÷${(+C3D.zoneScale).toFixed(2)})` : ''}; across: ${c3dZonesText(C3D.zZones)}${c3dNz() !== (C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull) ? ` (${c3dNz()} elements)` : ''}`)]];
+  // (the mesh's preset, statistics and problems: the solved mesh while up to date, else the starting layout, estimated)
+  const pr = c3dPresetOf(), MS = c3dMeshStats(), MP = c3dMeshProblems(MS), f3 = v => String(+(+v).toPrecision(3));
+  rows.push(['Mesh preset', C3D.frac3 ? 'adapted (meshing to an accuracy)' : pr === 'custom' ? 'Custom' : C3D_MESH_PRESETS[pr].l]);
+  if (MS) { const St = MS.S; rows.push(['Mesh statistics', repEsc(`${MS.solved ? 'as solved' : 'before solving, estimated'}: ${St.cells.toLocaleString()} hexahedra (${St.nEx} × ${St.nEy} × ${St.nEz}), ${St.nodes.toLocaleString()} velocity nodes; ${St.gap.cells} across the minimum gap, ${St.across.cells} across the ${c3dWhere()}; quality worst ${St.q.min.toFixed(2)}; aspect ratio largest ${f3(St.arXY.max)} in the x–y plane (${f3(St.ar.max)} in 3D); skewness largest ${f3(St.skew.max)}; non-orthogonality largest ${f3(St.nonOrth.max)}°; ${St.invalid} invalid`)]); }
+  rows.push(['Mesh errors and warnings', repEsc(MP.length ? MP.map(q => `${q.level === 'error' ? 'Error' : 'Warning'}: ${q.text}`).join(' ') : MS ? 'none' : 'not known yet (the stations are laid out on the Mesh step)')]);
   if (C3D.region === 'full') { const L = c3dWideLayout(); rows.push(['Solved as', repEsc(C3D.webEdges === 'open' ? `each end first as an edge strip (its outer side open, the bead pressure raised in steps from none; contact angle on the web ${P.thw}°); if both hold the set bead pressure, ${L.subs.length} overlapping strips (the edge strips the end strips, open on their outer sides), sweep after sweep until they agree`
     : `${L.subs.length} overlapping strips of ${L.sub} elements across, sweep after sweep until they agree; the web's edges ${P.skew ? 'open, each held at its own station\'s flow along the skewed blade' : 'symmetry planes'}`)]); }
   if (C3D.source === 'file') rows.splice(1, 0, ['File axes', repEsc(`machine direction ${C3D.machine}, up ${C3D.up}${C3D_FILE && C3D_FILE.kind === 'stl' ? `, units ${C3D.units}` : ''}`)], ['Inlet upstream of the edge', `${C3D.inlet} mm`],
@@ -309,7 +314,15 @@ async function rep3D() {
     if (a) edge += `<p>${repEsc(cleanText(a))}</p>`;
     if (t) edge += repRows([...t.querySelectorAll('tbody tr')].map(r => [...r.children].map(td => repEsc(cleanText(td)))), [...t.querySelectorAll('th')].map(th => repEsc(cleanText(th))));
   }
-  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + body + (edge ? '<h3>The web\'s edge</h3>' + edge : '');
+  // (the mesh-independence study, when run)
+  let study = '';
+  if (M3S.runs.length) {
+    const T = m3StudyTable(), L = p => C3D_MESH_PRESETS[p].l;
+    study = `<h3>Mesh independence</h3><p>${repEsc(`The strip at L${M3S.loc + 1} (${M3S.width} mm) on ${T.P.map(L).join(', ')}, nothing else changed; run ${new Date(M3S.when).toLocaleString()}${M3S.status !== 'done' ? ` (${M3S.status})` : ''}.${T.worst && M3S.status === 'done' ? ` Largest change from ${L(T.P[T.P.length - 2])} to ${L(T.P[T.P.length - 1])}: ${(T.worst.d * 100).toPrecision(2)} % (${T.worst.l.toLowerCase()}).` : ''}`)}</p>`
+      + repRows([['Hexahedra', ...T.P.map((p, j) => M3S.runs[j] ? `${M3S.runs[j].cells.toLocaleString()} (${M3S.runs[j].dims})` : ''), '', ''], ...T.rows.map(r => [repEsc(r.l), ...r.v.map(repEsc), ...r.d.map(d => repEsc(d || ''))])],
+        ['Quantity', ...T.P.map(L), ...T.P.slice(1).map((p, j) => `${L(T.P[j])} → ${L(p)}`)]);
+  }
+  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + body + (edge ? '<h3>The web\'s edge</h3>' + edge : '') + study;
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };

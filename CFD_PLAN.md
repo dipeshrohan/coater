@@ -12,6 +12,58 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### 3D streamlines: audit and seeding (Flow › 3D, Results)
+
+User report: the 3D streamlines stay in planes. Audited before changing anything (not assumed):
+- The solver is full 3D Navier-Stokes (cfd-fem3d.js: u, v, w momentum with convection, the full viscous stress and the
+  pressure gradient; continuity with dw/dz); w is solved, stored, saved and drawn.
+- The integrator (cfd-3d-stream.js) is 3D: RK4 on d(C, L, K)/dt = J^-1 (u, v, w) in each 27-node element's own
+  triquadratic map (3D interpolation, exact for quadratic fields); the drawing uses the true x, y, z.
+- The default strip, solved: max |u_z| 0.016 mm/s against max |u_x| 5.94 mm/s (R_zx 0.27 %), 9 z layers, seeds at 6 z.
+  Its sides are symmetry planes and only the gap varies across it (8.6 um on 1.72 mm): the solution is nearly 2D and
+  its lines move 0.04 mm across -- correct, not a fault. Skewed 5 deg: R_zx 4.3 %, lines cross 1.1 mm (the web's frame).
+Root cause: the physics of the default case (nearly invariant across z, symmetry sides), with nothing on the page saying
+so, and one seed mode. Added (post-processing only; the solver and its conditions unchanged): the diagnostic (largest and
+mean |u_x|, |u_y|, |u_z|, R_zx, z range, layers, elements across, seed z, what in the solve drives u_z); seeds (point,
+typed points, cross-web line, up the gap, plane, volume; presets: upstream bead, gap entry, active edge, wet film), each
+located in the flow (none in the blade), traced back and on; slice modes named as slices (the velocity projected on the
+slice); colour by speed, u_x, u_y, u_z, pressure, shear rate, viscosity; a length limit; the lines as a CSV; u_z on a
+Y-Z section (with (u_z, u_y) arrows) and X-Z at half the gap. Checks: cfd-3d-stream.validate.js (21), sl_test (screen).
+
+### 3D mesh setup and quality control (Flow › 3D, Mesh step)
+
+User spec: the 3D mesh's setup and checks inside the existing 3D workflow, reusing what is there; only what the
+3D solver supports; errors (the solve cannot run) apart from warnings; the default never 1-2 elements across.
+Inspected first (not assumed):
+- The mesh: structured Taylor–Hood Q2–Q1 hexahedra (27 velocity nodes) on spines, boundary-fitted to the blade,
+  the web and the free surface (cfd-fem3d.js). No tetrahedral, polyhedral or hex-dominant mesher exists; the free
+  surface is the mesh's boundary (no VOF). Each station across is laid out as the 2D lays out its mesh.
+- Refinement that exists: the 2D's zones at every station (metering edge, contact line, exit face, film, bands
+  along x, layers at the web and at the blade/surface, growth), zones across the web (the region's ends, bands),
+  the edge strip's elements round the edge, and meshing to an accuracy (adaptive re-meshing between solves; no
+  refinement during a solve). The porous fibre is 2D-only: in 3D it is Beavers–Joseph slip on the web, so there
+  is no porous interface to refine in 3D.
+What was added (cfd-3d-mesh.js, pure, cfd-3d-mesh.validate.js; ui-3d.js, cfd-steps.js, cfd-accuracy.js):
+- Presets stored explicitly (C3D_MESH_PRESETS): Coarse / Medium (the defaults) / Fine, any other counts Custom;
+  the default across a strip 2 -> 4 elements (9 stations; Coarse 3).
+- The Mesh step's side, grouped: the type stated; the preset and the size class (by the solve's memory); the
+  metering gap (elements across, H_eff the smallest gap under the edge, H_eff / N, node spacing, the element
+  heights there); across the web (width, N_z, stations, dz); the 2D's zones grouped as active edge / meniscus /
+  upstream bead / boundary layers (the same zones and controls as Flow › 2D), the porous interface and adaptive
+  refinement stated as not in 3D.
+- Statistics (exact once solved, else the middle station's layout at every station, heights by each station's gap):
+  hexahedra, nodes, cells along / up / across, edge lengths, volumes, elements across the minimum gap, aspect ratio
+  (in the x-y plane, and 3D), equiangle skewness, non-orthogonality, wall-layer elements, invalid elements, quality.
+- Errors and warnings: errors -- invalid elements, more memory than a page, edge strips that do not fit; warnings
+  (M3_WARN, each explained) -- fewer than 3 across the gap or the region, skewness above 0.85 near the edge, x-y
+  aspect ratio above 20 near the meniscus or 100 anywhere, non-orthogonality above 70 deg.
+- Sections (display only): X–Y at the middle station, X–Z on the web, Y–Z at the edge, gap zoom, edge zoom.
+- Results: the cross-flow diagnostic (largest |u_x|, |u_y|, |u_z|, |u_z| / |u_x|).
+- The mesh-independence study: the strip on Coarse, Medium, Fine, the physics checked the same before each solve
+  (c3dPhysicsKey), the film, flow rate, pressures, shear rate, wall shear stress, contact line and its curvature,
+  speeds, with the change from one mesh to the next; saved with the project.
+- Each solve keeps its mesh (preset, counts, zones, statistics in brief, warnings, time) in its result and project.
+
 ### Phase 4 (design): the blade across the web (in progress)
 
 User (with mock-ups, three rounds): purpose "A + B + C" (describe the blade across the web and see the film;
