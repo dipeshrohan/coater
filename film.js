@@ -578,7 +578,7 @@ function fmRun(dr, o) {
   // the plate a piece cut from the roll is (GO-4d, sheet.js), as cut: on the roll its water evens out through it but
   // stays in (the turns seal each other; only the roll's ends breathe), at the room's temperature -- its stiffnesses
   // about its neutral plane, its natural curvature both ways (+ the roll's set along the line), its weight. Pressed
-  // flat, its natural strain as cut and after the drying oven (Q72: dried through at the oven's temperature, its air
+  // flat, its natural strain as cut and after the pre heat treatment (Q72: dried through at the oven's temperature, its air
   // the room's heated -- the isotherm's water there -- then cooled to the room's)
   // (eX: the part of the flat strain per unit β -- it is linear in β -- so a measured size reads back as a β)
   const plateOf = (Ls2, Xv) => { let S2 = 0, Sz = 0; for (const Lr of Ls2) { S2 += Lr.E * Lr.t; Sz += Lr.E * Lr.t * (Lr.z0 + Lr.t / 2); }

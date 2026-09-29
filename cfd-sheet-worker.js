@@ -1,7 +1,7 @@
 /*
  * cfd-sheet-worker.js — a cut piece of the film in 3D (GO-4d, sheet.js) off the main thread: the piece free (held up)
  * and lying on a table under its weight, for its film's two ways the water can leave; and (GO-4f, press.js) the pieces
- * pressed in the stack through the drying oven and after it under the plate, and the piece let go out of the stack and
+ * pressed in the stack through the pre heat treatment and after it under the plate, and the piece let go out of the stack and
  * a day later.
  *
  * Message in:  { id, pieces: [{ where, plate: { A, D, nu, h, kS, kSet, p } }], Lx, Ly, n }

@@ -1036,6 +1036,20 @@ GO-7c built:
 - Not yet: the end pieces against the plates (their gas out through one paper; the plate's hold); the waves need the
   pieces to grow along themselves somewhere (graphitizing, heat): the photos' wavelength and your sizes set it.
 
+GO-4g (the pieces' edge waves, the user's photos -- the photos stay out of the app):
+- The process in the user's words: coating → the drying oven (on the line) → cut into 30 × 30 cm pieces → stacked under
+  the plate → an oven for the pre heat treatment (the app's pressed stack, 100 °C, 1–2 h) → the furnace, runs 1 and 2.
+  The app called the pre heat treatment "the drying oven" as the line's: renamed "pre heat treatment" throughout.
+- The photos (five, after the pre heat treatment, taken 1 h or more after it; the waves stay for hours): waves along
+  every edge in a band 35–50 mm deep, the middle flat; their ridges across the edge, often fanning from points on it,
+  about 6–8 mm apart (counted over 50 mm stretches, the pieces' 300 mm as the scale, ±3 %). One piece has a sharp
+  straight line about 200 mm long near a corner (crack or fold: not known); one a torn corner (how: not known). Just cut,
+  before the stack, the pieces can be wavy or not.
+- The app's pressed stack does not make them: it dries a piece through in 3.3 min (the water's speed fitted to the size
+  back to as cut 1–2 h later) and leaves its edges 0.005 % longer than 50 mm in (a finer mesh, creep times 1–100 min
+  alike): flat; its piece out of the stack a bowl, corners 3 mm. Not the room's water coming back at the edges either
+  (the photos 1 h or more after, the waves staying). Their cause is not in the model yet; the creep time stays assumed.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

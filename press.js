@@ -1,6 +1,6 @@
 /*
  * press.js — the cut pieces dried in a pressed stack (GO-4f): 20 pieces directly on each other under an aluminium
- * plate in the drying oven (Q72–Q78). Pressed, a piece's water can leave only through the stack's edges: along the
+ * plate in the pre heat treatment (Q72–Q78). Pressed, a piece's water can leave only through the stack's edges: along the
  * piece (its own pores and the gaps between the pieces) to its edges. The water in the piece's plane, 2D, on a quarter
  * with its two mirror lines:
  *   ρS ∂X/∂t = ∇·(K psat(T) ∇a(X)),  a(X) the GAB isotherm inverted (1 where the pores hold more than it gives),
@@ -144,7 +144,7 @@ function prProps(tab, X) {
 
 /**
  * The pieces pressed in the stack (GO-4f): their water and, each held flat, the stress the uneven water leaves in it
- * and the creep that eases it, through stages -- in the drying oven, then under the plate in the room. o: { Lx, Ly,
+ * and the creep that eases it, through stages -- in the pre heat treatment, then under the plate in the room. o: { Lx, Ly,
  * nx, ny, grade (the water's cells), X0 (the water as cut, uniform), rhoS, gab, Xcap, K, tab (the plate at a uniform water:
  * rows [X, A, D, e, k] -- stretch and bending stiffness, natural stretch and curvature), nu, kSet (the roll's set
  * along the line, 1/m), tau (the creep time at the water X0, s; the creep's rate goes as the water: dry, none),
