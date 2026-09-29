@@ -4,8 +4,8 @@
  * under its weight (Q67: where the curl is seen is not known), drawn in a view from above and the front with its
  * heights; its size pressed flat later against as cut (Q68/69); a measured size read back as the swelling it implies.
  * Q65: 30 × 30 cm pieces (an input); Q70: cut from the roll later.
- * GO-4f (press.js, in two sheet workers, one per way): the pieces pressed in the stack -- their water through the drying
- * oven and after it under the plate in the room, the stress each holds flat, the creep; the piece let go out of the stack
+ * GO-4f (press.js, in two sheet workers, one per way): the pieces pressed in the stack -- their water through the pre heat
+ * treatment and after it under the plate in the room, the stress each holds flat, the creep; the piece let go out of the stack
  * (1–2 h after the pre heat treatment, Q85) and a day later (Q81), its size then (Q83/Q86).
  */
 const SHEET = { res: null, key: null, busy: false, error: null, pending: null, worker: null, id: 0, way: 'top', again: false, prog: null, ms: 0 };

@@ -1,5 +1,5 @@
 /*
- * press.validate.js — checks of press.js (the cut pieces pressed in a stack: their water through the drying oven and
+ * press.validate.js — checks of press.js (the cut pieces pressed in a stack: their water through the pre heat treatment and
  * after it, the stress each holds flat, the creep that eases it) against exact solutions. Run: node press.validate.js
  */
 const P = require('./press.js'), S = require('./sheet.js');
