@@ -252,7 +252,7 @@ const legendItems = els => {
   return out;
 };
 /** A plot's title as its caption reads, without the caption's (i) button. */
-const captionText = fc => fc ? [...fc.childNodes].filter(n => !(n.nodeType === 1 && n.tagName === 'BUTTON')).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim() : '';
+const captionText = fc => fc ? [...fc.childNodes].filter(n => !(n.nodeType === 1 && (n.tagName === 'BUTTON' || n.matches('.seg, [role=tablist]')))).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim() : '';   // (a caption's own buttons and switches are not its words)
 const chartName = (cv, fallback) => cv.getAttribute('aria-label') || captionText(cv.closest('figure') && cv.closest('figure').querySelector('figcaption')) || fallback;
 
 /** The things in the current view that can be saved as an image. */

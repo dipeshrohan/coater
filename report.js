@@ -119,7 +119,7 @@ async function repModule(m, statsTitle = 'Results') {
   if (m === 11) html += acrossReportHTML();
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
-  const figs = imageTargets().filter(t => t.id.startsWith('pane:'));
+  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')));   // (not an editor's drawing)
   if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, t.title())).join('');
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   const scope = cleanText(document.getElementById('scope'));
@@ -128,6 +128,12 @@ async function repModule(m, statsTitle = 'Results') {
 }
 /** Process: the chain and where each stage stands, the answers, the plot, the mass balance at each location, the oven's zones. */
 async function repProcess() {
+  // (GO-6: the page shows one stage at a time; for the report every stage, step, view and chart is drawn open, as one
+  // long page, so each figure is taken at its size, then the stage view comes back)
+  PROC_ALL = true;
+  try { return await repProcessAll(); } finally { PROC_ALL = false; if (tab === 12) render(); }
+}
+async function repProcessAll() {
   await oneDWait(true);   // (the wet film across the web: the 1D, for the inputs as they are)
   await dryWait();        // (the drying in the oven, GO-3: every film, both ways the water may leave)
   await filmWait();       // (the film followed on to the peel, GO-4)
@@ -138,7 +144,8 @@ async function repProcess() {
   const keepState = typeof SHEET !== 'undefined' ? SHEET.state : null;
   if (keepState) SHEET.state = 'cut';
   let html = await repModule(12);
-  const chain = [...document.querySelectorAll('.chain li')].map(li => [repEsc(cleanText(li.querySelector('.ch-t'))), repEsc(cleanText(li.querySelector('.ch-st'))), repEsc(cleanText(li.querySelector('.ch-s')))]);
+  // (the chain: each stage, where it stands and its line -- from the stages themselves, one shown at a time on the tab)
+  const chain = processStages().map(g => [repEsc(g.t), repEsc(STAGE_ST[g.st][0]), repEsc(String(g.s).replace(/<[^>]*>/g, ''))]);
   const t = document.querySelector('.proc-mb'), note = document.querySelector('#procTable .fv-note');
   // (each zone's top, GO-3: what is above the film and its values)
   const topText = z => { const k = z.top || 'none', air = k === 'air' || k === 'air+ir', ir = k === 'ir' || k === 'air+ir';
@@ -202,7 +209,8 @@ async function repProcess() {
   const uSt = document.getElementById('furnState');
   if (uSt) {
     const uPills = [...uSt.querySelectorAll('.pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
-    const uLine = uSt.querySelector('.dry-where'), uNote = document.getElementById('furnNote');
+    // (the furnace's line: what goes in, the runs and the stack -- in Setup's parts on the tab, whole here)
+    const uLine = uSt.querySelector('.dry-where') || (FURN.res && furnCurrent() ? (() => { const d = document.createElement('div'); d.innerHTML = furnStateText(FURN.res); return d.firstElementChild; })() : null), uNote = document.getElementById('furnNote');
     // (all five checks, not only the one shown: each its word and level, then its sentences)
     const uChecks = FURN.res && furnCurrent() ? furnLights(FURN.res).map(q => { const d = document.createElement('div'); d.innerHTML = furnCheckBody(FURN.res, q.k);
       return [repEsc(q.t), repEsc(`${furnWord(q)}${Number.isFinite(q.v) ? ` (${(q.v * 100).toFixed(0)} % of its limit)` : ''}: ${[...d.querySelectorAll('.film-v')].map(v => cleanText(v)).join('; ')}`)]; }) : [];

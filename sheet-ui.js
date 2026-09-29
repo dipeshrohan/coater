@@ -190,16 +190,16 @@ const SHEET_WHEN = { cut: 'before the drying oven (as cut)', dry: 'after the dry
 // ---- the section's piece: its frame (inside the film's section), and its render ----
 function sheetSectionHTML() {
   return `<div class="sheet-sec" id="sheetSec">
-    <h3 class="oned-h">A piece cut from the roll, in 3D</h3>
-    <div class="sheet-head">${filmPicCut(0.9)}<p class="fv-why">Pieces of ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm are cut from the roll later, then stacked 20 at a time under an aluminium plate and dried in the drying oven. As cut, how a piece curls is not known, nor where it is looked at, so it is shown held up (free) and lying on a table under its weight, drawn with its curl up.</p>
+    <h3 class="oned-h" data-fview="piece">A piece cut from the roll, in 3D</h3>
+    <div class="sheet-head" data-fview="piece">${filmPicCut(0.9)}<p class="fv-why">Pieces of ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm are cut from the roll later, then stacked 20 at a time under an aluminium plate and dried in the drying oven. As cut, how a piece curls is not known, nor where it is looked at, so it is shown held up (free) and lying on a table under its weight, drawn with its curl up.</p>
       <div class="seg" role="tablist" aria-label="Which way the water left" id="sheetWay">${Object.entries(SHEET_WAYS).map(([k, t]) => `<button type="button" role="tab" data-sheetway="${k}" aria-selected="${k === SHEET.way}">${t}</button>`).join('')}</div></div>
-    <div class="sheet-when"><span class="fv-why">The piece</span><div class="seg" role="tablist" aria-label="When the piece is shown" id="sheetWhen">${Object.entries(SHEET_STATES).map(([k, t]) => `<button type="button" role="tab" data-sheetwhen="${k}" aria-selected="${k === SHEET.state}">${t}</button>`).join('')}</div></div>
-    <div id="sheetState"></div>
-    <div class="dry-grid sheet-grid">
+    <div class="sheet-when" data-fview="piece"><span class="fv-why">The piece</span><div class="seg" role="tablist" aria-label="When the piece is shown" id="sheetWhen">${Object.entries(SHEET_STATES).map(([k, t]) => `<button type="button" role="tab" data-sheetwhen="${k}" aria-selected="${k === SHEET.state}">${t}</button>`).join('')}</div></div>
+    <div id="sheetState" data-fview="piece"></div>
+    <div class="dry-grid sheet-grid" data-fview="piece">
       <figure class="pane dry-pane"><figcaption>${uiBadge('film')}Held up (free)</figcaption><canvas id="sh1" role="img" aria-label="The cut piece held up, as it curls free, in a view from above and the front"></canvas><div class="pane-legend" id="sh1Lg"></div></figure>
       <figure class="pane dry-pane"><figcaption>${uiBadge('film')}On a table (its weight)</figcaption><canvas id="sh2" role="img" aria-label="The cut piece lying on a table under its weight, its curl up, in a view from above and the front"></canvas><div class="pane-legend" id="sh2Lg"></div></figure>
     </div>
-    <div class="stack-sec" id="stackSec">
+    <div class="stack-sec" id="stackSec" data-fview="stack">
       <h4 class="oned-h">In the pressed stack, and out of it</h4>
       <div class="sheet-head stack-head">${filmPicDryStack(0.9)}${filmPicStackRest(0.9)}<p class="fv-why">Stacked 20 at a time, the pieces lie flat under the plate, free in their own plane. Their water leaves along them to the stack's edges in the drying oven, then comes back the same way under the plate in the room. Held flat, a piece carries the stress of its uneven water, and while wet it creeps and eases it: what the creep leaves is how the piece lies when it is taken out.</p></div>
       <div id="stackState"></div>
@@ -209,7 +209,7 @@ function sheetSectionHTML() {
         <figure class="pane dry-pane"><figcaption>${uiBadge('cut')}The pull held flat</figcaption><canvas id="st2" role="img" aria-label="The largest pull in a piece held flat in the stack against time, with the film's strength"></canvas><div class="pane-legend" id="st2Lg"></div></figure>
       </div>
     </div>
-    <div id="sheetMeas"></div>
+    <div id="sheetMeas" data-fview="piece"></div>
   </div>`;
 }
 function sheetStatusPaint() {

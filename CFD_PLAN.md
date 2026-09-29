@@ -941,6 +941,32 @@ GO-5b built:
 - Fixed on the way: a chart's left margin grows to its widest y label (a DOE on a small range cut its labels); the gas
   picture's caption on two lines (it was cut at its sides); the lights keep their help once one is picked.
 
+GO-6 built (the Process tab one stage at a time, Q115–Q122 and the choices above):
+- The chain as tabs in one row (number, name, a dot and word for where it stands, its line on hover; arrow keys along
+  them). The stage picked is shown; the others stay drawn, hidden, so they go on solving and the report reads them all.
+- The drying, the film and the furnace in three steps, Setup › Solve › Results, on Results once solved. Setup: their
+  inputs (the same values as the inputs bar's, kept in step both ways, one undo step each). Solve: where it stands, the
+  solver's settings, this run's checks (the furnace: each run's gas made against out and held). Results: the answer in a
+  line, the warnings folded behind a button, one chart at a time picked by chips. The slurry and the flakes: one page
+  each (their values; where they are changed or computed). The coating: its chart and the mass balance, with links to
+  Flow › 1D, across the web and the 2D (as the old chain's card had). The drying's Setup: the oven's zones as a table
+  typed in (length, air speed, temperature, humidity, what is above the film), the inputs bar's values; adding or
+  removing a zone, the jets and the IR there.
+- The furnace's Setup: each run's program as a table and a drawing side by side, one run at a time; a corner dragged
+  (where a ramp ends: its temperature and rate; a hold ends: its time; the cooling ends: its rate) sets the steps, one
+  undo step named for what changed; the stack in its holder drawn beside its inputs (pieces, paper, margin, the plate,
+  a gap or the next plate on it), your limit (the thickness's spread). Results: the lights; the tiles; the charts (the
+  thickness first) beside the piece as a colour map from above or in 3D (turned by dragging, its heights raised).
+- The film's Results: three views (the film peeled off; the pressed stack; a piece in 3D), each alone.
+- The furnace's DOE (Q122): the DOE tab switches between Coating DOE and Furnace DOE, each keeping its own design and
+  runs (in the project too). Factors: run 1's and run 2's heating rates (×), run 2's top and hold, the pieces, the plate,
+  the gap, the paper, eight of the Furnace card's values; outputs: the graphene film's twelve. Runs go to the furnace's
+  worker with the factors' values, the film's piece as it is; about 10 s a run.
+- The report reads every stage, shown or not; the furnace's line (what goes in, the runs, the stack) whole, as Setup
+  shows it in parts. A figure's caption no longer takes in its own switch's words (the piece's Map | 3D).
+- Checked: every control the one long page showed is reached on GO-6 by its stage, step, view or chip (a census by
+  clicks), but the chain's six cards, which the stage tabs and each stage's links replace.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

@@ -55,11 +55,90 @@ function processStages() {
   ];
 }
 const STAGE_ICON = { slurry: 'drop', coat: 8, align: 'fibre', dry: 'oven', film: 'film', furn: 'bars' };
+/** The stages' short names, on their tabs (Q115). */
+const STAGE_TAB = { slurry: 'Slurry', coat: 'Coating', align: 'Flakes', dry: 'Drying', film: 'Film', furn: 'Furnace' };
+/** The Process tab shows one stage at a time (Q115), each in steps Setup › Solve › Results (Q116); remembered while open. */
+const PROC = { stage: 'coat', step: {} };
+/** The report's Process section: every stage, step, film view and chart drawn open at once (as one long page). */
+let PROC_ALL = false;
+/** The stages that are computed here, with their steps; the others show their one page. */
+const PROC_STEPS = { dry: ['setup', 'solve', 'results'], film: ['setup', 'solve', 'results'], furn: ['setup', 'solve', 'results'] };
+const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results' };
+/** The chain as tabs in one row (Q139): number, name, a dot for where it stands (its word for readers), its line on hover. */
 function processChainHTML() {
-  return `<ol class="chain" aria-label="The process, stage by stage">${processStages().map((g, i) => {
-    const [stT, stC] = STAGE_ST[g.st], inner = `<span class="ch-n">${i + 1}</span><span class="ch-t">${uiBadge(STAGE_ICON[g.k])}${g.t}</span><span class="ch-st ch-${stC}">${stT}</span><span class="ch-s">${g.s}</span>`;
-    return `<li class="ch-${g.st}">${g.go != null ? `<button type="button" class="ch-b" data-chain="${g.go}" title="${g.go === 'oven' ? 'The oven\'s zones, in the inputs bar' : g.go === 'dry' ? 'The drying, below the chain' : g.go === 'film' ? 'The film, below the drying' : g.go === 'furn' ? 'The furnace, below the film' : `Open ${TABS[g.go]}`}">${inner}</button>` : `<div class="ch-b">${inner}</div>`}</li>`;
-  }).join('')}</ol>`;
+  return `<div class="proc-tabs" role="tablist" aria-label="The process, stage by stage">${processStages().map((g, i) => {
+    const [stT, stC] = STAGE_ST[g.st], on = g.k === PROC.stage;
+    return `<button type="button" role="tab" class="pt" data-stage="${g.k}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${g.t}: ${stT}. ${String(g.s).replace(/<[^>]*>/g, '').replace(/"/g, '&quot;')}"><b>${i + 1}</b>${uiBadge(STAGE_ICON[g.k])}<span>${STAGE_TAB[g.k]}</span><i class="pt-dot pt-${stC}" aria-hidden="true"></i><span class="sr-only">${stT}</span></button>`;
+  }).join('')}</div>`;
+}
+/** The stage shown: its line (where it stands) under the tabs, and its steps. */
+function processStageHead() {
+  const g = processStages().find(q => q.k === PROC.stage), [stT, stC] = STAGE_ST[g.st], steps = PROC_STEPS[g.k];
+  const now = processStep(g.k);
+  const bar = steps ? `<div class="step-bar proc-steps" role="tablist" aria-label="${g.t}: its steps">${steps.map((k, i) => `<button type="button" role="tab" data-pstepgo="${k}" aria-selected="${k === now}"><b>${i + 1}</b><span>${PROC_STEP_T[k]}</span></button>`).join('<span class="step-sep" aria-hidden="true">›</span>')}</div>` : '';
+  return `<div class="proc-head"><h2 class="proc-h">${uiBadge(STAGE_ICON[g.k])}${g.t}</h2><span class="ch-st ch-${stC}">${stT}</span><span class="proc-line">${g.s}</span>${bar}</div>`;
+}
+/** A stage's step: as chosen, else Results once it is solved, else Setup. */
+function processStep(k) {
+  if (!PROC_STEPS[k]) return null;
+  if (PROC.step[k]) return PROC.step[k];
+  const g = processStages().find(q => q.k === k);
+  return g && g.st === 'solved' ? 'results' : 'setup';
+}
+/** The slurry (stage 1): its card's values the chain uses, and where to change them. */
+function procSlurryHTML() {
+  const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length;
+  const row = (l, v, f) => `<tr><th>${l}</th><td>${v}</td><td class="fv-why">${f || ''}</td></tr>`;
+  const fl = k => c[k] ? { given: 'From you', assumed: 'Assumed', measured: 'Measured' }[c[k].flag] || '' : '';
+  return `<div class="proc-card"><table class="proc-kv"><tbody>
+    ${row('Solids (GO)', `${c.phi.v} vol%`, fl('phi'))}${row('GO density', `${c.rhoS.v} g/cm³`, fl('rhoS'))}${row('Liquid (water)', `${c.rhoL.v} kg/m³`, fl('rhoL'))}
+    ${row('Dry film packing', `${c.phiDry.v}`, fl('phiDry'))}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`, 'worked out')}</tbody></table>
+    <p class="fv-why">${nA} of the slurry card's ${keys.length} values are assumed. How it flows (its viscosity, yield stress and structure) is on the same tab.</p>
+    <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="13">${uiIco(13)}Edit in Materials</button></div></div>`;
+}
+/** The flakes' alignment (stage 3): where it stands at each location, and where it is computed. */
+function procAlignHTML() {
+  const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null);
+  const rows = o.map((q, i) => `<tr><th>L${i + 1}</th><td>${q ? q.film.oven.Sy.toFixed(2) : '—'}</td><td>${q && q.film.dried ? q.film.dried.Sy.toFixed(2) : '—'}</td></tr>`).join('');
+  return `<div class="proc-card">${MAT.orient.on ? `<table class="proc-kv"><thead><tr><th></th><th>Flatness at the oven</th><th>Dried</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="fv-why">The flakes' flatness (1: all flat) is computed with each 2D run, along its streamlines to the film. Run the 2D at a location to fill its row.</p>` : '<p class="fv-why">The flakes\' alignment is off (Materials).</p>'}
+    <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Flow › 2D</button><button type="button" class="btn btn-secondary btn-sm" data-chain="13">${uiIco(13)}The alignment card</button></div></div>`;
+}
+/** A stage's answer in one line (Q117: its line in the chain), then its warnings folded behind a button. */
+function procAnswerHTML(line, warnHTML) {
+  const box = document.createElement('div'); box.innerHTML = warnHTML || '';
+  const pills = [...box.querySelectorAll('.pill')], nBad = pills.filter(q => q.classList.contains('bad')).length;
+  return `<p class="furn-answer">${line}</p>${pills.length ? `<details class="furn-warn"><summary>${nBad ? '<i class="pt-dot pt-bad" aria-hidden="true"></i>' : ''}Warnings (${pills.length})</summary>${warnHTML}</details>` : ''}`;
+}
+/** A stage's charts one at a time, picked by chips above them (Q118): each grid's chosen chart (its canvas's id). */
+const PROC_CHART = { dry: 'dr1', film: 'fm1' };
+const PROC_CHARTS = {
+  dry: [['dr1', 'Water in the film'], ['dr2', 'Temperatures'], ['dr3', 'Evaporation'], ['dr4', 'The film and its skin'], ['dr5', 'Through the film']],
+  film: [['fm1', 'Stress at its top'], ['fm2', 'Crack risk'], ['fm3', 'Peel force'], ['fm4', 'Through it at the peel'], ['fm5', 'Blister risk'], ['fm6', 'On a table']],
+};
+function procChipsHTML(k) {
+  return `<div class="furn-chips" role="tablist" aria-label="Which chart">${PROC_CHARTS[k].map(([id, t]) => `<button type="button" role="tab" class="chip" data-pchart="${k}|${id}" aria-selected="${id === PROC_CHART[k]}">${t}</button>`).join('')}</div>`;
+}
+function procShowChart(k) {
+  const on = PROC_CHART[k];
+  document.querySelectorAll(`[data-pchart^="${k}|"]`).forEach(b => b.setAttribute('aria-selected', String(b.dataset.pchart === `${k}|${on}`)));
+  PROC_CHARTS[k].forEach(([id]) => { const cv = document.getElementById(id); if (cv) cv.closest('figure').hidden = !PROC_ALL && id !== on; });
+}
+/** Show the stage chosen (the others stay drawn, hidden: they go on solving and the report reads them). */
+function processShowStage() {
+  const k = PROC.stage, wb = document.getElementById('modWb');
+  if (wb) wb.classList.toggle('proc-all', PROC_ALL);
+  if (PROC_ALL) {
+    if (wb) delete wb.dataset.procStage;
+    document.querySelectorAll('.proc-stage').forEach(el => { el.hidden = false; delete el.dataset.step; });
+    document.querySelectorAll('#modWb .mod-vp > figure.pane, #modWb .mod-extra').forEach(el => { el.hidden = false; });
+    return;
+  }
+  if (wb) wb.dataset.procStage = k;
+  document.querySelectorAll('.proc-stage').forEach(el => { el.hidden = el.dataset.stageOf !== k; });
+  document.querySelectorAll('#modWb .mod-vp > figure.pane, #modWb .mod-extra').forEach(el => { el.hidden = k !== 'coat'; });
+  const step = processStep(k);
+  document.querySelectorAll('.proc-stage[data-stage-of="' + k + '"]').forEach(el => { if (step) el.dataset.step = step; else delete el.dataset.step; });
 }
 
 // ---- the page ----
@@ -81,6 +160,14 @@ function processSidebar() {
   wireOvenZones(() => processPage(true), render);
   wireFurnTree(() => processPage(true));
 }
+/** Open a stage (from its tab, a link or another tab's "See it on Process"), at the page's top. */
+function processGo(k, step) {
+  if (!STAGE_TAB[k]) return;
+  PROC.stage = k; if (step) PROC.step[k] = step;
+  tab = 12; render();
+  const vp = document.querySelector('.mod-vp'); if (vp) vp.scrollTop = 0;
+  const b = document.querySelector(`.proc-tabs [data-stage="${k}"]`); if (b && document.activeElement && document.activeElement.closest && document.activeElement.closest('.proc-tabs')) b.focus();
+}
 function viewProcess() {
   processSidebar();
   processPage();
@@ -94,19 +181,42 @@ function processPageBody() {
   oneDRequest(true);
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   view.innerHTML = moduleFrame({
-    top: processChainHTML() + drySectionHTML() + filmSectionHTML() + furnSectionHTML(),
+    top: processChainHTML() + processStageHead()
+      + `<div class="proc-stage" data-stage-of="slurry">${procSlurryHTML()}</div>`
+      + `<div class="proc-stage" data-stage-of="align">${procAlignHTML()}</div>`
+      + `<div class="proc-stage" data-stage-of="dry">${drySectionHTML()}</div>`
+      + `<div class="proc-stage" data-stage-of="film">${filmSectionHTML()}</div>`
+      + `<div class="proc-stage" data-stage-of="furn">${furnSectionHTML()}</div>`,
     panes: [{ id: 'pr1', icon: 'film', title: 'Wet and dry film across the web', aria: 'Wet film and dry film against position across the web',
       legend: oneDLegend([['wet film (1D)', mut, 'dash'], ['dry film (mass balance)', acc]]),
       note: 'The wet film is the 1D gap flow at every position across the web (Flow › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
-    extra: '<div class="proc-table" id="procTable"></div>',
+    extra: `<div class="proc-table" id="procTable"></div><div class="prop-actions proc-go"><button type="button" class="btn btn-secondary btn-sm" data-chain="8">${uiIco(8)}Flow › 1D: the gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-chain="11">${uiIco(11)}Across the web</button><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Flow › 2D</button></div>`,
   });
+  processShowStage();
   if (!view.dataset.wired) {
     view.dataset.wired = '1';
+    // (the stages' tabs by the keyboard: arrows, Home and End move to a stage and open it)
+    view.addEventListener('keydown', e => {
+      const b = e.target.closest && e.target.closest('.proc-tabs [data-stage]');
+      if (!b || tab !== 12 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      const ks = Object.keys(STAGE_TAB), i = ks.indexOf(b.dataset.stage);
+      const j = e.key === 'Home' ? 0 : e.key === 'End' ? ks.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + ks.length) % ks.length;
+      e.preventDefault(); processGo(ks[j]);
+      const nb = document.querySelector(`.proc-tabs [data-stage="${ks[j]}"]`); if (nb) nb.focus();
+    });
     view.addEventListener('click', e => {
+      if (tab !== 12) return;
+      // (a stage's tab; a step of the stage shown)
+      const st = e.target.closest && e.target.closest('[data-stage]');
+      if (st && st.closest('.proc-tabs')) { processGo(st.dataset.stage); return; }
+      const pc = e.target.closest && e.target.closest('[data-pchart]');
+      if (pc) { const [k, id] = pc.dataset.pchart.split('|'); PROC_CHART[k] = id; procShowChart(k); if (k === 'dry') dryRender(); else filmRender(); return; }
+      const sp = e.target.closest && e.target.closest('[data-pstepgo]');
+      if (sp) { PROC.step[PROC.stage] = sp.dataset.pstepgo; render(); return; }
       const b = e.target.closest && e.target.closest('[data-chain]');
-      if (!b || tab !== 12) return;
+      if (!b) return;
       const go = b.dataset.chain;
-      if (go === 'dry' || go === 'film' || go === 'furn') { const sec = document.getElementById({ dry: 'drySec', film: 'filmSec', furn: 'furnSec' }[go]); if (sec) sec.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      if (go === 'dry' || go === 'film' || go === 'furn') processGo(go);
       else if (go === 'furnin') { FV.tree.furn = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="furn"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else if (go === 'peel') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; const b = document.getElementById('ovzPeel'); if (b) b.scrollIntoView({ block: 'nearest' }); const f = document.getElementById('ovzPeelLen'); if (f) f.focus(); } }
       else if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
