@@ -83,7 +83,7 @@ const DOE_OUTPUTS = [
   { k: 'furnSD', l: 'Graphene film\'s thickness, standard deviation over the batch', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
   { k: 'furnCrack', l: 'Its pull against its strength, the stack\'s worst piece', u: '% (100: cracks)', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnWave', l: 'Its squeeze against what buckles it, the stack\'s worst piece', u: '% (100: waves)', g: 'Furnace (graphene film)', d: 0 },
-  { k: 'furnStuck', l: 'Stuck to its paper, the stack\'s most', u: '% of the piece', g: 'Furnace (graphene film)', d: 0 },
+  { k: 'furnStuck', l: 'Stuck to its paper or plate, the stack\'s most', u: '% of the piece', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnSize', l: 'Its size after the furnace, free', u: '% (along itself)', g: 'Furnace (graphene film)', d: 2 },
 ];
 const DOE = {
