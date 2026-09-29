@@ -891,6 +891,56 @@ GO-5a built:
   0.22 g/cm³, 145 W/(m·K). At 90 µm (the user's typical): the first run 97.5 % of its hold, the second puffs from
   1142 °C, 125 µm (1.38×), 0.47 g/cm³, 311 W/(m·K).
 
+GO-5b decisions (the user, with the pictures of the holder and the design sheets):
+- Q111: its size after the furnace against the GO piece: not known. Q112: found stuck to the paper after the second run.
+  Q113: it cracks straight across. Q114: new waves out of the furnace. Q115–Q118: the Process tab one stage at a time
+  (the chain as tabs), each stage Setup › Solve › Results, short words with the warnings folded, one big chart with chips
+  (the redesign, next). Q119: the program as a table and a drawing side by side. Q120: the piece as a colour map and in
+  3D. Q121: the checks as traffic lights. Q122: a separate, fast furnace DOE. Q123: the cracks after run 2. Q124: many,
+  a grid. Q125: stuck all over. Q126: bending tested by hand. Q127: a piece can be measured after run 1 too. Q128: its
+  thickness's standard deviation 30 µm. Q129: no target heat conduction yet. Q130: photos of the defects later.
+- The holder (the user's photos, Q131): in each tier a base plate held on threaded graphite rods by nuts, the stack
+  (over 150 pieces, a paper between each two), a plate resting on the stack (its weight; "to put some pressure when they
+  expand"), a gap, then the next tier's plate. "The holder stack design can change, and varies with product": the
+  plate's weight, the gap and the pieces are inputs, not asked (Q132–Q134 withdrawn at the user's word). The photos stay
+  out of the app.
+- Chosen (the user asked for no more questions; from the sheets go5_q131/q139/q143): the light is amber from 80 % of
+  its limit; the furnace DOE in the DOE tab (a switch); the program one run at a time; the piece's map and 3D as one
+  panel with a switch; inputs in a stage's Setup and in the inputs bar, kept in step; stages solve by themselves.
+
+GO-5b design (the piece along itself on its paper):
+- Its natural strain along itself, uniform: its water leaving (β, the Film card), all its oxygen gone (bO) in step with
+  the oxygen left, graphitizing (bG) in step with it, and heat against the paper's (am).
+- On its paper: a disc of the piece's area in rings (axisymmetric plane stress, linear elements, graded to the edge over
+  30 × 2h), each ring held by a stiff spring (kt = E/((1−ν) 4 h₀): a stuck film's stress falls to its edge over about
+  2h) that slips beyond its limit: friction, μ times the load pressing it (the papers' and the plate's weight, the
+  papers pushed once the stack fills the gap; nothing where the gas lifts the paper), or once stuck its bond τb. Stuck
+  from the temperature set where pressed, for good. Newton on the displacements (the springs' active set), tridiagonal.
+- Its stiffness and strength with its density (open cells): E (ρ/ρ₀)², σc (ρ/ρ₀)^1.5, from the Film card's GO values.
+- Checks: cracks where its pull (largest principal stress) beats its strength (stuck, into cells s = 2 σc h / τb: a
+  grid); waves where its squeeze beats a plate's on the papers' give through their thickness, both sides (σ = 2√(D k)/h,
+  λ = 2π (D/k)^¼); sticks; its size free after the furnace; its thickness's spread (standard deviation) against the
+  user's 30 µm. The lights: puffs, cracks, waves, sticks, even.
+
+GO-5b built:
+- furnace.js: fuPlaneMesh, fuPlaneState, fuPlaneStep, coupled into fuRun step by step (o.plane); the plate resting on
+  the stack (o.plateP, its weight over the paper); the thickness's standard deviation. furnace.validate.js: 17 checks
+  (the worker's fits; the rings against the exact disc slipping under uniform friction, σr = f(2+ν)(R−r)/3,
+  σθ = f((2+ν)R − (1+2ν)r)/3, converging; stuck, −Eε/(1−ν) exactly; through the runs its size free, when it sticks,
+  and no hold no pull).
+- UI: the four check cards become five lights (puffs, cracks, waves, sticks, even) with the picked one's picture and
+  words; a seventh chart (its pull and squeeze against what they take, where it sticks); a tile (its size after); the
+  holder drawn as the photos' tier (the plate, the gap or the plate on it, as set); inputs: a plate resting on the stack
+  (kg), your limit (the thickness's standard deviation, 30 µm); pieces in a stack 200 (assumed). The Furnace card:
+  six more values (along the piece: shrinks with its oxygen gone, as it graphitizes, heat against the paper's,
+  friction, sticks from, its bond). DOE: five more outputs. Help, report, CSV.
+- At the app's defaults (its 371 µm piece, 200 pieces, 7 kg plate): it sticks from 2200 °C in run 2, its pull at most
+  50 % of its strength (no cracks), never squeezed (no waves), 4.1 % smaller free. With graphitizing shrinking 2 % it
+  cracks in run 2 into a grid about 4 mm apart; growing 1 % it waves (about 1.8 mm). The values are assumed until the
+  user's photos and measured sizes set them.
+- Fixed on the way: a chart's left margin grows to its widest y label (a DOE on a small range cut its labels); the gas
+  picture's caption on two lines (it was cut at its sides); the lights keep their help once one is picked.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

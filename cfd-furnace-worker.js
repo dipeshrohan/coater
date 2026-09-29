@@ -31,8 +31,23 @@ function furnCompact(r, o) {
   const where = k => { if (k == null) return null; const i = k % g.nx, j = Math.floor(k / g.nx); return { x: p(g.cx[i] * 1000), y: p(g.cy[j] * 1000) }; };
   return { hist, along, diag, map, half: [o.Lx * 500, o.Ly * 500],
     runs: r.runs.map(q => ({ peak: { idx: q.peak.idx, T: q.peak.T - K0, t: q.peak.t / 3600, at: where(q.peak.k) }, puffAt: q.puffAt ? { T: q.puffAt.T - K0, t: q.puffAt.t / 3600 } : null, gasMax: q.gasMax, tEnd: q.tEnd / 3600, gas: q.gas })),
-    end: { h: r.hMean, hMin: r.hMin, hMax: r.hMax, hc: r.hc, rho: r.rho, kappa: r.kappa, kept: r.kept, CO: r.CO, O: r.O, C: r.C, g: r.g, d: r.d, La: r.La, mA: r.mA, mEnd: r.mEnd },
-    split1: r.chem.split1, stages: r.stages, graph: r.graph };
+    end: { h: r.hMean, hMin: r.hMin, hMax: r.hMax, hSD: r.hSD, hc: r.hc, rho: r.rho, kappa: r.kappa, kept: r.kept, CO: r.CO, O: r.O, C: r.C, g: r.g, d: r.d, La: r.La, mA: r.mA, mEnd: r.mEnd },
+    split1: r.chem.split1, stages: r.stages, graph: r.graph, plane: planeCompact(r.plane) };
+}
+/** The piece along itself (GO-5b), compact: its history thinned per run (the highest pull and squeeze kept), in h, °C, %, MPa. */
+function planeCompact(pl) {
+  if (!pl) return null;
+  const p = v => v == null ? null : +(+v).toPrecision(5), K0 = FU_K0, at = q => q ? { run: q.run, t: p(q.t / 3600), T: p(q.T - K0), r: q.r != null ? p(q.r) : undefined } : null;
+  const hist = [];
+  for (let run = 0; run < 2; run++) {
+    const h = pl.hist.filter(q => q.run === run), step = Math.max(1, Math.ceil(h.length / 400));
+    let a = 0, b = 0; h.forEach((q, i) => { if (q.ratio > h[a].ratio) a = i; if (q.wave > h[b].wave) b = i; });
+    h.forEach((q, i) => { if (i % step && i !== h.length - 1 && i !== a && i !== b) return;
+      hist.push({ run, t: p(q.t / 3600), T: p(q.T - K0), eps: p(q.eps * 100), s1: p(q.s1 / 1e6), s2: p(q.s2 / 1e6), sc: p(q.sc / 1e6), sw: p(q.sw / 1e6), ratio: p(q.ratio * 100), wave: p(q.wave * 100), stuck: p(q.stuck * 100) }); });
+  }
+  return { hist, ratioMax: pl.ratioMax, where: at(pl.where), first: pl.first ? { ...at(pl.first), sc: pl.first.sc / 1e6, h: pl.first.h } : null, stuckAt: at(pl.stuckAt), stuckFrac: pl.stuckFrac,
+    spacing: pl.spacing, waveMax: pl.waveMax, waveAt: pl.waveAt ? { ...at(pl.waveAt), lambda: pl.waveAt.lambda } : null, compMin: pl.compMin / 1e6, size: pl.size, R: pl.R,
+    rings: { rm: pl.rings.rm.map(v => p(v / pl.R)), sr: pl.rings.sr.map(v => p(v / 1e6)), st: pl.rings.st.map(v => p(v / 1e6)) } };
 }
 
 onmessage = e => {

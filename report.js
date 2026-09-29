@@ -196,14 +196,16 @@ async function repProcess() {
     }
   }
   if (keepState) { SHEET.state = keepState; sheetRender(); }
-  // the furnace and the graphene film (GO-5): its line and warnings, the four checks, the tiles, the measured and what
+  // the furnace and the graphene film (GO-5): its line and warnings, the five checks, the tiles, the measured and what
   // they mean, the runs and the stack as set, its note (its six charts go with the plots)
   let furn = '';
   const uSt = document.getElementById('furnState');
   if (uSt) {
     const uPills = [...uSt.querySelectorAll('.pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
     const uLine = uSt.querySelector('.dry-where'), uNote = document.getElementById('furnNote');
-    const uChecks = [...document.querySelectorAll('#furnChecks .film-check')].map(c => [repEsc(cleanText(c.querySelector('h4'))), repEsc([...c.querySelectorAll('.film-v')].map(v => cleanText(v)).join('; '))]);
+    // (all five checks, not only the one shown: each its word and level, then its sentences)
+    const uChecks = FURN.res && furnCurrent() ? furnLights(FURN.res).map(q => { const d = document.createElement('div'); d.innerHTML = furnCheckBody(FURN.res, q.k);
+      return [repEsc(q.t), repEsc(`${furnWord(q)}${Number.isFinite(q.v) ? ` (${(q.v * 100).toFixed(0)} % of its limit)` : ''}: ${[...d.querySelectorAll('.film-v')].map(v => cleanText(v)).join('; ')}`)]; }) : [];
     const uStats = [...document.querySelectorAll('#furnStats .stat')].map(el => [repEsc(cleanText(el.querySelector('span'))), repEsc(cleanText(el.querySelector('strong'))), repEsc(cleanText(el.querySelector('small')))]);
     const um = (MAT.furnMeas || {}).out || [], uRows = um.map(q => [q.loc === 'web' ? 'The web' : q.loc, repEsc([Number.isFinite(q.h) ? `${q.h} µm thick` : '', Number.isFinite(q.kept) ? `${q.kept} % of its weight kept` : '', Number.isFinite(q.kappa) ? `${q.kappa} W/(m·K) along it` : ''].filter(Boolean).join(', '))]);
     const uImp = [...document.querySelectorAll('#furnMeas .film-imp li')].filter(li => !li.classList.contains('fv-why')).map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*(Use|Fit the [^.]*?(to it|to my first run))\s*/g, ' ').trim())}</li>`);
