@@ -279,6 +279,36 @@ const r = F.fuRun(base());
     `coldest ${(L.stacks.cold.hMean * 1e6).toFixed(2)}, as set ${(L.stacks.mid.hMean * 1e6).toFixed(2)}, hottest ${(L.stacks.hot.hMean * 1e6).toFixed(2)} µm; the batch ± ${(L.batch.hSD * 1e6).toFixed(3)} µm (within a stack ± ${(L.batch.within * 1e6).toFixed(3)})`);
 }
 
+// 21. sticking needs pressure (GO-7c): at 0 the pieces stick wherever pressed, as before, bit for bit; with a room the
+//     stack does not fill, each piece is pressed by the weight above it, so a pressure between the top's and the bottom's
+//     leaves the top free and sticks the bottom, the thickness untouched (sticking does not act back on the gas); with a
+//     room it fills, the holder's squeeze presses every piece alike and the pieces cannot be told apart
+{
+  const pl = { Ep: 20e9, nu: 0.2, sigF: 100e6, bw: 0.08, bO: 0.03, bG: 0.005, mu: 0.15, Tstick: 1800 + 273.15, tauB: 1e6, am: 0, faces: 2 };
+  const P3 = [{ m: 0, w: 1 }, { m: 10, w: 4 }, { m: 19, w: 1 }];
+  const o = base({ dT: 2, plateP: 600, gap: 1, positions: P3 }), a = F.fuRun({ ...o, plane: pl }), z = F.fuRun({ ...o, plane: { ...pl, pStick: 0 } });
+  const same = a.pos.every((q, i) => q.hMean === z.pos[i].hMean && q.plane.ratioMax === z.pos[i].plane.ratioMax && q.plane.stuckFrac === z.pos[i].plane.stuckFrac);
+  const [t, , b] = a.pos, up = a.pos.every((q, i) => i === 0 || q.plane.pcHalf > a.pos[i - 1].plane.pcHalf);
+  const pS = (t.plane.pcHotMax + b.plane.pcHalf) / 2, s = F.fuRun({ ...o, plane: { ...pl, pStick: pS } });
+  const split = t.plane.pcHotMax < b.plane.pcHalf && s.pos[0].plane.stuckFrac === 0 && s.pos[2].plane.stuckFrac >= 0.5 && s.pos.every((q, i) => q.hMean === a.pos[i].hMean);
+  const j = F.fuRun({ ...o, gap: 0.2e-3, plane: pl }), jam = j.squeeze.max > 0 && a.squeeze.max === 0
+    && Math.max(...j.pos.map(q => q.plane.pcHalf)) / Math.min(...j.pos.map(q => q.plane.pcHalf)) < 1.01;
+  check('sticking needs pressure: at 0 as before; the top free and the bottom stuck between their weights; a filled room presses all alike', same && up && split && jam,
+    `pressed once hot (half its area) ${a.pos.map(q => (q.plane.pcHalf / 1e3).toFixed(2)).join(', ')} kPa; from ${(pS / 1e3).toFixed(2)} kPa stuck ${s.pos.map(q => (q.plane.stuckFrac * 100).toFixed(0) + ' %').join(', ')}; the room filled: squeezed ${(j.squeeze.max / 1e6).toFixed(2)} MPa, pressed ${j.pos.map(q => (q.plane.pcHalf / 1e6).toFixed(3)).join(', ')} MPa`);
+}
+
+// 22. the film's openings and the paper's gas exchanged together (GO-7c): 200 pieces whose stack fills its room -- the
+//     holder squeezing hard, the gas moving between the openings and the paper faster than a step -- the gas under the
+//     paper never below a vacuum (the steps taken one after the other drove it to −10¹⁵ Pa before), and the thickness
+//     and the squeeze converging with the step (2 K against 1 K; the squeeze taken from the step's start, 1 %)
+{
+  const P3 = [{ m: 0, w: 1 }, { m: 100, w: 4 }, { m: 199, w: 1 }];
+  const o = base({ N: 200, h0: 371e-6, gap: 0.05, plateP: 594, positions: P3 }), a = F.fuRun({ ...o, dT: 2 }), b = F.fuRun({ ...o, dT: 1 });
+  const eh = Math.max(...a.pos.map((q, i) => rel(q.hMean, b.pos[i].hMean))), es = rel(a.squeeze.max, b.squeeze.max);
+  check('the openings and the paper together: 200 pieces squeezed, the gas under the paper above a vacuum, converging with the step', a.uMin > -101325 && b.uMin > -101325 && b.squeeze.max > 0 && eh < 3e-3 && es < 1e-2,
+    `the gas under the paper at least ${(b.uMin / 1e3).toFixed(3)} kPa; squeezed ${(b.squeeze.max / 1e6).toFixed(3)} MPa (2 K: ${rel(a.squeeze.max, b.squeeze.max).toExponential(1)}); thickness ${b.pos.map(q => (q.hMean * 1e6).toFixed(1)).join(', ')} µm (2 K: ${eh.toExponential(1)})`);
+}
+
 console.log(`the defaults: run 1 the gas at ${(r.runs[0].peak.idx * 100).toFixed(1)} % of its hold; run 2 puffs from ${(r.runs[1].puffAt.T - 273.15).toFixed(0)} °C; ${(r.hMean * 1e6).toFixed(1)} µm (${(r.hMean / 90e-6).toFixed(3)}×), ${r.rho.toFixed(0)} kg/m³, ${(r.kept * 100).toFixed(1)} % kept, g ${r.g.toFixed(3)}, La ${r.La.toFixed(0)} nm, ${r.kappa.toFixed(0)} W/(m K)`);
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;
