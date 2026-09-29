@@ -1049,6 +1049,10 @@ GO-4g (the pieces' edge waves, the user's photos -- the photos stay out of the a
   back to as cut 1–2 h later) and leaves its edges 0.005 % longer than 50 mm in (a finer mesh, creep times 1–100 min
   alike): flat; its piece out of the stack a bowl, corners 3 mm. Not the room's water coming back at the edges either
   (the photos 1 h or more after, the waves staying). Their cause is not in the model yet; the creep time stays assumed.
+- The pieces are cut by hand with a knife. Not observed yet (would decide the cause): whether the furnace's waves are
+  the ones the pieces had after the pre heat treatment; which pieces of the stack wave most; whether the roll is wavy
+  before cutting. Suggested: mark a few pieces and photograph them as cut, after the pre heat treatment and after the
+  furnace, noting their place in each stack.
 
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
