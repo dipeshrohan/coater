@@ -760,6 +760,7 @@ function fuRun(o) {
       let tb = faces * pl.tauB;
       if (q.nPl) {
         plane.stuckPlFrac = P.stuckPl.reduce((s_, v, i) => s_ + (v ? P.A[i] : 0), 0) / Atot;
+        plane.stuckPaFrac = P.stuck.reduce((s_, v, i) => s_ + (v ? P.A[i] : 0), 0) / Atot;   // (to its paper only)
         const paperStuck = P.stuck.some(v => v);
         tb = (paperStuck ? (faces - q.nPl) * pl.tauB : 0) + (plane.stuckPlFrac > 0 ? q.nPl * PL.tauB : 0);
       }

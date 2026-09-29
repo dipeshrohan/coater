@@ -143,6 +143,9 @@ function applyFurn(f) {
   if (!f || typeof f !== 'object') return out;
   for (const [k, , , lo, hi, , , flag] of FURN_FIELDS) { if (Number.isFinite(f[k]) && f[k] >= lo && f[k] <= hi) out[k] = f[k]; if (typeof f[flag] === 'boolean') out[flag] = f[flag]; }
   if (f.room === 'gap' || f.room === 'plates') out.room = f.room;
+  // (GO-7e: what the top and bottom pieces touch; a project from before: the plates, as the user's holder)
+  if (f.ends === 'plates' || f.ends === 'papers') out.ends = f.ends;
+  if (typeof f.endsSet === 'boolean') out.endsSet = f.endsSet;
   if (typeof f.runsSet === 'boolean') out.runsSet = f.runsSet;
   const inR = (v, [lo, hi]) => Number.isFinite(v) && v >= lo && v <= hi;
   if (Array.isArray(f.runs)) out.runs = out.runs.map((d, r) => {

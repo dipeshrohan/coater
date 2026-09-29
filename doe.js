@@ -108,8 +108,10 @@ const DOE_FURN_FACTORS = [
   { k: 'plateW', l: 'A plate resting on the stack', u: 'kg', kind: 'fstack', g: 'The stack in its holder', d: 1, lo: 0, hi: 1000 },
   { k: 'gap', l: 'Gap above the stack', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 0, lo: 0, hi: 1000 },
   { k: 'paperT', l: 'Graphite paper\'s thickness', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 2, lo: 0.01, hi: 10 },
+  // (GO-7e: the holder's plates the top and bottom pieces touch)
+  { k: 'plateT', l: 'The holder\'s plates\' thickness', u: 'mm', kind: 'fstack', g: 'The stack in its holder', d: 0, lo: 1, hi: 500 },
   // (the card's rows that follow on from the one above them, "…", named whole here; the pressure it sticks from, GO-7c)
-  ...['sigZ', 'es', 'Dgal', 'bO', 'bG', 'mu', 'Tst', 'pSt', 'tauB'].map(k => { const q = MAT_FURN.find(r => r[0] === k), whole = { bG: 'Shrinks along it as its layers order into graphite', pSt: 'It sticks where pressed at least' };
+  ...['sigZ', 'es', 'Dgal', 'bO', 'bG', 'mu', 'Tst', 'pSt', 'tauB', 'Bpl', 'muPl'].map(k => { const q = MAT_FURN.find(r => r[0] === k), whole = { bG: 'Shrinks along it as its layers order into graphite', pSt: 'It sticks where pressed at least' };
     return { k: 'c_' + k, card: k, l: whole[k] || q[1], u: q[2], kind: 'fcard', g: 'The Furnace card', d: q[6], lo: q[3], hi: q[4] }; }),
 ];
 /** The DOE shown: the coating's (the 2D CFD at a location) or the furnace's; the other's design and runs kept aside. */
@@ -371,7 +373,7 @@ function viewDOE() {
       <details class="grp cfd-grp" open><summary>From the furnace</summary>
         ${row('The piece', q ? `${dryFilmName(q.key).replace(/^the /, '')}, ${(q.P.h * 1e6).toFixed(0)} µm` : 'not solved yet (Process › Film)')}
         ${[0, 1].map(r => row(FURN_RUNS[r], fu.runs[r].file ? `your file ${dryEsc(fu.runs[r].file.name)}` : fu.runs[r].steps.map(st => `${st.rate} °C/min to ${st.to} °C`).join(', '))).join('')}
-        ${row('The stack', `${fu.N} pieces, ${fu.plateW} kg on it, ${fu.room === 'gap' ? `${fu.gap} mm gap` : 'the plate above on it'}`)}
+        ${row('The stack', `${fu.N} pieces, ${fu.plateW} kg on it, ${fu.room === 'gap' ? `${fu.gap} mm gap` : 'the plate above on it'}, ${fu.ends === 'papers' ? 'its ends on papers' : `its ends on the plates (${fu.plateT} mm)`}`)}
         <p class="prop-note">Every run is the furnace for the film's piece as it is (the flow is not solved again), its factors set; everything else as on Process › Furnace and the Furnace card.</p>
         <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToFurn">${uiIco(12)}Open the furnace</button></div>
       </details>`;

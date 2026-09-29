@@ -14,7 +14,8 @@ importScripts('furnace.js');
 /** A run's result, compact: the first piece's (the top) as before, every piece followed in pos, the stack's spread in batch. */
 function furnCompact(r, o) {
   const top = furnPieceCompact(r, r, o);
-  top.pos = (r.pos || [r]).map(q => ({ m: q.m || 0, w: q.w == null ? 1 : q.w, load: q.load, ...furnPieceCompact(q, r, o) }));
+  // (each piece's faces, GO-7e: 'plate' where it touches the holder's plate)
+  top.pos = (r.pos || [r]).map(q => ({ m: q.m || 0, w: q.w == null ? 1 : q.w, load: q.load, faces: q.faces || null, ...furnPieceCompact(q, r, o) }));
   top.batch = r.batch || { hMean: r.hMean, hSD: r.hSD, faces: 1 };   // (over the stacks too, when the load's spread was given)
   // (the holder's squeeze once the stack fills its room: MPa, from when, °C; GO-7c)
   top.squeeze = r.squeeze ? { max: r.squeeze.max / 1e6, from: r.squeeze.from ? { run: r.squeeze.from.run, T: r.squeeze.from.T - FU_K0 } : null } : null;
@@ -56,6 +57,8 @@ function planeCompact(pl) {
       hist.push({ run, t: p(q.t / 3600), T: p(q.T - K0), eps: p(q.eps * 100), s1: p(q.s1 / 1e6), s2: p(q.s2 / 1e6), sc: p(q.sc / 1e6), sw: p(q.sw / 1e6), ratio: p(q.ratio * 100), wave: p(q.wave * 100), stuck: p(q.stuck * 100) }); });
   }
   return { hist, ratioMax: pl.ratioMax, where: at(pl.where), pcHalf: pl.pcHalf / 1e3, pcHotMax: pl.pcHotMax / 1e3, first: pl.first ? { ...at(pl.first), sc: pl.first.sc / 1e6, h: pl.first.h } : null, stuckAt: at(pl.stuckAt), stuckFrac: pl.stuckFrac,
+    // (stuck to the holder's plate, GO-7e; its steps' balance)
+    stuckPlAt: at(pl.stuckPlAt), stuckPlFrac: pl.stuckPlFrac == null ? null : pl.stuckPlFrac, stuckPaFrac: pl.stuckPaFrac == null ? null : pl.stuckPaFrac, resMax: pl.resMax || 0,
     spacing: pl.spacing, waveMax: pl.waveMax, waveAt: pl.waveAt ? { ...at(pl.waveAt), lambda: pl.waveAt.lambda } : null, compMin: pl.compMin / 1e6, size: pl.size, R: pl.R,
     rings: { rm: pl.rings.rm.map(v => p(v / pl.R)), sr: pl.rings.sr.map(v => p(v / 1e6)), st: pl.rings.st.map(v => p(v / 1e6)) } };
 }
