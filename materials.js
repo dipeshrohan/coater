@@ -131,7 +131,7 @@ const MAT_FURN = [
   ['am', 'Its heat expansion along it, less the paper\'s', '×10⁻⁶/K', -10, 10, 0.1, 1, 0, 'assumed', 'both are graphite: about the same', 'plane'],
   ['mu', 'Friction on the graphite paper', '', 0, 2, 0.01, 2, 0.15, 'assumed', 'graphite on graphite about 0.1–0.2', 'plane'],
   ['Tst', 'It sticks to the paper from', '°C', 500, 3300, 10, 0, 2200, 'assumed', 'you find it stuck after the second run (Q112), all over (Q125): where between 1000 and 2800 °C is not known', 'plane'],
-  ['pSt', '… where pressed at least', 'kPa', 0, 100000, 0.01, 2, 0, 'assumed', 'the waved top pieces come off free, the cracked bottom ones stuck (GO-7c): 0 sticks it wherever pressed; where in the stack yours stick (Measured) sets it', 'plane'],
+  ['pSt', '… where pressed at least', 'kPa', 0, 100000, 0.001, 3, 0, 'assumed', 'the waved top pieces come off free, the cracked bottom ones stuck (GO-7c): 0 sticks it wherever pressed; where in the stack yours stick (Measured) sets it', 'plane'],
   ['tauB', 'Its bond to the paper, stuck', 'MPa', 0.001, 100, 0.01, 3, 1, 'assumed', 'not known: when it is stuck and cracks, the cracks\' spacing gives it', 'plane'],
 ];
 const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking' };

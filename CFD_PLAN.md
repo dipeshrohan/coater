@@ -1006,6 +1006,36 @@ GO-7 built (7a: held by both papers; 7b: the stack's pieces and the batch):
   the pieces, the pick and its keys, the load's spread in both places with undo, refused out of range, projects old
   and new, the report, the CSV, stacks of one and two, help, dark, phone), every validation file, http and file://.
 
+GO-7c decisions (the user): the stack's top and bottom about the same temperature; the top and bottom pieces touch the
+  holder's plates directly; whether the stack fills its gap after the runs: not known; the waved pieces near the top
+  come off free, the cracked ones near the bottom are stuck. So sticking depends on how hard a piece is pressed.
+
+GO-7c built:
+- Found and fixed (furnace.js, since GO-5b): the gas in the film's openings and under the paper were exchanged one
+  after the other, three times a step; with 200 pieces the exchange is faster than a step and it blew up (the gas under
+  the paper to −10¹⁵ Pa at the app's defaults, −10¹⁰ Pa with a 200 mm gap). Now each cell's exchange, linear in the
+  paper's gas (Newton for an opening that parts), is solved with the paper's equation; the held and parting updates
+  both backward Euler, meeting where it starts to part; at most 3 iterations, never below a vacuum. The holder's
+  squeeze from the step's end (each piece sees the stack grow as it grows itself): from its start the squeezed stack
+  was 1 % off at 1 K steps (first order), now 0.012 % (1 K against 0.5 K). A run: 13 s in Node (8 s before, wrong).
+- The results before this at the app's defaults (a stack of 200 in its 50 mm gap, all assumed) came from the blow-up:
+  621 ± 14 µm then; now 1013 ± 105 µm, the stack filling its room from 147 °C and the holder squeezing every piece
+  alike, 13.2 MPa -- its papers pressed past their thickness, beyond the model (warned). With a 200 mm gap: 1105 µm.
+- A piece sticks where pressed at least a pressure (the Furnace card, kPa; 0: wherever pressed, as before). Each
+  ring's most pressure once hot is kept. Measured: the first piece stuck from the top; the top, middle and bottom
+  against it; Fit: the pressure between the pressures on that piece and the one above it (to a piece or two: next to
+  each other they differ by a piece's weight, near what the model resolves), refused when the stuck piece is not
+  pressed harder than the top by half their weights' difference (the holder squeezing them all alike). A DOE factor.
+  With a 200 mm gap and stuck from the 150th: 1.633 kPa; the top and middle free, the bottom stuck from 2773 °C.
+- Warned: the stack filling its room (from when, the squeeze), its papers pressed past their thickness.
+- Fixed on the way: a fit that could not be made left its button as "Fitting…" (the three fits); its words stayed
+  after the inputs changed.
+- furnace.validate.js: 22 checks (21: sticking needs pressure, at 0 as before bit for bit, the top free and the bottom
+  stuck between their weights, a filled room pressing all alike; 22: 200 pieces squeezed, the gas under the paper
+  above a vacuum, converging with the step).
+- Not yet: the end pieces against the plates (their gas out through one paper; the plate's hold); the waves need the
+  pieces to grow along themselves somewhere (graphitizing, heat): the photos' wavelength and your sizes set it.
+
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier
   (material, thickness), typical wet and dry thickness, the oven (zones,

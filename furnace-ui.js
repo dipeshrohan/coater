@@ -593,7 +593,7 @@ function furnFit(what, target, label) {
       return;
     }
     if (!m.ok) { FURN.fit = { what, error: m.error, done: true }; if (tab === 12) furnRender(); return; }
-    const card = what === 'es' ? ['es', +m.value.toPrecision(3)] : what === 'pSt' ? ['pSt', +(m.value / 1e3).toPrecision(3)] : ['Dgal', +(m.value / 1e-10).toPrecision(3)];
+    const card = what === 'es' ? ['es', +m.value.toPrecision(3)] : what === 'pSt' ? ['pSt', +(m.value / 1e3).toPrecision(7)] : ['Dgal', +(m.value / 1e-10).toPrecision(3)];
     FURN.fit = null; FURN.lastFit = { what, range: m.range || null, v: card[1] };   // (its range said while the card keeps it)
     furnUse(card[0], card[1], label);
   };
