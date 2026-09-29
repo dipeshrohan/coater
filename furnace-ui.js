@@ -74,6 +74,7 @@ function furnRequest() {
   if (!q) return;
   const key = JSON.stringify(q);
   if (key === FURN.key || key === FURN.pending) return;
+  if (FURN.fit && FURN.fit.done) FURN.fit = null;   // (a fit that could not be made: its words were for the inputs before)
   if (FURN.busy) { FURN.again = true; return; }
   FURN.busy = true; FURN.again = false; FURN.pending = key; FURN.prog = null;
   if (!FURN.worker) FURN.worker = makeWorker('cfd-furnace-worker.js');
@@ -504,7 +505,7 @@ function furnMeasured(r) {
     for (const [k, q] of (m.out || []).entries()) {
       if (q.loc !== DRY.sel) continue;
       if (Number.isFinite(q.h)) {
-        const tgt = q.h * 1e-6, busy = FURN.fit && FURN.fit.what === 'es';
+        const tgt = q.h * 1e-6, busy = FURN.fit && FURN.fit.what === 'es' && !FURN.fit.done;
         imp.push(`<li>Your graphene film ${q.h} µm thick against the computed ${furnUm(e.h)} µm (${((e.h / tgt - 1) * 100).toFixed(0)} %). ${busy ? `<span id="furnFitMsg">${pill(FURN.fit.msg || 'Fitting…', '')}</span>` : `<button type="button" class="linkish" data-furnfit="es|${tgt}|your thickness ${q.h} µm">Fit the puffed film's way out to it</button>`}</li>`);
       }
       if (Number.isFinite(q.kept)) imp.push(`<li>Your weight kept ${q.kept} % against the computed ${(e.kept / (1 + P.Xroom) * 100).toFixed(1)} % (of the GO piece with its water, ${(P.Xroom * 100).toFixed(1)} %): the Furnace card's oxygen shares and the GO's C/O set it.</li>`);
@@ -514,16 +515,16 @@ function furnMeasured(r) {
       }
     }
     if (!(m.out || []).some(q => q.loc === DRY.sel)) imp.push('<li class="fv-why">Nothing measured for this film yet.</li>');
-    const f1 = FURN.fit && FURN.fit.what === 'Dgal';
+    const f1 = FURN.fit && FURN.fit.what === 'Dgal' && !FURN.fit.done;
     imp.push(`<li>The first run does not puff up (Q101): ${f1 ? `<span id="furnFitMsg">${pill(FURN.fit.msg || 'Fitting…', '')}</span>` : `<button type="button" class="linkish" data-furnfit="Dgal|0|your first run not puffing">Fit the gas through its open layers to my first run</button>`} (the least that keeps it below its hold, with the first run as set).</li>`);
     // (where in the stack yours stick, GO-7c: the pieces followed stuck over half their area or not, against yours)
     const sf = m.stuckFrom;
     if (Number.isFinite(sf)) {
       const L = furnPieces(r), got = L.map(q => ({ q, stuck: !!(q.plane && q.plane.stuckFrac >= 0.5), want: q.nth >= sf }));
-      const ok = got.every(x => x.stuck === x.want), f3 = FURN.fit && FURN.fit.what === 'pSt';
+      const ok = got.every(x => x.stuck === x.want), f3 = FURN.fit && FURN.fit.what === 'pSt' && !FURN.fit.done;
       const say = got.map(x => `${FURN_POS_NAME[x.q.name].toLowerCase()} (the ${furnOrd(x.q.nth)}) ${x.stuck ? 'stuck' : 'free'}${x.stuck === x.want ? '' : ` <span class="warn-text">(yours ${x.want ? 'stuck' : 'free'})</span>`}`).join(', ');
       imp.push(`<li>Yours stuck from the ${furnOrd(sf)} piece down; computed: ${say}. ${ok ? 'As yours.' : f3 ? `<span id="furnFitMsg">${pill(FURN.fit.msg || 'Fitting…', '')}</span>` : `<button type="button" class="linkish" data-furnfit="pSt|${sf}|the pieces stuck from the ${furnOrd(sf)}">Fit the pressure it sticks from to it</button>`}</li>`);
-      if (FURN.lastFit && FURN.lastFit.what === 'pSt' && FURN.lastFit.range) { const [a, b] = FURN.lastFit.range; imp.push(`<li class="fv-note">Any pressure between ${(a / 1e3).toPrecision(3)} and ${(b / 1e3).toPrecision(3)} kPa sticks the ${furnOrd(sf)} piece and not the one above it (their pressure once hot over half their area); the middle is used.</li>`); }
+      if (FURN.lastFit && FURN.lastFit.what === 'pSt' && FURN.lastFit.range && MAT.furn.pSt.v === FURN.lastFit.v && MAT.furn.pSt.flag === 'measured') { const [a, b] = FURN.lastFit.range; imp.push(`<li class="fv-note">Fitted between the pressures on the ${furnOrd(sf - 1)} and the ${furnOrd(sf)} pieces once hot, over half their area: ${(a / 1e3).toPrecision(4)} and ${(b / 1e3).toPrecision(4)} kPa. Next to each other they differ by a piece's weight, near what the model resolves: where it sticks is right to a piece or two.</li>`); }
     }
     if (FURN.fit && FURN.fit.error) imp.push(`<li>${pill(`The fit could not be made: ${dryEsc(FURN.fit.error)}`, 'bad')}</li>`);
   }
@@ -592,8 +593,8 @@ function furnFit(what, target, label) {
       return;
     }
     if (!m.ok) { FURN.fit = { what, error: m.error, done: true }; if (tab === 12) furnRender(); return; }
-    FURN.fit = null; FURN.lastFit = { what, range: m.range || null };
     const card = what === 'es' ? ['es', +m.value.toPrecision(3)] : what === 'pSt' ? ['pSt', +(m.value / 1e3).toPrecision(3)] : ['Dgal', +(m.value / 1e-10).toPrecision(3)];
+    FURN.fit = null; FURN.lastFit = { what, range: m.range || null, v: card[1] };   // (its range said while the card keeps it)
     furnUse(card[0], card[1], label);
   };
   FURN.fitWorker.onerror = e => { FURN.fit = { what, error: e.message || 'the fit\'s worker failed', done: true }; if (tab === 12) furnRender(); };

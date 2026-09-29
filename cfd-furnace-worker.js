@@ -106,14 +106,16 @@ onmessage = e => {
         else {
           tick();
           const P = o.positions || [{ m: 0, w: 1 }], r = fuRun({ ...o, positions: [...P, { m: nth - 2, w: 0 }, { m: nth - 1, w: 0 }] });
-          const [a, b] = r.pos.slice(-2).map(q => q.plane.pcHalf), [wa, wb] = r.pos.slice(-2).map(q => q.load);
-          // (the two pressed apart by at least half the one piece's weight between them: less, and what presses them --
-          //  the holder squeezing the stack -- drowns it, and no pressure found would mean anything)
-          if (!(b - a > 0.5 * (wb - wa))) throw new Error(r.squeeze && r.squeeze.max > 0
-            ? `the stack fills its room and the holder squeezes every piece alike (${(r.squeeze.max / 1e6).toFixed(2)} MPa): no pressure sticks the ${ord(nth)} and not the one above it: is there a gap left above your stack?`
-            : `the ${ord(nth)} piece is pressed no harder than the one above it once hot: no pressure sticks it and not that one`);
-          value = (a + b) / 2;
-          e.data.range = [a, b];
+          const [a, b] = r.pos.slice(-2).map(q => q.plane.pcHalf), t = r.pos[0], wb = r.pos[r.pos.length - 1].load;
+          // (the stuck piece pressed harder than the top by at least half the weight between them: less, and what
+          //  presses them all -- the holder squeezing the stack -- drowns their weights, and no pressure found would mean
+          //  anything. Next to each other two pieces differ by a piece's weight, a few pascals, near the model's own
+          //  resolution: the pressure is theirs, to a piece or two)
+          if (!(b - t.plane.pcHalf > 0.5 * (wb - t.load))) throw new Error(r.squeeze && r.squeeze.max > 0
+            ? `the stack fills its room and the holder squeezes every piece alike (${(r.squeeze.max / 1e6).toFixed(2)} MPa): no pressure sticks the ${ord(nth)} and not the pieces above it: is there a gap left above your stack?`
+            : `the ${ord(nth)} piece is pressed no harder than the top one once hot: no pressure sticks it and not the pieces above it`);
+          value = b > a ? (a + b) / 2 : b * (1 - 1e-9);
+          e.data.range = [Math.min(a, b), b];
         }
       } else throw new Error('unknown fit');
       const r = fuRun(what === 'es' ? { ...o, es: value } : what === 'pSt' ? { ...o, plane: { ...o.plane, pStick: value } } : { ...o, Dgal: value });
