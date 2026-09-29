@@ -938,6 +938,8 @@ GO-5b built:
   50 % of its strength (no cracks), never squeezed (no waves), 4.1 % smaller free. With graphitizing shrinking 2 % it
   cracks in run 2 into a grid about 4 mm apart; growing 1 % it waves (about 1.8 mm). The values are assumed until the
   user's photos and measured sizes set them.
+- Fixed on the way: a chart's left margin grows to its widest y label (a DOE on a small range cut its labels); the gas
+  picture's caption on two lines (it was cut at its sides); the lights keep their help once one is picked.
 
 Asked at the start of each phase (with options, not assumed now):
 - GO-0: the GO dispersion (concentration, flake size, C/O), the carrier

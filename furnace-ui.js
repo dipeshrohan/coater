@@ -258,11 +258,11 @@ function furnLights(r) {
   const [r1, r2] = r.runs, pl = r.plane, e = r.end, fu = OVEN.furn, Tst = MAT.furn.Tst.v, Tmax = Math.max(...r.hist.map(q => q.T));
   const puffL = Math.max(r1.peak.idx, r2.peak.idx, r1.puffAt || r2.puffAt ? 1 : 0);
   return [
-    { k: 'puff', t: 'Puffs up', bad: 'puffs up', v: puffL },
-    { k: 'crack', t: 'Cracks', bad: 'cracks', v: pl ? pl.ratioMax : NaN },
-    { k: 'wave', t: 'Waves', bad: 'waves', v: pl ? pl.waveMax : NaN },
-    { k: 'stick', t: 'Sticks', bad: 'sticks', v: pl && pl.stuckAt ? Math.max(1, Tmax / Tst) : Tmax / Tst },
-    { k: 'even', t: 'Even', bad: 'uneven', v: e.hSD * 1e6 / fu.sdMax },
+    { k: 'puff', t: 'Puffing', bad: 'it puffs', v: puffL },
+    { k: 'crack', t: 'Cracking', bad: 'it cracks', v: pl ? pl.ratioMax : NaN },
+    { k: 'wave', t: 'Waves', bad: 'it waves', v: pl ? pl.waveMax : NaN },
+    { k: 'stick', t: 'Sticking', bad: 'it sticks', v: pl && pl.stuckAt ? Math.max(1, Tmax / Tst) : Tmax / Tst },
+    { k: 'even', t: 'Thickness spread', bad: 'over your limit', v: e.hSD * 1e6 / fu.sdMax },
   ];
 }
 /** A check's word for its level (Q121): OK, a risk, or what happens. */
