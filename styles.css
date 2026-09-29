@@ -1894,9 +1894,10 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .proc-grid td, .proc-grid th { padding-right: 18px; }
 .proc-zones td { padding: 3px 12px 3px 0; }
 .proc-zones input { width: 76px; font: inherit; font-family: var(--mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); text-align: right; }
-.proc-zones select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); max-width: 250px; }
+.proc-zones select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); max-width: 300px; }
 .proc-zones input:focus-visible, .proc-zones select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-@media (max-width: 720px) { .furn-block:has(.proc-zones) { overflow-x: auto; } }
+.proc-zones-wrap { overflow-x: auto; }
+@media (max-width: 720px) { .furn-block .prop-actions { flex-wrap: wrap; padding-left: 0; } .furn-block .prop-actions .btn { flex: 0 1 auto; min-width: 0; white-space: normal; text-align: left; height: auto; } }
 
 /* the film stage's Results, one view at a time (the film peeled off, a piece in 3D, the pressed stack) */
 .film-views { margin: 0 0 10px; }

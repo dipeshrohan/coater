@@ -127,8 +127,8 @@ function procOvenTable() {
   const z = OVEN.zones, th = OVEN_ZONE_FIELDS.filter(f => f[0] !== 'plenum');
   const cell = (q, i, [k, l, u, lo, hi, step]) => `<td><input type="number" id="pz${i + 1}_${k}" min="${lo}" max="${hi}" step="${step}" value="${q[k]}" data-pzone="${i}:${k}" aria-label="Oven zone ${i + 1}: ${l.toLowerCase()}, ${u}"></td>`;
   const top = (q, i) => `<td><select id="pz${i + 1}_top" data-pztop="${i}" aria-label="Oven zone ${i + 1}: above the film">${Object.entries(OVEN_TOPS).map(([k, t]) => `<option value="${k}"${k === q.top ? ' selected' : ''}>${t}</option>`).join('')}</select></td>`;
-  return `<table class="proc-kv proc-grid proc-zones"><thead><tr><th>Zone</th>${th.map(f => `<th>${f[1]} <small>${f[2]}</small></th>`).join('')}<th>Above the film</th></tr></thead><tbody>
-    ${z.map((q, i) => `<tr><th>${i + 1}</th>${th.map(f => cell(q, i, f)).join('')}${top(q, i)}</tr>`).join('')}</tbody></table>`;
+  return `<div class="proc-zones-wrap"><table class="proc-kv proc-grid proc-zones"><thead><tr><th>Zone</th>${th.map(f => `<th>${f[1]} <small>${f[2]}</small></th>`).join('')}<th>Above the film</th></tr></thead><tbody>
+    ${z.map((q, i) => `<tr><th>${i + 1}</th>${th.map(f => cell(q, i, f)).join('')}${top(q, i)}</tr>`).join('')}</tbody></table></div>`;
 }
 function procOvenLine() { const o = ovenTime(lineSpeed()); return `${OVEN.zones.length} zones, ${+o.len.toFixed(2)} m: the film ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} in it at ${P.U} m/min (assumed values)`; }
 /** The section's frame (filled by dryRender after the page is drawn). */
@@ -140,7 +140,7 @@ function drySectionHTML() {
       <div class="seg" role="tablist" aria-label="Which film" id="drySel">${seg.map(([k, t]) => `<button type="button" role="tab" data-dry="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="dryZones" data-chain="oven" title="The oven's zones, in the inputs bar">${uiIco('oven')}Oven zones</button><button type="button" class="btn btn-secondary btn-sm" id="dryCsv">Export CSV</button></header>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The oven</h4><span class="fv-why">${procOvenLine()}</span></div>${procOvenTable()}
-      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="oven">${uiIco('oven')}Add or remove a zone, the jets and IR (inputs bar)</button></div></div>
+      <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="oven">${uiIco('oven')}More: add a zone, jets, IR (inputs bar)</button></div></div>
     <div class="dry-ways" id="dryWays" data-pstep="setup">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">Where the water leaves is not known, so both are computed. From the top only: the fibre under the film only brings the hot air's heat. From the top and the bottom: vapour also goes into the air blown up through the fibre, which carries it away.</p></div>
     <div id="dryState" data-pstep="solve results"></div>
