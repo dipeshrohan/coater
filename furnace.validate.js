@@ -309,6 +309,58 @@ const r = F.fuRun(base());
     `the gas under the paper at least ${(b.uMin / 1e3).toFixed(3)} kPa; squeezed ${(b.squeeze.max / 1e6).toFixed(3)} MPa (2 K: ${rel(a.squeeze.max, b.squeeze.max).toExponential(1)}); thickness ${b.pos.map(q => (q.hMean * 1e6).toFixed(1)).join(', ')} µm (2 K: ${eh.toExponential(1)})`);
 }
 
+// 23. the ends against the plates (GO-7e): the top and bottom pieces touch the holder's isostatic graphite plates, N − 1
+//     papers. Given, but left on papers, nothing changes (bit for bit). A piece against a plate that lets nothing
+//     through, pressed hard enough to keep it on the plate and its layers together, its paper open wide: at every step
+//     its peak is the one-sided slab's, u + G R T h / (2 D) (where it is above the pressure's rounding, 0.1 Pa), and
+//     nothing leaves by the plate. A piece alone between two plates open wide comes out as one between two papers open
+//     wide, pressed so neither lifts (the plate-face path against the papers'). Each piece carries the
+//     plate, the papers above it (none above the top piece) and the pieces above it. The gas made is what left by either
+//     face plus what is held. At the defaults (200 pieces filling their room), converging with the step.
+const PLATE = { B: 2e-6, t: 0.03, mu: 0.15, Tstick: 2200 + 273.15, tauB: 1e6 }, FU_EPL = 10e9;
+const plPl = { Ep: 20e9, nu: 0.2, sigF: 100e6, bw: 0.08, bO: 0.03, bG: 0.005, mu: 0.15, Tstick: 2200 + 273.15, tauB: 1e6, am: 0, faces: 2 };
+let endsDef = null;
+{
+  const o = base({ dT: 2 }), a = F.fuRun(o), b = F.fuRun({ ...o, ends: 'papers', plate: PLATE });
+  const same = a.hMean === b.hMean && a.hSD === b.hSD && a.hist.length === b.hist.length && a.hist.every((q, i) => q.idxMid === b.hist[i].idxMid && q.uMid === b.hist[i].uMid);
+  // (sealed: the top piece of two, its plate letting nothing through, a load that keeps it on the plate and its layers together)
+  const sl = F.fuRun(base({ dT: 2, N: 2, ends: 'plates', paper: { t: 5e-4, rho: 1000, D: 1e3, Ez: 1e7 }, plate: { ...PLATE, B: 0 }, plateP: 1e8, positions: [{ m: 0 }] }));
+  let eS = 0, nS = 0;
+  for (const h of sl.hist) if (h.G > 0 && h.Vmid === 0) { const want = h.uMid + h.G * R * h.T * h.hc / (2 * h.D); if (want < 0.1) continue; eS = Math.max(eS, rel(h.idxMid * h.hold, want)); nS++; }
+  const plOut = Math.max(...sl.runs.map(x => Math.abs(x.gas.outPl) / x.gas.made));
+  // (alone between two plates open wide against alone between two papers open wide; no holder, pressed so neither lifts)
+  const w = { N: 1, room: 'none', plateP: 5000, dT: 2 };
+  const pp = F.fuRun(base({ ...w, paper: { t: 5e-4, rho: 0, D: 1e3, Ez: 1e7 } })), qq = F.fuRun(base({ ...w, paper: { t: 5e-4, rho: 0, D: 1e3, Ez: 1e7 }, ends: 'plates', plate: { ...PLATE, B: 1e3 } }));
+  const eOpen = rel(qq.hMean, pp.hMean), puffed = Math.max(...qq.V) > 1e-5 && pp.hist.every(h => h.lifted === 0);
+  // (the loads down a stack of 20 against the plates: no paper above the top piece)
+  const N = 20, oL = base({ dT: 2, plateP: 600, ends: 'plates', plate: PLATE }), st = F.fuRun({ ...oL, N, positions: [{ m: 0 }, { m: 10 }, { m: 19 }] });
+  const paperW = oL.paper.rho * 9.81 * oL.paper.t, share = oL.Lx * oL.Ly / ((oL.Lx + 2 * oL.margin) ** 2), kP = N / ((N - 1) * oL.paper.t / oL.paper.Ez + 2 * PLATE.t / FU_EPL), g0 = oL.gap / N;
+  let eL = 0;
+  for (const q of st.pos) { const h = q.hist[q.hist.length - 1], want = paperW * q.m + 600 + q.m * st.mA * h.kept * 9.81 * share; eL = Math.max(eL, rel(h.hold - oL.sigZ - kP * Math.max(0, h.Vmid - g0), want)); }
+  const bal = Math.max(...st.pos.flatMap(q => q.runs.map(x => Math.abs((x.gas.out + x.gas.held - x.gas.held0) / x.gas.made - 1))));
+  const faces = st.pos.map(q => q.faces.top + '/' + q.faces.bottom).join(', ');
+  // (the defaults: 200 pieces filling their 50 mm room, the top piece and the middle; 2 K against 1 K)
+  const oD = base({ N: 200, h0: 371e-6, gap: 0.05, plateP: 594, ends: 'plates', plate: PLATE, plane: plPl, positions: [{ m: 0, w: 1 }, { m: 100, w: 4 }] });
+  const d2 = F.fuRun({ ...oD, dT: 2 }), d1 = F.fuRun({ ...oD, dT: 1 }); endsDef = d1;
+  const eh = Math.max(...d1.pos.map((q, i) => rel(d2.pos[i].hMean, q.hMean)));
+  check('the ends against the plates: on papers as before; sealed, the one-sided slab and nothing through it; open, as open papers; the loads; the gas; the step',
+    same && nS > 100 && eS < 1e-6 && plOut < 1e-12 && eOpen < 1e-6 && puffed && eL < 1e-9 && bal < 1e-9 && faces === 'plate/paper, paper/paper, paper/plate' && eh < 3e-3,
+    `sealed: the peak ${eS.toExponential(1)} off over ${nS} steps, ${plOut.toExponential(1)} of the gas by the plate; open plates against open papers ${eOpen.toExponential(1)} (puffed ${(Math.max(...qq.V) * 1e6).toFixed(1)} µm); loads worst ${eL.toExponential(1)}; the gas ${bal.toExponential(1)}; faces ${faces}; `
+    + `the defaults' top and middle pieces ${d1.pos.map(q => (q.hMean * 1e6).toFixed(1)).join(', ')} µm (2 K: ${eh.toExponential(1)})`);
+}
+// 24. the piece along itself balanced at every step (GO-7e): its rings' Newton now halves a step that does not lower the
+//     energy (convex: the film's and the springs', quadratic up to their limit, straight beyond). Before, with a hold far
+//     stiffer than the film -- a piece gripped by its plate under the holder's squeeze -- the springs' limits flipped for
+//     good and the step was left where it stopped: 5306 of 37575 steps (1686 with every piece between papers), a
+//     middle's squeeze of −248 MPa where holding it fully gives at most 108. Now: every step balanced, and its pull never
+//     beyond what holding it fully could give, E |ε| / (1 − ν) (it only shrinks)
+{
+  const q = endsDef.pos, resMax = Math.max(...q.map(x => x.plane.resMax || 0));
+  let over = 0; for (const x of q) for (const h of x.plane.hist) { const bnd = h.E * Math.abs(h.eps) / (1 - plPl.nu); over = Math.max(over, (Math.max(Math.abs(h.s1), Math.abs(h.s2)) - bnd) / Math.max(bnd, 1)); }
+  check('the piece along itself balanced at every step, its pull within what holding it fully gives', resMax < 1e-9 && over < 1e-6,
+    `the force left over at most ${resMax.toExponential(1)} of the forces on the rings; the pull at most ${over <= 0 ? 'within' : (over * 100).toFixed(4) + ' % over'} E |ε| / (1 − ν); the top piece cracks ${(q[0].plane.ratioMax * 100).toFixed(0)} %, the middle ${(q[1].plane.ratioMax * 100).toFixed(0)} %`);
+}
+
 console.log(`the defaults: run 1 the gas at ${(r.runs[0].peak.idx * 100).toFixed(1)} % of its hold; run 2 puffs from ${(r.runs[1].puffAt.T - 273.15).toFixed(0)} °C; ${(r.hMean * 1e6).toFixed(1)} µm (${(r.hMean / 90e-6).toFixed(3)}×), ${r.rho.toFixed(0)} kg/m³, ${(r.kept * 100).toFixed(1)} % kept, g ${r.g.toFixed(3)}, La ${r.La.toFixed(0)} nm, ${r.kappa.toFixed(0)} W/(m K)`);
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;

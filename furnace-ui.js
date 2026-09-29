@@ -12,6 +12,8 @@ const FURN = { res: null, key: null, busy: false, error: null, pending: null, wo
   fit: null, fitWorker: null, fileRun: 0, pendingFile: null, light: null };
 const FURN_RUNS = ['Run 1', 'Run 2'], FURN_RUN_WHAT = ['to about 1000 °C (carbonising)', 'to 2800 °C (graphitizing)'];
 const FURN_ROOM = { gap: 'A gap above', plates: 'The plate on it' };
+// (GO-7e: what the stack's top and bottom pieces touch -- the holder's plates (the user) or papers as every other)
+const FURN_ENDS = { plates: 'The plates', papers: 'Papers' };
 
 // ---- the inputs ----
 /** Run r's program as points [t (s), T (K)]: your file's cycle, or its steps from the room. */
@@ -22,9 +24,16 @@ function furnProgram(r, Troom = 25) {
 }
 /** The pieces of a stack of N followed (GO-7): its top, middle and bottom, each with its share of the stack (Simpson's
  *  rule over it, 1 : 4 : 1); fewer when the stack has fewer pieces. */
-function furnPositions(N) {
+function furnPositions(N, ends = 'papers') {
   const n = Math.max(1, Math.round(N || 1)), mid = Math.round((n - 1) / 2), out = [];
   if (n === 1) return [{ m: 0, w: 1, name: 'only' }];
+  if (ends === 'plates') {
+    // (GO-7e: the top and bottom pieces touch the plates -- each its own, one of N; the pieces between, each between two
+    //  papers, their top, middle and bottom by Simpson over them (all of them when three or fewer))
+    const k = n - 2, inner = k <= 0 ? [] : k <= 3 ? Array.from({ length: k }, (_, i) => [1 + i, 1, k === 1 ? 'middle' : i === 0 ? 'next' : i === k - 1 ? 'nextb' : 'middle'])
+      : [[1, k / 6, 'next'], [Math.round((n - 1) / 2), 4 * k / 6, 'middle'], [n - 2, k / 6, 'nextb']];
+    return [{ m: 0, w: 1, name: 'top' }, ...inner.map(([m, w, name]) => ({ m, w, name })), { m: n - 1, w: 1, name: 'bottom' }];
+  }
   for (const [m, w, name] of [[0, 1, 'top'], [mid, 4, 'middle'], [n - 1, 1, 'bottom']]) {
     const q = out.find(x => x.m === m);
     if (q) { q.w += w; if (name === 'bottom') q.name = 'bottom'; } else out.push({ m, w, name });
@@ -40,6 +49,8 @@ function furnOpts(P, Lx, Ly) {
       last: { Tp: v('T3'), sig: v('w3') * 1e3 }, graph: { Tp: v('Tg'), sig: v('wg') * 1e3 } },
     dIn: v('dIn'), Dgal: v('Dgal') * 1e-10, Dmin: v('Dmin') * 1e-13, es: v('es'), sigZ: v('sigZ') * 1e3,
     paper: { t: fu.paperT / 1000, rho: v('rhoP') * 1000, D: v('Dp') * 1e-6, Ez: v('Ez') * 1e6 }, N: fu.N, room: fu.room, gap: fu.room === 'gap' ? fu.gap / 1000 : 0,
+    // (the top and bottom pieces against the holder's plates, isostatic graphite, GO-7e)
+    ends: fu.ends === 'papers' ? 'papers' : 'plates', plate: { B: v('Bpl') * 1e-6, t: (fu.plateT || 30) / 1000, mu: v('muPl'), Tstick: v('TstPl') + 273.15, tauB: v('tauPl') * 1e6 },
     // (a plate resting on the stack: its weight over the paper's area; GO-5b)
     plateP: (fu.plateW || 0) * FU_G / ((Lx + 2 * fu.margin / 1000) * (Ly + 2 * fu.margin / 1000)),
     La0: v('La0'), La1: v('La1'), ell: v('ell'), kG: v('kG'), nP: 12, nM: 2, dT: 1,
@@ -51,7 +62,7 @@ function furnOpts(P, Lx, Ly) {
       faces: 2 },
     // (the stack's top, middle and bottom pieces, together; the load's temperature spread, when given: its coldest and
     //  hottest stacks too, GO-7)
-    positions: furnPositions(fu.N).map(({ m, w }) => ({ m, w })), loadSpread: Number.isFinite(fu.dTload) && fu.dTload > 0 ? fu.dTload : null };
+    positions: furnPositions(fu.N, fu.ends === 'papers' ? 'papers' : 'plates').map(({ m, w }) => ({ m, w })), loadSpread: Number.isFinite(fu.dTload) && fu.dTload > 0 ? fu.dTload : null };
 }
 /** The furnace's options for the DOE (a run's own piece fills in its thickness, GO and water in the worker): the room the Drying card's, the pieces' size the inputs bar's. */
 function furnDoeOpts() {
@@ -127,12 +138,16 @@ function furnPicHolder(sc = 1) {
   const rest = (fu.plateW || 0) > 0, gap = fu.room !== 'plates', L = 10, R = 176, rodX = [26, 160];
   const pl = (y, nuts) => `<rect x="${L}" y="${y}" width="${R - L}" height="7" rx="1.5" fill="${plate}"/>` + (nuts ? rodX.map(x => `<rect x="${x - 7}" y="${y + 7}" width="14" height="4.5" rx="1" fill="${nut}"/>`).join('') : '');
   let st = '';
-  const bot = 124, top = 80;
-  for (let y = bot; y > top; y -= 7) st += `<rect x="42" y="${y - 2.5}" width="102" height="2.5" fill="${gr}"/><rect x="50" y="${y - 5.5}" width="86" height="2.5" fill="${go}"/>`;
-  st += `<rect x="42" y="${top - 1}" width="102" height="2.5" fill="${gr}"/>`;
+  const bot = 124, top = 80, ends = fu.ends !== 'papers';
+  // (GO-7e: with the ends on the plates, the bottom piece on the base plate and the top one under the plate, no paper between)
+  if (ends) for (let y = bot; y > top; y -= 7) st += `<rect x="50" y="${y - 2.5}" width="86" height="2.5" fill="${go}"/>` + (y - 7 > top ? `<rect x="42" y="${y - 5.5}" width="102" height="2.5" fill="${gr}"/>` : '');
+  else {
+    for (let y = bot; y > top; y -= 7) st += `<rect x="42" y="${y - 2.5}" width="102" height="2.5" fill="${gr}"/><rect x="50" y="${y - 5.5}" width="86" height="2.5" fill="${go}"/>`;
+    st += `<rect x="42" y="${top - 1}" width="102" height="2.5" fill="${gr}"/>`;
+  }
   const yRest = top - 8, yNext = gap ? (rest ? 36 : 44) : (rest ? yRest - 7 : top - 8);
   const lab = (y, t) => `<path d="M${R + 3} ${y}H${R + 12}" stroke="${ink}" stroke-width=".7"/><text x="${R + 15}" y="${y + 3}" font-size="8.5" fill="${ink}">${t}</text>`;
-  return `<svg class="dry-pic" width="${w * sc}" height="${h * sc}" viewBox="0 0 ${w} ${h}" role="img" aria-label="One tier of the graphite holder: a base plate held on threaded rods by nuts, the stack of GO pieces between graphite papers, ${rest ? 'a plate resting on it, ' : ''}${gap ? 'a gap to the next plate held by nuts' : 'the next plate held on it'}">
+  return `<svg class="dry-pic" width="${w * sc}" height="${h * sc}" viewBox="0 0 ${w} ${h}" role="img" aria-label="One tier of the graphite holder: a base plate held on threaded rods by nuts, the stack of GO pieces between graphite papers${ends ? " (its top and bottom pieces on the plates)" : ""}, ${rest ? 'a plate resting on it, ' : ''}${gap ? 'a gap to the next plate held by nuts' : 'the next plate held on it'}">
     <defs><pattern id="fuThr" width="7" height="2.5" patternUnits="userSpaceOnUse"><rect width="7" height="2.5" fill="#6c757d"/><rect width="7" height=".9" fill="${gr}"/></pattern>
       <marker id="fuAr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="${b}"/></marker>
       <marker id="fuAw" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0L10,5L0,10z" fill="${red}"/></marker></defs>
@@ -145,7 +160,7 @@ function furnPicHolder(sc = 1) {
     ${lab(yNext + 3, gap ? 'next plate, on nuts' : 'next plate, held on it')}
     ${gap ? lab(((rest ? yRest : top) + yNext + 7) / 2, `gap ${fu.gap ?? ''} mm`) : ''}
     ${rest ? lab(yRest + 3, `plate on it, ${fu.plateW} kg`) : ''}
-    ${lab(102, `${fu.N ?? ''} pieces`)}
+    ${lab(102, `${fu.N ?? ''} pieces`)}${ends ? lab(113, 'its ends on the plates') : ''}
     ${lab(bot + 5, 'base plate, on nuts')}
     <text x="93" y="${h - 2}" font-size="8.5" text-anchor="middle" fill="${ink}">one tier of the graphite holder, argon</text></svg>`;
 }
@@ -291,6 +306,7 @@ function furnWarnings(r) {
   if (!fu.nSet) w.push(pill(`The pieces in a stack are assumed (${fu.N}: your photos show over 150): it depends on the product`, 'warn'));
   if (!fu.roomSet) w.push(pill('A gap above the stack or the holder\'s plates on it depends on the product: set it under The furnace', 'warn'));
   if (!fu.plateSet) w.push(pill(`The plate resting on the stack is assumed (${fu.plateW} kg): set yours under The furnace`, 'warn'));
+  if (fu.ends !== 'papers' && !fu.plateTSet) w.push(pill(`The holder's plates' thickness is assumed (${fu.plateT} mm): the gas from the top and bottom pieces goes through them; set yours under The furnace`, 'warn'));
   if (r.runs[0].puffAt) {
     const thick = r.q.P.h > 120e-6 ? `this GO piece is ${furnUm(r.q.P.h)} µm, thicker than your usual 60–120 µm (Q99), so its gas has further to go; ` : '';
     w.push(pill(`It puffs up in the first run too (from ${r.runs[0].puffAt.T.toFixed(0)} °C): ${thick}you have seen it puff only in the second (Q101). With your pieces and programs, Fit to my first run (below) sets the gas-tightness`, 'bad'));
@@ -303,12 +319,12 @@ function furnWarnings(r) {
   return `<div class="dry-warn">${w.join('')}</div>`;
 }
 // ---- the stack's pieces (GO-7): its top, middle and bottom followed together; the one shown; the batch ----
-const FURN_POS_NAME = { top: 'Top', middle: 'Middle', bottom: 'Bottom', only: 'The piece' };
+const FURN_POS_NAME = { top: 'Top', next: 'Next', middle: 'Middle', nextb: 'Next', bottom: 'Bottom', only: 'The piece' };
 const furnOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'));
 /** The pieces followed, each with its name and its place in the stack (the 1st, the 100th of 200). */
 function furnPieces(r) {
   // (named by the stack the run had, not the one set since: an input changed shows the last run until solved again)
-  const N = r.q && r.q.o && r.q.o.N || OVEN.furn.N, P = furnPositions(N);
+  const o = r.q && r.q.o, N = o && o.N || OVEN.furn.N, P = furnPositions(N, o ? o.ends : OVEN.furn.ends);
   return (r.pos || [{ ...r, m: 0, w: 1 }]).map((q, i) => ({ ...q, i, name: (P[i] || {}).name || 'top', nth: (q.m || 0) + 1, N }));
 }
 /** A piece's view (the one shown, FURN.pos, unless i is given): its own results over the run's shared ones. */
@@ -322,7 +338,9 @@ function furnBatch(r) {
   const b = r.batch || { hMean: r.end.h, hSD: r.end.hSD }, e = r.end;
   return { h: b.hMean, sd: b.hSD, rho: e.mEnd / b.hMean, kappa: e.kappa * e.h / b.hMean, stacks: !!b.stacks, within: b.within };
 }
-const furnPieceLabel = q => q.name === 'only' ? 'the piece' : `the ${q.name} piece (the ${furnOrd(q.nth)} of ${q.N || OVEN.furn.N})`;
+const furnPieceLabel = q => q.name === 'only' ? 'the piece' : `the ${FURN_POS_NAME[q.name].toLowerCase()} piece (the ${furnOrd(q.nth)} of ${q.N || OVEN.furn.N})`;
+/** A piece's plate (GO-7e): 'on the plate' (the top: the one resting on the stack; the bottom: the base plate), both when alone; '' between papers. */
+const furnOnPlate = q => { const f = q && q.faces; if (!f) return ''; return f.top === 'plate' && f.bottom === 'plate' ? 'between the plates' : f.top === 'plate' ? 'under the plate' : f.bottom === 'plate' ? 'on the base plate' : ''; };
 /** The pieces: which one is shown, and each side by side (its load, thickness, spread, pull, squeeze, when it sticks). */
 function furnPiecesRender(r) {
   const el = document.getElementById('furnPieces');
@@ -331,7 +349,9 @@ function furnPiecesRender(r) {
   const sel = L.length > 1 ? `<div class="furn-pos"><span class="fv-why">The piece shown</span><div class="seg seg-sm" role="tablist" aria-label="The piece shown" id="furnPosSel">${L.map(q => `<button type="button" role="tab" data-furnpos="${q.i}" aria-selected="${q.i === on}">${FURN_POS_NAME[q.name]} <small>${furnOrd(q.nth)}</small></button>`).join('')}</div></div>` : '';
   const pct = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)} %` : '—';
   const rows = L.map(q => { const pl = q.plane;
-    return `<tr${q.i === on ? ' class="on"' : ''}><th>${FURN_POS_NAME[q.name]} <small>${furnOrd(q.nth)}</small></th><td>${Number.isFinite(q.load) ? q.load.toFixed(0) + ' Pa' : '—'}</td><td>${furnUm(q.end.h)} µm</td><td>${(q.end.hSD * 1e6).toFixed(1)} µm</td><td>${pct(pl && pl.ratioMax)}</td><td>${pct(pl && pl.waveMax)}</td><td>${pl && pl.stuckAt ? `${pl.stuckAt.T.toFixed(0)} °C` : 'no'}</td></tr>`; }).join('');
+    // (on a plate, GO-7e: which, and when it sticks to it)
+    const onPl = furnOnPlate(q), stuckPl = pl && pl.stuckPlAt ? `<br><small>to the plate from ${pl.stuckPlAt.T.toFixed(0)} °C</small>` : '';
+    return `<tr${q.i === on ? ' class="on"' : ''}><th>${FURN_POS_NAME[q.name]} <small>${furnOrd(q.nth)}${onPl ? ` · ${onPl}` : ''}</small></th><td>${Number.isFinite(q.load) ? q.load.toFixed(0) + ' Pa' : '—'}</td><td>${furnUm(q.end.h)} µm</td><td>${(q.end.hSD * 1e6).toFixed(1)} µm</td><td>${pct(pl && pl.ratioMax)}</td><td>${pct(pl && pl.waveMax)}</td><td>${pl && pl.stuckAt ? `${pl.stuckAt.T.toFixed(0)} °C${stuckPl}` : 'no'}</td></tr>`; }).join('');
   // (the load's coldest and hottest stacks, GO-7: their own group, each its pieces together -- the same weights on them)
   const sStuck = s => { const T = s.pos.map(p => p.stuckT).filter(Number.isFinite); return T.length ? `${Math.min(...T).toFixed(0)} °C` : 'no'; };
   const sRow = (lab, s) => `<tr><th>${lab} <small>${s.d > 0 ? '+' : '−'}${Math.abs(s.d).toFixed(0)} °C at the top</small></th><td class="fv-why">as above</td><td>${furnUm(s.hMean)} µm</td><td>${(s.hSD * 1e6).toFixed(1)} µm</td><td>${pct(Math.max(...s.pos.map(p => p.ratioMax)))}</td><td>${pct(Math.max(...s.pos.map(p => p.waveMax)))}</td><td>${sStuck(s)}</td></tr>`;
@@ -350,7 +370,7 @@ function furnLights(r) {
   const cand = L.map(q => ({ label: furnPieceLabel(q), i: q.i, puff: Math.max(...q.runs.map(x => x.peak.idx), q.runs.some(x => x.puffAt) ? 1 : 0),
     crack: q.plane ? q.plane.ratioMax : NaN, wave: q.plane ? q.plane.waveMax : NaN, stuck: !!(q.plane && q.plane.stuckAt) }));
   if (sp) for (const [s, lab] of [[sp.cold, 'coldest'], [sp.hot, 'hottest']]) s.pos.forEach((p, j) => { const q = L[j] || L[0];
-    cand.push({ label: `the ${lab} stack's ${q.name === 'only' ? 'piece' : q.name + ' piece'}`, i: null, j: q.i, puff: Math.max(...p.puff, p.puffAt.some(x => x != null) ? 1 : 0), crack: p.ratioMax, wave: p.waveMax, stuck: p.stuckFrac > 0 }); });
+    cand.push({ label: `the ${lab} stack's ${q.name === 'only' ? 'piece' : FURN_POS_NAME[q.name].toLowerCase() + ' piece'}`, i: null, j: q.i, puff: Math.max(...p.puff, p.puffAt.some(x => x != null) ? 1 : 0), crack: p.ratioMax, wave: p.waveMax, stuck: p.stuckFrac > 0 }); });
   const worst = k => cand.reduce((a, q) => (Number.isFinite(q[k]) && (!a || q[k] > a[k]) ? q : a), null) || cand[0];
   const wP = worst('puff'), wC = worst('crack'), wW = worst('wave'), wS = cand.find(q => q.stuck) || cand[0];
   return [
@@ -369,7 +389,7 @@ function furnCheckBody(r, k) {
   if (k === 'even') {
     const B = furnBatch(r), bad = t => `<span class="warn-text">${t}</span>`;
     return v(`Its thickness over the batch: <b>${(B.sd * 1e6).toFixed(1)} µm</b> standard deviation against your ${fu.sdMax} µm, about ${furnUm(B.h)} µm.`)
-      + v(`Each piece's own across it and the pieces' about the stack's: ${L.map(q => `${FURN_POS_NAME[q.name].toLowerCase()} ${furnUm(q.end.h)} ± ${(q.end.hSD * 1e6).toFixed(1)} µm`).join(', ')}.`)
+      + v(`Each piece's own across it and the pieces' about the stack's: ${L.map(q => `${FURN_POS_NAME[q.name].toLowerCase()} (${furnOrd(q.nth)}) ${furnUm(q.end.h)} ± ${(q.end.hSD * 1e6).toFixed(1)} µm`).join(', ')}.`)
       + v(B.stacks ? `The stacks from the coldest to the hottest (${sp.spread} °C apart at the top): ${furnUm(sp.cold.hMean)} to ${furnUm(sp.hot.hMean)} µm.` : 'The stacks\' differences are not in it: the load\'s temperature spread is not known.')
       + v(B.sd * 1e6 > fu.sdMax ? bad('Uneven: over your limit.') : 'Within your limit.');
   }
@@ -378,7 +398,7 @@ function furnCheckBody(r, k) {
   const at = w ? (w.i != null ? w.i : w.j) : null, pieceTxt = furnPieceCheckBody(furnView(r, at != null ? at : FURN.pos || 0), k);
   const pct = x => Number.isFinite(x) ? `${(x * 100).toFixed(0)} %` : '—';
   const side = { puff: q => pct(Math.max(...q.runs.map(x => x.peak.idx))), crack: q => pct(q.plane && q.plane.ratioMax), wave: q => pct(q.plane && q.plane.waveMax), stick: q => q.plane && q.plane.stuckAt ? `from ${q.plane.stuckAt.T.toFixed(0)} °C` : 'no' }[k];
-  const all = L.length > 1 ? v(`<b>the stack</b> ${L.map(q => `${FURN_POS_NAME[q.name].toLowerCase()} ${side(q)}`).join(', ')}${sp ? `; the coldest stack at most ${pct(Math.max(...sp.cold.pos.map(p => ({ puff: Math.max(...p.puff), crack: p.ratioMax, wave: p.waveMax, stick: p.stuckFrac })[k])))}, the hottest ${pct(Math.max(...sp.hot.pos.map(p => ({ puff: Math.max(...p.puff), crack: p.ratioMax, wave: p.waveMax, stick: p.stuckFrac })[k])))}` : ''}`) : '';
+  const all = L.length > 1 ? v(`<b>the stack</b> ${L.map(q => `${FURN_POS_NAME[q.name].toLowerCase()} (${furnOrd(q.nth)}) ${side(q)}`).join(', ')}${sp ? `; the coldest stack at most ${pct(Math.max(...sp.cold.pos.map(p => ({ puff: Math.max(...p.puff), crack: p.ratioMax, wave: p.waveMax, stick: p.stuckFrac })[k])))}, the hottest ${pct(Math.max(...sp.hot.pos.map(p => ({ puff: Math.max(...p.puff), crack: p.ratioMax, wave: p.waveMax, stick: p.stuckFrac })[k])))}` : ''}`) : '';
   return (w && (L.length > 1 || sp) ? v(`<b>the worst</b> ${w.label}${w.i == null ? `; below, the same piece in the stack as set` : ''}`) : '') + pieceTxt + all;
 }
 /** A piece's sentences for a check: when, where and how much. */
@@ -389,6 +409,8 @@ function furnPieceCheckBody(r, k) {
   const when = q => `${q.T.toFixed(0)} °C in run ${q.run + 1} (${(q.t - (q.run ? r.runs[0].tEnd : 0)).toFixed(1)} h in)`;
   const puffRun = q => q.puffAt ? bad(`puffs up from ${q.puffAt.T.toFixed(0)} °C (${q.puffAt.t.toFixed(1)} h in)`) : `does not: at most ${(q.peak.idx * 100).toFixed(0)} % of its hold (at ${q.peak.T.toFixed(0)} °C, ${where(q.peak)})`;
   const v = t => `<span class="film-v">${t}</span>`;
+  // (a piece on the holder's plate, GO-7e: one face the plate's, the other its paper's)
+  const onPl = furnOnPlate(r.piece), paperS = onPl ? 'its paper and the plate' : 'its paper';
   if (k === 'puff') {
     // (the stack's growth against the room above it: once it fills the gap, the plate above holds the pieces)
     const grow = fu.N * Math.max(0, e.h - e.hc) * 1000, full = fu.room === 'plates' || grow >= fu.gap * 0.999;
@@ -399,11 +421,12 @@ function furnPieceCheckBody(r, k) {
     + v(e.hSD * 1e6 > fu.sdMax ? bad('Uneven: where the gas cannot get out it puffs more.') : 'Within your limit.');
   if (!pl) return v('Not computed.');
   if (k === 'crack') return pl.first
-    ? v(bad(`It cracks from ${when(pl.first)}, ${whereR(pl.first.r)}: its pull beats its strength (${pl.first.sc.toFixed(2)} MPa there).`)) + v(pl.stuckFrac > 0 && pl.spacing ? `Stuck to its paper, it breaks into cells about <b>${(pl.spacing * 1000).toFixed(1)} mm</b> apart (a grid, Q124): about ${Math.max(1, Math.round(Math.sqrt(r.q.o.Lx * r.q.o.Ly) / pl.spacing))} across the piece.` : 'Free on its paper, straight across where the pull is highest (Q113).')
-    : v(`It does not: its pull at most <b>${(pl.ratioMax * 100).toFixed(0)} %</b> of its strength${pl.where ? `, at ${when(pl.where)}, ${whereR(pl.where.r)}` : ''}.`) + v('It shrinks along itself as its oxygen leaves and it graphitizes; its paper holds it back (friction, or its bond where stuck): its pull.');
-  if (k === 'wave') return pl.waveMax >= 1 ? v(bad(`Squeezed along itself, it buckles between its papers into waves about <b>${(pl.waveAt.lambda * 1000).toFixed(1)} mm</b> long, from ${when(pl.waveAt)}.`))
-    : v(`It does not: squeezed at most <b>${(pl.waveMax * 100).toFixed(0)} %</b> of what buckles it between its papers${pl.waveAt ? ` (waves would be about ${(pl.waveAt.lambda * 1000).toFixed(1)} mm long)` : ''}.`) + v(pl.compMin < 0 ? `Its squeeze at most ${(-pl.compMin).toFixed(2)} MPa.` : 'It is never squeezed: it only shrinks against its paper. Growing along itself (graphitizing below 0 on the Furnace card) or its heat expansion against the paper\'s would squeeze it.');
-  if (k === 'stick') return pl.stuckAt ? v(bad(`It sticks to its paper from ${when(pl.stuckAt)}: ${(pl.stuckFrac * 100).toFixed(0)} % of it (where pressed; where the gas lifts the paper, not).`)) + v('Stuck, the paper holds it by its bond: it can no longer slide as it shrinks.')
+    ? v(bad(`It cracks from ${when(pl.first)}, ${whereR(pl.first.r)}: its pull beats its strength (${pl.first.sc.toFixed(2)} MPa there).`)) + v(pl.stuckFrac > 0 && pl.spacing ? `Stuck to ${pl.stuckPlAt ? (pl.stuckPaFrac > 0 ? 'its paper and the plate' : 'the plate') : 'its paper'}, it breaks into cells about <b>${(pl.spacing * 1000).toFixed(1)} mm</b> apart (a grid, Q124): about ${Math.max(1, Math.round(Math.sqrt(r.q.o.Lx * r.q.o.Ly) / pl.spacing))} across the piece.` : `Free on ${paperS}, straight across where the pull is highest (Q113).`) + (onPl ? v('The plate lets its gas through, so nothing lifts it off the plate: pressed on it, the plate grips it as it shrinks.') : '')
+    : v(`It does not: its pull at most <b>${(pl.ratioMax * 100).toFixed(0)} %</b> of its strength${pl.where ? `, at ${when(pl.where)}, ${whereR(pl.where.r)}` : ''}.`) + v(`It shrinks along itself as its oxygen leaves and it graphitizes; ${paperS} hold${onPl ? '' : 's'} it back (friction, or the bond where stuck): its pull.${onPl ? ' The plate lets its gas through, so nothing lifts it off the plate: pressed on it, the plate grips it.' : ''}`);
+  const between = onPl === 'between the plates' ? 'between the plates' : onPl ? 'into its paper (the plate on its other face)' : 'between its papers';
+  if (k === 'wave') return onPl === 'between the plates' ? v('It cannot wave: the two plates hold it flat.') : pl.waveMax >= 1 ? v(bad(`Squeezed along itself, it buckles ${between} into waves about <b>${(pl.waveAt.lambda * 1000).toFixed(1)} mm</b> long, from ${when(pl.waveAt)}.`))
+    : v(`It does not: squeezed at most <b>${(pl.waveMax * 100).toFixed(0)} %</b> of what buckles it ${between}${pl.waveAt ? ` (waves would be about ${(pl.waveAt.lambda * 1000).toFixed(1)} mm long)` : ''}.`) + v(pl.compMin < 0 ? `Its squeeze at most ${(-pl.compMin).toFixed(2)} MPa.` : 'It is never squeezed: it only shrinks against its paper. Growing along itself (graphitizing below 0 on the Furnace card) or its heat expansion against the paper\'s would squeeze it.');
+  if (k === 'stick') return pl.stuckAt ? v(bad(onPl && pl.stuckPlAt ? `It sticks to the plate from ${when(pl.stuckPlAt)}: ${(pl.stuckPlFrac * 100).toFixed(0)} % of it${pl.stuckPaFrac > 0 ? `; to its paper ${(pl.stuckPaFrac * 100).toFixed(0)} %` : ''} (where pressed; where the gas lifts it, not).` : `It sticks to its paper from ${when(pl.stuckAt)}: ${(pl.stuckFrac * 100).toFixed(0)} % of it (where pressed; where the gas lifts the paper, not).`)) + v(`Stuck, ${onPl && pl.stuckPlAt ? 'the plate holds' : 'the paper holds'} it by its bond: it can no longer slide as it shrinks.`)
     : v(`It does not: it reaches ${Math.max(...r.hist.map(q => q.T)).toFixed(0)} °C, below the ${MAT.furn.Tst.v} °C it sticks at (the Furnace card).`);
   return '';
 }
@@ -479,7 +502,7 @@ function furnNoteText() {
 function furnExportCSV() {
   if (!FURN.res) return;
   // (every piece followed, GO-7: its place in the stack in the first column)
-  const r = FURN.res, L = furnPieces(r), nm = q => `${q.name} (${furnOrd(q.nth)})`, B = furnBatch(r);
+  const r = FURN.res, L = furnPieces(r), nm = q => `${FURN_POS_NAME[q.name].toLowerCase()} (${furnOrd(q.nth)})`, B = furnBatch(r);
   const rows = [['piece', 'run', 'time_h', 'temperature_C', 'weight_kept_pct', 'C_O', 'graphitized', 'layer_spacing_nm', 'thickness_middle_um', 'thickness_edge_um', 'layers_alone_um', 'gas_vs_hold_middle_pct', 'gas_vs_hold_highest_pct', 'hold_kPa']];
   for (const p of L) for (const q of p.hist) rows.push([nm(p), q.run + 1, q.t, q.T, q.kept, q.CO, q.g, q.d, q.hMid, q.hEdge, q.hc, q.idxMid, q.idxMax, q.hold]);
   rows.push([]); rows.push(['piece', 'across', 'from_middle_mm', 'thickness_um']);
@@ -520,7 +543,8 @@ function furnMeasured(r) {
     // (where in the stack yours stick, GO-7c: the pieces followed stuck over half their area or not, against yours)
     const sf = m.stuckFrom;
     if (Number.isFinite(sf)) {
-      const L = furnPieces(r), got = L.map(q => ({ q, stuck: !!(q.plane && q.plane.stuckFrac >= 0.5), want: q.nth >= sf }));
+      // (stuck to their papers: a piece on a plate by its paper's face, GO-7e)
+      const L = furnPieces(r), got = L.map(q => ({ q, stuck: !!(q.plane && (q.plane.stuckPaFrac ?? q.plane.stuckFrac) >= 0.5), want: q.nth >= sf }));
       const ok = got.every(x => x.stuck === x.want), f3 = FURN.fit && FURN.fit.what === 'pSt' && !FURN.fit.done;
       const say = got.map(x => `${FURN_POS_NAME[x.q.name].toLowerCase()} (the ${furnOrd(x.q.nth)}) ${x.stuck ? 'stuck' : 'free'}${x.stuck === x.want ? '' : ` <span class="warn-text">(yours ${x.want ? 'stuck' : 'free'})</span>`}`).join(', ');
       imp.push(`<li>Yours stuck from the ${furnOrd(sf)} piece down; computed: ${say}. ${ok ? 'As yours.' : f3 ? `<span id="furnFitMsg">${pill(FURN.fit.msg || 'Fitting…', '')}</span>` : `<button type="button" class="linkish" data-furnfit="pSt|${sf}|the pieces stuck from the ${furnOrd(sf)}">Fit the pressure it sticks from to it</button>`}</li>`);
@@ -607,7 +631,7 @@ function furnTreeHTML() {
   const prop = (label, id, attrs, unit) => `<div class="prop"><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><input type="number" id="${id}" ${attrs}><span class="prop-u">${unit}</span></span></div>`;
   const fu = OVEN.furn, as = f => fu[f] ? '' : ' <small>assumed</small>';
   // (the load's temperature spread: empty while not known, not an assumed value)
-  const field = (i, id) => { const f = FURN_FIELDS[i], unk = f[0] === 'dTload'; return prop(`${f[1]}${unk ? '' : as(f[7])}`, id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[f[0]] ?? ''}"${unk ? ' placeholder="not known"' : ''} data-furnf="${f[0]}"`, f[2]); };
+  const field = (k, id) => { const f = FURN_FIELDS.find(q => q[0] === k), unk = k === 'dTload'; return prop(`${f[1]}${unk ? '' : as(f[7])}`, id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[f[0]] ?? ''}"${unk ? ' placeholder="not known"' : ''} data-furnf="${f[0]}"`, f[2]); };
   const run = r => {
     const R = fu.runs[r], p = furnProgram(r), top = Math.max(...p.map(q => q[1] - 273.15));
     const head = `<div class="furn-run-h"><b>${FURN_RUNS[r]}</b> <small>${FURN_RUN_WHAT[r]}: ${(p[p.length - 1][0] / 3600).toFixed(1)} h, to ${top.toFixed(0)} °C${fu.runsSet ? '' : ', assumed'}</small></div>`;
@@ -627,14 +651,16 @@ function furnTreeHTML() {
     <input type="file" id="furnFile" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
     <p class="prop-note">A cycle's file: two columns, time and temperature (°C), one row per point; its time's unit from its header (h, min or s) or chosen when you upload it.</p>
     <div class="ovz-pic">${furnPicHolder()}</div>
-    ${field(0, 'furnN')}${field(1, 'furnPaperT')}${field(2, 'furnMargin')}${field(4, 'furnPlate')}
+    ${field('N', 'furnN')}${field('paperT', 'furnPaperT')}${field('margin', 'furnMargin')}${field('plateW', 'furnPlate')}
     <div class="prop"><span class="prop-l">Above the stack${as('roomSet')}</span><div class="seg seg-sm" role="tablist" aria-label="Above the stack in the holder" id="furnRoom">${Object.entries(FURN_ROOM).map(([k, t]) => `<button type="button" role="tab" data-furnroom="${k}" aria-selected="${k === fu.room}">${t}</button>`).join('')}</div></div>
-    ${fu.room === 'gap' ? field(3, 'furnGap') : ''}
-    <p class="prop-note">One GO piece between each two graphite papers, in the graphite holder with its plates and screw rods; a plate may rest on the stack (its weight presses it; 0 kg: none), and above it a gap to the holder's next plate, or that plate on it. Its top, middle and bottom pieces are followed, each under the weight above it. Once the stack has grown into the gap, it pushes on the plate above.</p>
-    ${field(6, 'furnDTload')}
+    ${fu.room === 'gap' ? field('gap', 'furnGap') : ''}
+    <div class="prop"><span class="prop-l">The top and bottom pieces touch${as('endsSet')}</span><div class="seg seg-sm" role="tablist" aria-label="What the top and bottom pieces touch" id="furnEnds">${Object.entries(FURN_ENDS).map(([k, t]) => `<button type="button" role="tab" data-furnends="${k}" aria-selected="${k === fu.ends}">${t}</button>`).join('')}</div></div>
+    ${fu.ends === 'plates' ? field('plateT', 'furnPlateT') : ''}
+    <p class="prop-note">One GO piece between each two graphite papers, in the graphite holder with its plates and screw rods; the top and bottom pieces on the holder's plates (isostatic graphite: the gas through them, their hold on the Furnace card) or on papers too. A plate may rest on the stack (its weight presses it; 0 kg: none), and above it a gap to the holder's next plate, or that plate on it. Its top, middle and bottom pieces are followed, each under the weight above it, and with the plates the pieces next to them. Once the stack has grown into the gap, it pushes on the plate above.</p>
+    ${field('dTload', 'furnDTload')}
     <p class="prop-note">Every stack sees the runs as set unless you give the load's temperature spread: then its coldest and hottest stacks are solved too, and the batch's spread takes in the stacks' differences.</p>
     <div class="ovz-h"><span>Your limits</span></div>
-    ${field(5, 'furnSd')}</div>`;
+    ${field('sdMax', 'furnSd')}</div>`;
 }
 /** Parse a cycle's file into run r (its time's unit from its header, else asked). */
 function furnFileIn(r, name, text, unit) {
@@ -681,6 +707,7 @@ function wireFurnTree(changed) {
     else if (t.dataset.furnclear != null) { const r = +t.dataset.furnclear; undoHint(`${FURN_RUNS[r]}: steps instead of the file`); setRuns(fu().runs.map((q, j) => j === r ? { ...q, file: null } : q)); }
     else if (t.dataset.furnfile != null) { FURN.fileRun = +t.dataset.furnfile; const f = document.getElementById('furnFile'); f.value = ''; f.click(); }
     else if (t.dataset.furnroom) { OVEN.furn = { ...fu(), room: t.dataset.furnroom, roomSet: true }; render(); }
+    else if (t.dataset.furnends) { OVEN.furn = { ...fu(), ends: t.dataset.furnends, endsSet: true }; render(); }
     else if (t.id === 'furnUnitOk') { const p = FURN.pendingFile; if (p) furnFileIn(p.run, p.name, p.text, document.getElementById('furnUnit').value); }
     else if (t.id === 'furnUnitNo') { FURN.pendingFile = null; render(); }
   });
