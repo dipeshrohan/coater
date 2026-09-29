@@ -523,7 +523,7 @@ function filmPeelTreeHTML(prop) {
     ${[[4, 'ovzDryT'], [5, 'ovzTOven']].map(([i, id]) => { const f = OVEN_PEEL_FIELDS[i]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); }).join('')}
     ${typeof filmPicStackRest === 'function' ? `<div class="ovz-pic">${filmPicStackRest()}</div>` : ''}
     ${(() => { const f = OVEN_PEEL_FIELDS[6]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, 'ovzTRest', `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); })()}
-    <p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and dried in the drying oven, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film's section).</p></div>`;
+    <p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film's section).</p></div>`;
 }
 function wireFilmPeel(changed) {
   document.querySelectorAll('#setupExtra input[data-ovpeel]').forEach(el => {

@@ -70,8 +70,8 @@ const DOE_OUTPUTS = [
   { k: 'rollBoth', l: 'Stress on the roll, top and bottom', u: 'MPa', g: 'Film (peeled off)', d: 0 },
   { k: 'blisterTop', l: 'Blister risk, top only', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
   { k: 'blisterBoth', l: 'Blister risk, top and bottom', u: '× its hold (1 and above: blisters)', g: 'Film (peeled off)', d: 2 },
-  { k: 'sizeTop', l: 'A piece\'s size change in the drying oven, top only', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
-  { k: 'sizeBoth', l: 'A piece\'s size change in the drying oven, top and bottom', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
+  { k: 'sizeTop', l: 'A piece\'s size change in the pre heat treatment, top only', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
+  { k: 'sizeBoth', l: 'A piece\'s size change in the pre heat treatment, top and bottom', u: '% of as cut', g: 'Film (peeled off)', d: 2 },
   // (the furnace, GO-5: this run's film's piece, its water leaving from the top only, through both runs)
   { k: 'furnH', l: 'Graphene film\'s thickness, the batch\'s mean', u: 'µm', g: 'Furnace (graphene film)', d: 1 },
   { k: 'furnRatio', l: 'Graphene film over the GO piece, thickness', u: '×', g: 'Furnace (graphene film)', d: 2 },
