@@ -1033,8 +1033,51 @@ GO-7c built:
 - furnace.validate.js: 22 checks (21: sticking needs pressure, at 0 as before bit for bit, the top free and the bottom
   stuck between their weights, a filled room pressing all alike; 22: 200 pieces squeezed, the gas under the paper
   above a vacuum, converging with the step).
-- Not yet: the end pieces against the plates (their gas out through one paper; the plate's hold); the waves need the
-  pieces to grow along themselves somewhere (graphitizing, heat): the photos' wavelength and your sizes set it.
+- Not yet: the end pieces against the plates (their gas out through one paper; the plate's hold) -- built in GO-7e;
+  the waves need the pieces to grow along themselves somewhere (graphitizing, heat): the photos' wavelength and your
+  sizes set it.
+
+GO-7e (the top and bottom pieces against the holder's plates). The user: the top and bottom pieces touch the holder's
+  plates directly; the plates are isostatic graphite; how the end pieces come out ("they could be anything") is for the
+  simulation to find, not to be asked.
+- The gas: on the plate's face no paper. What reaches it goes through the plate across its thickness (Darcy, its
+  permeability coefficient as the paper's, µ ∝ T^0.7; isostatic graphites 0.01–0.06 cm²/s by DIN 51935, fine grains
+  the least: 2 ×10⁻⁶ m²/s assumed) or, where the gas there beats the load, lifts the piece off the plate and gets by.
+  Across the film the gas made evenly through it leaves by both faces, each at its own pressure (the slab exactly:
+  J₁ = G/2 + K (p₂ − p₁), K = D/(R T h)); its peak inside, p₁ + B ξ*², ξ* = ½ + (p₂ − p₁)/(2B), B = G/(2K), parts it
+  where it beats the hold; parted at ξ (kept), the gas held leaves by each side at 2K/ξ and 2K/(1 − ξ), the plate's in
+  series (at ξ = ½ the pieces between papers' 8K; at the parting the slab's fluxes G ξ and G(1 − ξ), so the two meet).
+  Its paper also takes half the gas the next piece makes (between papers each paper takes that from both). N − 1
+  papers (none above the top piece), pressed in series with the plates' own give (isostatic graphite about 10 GPa:
+  only that when the stack is one piece).
+- The piece along itself: that face held by the plate -- its friction, sticking from its own temperature where pressed
+  at least the paper's pressure, its bond (the Furnace card's plates, all assumed as the paper's). A wave only into
+  its paper (the plate on its other face): the lowest, touching the plate between its crests, σ = 2 √(3 D k) / h (one
+  paper's k; the load pressing it to the plate, not counted, would hold it flatter); between two plates, flat.
+- Found and fixed on the way (since GO-5b): the rings' Newton could stop unbalanced -- with a hold far stiffer than the
+  film the springs' limits flipped back and forth until 60 iterations, and the step was kept where it stopped: 1686 of
+  37 575 steps at the defaults with every piece between papers, 5306 with the ends on the plates, where it made a
+  middle's squeeze of −248 MPa (holding it fully gives at most 108 MPa) and waves that are not there. Now a Newton step
+  that does not lower the energy (convex: the film's and the springs', quadratic up to their limit, straight beyond) is
+  halved, the change taken from the step's slope, curvature and each spring's own (the energy itself is too coarse near
+  the end): every step balanced within 1e-12 of its forces; with no hold, no pull (0.009 Pa, as before).
+- What it finds at the defaults (200 pieces filling their 50 mm room, the holder squeezing them at 11.8 MPa): the top
+  and bottom pieces come out 622 µm against 955 µm for the rest (their gas out through the plate: they puff less; the
+  gas under the next paper even drains through them into the plate, 118–136 % of what they make), and crack -- their
+  pull 405 % of their strength from 171 °C in run 1 -- while the rest reach 72 %: nothing cushions them on the plate,
+  so the squeeze presses them on it and it grips them as they shrink (the pieces between papers ride on the gas that
+  lifts their papers). No waves anywhere. With room to spare (a 200 mm gap), the end pieces come out as the rest.
+- Followed: the 1st and the 200th (on the plates) and, between papers, the 2nd, the middle and the 199th; the batch
+  each end piece one of N, the 198 between by Simpson (1 : 33 : 132 : 33 : 1). A run 22 s in the browser's worker.
+- UI: the inputs bar and Setup: "The top and bottom pieces touch" The plates (from you) | Papers, the holder's plates'
+  thickness (30 mm, assumed, warned); the picture with the ends on the plates; the Furnace card's group "The holder's
+  plates (isostatic graphite)" (gas through the plate, its friction, it sticks to it from, its bond), each with its
+  help; the pieces' table names the pieces on the plates and when they stick to them; the check's words for a piece on
+  a plate; the Solve step's rows; the report's stack rows; the DOE's factors (the plates' thickness, the gas through
+  the plate, its friction); projects (one from before: the plates, 30 mm assumed); undo.
+- furnace.validate.js: 24 checks (23: on papers as before bit for bit; a sealed plate the one-sided slab, u + G R T h /
+  (2 D), to 3e-7 and nothing through it; two plates open wide as two papers open wide, 3e-8; the loads with N − 1
+  papers; the gas; the step, 3e-4. 24: every step balanced, the pull within what holding it fully gives).
 
 GO-4g (the pieces' edge waves, the user's photos -- the photos stay out of the app):
 - The process in the user's words: coating → the drying oven (on the line) → cut into 30 × 30 cm pieces → stacked under

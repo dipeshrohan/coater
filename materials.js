@@ -133,8 +133,13 @@ const MAT_FURN = [
   ['Tst', 'It sticks to the paper from', '°C', 500, 3300, 10, 0, 2200, 'assumed', 'you find it stuck after the second run (Q112), all over (Q125): where between 1000 and 2800 °C is not known', 'plane'],
   ['pSt', '… where pressed at least', 'kPa', 0, 100000, 0.001, 3, 0, 'assumed', 'the waved top pieces come off free, the cracked bottom ones stuck (GO-7c): 0 sticks it wherever pressed; where in the stack yours stick (Measured) sets it', 'plane'],
   ['tauB', 'Its bond to the paper, stuck', 'MPa', 0.001, 100, 0.01, 3, 1, 'assumed', 'not known: when it is stuck and cracks, the cracks\' spacing gives it', 'plane'],
+  // (the holder's plates, isostatic graphite (the user): the top and bottom pieces touch them directly, GO-7e)
+  ['Bpl', 'Gas through the plate', '×10⁻⁶ m²/s', 0, 1e4, 0.1, 2, 2, 'assumed', 'isostatic graphites\' permeability coefficient (DIN 51935) 0.01–0.06 cm²/s, fine grains the least: 1–6; your plate\'s datasheet gives it', 'plate'],
+  ['muPl', 'Friction on the plate', '', 0, 2, 0.01, 2, 0.15, 'assumed', 'graphite on graphite about 0.1–0.2, as on the paper', 'plate'],
+  ['TstPl', 'It sticks to the plate from', '°C', 500, 3300, 10, 0, 2200, 'assumed', 'not known: as to the paper; where pressed at least the paper\'s pressure', 'plate'],
+  ['tauPl', 'Its bond to the plate, stuck', 'MPa', 0.001, 100, 0.01, 3, 1, 'assumed', 'not known: as to the paper', 'plate'],
 ];
-const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking' };
+const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
@@ -223,10 +228,13 @@ const FURN_RUNS_DEFAULT = [
   { steps: [{ rate: 1, to: 300, hold: 0 }, { rate: 3, to: 1000, hold: 60 }], cool: 5, file: null },
   { steps: [{ rate: 10, to: 1000, hold: 0 }, { rate: 5, to: 2000, hold: 0 }, { rate: 2, to: 2800, hold: 60 }], cool: 10, file: null },
 ];
-const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, sdMax: 30, dTload: null, runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, sdSet: true, dTSet: false };
+// (GO-7e: the top and bottom pieces touch the holder's plates directly (the user), their thickness assumed)
+const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, plateT: 30, sdMax: 30, dTload: null, ends: 'plates', runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, plateTSet: false, sdSet: true, dTSet: false, endsSet: true };
 const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['paperT', 'Graphite paper\'s thickness', 'mm', 0.01, 10, 0.05, 2, 'paperSet'],
   ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet'],
   ['plateW', 'A plate resting on the stack', 'kg', 0, 1000, 0.5, 1, 'plateSet'], ['sdMax', 'Its thickness may spread (standard deviation)', 'µm', 0.1, 1000, 1, 1, 'sdSet'],
+  // (GO-7e: the holder's plates' thickness, the gas's way through them)
+  ['plateT', 'The holder\'s plates\' thickness', 'mm', 1, 500, 1, 0, 'plateTSet'],
   // (GO-7: the load's temperature spread, its hottest stack less its coldest: not known until you give it -- empty, not assumed)
   ['dTload', 'The load\'s temperature spread (its hottest stack less its coldest)', '°C', 0, 1000, 5, 0, 'dTSet']];
 const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
