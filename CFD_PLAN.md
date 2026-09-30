@@ -12,6 +12,54 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Multiphysics, phase MP: every stage in 1D, 2D and 3D, all its physics (mp-core.js)
+
+User (30 Sep): "Make sure the physics is correct and aligned. All process need to have 1d, 2d and 3 d solvers. They
+are mutiphysics solvers so that all physics can be solved, like thermal, stress, strain, fluid flow etc."
+
+Audit (from the code, 30 Sep) -- what each stage solves now:
+
+| Stage | 1D | 2D | 3D | Physics |
+|---|---|---|---|---|
+| 1 Mixing | -- | -- | -- | the rheology law only (rheo.js) |
+| 2 Coating | lubrication (cfd-1d.js) | Navier-Stokes FEM, free surface (cfd-fem.js); structure, flakes along it | Navier-Stokes FEM (cfd-fem3d.js) | flow only, isothermal; the blade's bow a beam (cfd-across.js) |
+| 3 Drying | through the thickness (drying.js) | -- | -- | heat, water (skin, isotherm) |
+| 4 Peel and wind | the laminate (film.js) | plane-strain FEM of the stack (cracks) | -- | stress, the set film's water |
+| 5 Cutting | (the laminate's curl) | -- | the piece, von Karman plate (sheet.js) | stress/strain |
+| 6 Pre heat treatment | -- | the piece's water in its plane (press.js) | -- | water, stress held flat, creep; the temperature the oven's (uniform) |
+| 7 Furnace | kinetics; the gas across the piece | the gas along the paper; the pull along the piece | -- | chemistry, gas, stress; the temperature the program's |
+| 8 Graphene film | a correlation (conductivity) | -- | -- | -- |
+
+Alignment found: the chain hands on what each stage makes (S1-S7); film.js peels only the set layers when the film is wet
+inside at the peel (said on the Line). Two assumptions each stage makes about another's physics are not yet computed:
+the stack's and the furnace's temperature is taken as the oven's or the program's (no heat-up lag, no gradient).
+
+The method: one core for every stage's solids and films (mp-core.js), so the stages share their equations, their
+materials and their coupling, and a stage's 1D, 2D and 3D are the same physics in fewer dimensions:
+- MP-0 (this): mp-core.js -- structured Lagrange meshes (p 1, 2) in 1D, 2D, 3D, layered and bendable; heat, water and
+  porous (Darcy) flow as one transport equation (anisotropic, a transfer coefficient, radiation, advection by SUPG,
+  implicit in time, Picard for what depends on the field); stress and strain with an eigenstrain (thermal, hygral) for
+  isotropic and transversely isotropic solids, 3D, plane strain, plane stress; the 1D laminate through a film (film.js's
+  convention). mp-core.validate.js: 26 checks against exact solutions and of the dimensions against each other (a 2D
+  varying along one axis = the 1D; a 3D strip with mirror sides = the 2D; the 1D laminate = Timoshenko's bimetal and
+  film.js's; a 2D strip and a 3D plate curl as the 1D away from their edges).
+- Then a stage at a time, each its own PR, each validated (its 1D against the stage's own solver where one exists, its
+  2D and 3D against the 1D where they must agree), each page with a solver card (1D | 2D | 3D; the physics solved and
+  how they couple; fields on a section and in 3D; the checks):
+  - MP-1 Pre heat treatment: the stack in the oven -- heat (the plate, the pieces, the shelf: its heat-up), the water
+    (1D through a piece, 2D its plane = press.js, 3D the stack), the stress each piece holds (hygral and thermal).
+  - MP-2 Furnace: the holder and the stack under the program -- heat (radiation in the furnace, conduction through the
+    graphite: the pieces' lag and gradient against the program), the gas (1D across, 2D along the paper = furnace.js,
+    3D the piece between its papers), the stress (the pull along the piece, 3D).
+  - MP-3 Cutting and MP-4 Peel and wind: the laminate (1D), the section (2D, film.js's FEM), the piece and the film on
+    its web and on the roll (3D); winding stress in the roll.
+  - MP-5 Drying: the film on its web across the line (2D: through and across, the film's edge) and along it (3D:
+    marched with the web -- along the line the web's speed carries the heat and water far faster than they spread).
+  - MP-6 Coating: the heat (the slurry, the web, the blade) and the blade under the flow's pressure (1D beam, 2D and 3D
+    solid).
+  - MP-7 Mixing: the flow and heat in the mixer (needs the mixer's geometry), the flakes' breakage.
+  - MP-8 Graphene film: heat through the anisotropic product (its test or its use).
+
 ### Workflow, phase WF-2: the tabs in the process's order (ui.js NAV/SECTIONS, line-ui.js)
 
 User (30 Sep): "Keep Mixing instead of slurry"; layout A (a map of the line first, then a tab per stage with its own
