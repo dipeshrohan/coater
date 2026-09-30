@@ -32,7 +32,7 @@
  * SI inside (m, s, kg, Pa, mol); temperatures in °C (the programs in K, as furnace.js's).
  */
 const FMP = typeof mpMesh === 'function' ? { mpMesh, mpTransport, mpElastic, mpAt, MP_SIGMA } : require('./mp-core.js');
-const FMP_FU = typeof fuStage === 'function' ? { fuStage, fuArrInt, fuChem, fuTempAt, FU_R, FU_M, FU_K0 } : require('./furnace.js');
+const FMP_FU = typeof fuStage === 'function' ? { fuStage, fuArrInt, fuChem, fuTempAt, fuAdvance, fuConv, FU_R, FU_M, FU_K0 } : require('./furnace.js');
 
 const FMP_K0 = 273.15, FMP_G = 9.80665, FMP_CW = 4180, FMP_DG = 0.3354, FMP_DT = 0.344;
 // graphite's heat capacity, cal/(g K) from T (K), 200–3500 K (Butland and Maddison, J. Nucl. Mater. 49 (1973) 45):
@@ -83,11 +83,14 @@ function fmpNat(kind, Ts, Tg, L, p) {
  *   gas: { Dgal, Dmin (m²/s), dIn (nm), sigZ (Pa), plateP (Pa, the plate's weight on the stack) },
  *   plane: { Ep (Pa), nu, bO, bG (the shrink, all the oxygen gone and graphitized), am (1/K, less the paper's) },
  *   mesh: { nx, ny, nm (the margin's), nz (the stack's), nPlate, grade }, dT (K per step below 400 °C; default 2),
- *   dTHigh (above; default 10), dtMax (s; default 600), jumpMax (K a step at most; default 50), follow (piece indices,
- *   0 the bottom), snapTimes (s), onProgress ({ k, n }); the checks': isothermal (the program's temperature everywhere,
+ *   dTHigh (above; default 10), dtMax (s; default 600), jumpMax (K a step at most; default 100), follow (piece indices,
+ *   0 the bottom), snapTimes (s), snapUneven (true: snapshots too where the stack is most uneven and where its own heat is furthest above the program), onProgress ({ k, n });
+ *   the checks': isothermal (the program's temperature everywhere,
  *   no heat solved), adiabatic (no heat through the faces), sides (false: the sides insulated), sealY (3D: the y side
  *   insulated and sealed to the gas, no margin there: the stack as long across as the 2D takes it), noChem (no chemistry) }.
- * Returns { dim, series, snaps, summary, follow, energy { faces, reaction, held }, mesh, ms }.
+ * Between the runs the stack cools to the room (it is taken out), its chemistry kept.
+ * Returns { dim, series, snaps, summary, follow, energy { faces, reaction, between (the heat given up between the
+ * runs), held (= faces + reaction + between, step by step) }, mesh, ms }.
  */
 function fmpStack(o) {
   const t0 = Date.now(), dim = o.dim, N = Math.max(1, Math.round(o.N)), h = o.h, tp = o.tp, go = o.go, P = o.paper;
@@ -205,7 +208,9 @@ function fmpStack(o) {
     if (useGas) bc.push({ face: f, type: 'robin', h: (x, t, u) => fmpNat(kind, u, Tprog, kind === 'side' ? Hh : Lh, pa), uInf: () => Tprog });
   }
   const f0 = fieldsNow();
-  const Tr = iso ? null : FMP.mpTransport(M, { K, C, S, lump: true, fields: f0, Qn, bc, u0: o.runs[0][0][1] - FMP_K0, picard: 40, tol: o.tol || 1e-9 });
+  // (the conduction at each step's start -- only the margin's gaps depend on the temperature, weakly -- so it is built
+  //  once a step; Newton follows the capacity, the chemistry's heat and the faces)
+  const Tr = iso ? null : FMP.mpTransport(M, { K, C, S, lump: true, Kstep: true, fields: f0, Qn, bc, u0: o.runs[0][0][1] - FMP_K0, picard: 40, tol: o.tol || 1e-9 });
   const Tn = iso ? new Float64Array(M.N).fill(o.runs[0][0][1] - FMP_K0) : Tr.u;
   // ---- sampling: the followed pieces (0 the bottom) at their middle plane ----
   const follow = dim === 1 ? [Math.floor((N - 1) / 2)] : (o.follow || [0, Math.floor((N - 1) / 2), N - 1]).filter((v, k, a) => v >= 0 && v < N && a.indexOf(v) === k);
@@ -303,27 +308,34 @@ function fmpStack(o) {
     plan.splice(j, 0, { run: plan[j].run, t: ts, T: prev.T + (plan[j].T - prev.T) * w, snap: true });
   }
   const series = [], snaps = [], snapAt = new Set((o.snapTimes || []).map(t => +t.toFixed(6)));
-  let Eface = 0, Ereact = 0, Eheld = 0, tNow = 0, run = 0, Gnode = new Float64Array(M.N), eig = new Float64Array(M.N);
+  let aRef = 0, oRef = 0, Eface = 0, Ereact = 0, Eheld = 0, Ebetween = 0, tNow = 0, run = 0, Gnode = new Float64Array(M.N), eig = new Float64Array(M.N);
   const gasPk = follow.map(() => ({ ratio: 0, under: 0, middle: 0, hold: null, t: null, T: null, Tprog: null, run: null }));
   const record = (t, T) => {
-    const pc = {};
+    const pc = {}, aNod = nodal(g => alpha[1][g]), oNod = nodal(oGone);
     for (const [j, i] of follow.entries()) {
       const z = zPiece(i), mid = at(Tn, [0, 0], z), edge = at(Tn, [hx, hy], z);
-      const aM = at(nodal(g => alpha[1][g]), [0, 0], z), aE = at(nodal(g => alpha[1][g]), [hx, hy], z);
+      const aM = at(aNod, [0, 0], z), aE = at(aNod, [hx, hy], z), oM = at(oNod, [0, 0], z), oE = at(oNod, [hx, hy], z);
       const gz = gasAt(i, Gnode);
       if (gz && gz.middle / gz.hold > gasPk[j].ratio) Object.assign(gasPk[j], { ratio: gz.middle / gz.hold, middle: gz.middle, hold: gz.hold, under: gz.under, t, T: mid, Tprog: T, run });
       const stv = pieceStress(i, eig);
-      pc[i] = { mid, edge, aM, aE, under: gz ? gz.under : null, middle: gz ? gz.middle : null, hold: gz ? gz.hold : null, pull: stv ? stv.peak / 1e6 : null };
+      pc[i] = { mid, edge, aM, aE, oM, oE, under: gz ? gz.under : null, middle: gz ? gz.middle : null, hold: gz ? gz.hold : null, pull: stv ? stv.peak / 1e6 : null };
     }
     // (over the GO: its coldest and hottest)
     let lo = Infinity, hi = -Infinity;
     for (let n = 0; n < M.N; n++) if (goNode[n] >= 0) { lo = Math.min(lo, Tn[n]); hi = Math.max(hi, Tn[n]); }
-    series.push({ t, run, Tprog: T, lo, hi, pieces: pc });
+    series.push({ t, run, Tprog: T, lo, hi, aRef, oRef, pieces: pc });
+    // (the stack at its most uneven, kept as a snapshot: where the runaway's front is)
+    if (o.snapUneven && hi - lo > uneven.d + 1e-9) { uneven.d = hi - lo; uneven.snap = makeSnap(t, T); }
+    // (and where its own heat takes it furthest above the program, heating: the runaway)
+    const heating = series.length < 2 || T >= series[series.length - 2].Tprog - 1e-9;
+    if (o.snapUneven && heating && hi - T > Math.max(1, over.d) + 1e-9) { over.d = hi - T; over.snap = makeSnap(t, T); }
   };
+  const uneven = { d: 0, snap: null }, over = { d: 0, snap: null };
   const nzN = dim > 1 ? M.coord[zi].length : 1, nxN = M.coord[0].length;
   const section = f => Array.from({ length: nzN }, (_, kz) => Array.from({ length: nxN }, (_, kx) => f[M.node(dim === 1 ? [kx] : dim === 2 ? [kx, kz] : [kx, 0, kz])]));
-  const snap = (t, T) => snaps.push({ t, run, Tprog: T, secT: section(Tn), secA: section(nodal(g => alpha[1][g])), secO: section(nodal(oGone)),
-    T: Float64Array.from(Tn), pieces: Object.fromEntries(follow.map(i => { const gz = gasAt(i, Gnode), sv = pieceStress(i, eig); return [i, { gas: gz.p, s1: sv && sv.s1 ? Float64Array.from(sv.s1) : null, strip: sv ? sv.strip : null }]; })) });
+  const makeSnap = (t, T) => ({ t, run, Tprog: T, secT: section(Tn), secA: section(nodal(g => alpha[1][g])), secO: section(nodal(oGone)),
+    T: Float64Array.from(Tn), pieces: Object.fromEntries(follow.map(i => { const gz = gasAt(i, Gnode), sv = pieceStress(i, eig); return [i, { gas: gz.p, hold: gz.hold, s1: sv && sv.s1 ? Float64Array.from(sv.s1) : null, strip: sv ? sv.strip : null }]; })) });
+  const snap = (t, T) => snaps.push(makeSnap(t, T));
   dField = nodal(dOf);
   record(0, Tn[0]);
   // one step of the heat and the chemistry (tA → tB, the program TpA → TpB); split in two where it fails or its
@@ -336,13 +348,16 @@ function fmpStack(o) {
     else {
       Tr.setFields(fieldsNow());
       const before = Tr.stored(), it0 = Tr.iters;
-      try { Tr.step(tB, dt); } catch (e) { ok = false; }
+      const guess = prevStep && prevStep.t === tA ? Told.map((v, n) => v + (v - prevStep.T[n]) * dt / prevStep.dt) : null;
+      try { Tr.step(tB, dt, null, guess); } catch (e) { ok = false; splits.fail++; }
       if (ok) {
         // (Newton converged, and no node jumped more than jumpMax: a runaway is followed in steps of that much, its heat exact)
         let jump = 0; for (let n = 0; n < M.N; n++) if (goNode[n] >= 0) jump = Math.max(jump, Math.abs(Tn[n] - Told[n]));
-        if (Tr.iters - it0 >= 40 || !(jump <= Math.max(jumpMax, 2 * Math.abs(TpB - TpA) + 5)) || !Tn.every(Number.isFinite)) ok = false;
+        if (Tr.iters - it0 >= 40) { ok = false; splits.iters++; }
+        else if (!(jump <= Math.max(jumpMax, 2 * Math.abs(TpB - TpA) + 5)) || !Tn.every(Number.isFinite)) { ok = false; splits.jump++; }
       }
       if (!ok && depth < 40) {
+        deepest = Math.max(deepest, depth + 1);
         Tn.set(Told);
         const tm = (tA + tB) / 2, Tpm = (TpA + TpB) / 2;
         heatStep(tA, TpA, tm, Tpm, depth + 1); heatStep(tm, Tpm, tB, TpB, depth + 1);
@@ -353,6 +368,7 @@ function fmpStack(o) {
       Eb = fin * dt; Er = Tr.nodalIn() * dt; Eh = Tr.stored() - before;
     }
     Eface += Eb; Ereact += Er; Eheld += Eh; nSub++;
+    prevStep = { t: tB, dt, T: Told };
     // the chemistry advanced at each node over the step (T0 → T1): the gas it made
     if (!o.noChem) for (let n = 0; n < M.N; n++) {
       const g = goNode[n]; if (g < 0) continue;
@@ -367,15 +383,30 @@ function fmpStack(o) {
       if (pl) eig[n] = -(pl.bO || 0) * oGone(g) - (pl.bG || 0) * alpha[4][g] + (pl.am || 0) * (Tn[n] - Tref);
     }
   }
-  let nSub = 0, TpNow = o.runs[0][0][1] - FMP_K0;
-  const jumpMax = o.jumpMax || 50;
+  let nSub = 0, TpNow = o.runs[0][0][1] - FMP_K0, prevStep = null;
+  const splits = { fail: 0, iters: 0, jump: 0 };
+  let level = 0, deepest = 0;
+  const refST = ['water', 'labile', 'stable', 'last'].map(k => FMP_FU.fuStage({ ...o.stages[k], nodes: bins }));
+  const jumpMax = o.jumpMax || 100;
   for (const [k, st] of plan.entries()) {
     const dt = st.t - tNow;
     if (!(dt > 0)) continue;
     run = st.run; molStep = new Float64Array(M.N);
-    // (a new run starts from the room: the program jumps back, the stack as the last run left it)
-    const TpA = st.run !== (k ? plan[k - 1].run : 0) ? o.runs[st.run][0][1] - FMP_K0 : TpNow;
-    heatStep(tNow, TpA, st.t, st.T, 0);
+    // (a new run: the stack cooled to the room between the runs, its chemistry as the last left it -- the heat it gave
+    //  up then counted apart)
+    const fresh = st.run !== (k ? plan[k - 1].run : 0), TpA = fresh ? o.runs[st.run][0][1] - FMP_K0 : TpNow;
+    if (fresh && !iso) {
+      Tr.setFields(fieldsNow()); const before = Tr.stored();
+      Tn.fill(TpA); const after = Tr.stored();
+      Ebetween += after - before; Eheld += after - before;
+    } else if (fresh) Tn.fill(TpA);
+    // (the step split as finely as the last one needed, less a level: a runaway then costs few failed tries)
+    const nPart = 1 << level; deepest = level;
+    for (let j = 0; j < nPart; j++) heatStep(tNow + (st.t - tNow) * j / nPart, TpA + (st.T - TpA) * j / nPart, tNow + (st.t - tNow) * (j + 1) / nPart, TpA + (st.T - TpA) * (j + 1) / nPart, level);
+    level = Math.min(6, Math.max(0, deepest - 1));
+    // (the labile oxygen at the program's own temperature: furnace.js's case, alongside)
+    for (const q of refST) FMP_FU.fuAdvance(q, TpA + FMP_K0, st.T + FMP_K0, dt);
+    aRef = FMP_FU.fuConv(refST[1]); oRef = (aRef * oS[1] + FMP_FU.fuConv(refST[2]) * oS[2] + FMP_FU.fuConv(refST[3]) * oS[3]) / chem.O0;
     Gnode = molStep.map(v => v / dt);
     dField = nodal(dOf);
     tNow = st.t; TpNow = st.T;
@@ -383,11 +414,13 @@ function fmpStack(o) {
     if (snapAt.has(+st.t.toFixed(6))) snap(st.t, st.T);
     if (o.onProgress && (k % 20 === 0 || k === plan.length - 1)) o.onProgress({ k: k + 1, n: plan.length });
   }
+  if (over.snap) snaps.push({ ...over.snap, mark: 'over' });
+  if (uneven.snap) snaps.push({ ...uneven.snap, mark: 'uneven' });
   return { dim, series, snaps, follow, summary: fmpSummary(series, follow, o, gasPk),
-    energy: { faces: Eface, reaction: Ereact, held: Eheld }, substeps: nSub, iters: Tr ? Tr.iters : 0,
+    energy: { faces: Eface, reaction: Ereact, between: Ebetween, held: Eheld }, substeps: nSub, splits, iters: Tr ? Tr.iters : 0,
     // (the stages' conversions at the end at the middle piece's middle: water, labile, stable, last, graphitized)
     chemEnd: ST.map((_, s) => at(nodal(g => alpha[s][g]), [0, 0], zPiece(follow[0]))),
-    mesh: { nodes: M.N, elems: M.E, goNodes: nGo, H, Hs, coord: M.coord, zPiece: follow.map(zPiece), stressNodes: Ms ? Ms.N : 0 }, ms: Date.now() - t0 };
+    mesh: { nodes: M.N, elems: M.E, goNodes: nGo, H, Hs, plT, coord: M.coord, zPiece: follow.map(zPiece), stressNodes: Ms ? Ms.N : 0, stressCoord: Ms ? Ms.coord : null, gasCoord: Mp.coord }, ms: Date.now() - t0 };
 }
 
 /**
@@ -426,9 +459,12 @@ function fmpSummary(series, follow, o, gasPk) {
   });
   // (the labile oxygen half gone: the middle piece's middle and edge -- the time and the program's temperature)
   const half = key => { for (let k = 1; k < series.length; k++) { const a = series[k - 1].pieces[mid], b = series[k].pieces[mid]; if (a[key] < 0.5 && b[key] >= 0.5) { const w = (0.5 - a[key]) / (b[key] - a[key]); return { t: series[k - 1].t + w * (series[k].t - series[k - 1].t), T: series[k - 1].pieces[mid][key === 'aM' ? 'mid' : 'edge'] + w * (b[key === 'aM' ? 'mid' : 'edge'] - a[key === 'aM' ? 'mid' : 'edge']), Tprog: series[k - 1].Tprog + w * (series[k].Tprog - series[k - 1].Tprog) }; } } return null; };
+  // (at the program's own temperature: furnace.js's case)
+  let labileRef = null;
+  for (let k = 1; k < series.length && !labileRef; k++) { const a = series[k - 1].aRef, b = series[k].aRef; if (a < 0.5 && b >= 0.5) { const w = (0.5 - a) / (b - a); labileRef = { t: series[k - 1].t + w * (series[k].t - series[k - 1].t), Tprog: series[k - 1].Tprog + w * (series[k].Tprog - series[k - 1].Tprog) }; } }
   let pull = 0, pullAt = null;
   for (const s of series) for (const i of follow) { const p = s.pieces[i].pull; if (p != null && p > pull) { pull = p; pullAt = { t: s.t, piece: i, T: s.Tprog }; } }
-  return { runs, labileMid: half('aM'), labileEdge: half('aE'), gas: follow.map((i, j) => ({ i, ...gasPk[j] })), pull, pullAt, mid };
+  return { runs, labileMid: half('aM'), labileEdge: half('aE'), labileRef, gas: follow.map((i, j) => ({ i, ...gasPk[j] })), pull, pullAt, mid };
 }
 
 if (typeof module !== 'undefined') module.exports = { fmpStack, fmpSummary, fmpGasLevel, fmpCg, fmpHg, fmpArgon, fmpNat };

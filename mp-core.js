@@ -357,8 +357,10 @@ const mpVal = (f, ...args) => (typeof f === 'function' ? f(...args) : f);
  *   u0 (number, array, or (x) → u), theta (1: implicit Euler, the default; 0.5 Crank–Nicolson; S needs 1),
  *   Qn (m, n, u_n, t) → [q, dq/du]: a source per volume at node n (each node its share of the element, as lumped),
  *   with its slope, taken implicitly and by Newton (a reaction's heat whose state is kept at the nodes),
+ *   Kstep (true: K, Q and the flow taken at the step's start, their part of the system built once a step),
  *   picard (iterations when anything depends on u; default 1: linear), tol (relative; default 1e-8) }.
- * mpTransport returns { u (the field now), t, step(t, dt, fields) (to time t over dt; fields: the new time's),
+ * mpTransport returns { u (the field now), t, step(t, dt, fields, guess) (to time t over dt; fields: the new time's;
+ * guess: Newton's first iterate, else the step's start),
  * steady(t), fluxIn(face) (the flow into the body through a face held at a value), faceIn(face) (through a face with
  * a transfer coefficient or radiation, at u now), setFields(f), nodalIn() (∫ Qn at u now), stored(), iters }.
  */
@@ -389,18 +391,25 @@ function mpTransport(M, o) {
   const Cof = (m, uq, x, f) => (o.C === undefined ? 1 : mpVal(o.C, m, uq, x, f));
   const store = !!o.S, lump = !!o.lump, nodal = typeof o.Qn === 'function';
   // the elements' geometric shares at their nodes (lumping, a source at the nodes): Σ_q N_a w det J
-  let share = null;
+  // (summed per node and material: the list LN, LM, LS -- each node once for each material around it)
+  let LN = null, LM = null, LS = null;
   if (lump || nodal) {
-    share = new Float64Array(M.E * npe);
+    const share = new Float64Array(M.E * npe), at = new Map(), ln = [], lm = [], ls = [];
     for (let e = 0; e < M.E; e++) for (const q of rule) { const { det } = mpJac(M, e, q, dNdx); for (let a = 0; a < npe; a++) share[e * npe + a] += q.N[a] * q.w * det; }
+    for (let e = 0; e < M.E; e++) for (let a = 0; a < npe; a++) {
+      const n = M.conn[e * npe + a], key = n * 4096 + M.mat[e];
+      let j = at.get(key); if (j === undefined) { j = ln.length; at.set(key, j); ln.push(n); lm.push(M.mat[e]); ls.push(0); }
+      ls[j] += share[e * npe + a];
+    }
+    LN = Int32Array.from(ln); LM = Int32Array.from(lm); LS = Float64Array.from(ls);
   }
-  // the amount stored at the step's start (S): per element and point (or node, lumped)
-  const Sold = store ? new Float64Array(M.E * (lump ? npe : nr)) : null;
+  // the amount stored at the step's start (S): per element and point (or per node and material, lumped)
+  const Sold = store ? new Float64Array(lump ? LN.length : M.E * nr) : null;
   function keepStore() {
+    if (lump) { for (let j = 0; j < LN.length; j++) { const n = LN[j]; Sold[j] = o.S(LM[j], u[n], xNode(n), fNode(n)); } return; }
     for (let e = 0; e < M.E; e++) {
       const m = M.mat[e], base = e * npe;
-      if (lump) for (let a = 0; a < npe; a++) { const n = M.conn[base + a]; Sold[e * npe + a] = o.S(m, u[n], xNode(n), fNode(n)); }
-      else rule.forEach((q, qi) => {
+      rule.forEach((q, qi) => {
         const { x } = mpJac(M, e, q, dNdx); let uq = 0; for (let a = 0; a < npe; a++) uq += q.N[a] * u[M.conn[base + a]];
         Sold[e * nr + qi] = o.S(m, uq, x, fAt(e, q.N));
       });
@@ -408,16 +417,23 @@ function mpTransport(M, o) {
   }
   let raw = null;   // the last system before the values were imposed (fluxIn)
 
+  // (o.Kstep: K, Q and the flow at the step's start, not the iterate -- the elements' part of the system is then built
+  //  once a step and kept through its Newton iterations; only the capacity at the nodes, the nodal source and the faces
+  //  follow the iterate. Needs the capacity lumped when it depends on u.)
+  let kCache = null;
+  if (o.Kstep && store && !lump) throw new Error('mp-core: Kstep keeps the elements\' part a step: a stored amount must be lumped');
   /** Assemble K + C/(θ dt) (dt null: steady) and its right side at time t from the previous u (uOld) and the iterate uk. */
   function assemble(uOld, uk, t, dt, theta) {
-    const B = mpBand(N, bw, !o.vel), R = new Float64Array(N);
-    for (let e = 0; e < M.E; e++) {
+    const cached = o.Kstep && kCache && kCache.uOld === uOld && kCache.t === t && kCache.dt === dt;
+    const B = cached ? { ...kCache.B, a: Float64Array.from(kCache.B.a), L: null } : mpBand(N, bw, !o.vel), R = cached ? Float64Array.from(kCache.R) : new Float64Array(N);
+    const uEl = o.Kstep ? uOld : uk;
+    if (!cached) for (let e = 0; e < M.E; e++) {
       const m = M.mat[e], base = e * npe;
       ke.fill(0); fe.fill(0);
       rule.forEach((q, qi) => {
         const { det, x } = jac(e, q, qi), W = q.w * det, f = fAt(e, q.N);
-        let uq = 0; for (let a = 0; a < npe; a++) uq += q.N[a] * uk[M.conn[base + a]];
-        const k = Kof(m, uq, x, f), C = Cof(m, uq, x, f), Qv = o.Q ? mpVal(o.Q, m, uq, x, t, f) : 0;
+        let uq = 0; for (let a = 0; a < npe; a++) uq += q.N[a] * uEl[M.conn[base + a]];
+        const k = Kof(m, uq, x, f), C = lump && !o.vel ? 0 : Cof(m, uq, x, f), Qv = o.Q ? mpVal(o.Q, m, uq, x, t, f) : 0;
         const v = o.vel ? o.vel(m, x) : null, Cf = v ? (o.capFlow ? o.capFlow(m) : C) : 0;
         // SUPG: τ from the element's size along the flow and its Péclet number
         let tau = 0, vgrad = null;
@@ -454,23 +470,24 @@ function mpTransport(M, o) {
           fe[a] += wa * Qv * W;
         }
       });
-      if (dt && lump) for (let a = 0; a < npe; a++) {
-        const n = M.conn[base + a], xa = xNode(n), fa = fNode(n), ma = share[e * npe + a] / dt, C = Cof(m, uk[n], xa, fa);
-        ke[a * npe + a] += C * ma;
-        if (store) fe[a] += ma * (C * uk[n] - (o.S(m, uk[n], xa, fa) - Sold[e * npe + a]));
-        else fe[a] += C * ma * uOld[n];
-      }
-      // a source at the nodes, per volume, with its slope (Newton: q(u) ≈ q(u_k) + q'(u_k)(u − u_k)), each node its
-      // share of the element (MP-2: a reaction's heat, its state kept at the nodes)
-      if (nodal) for (let a = 0; a < npe; a++) {
-        const n = M.conn[base + a], [qv, dq] = o.Qn(m, n, uk[n], t), sh = share[e * npe + a];
-        fe[a] += sh * (qv - (dq || 0) * uk[n]);
-        ke[a * npe + a] -= sh * (dq || 0);
-      }
       for (let a = 0; a < npe; a++) {
         const i = M.conn[base + a]; R[i] += fe[a];
         for (let b = 0; b < npe; b++) mpAdd(B, i, M.conn[base + b], ke[a * npe + b]);
       }
+    }
+    if (o.Kstep && !cached) kCache = { uOld, t, dt, B: { ...B, a: Float64Array.from(B.a) }, R: Float64Array.from(R) };
+    // the iterate's part at the nodes: the lumped capacity and the nodal source (a source per volume, with its slope --
+    // Newton: q(u) ≈ q(u_k) + q'(u_k)(u − u_k); MP-2: a reaction's heat, its state kept at the nodes), each node its share
+    if ((dt && lump) || nodal) for (let j = 0; j < LN.length; j++) {
+      const n = LN[j], m = LM[j], sh = LS[j];
+      let dg = 0, rh = 0;
+      if (dt && lump) {
+        const xa = xNode(n), fa = fNode(n), ma = sh / dt, C = Cof(m, uk[n], xa, fa);
+        dg += C * ma;
+        rh += store ? ma * (C * uk[n] - (o.S(m, uk[n], xa, fa) - Sold[j])) : C * ma * uOld[n];
+      }
+      if (nodal) { const [qv, dq] = o.Qn(m, n, uk[n], t); rh += sh * (qv - (dq || 0) * uk[n]); dg -= sh * (dq || 0); }
+      R[n] += rh; mpAdd(B, n, n, dg);
     }
     // the faces: flux, transfer, radiation (linearized about the iterate)
     for (const bc of bcs) {
@@ -506,8 +523,8 @@ function mpTransport(M, o) {
   const picard = o.picard || 1, tol = o.tol || 1e-8, theta = o.theta === undefined ? 1 : o.theta;
   if (store && theta !== 1) throw new Error('mp-core: a stored amount (S) is stepped by implicit Euler (theta 1)');
   const T = { u, t: 0, iters: 0 };
-  function solve(uOld, t, dt) {
-    let uk = uOld;
+  function solve(uOld, t, dt, guess) {
+    let uk = guess && guess.length === N ? Float64Array.from(guess) : uOld;
     for (let it = 0; it < picard; it++) {
       const { B, R } = assemble(uOld, uk, t, dt, theta);
       mpFactor(B);
@@ -519,10 +536,10 @@ function mpTransport(M, o) {
     }
     return uk;
   }
-  T.step = (t, dt, newFields) => {
+  T.step = (t, dt, newFields, guess) => {
     if (store) keepStore();
     if (newFields) { fields = newFields; names = Object.keys(fields); }
-    T.u.set(solve(Float64Array.from(T.u), t, dt)); T.t = t;
+    T.u.set(solve(Float64Array.from(T.u), t, dt, guess)); T.t = t;
     return T.u;
   };
   /** Replace the fields without stepping (a stored amount then kept at the step's start with them: step(t, dt) after). */
@@ -531,7 +548,7 @@ function mpTransport(M, o) {
   T.nodalIn = () => {
     if (!nodal) return 0;
     let s = 0;
-    for (let e = 0; e < M.E; e++) for (let a = 0; a < npe; a++) { const n = M.conn[e * npe + a]; s += share[e * npe + a] * o.Qn(M.mat[e], n, T.u[n], T.t)[0]; }
+    for (let j = 0; j < LN.length; j++) s += LS[j] * o.Qn(LM[j], LN[j], T.u[LN[j]], T.t)[0];
     return s;
   };
   T.steady = (t = 0, newFields) => {
@@ -565,9 +582,9 @@ function mpTransport(M, o) {
   /** The amount stored in the body (∫ S, or ∫ C u), at u now. */
   T.stored = () => {
     let s = 0;
+    if (lump) { for (let j = 0; j < LN.length; j++) { const n = LN[j], m = LM[j], xa = xNode(n), fa = fNode(n); s += LS[j] * (store ? o.S(m, T.u[n], xa, fa) : Cof(m, T.u[n], xa, fa) * T.u[n]); } return s; }
     for (let e = 0; e < M.E; e++) {
       const m = M.mat[e], base = e * npe;
-      if (lump) { for (let a = 0; a < npe; a++) { const n = M.conn[base + a], xa = xNode(n), fa = fNode(n); s += share[base + a] * (store ? o.S(m, T.u[n], xa, fa) : Cof(m, T.u[n], xa, fa) * T.u[n]); } continue; }
       for (const q of rule) {
         const { det, x } = mpJac(M, e, q, dNdx), f = fAt(e, q.N); let uq = 0; for (let a = 0; a < npe; a++) uq += q.N[a] * T.u[M.conn[base + a]];
         s += (store ? o.S(m, uq, x, f) : Cof(m, uq, x, f) * uq) * q.w * det;

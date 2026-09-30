@@ -104,15 +104,19 @@ const base = {
 // 6. the dimensions agree: with no plates (top and bottom insulated) the 2D is the 1D; with its y side insulated and sealed
 //    the 3D is the 2D (through a runaway: heat, chemistry, gas)
 {
-  // (through a runaway the step's rounding, 10⁻¹¹ K, grows ten million times: agreed to 10⁻⁴ of its rise there)
-  const both = Hr => { const o = { ...base, Hr, runs: [FU.fuProgram([{ rate: 1, to: 320, hold: 0 }], 25, 0)], plane: null };
+  // (through a runaway its steps of at most 20 K: the two take the same steps)
+  const both = (Hr, jumpMax) => { const o = { ...base, Hr, jumpMax, runs: [FU.fuProgram([{ rate: 1, to: 320, hold: 0 }], 25, 0)], plane: null };
     const r1 = F.fmpStack({ ...o, dim: 1 }), r2 = F.fmpStack({ ...o, dim: 2, plates: false, mesh: { ...o.mesh, nz: 3 } });
     let e = 0; const i1 = r1.follow[0];
     for (let k = 0; k < r1.series.length; k++) for (const f of ['mid', 'edge', 'aM']) e = Math.max(e, Math.abs(r1.series[k].pieces[i1][f] - r2.series[k].pieces[i1][f]));
     return { e, over: r1.summary.runs[0].over }; };
-  const calm = both(0.3e6), wild = both(base.Hr);
-  check('no plates, top and bottom insulated: the 2D is the 1D (temperatures, conversions); through a runaway too', calm.e < 1e-8 && calm.over < 1 && wild.e < 1e-4 * (wild.over + 200),
+  const calm = both(0.3e6), wild = both(base.Hr, 20);
+  check('no plates, top and bottom insulated: the 2D is the 1D (temperatures, conversions); through a runaway too', calm.e < 1e-8 && calm.over < 1 && wild.e < 1e-8,
     `${fmt(calm.e)}; running away to ${wild.over.toFixed(0)} K above the program: ${fmt(wild.e)} K`);
+  // (the runaway's peak as its steps shrink: the default steps of at most 100 K within 3 % of the converged)
+  const peaks = [100, 20, 5].map(j => F.fmpStack({ ...base, dim: 1, jumpMax: j, runs: [FU.fuProgram([{ rate: 1, to: 320, hold: 0 }], 25, 0)], plane: null }).summary.runs[0].over);
+  check('the runaway\'s peak converges as its steps shrink (the default within 3 %)', Math.abs(peaks[2] - peaks[1]) < Math.abs(peaks[1] - peaks[0]) && Math.abs(peaks[0] - peaks[2]) / peaks[2] < 0.03,
+    `${peaks.map(v => v.toFixed(2)).join(' → ')} K above the program (steps of at most 100, 20, 5 K)`);
   const q = { ...base, plane: null, N: 20, runs: [FU.fuProgram([{ rate: 2, to: 300, hold: 0 }], 25, 0)], mesh: { nx: 5, nm: 1, nz: 4, nPlate: 1 } };
   const s2 = F.fmpStack({ ...q, dim: 2 }), s3 = F.fmpStack({ ...q, dim: 3, sealY: true, mesh: { ...q.mesh, ny: 2 } });
   let e3 = 0, eg = 0;
@@ -140,8 +144,9 @@ const base = {
 {
   for (const dim of [1, 2]) {
     const r = F.fmpStack({ ...base, dim, tol: 1e-10 }), E = r.energy;
-    check(`${dim}D, both runs: the heat through the faces and the reaction's = the rise of what the stack holds (step by step)`, rel(E.faces + E.reaction, E.held) < 1e-7,
-      `${fmt(rel(E.faces + E.reaction, E.held))}; the reaction's ${(E.reaction / 1e6).toFixed(2)} MJ${dim === 1 ? '/m²' : '/m'}; ${r.ms} ms`);
+    const bal = Math.abs(E.faces + E.reaction + E.between - E.held) / Math.abs(E.faces);
+    check(`${dim}D, both runs: the heat through the faces, the reaction's and that given up between the runs = the rise of what the stack holds (step by step)`, bal < 1e-7,
+      `${fmt(bal)}; the reaction's ${(E.reaction / 1e6).toFixed(2)} MJ${dim === 1 ? '/m²' : '/m'}; ${r.ms} ms`);
   }
   const r = F.fmpStack({ ...base, dim: 2, isothermal: true, runs: [FU.fuProgram([{ rate: 5, to: 600, hold: 0 }], 25, 0)] });
   const pk = Math.max(...r.series.map(s => Math.max(...r.follow.map(i => Math.abs(s.pieces[i].pull)))));

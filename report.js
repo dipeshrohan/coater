@@ -248,6 +248,22 @@ async function repProcessAll() {
       + '<h4>The furnace as set</h4>' + repRows([...runRows, ...stackRows], ['', 'Value', '', 'From'])
       + (uNote && cleanText(uNote) ? `<p class="lede">${repEsc(cleanText(uNote))}</p>` : '');
   }
+  // the furnace's multiphysics (MP-2): each dimension solved for the inputs as they are, its answers side by side
+  if (typeof fmpCurrent === 'function') {
+    const dims = [1, 2, 3].filter(d => fmpCurrent(d));
+    if (dims.length) {
+      const S = d => FMS.res[d].summary, K = v => `${v.toFixed(v < 10 ? 1 : 0)} K`, gas = d => fmpGasByRun(FMS.res[d]);
+      const rows = [['Behind the program, heating (run 1 · run 2)', d => S(d).runs.map(q => K(q.lag)).join(' · ')],
+        ['Its own heat above the program, run 1', d => (S(d).runs[0].over >= 1 ? `${K(S(d).runs[0].over)} at ${S(d).runs[0].overAt.T.toFixed(0)} °C` : 'none')],
+        ['Across the stack at once', d => K(Math.max(...S(d).runs.map(q => q.spread)))],
+        ['Labile oxygen half gone (the middle piece)', d => (S(d).labileMid ? `${S(d).labileMid.T.toFixed(0)} °C (the program ${S(d).labileMid.Tprog.toFixed(0)} °C)` : '—')],
+        ['Gas against the layers\' hold (run 1 · run 2)', d => gas(d).map(g => `${g.ratio.toFixed(g.ratio >= 10 ? 0 : 2)}×`).join(' · ')],
+        ['Pull, converting unevenly', d => `${S(d).pull.toFixed(1)} MPa`], ['Solved in', d => `${(FMS.res[d].ms / 1000).toFixed(1)} s`]];
+      const ref = S(dims[0]).labileRef;
+      furn += `<h4>The furnace's multiphysics (MP-2)</h4><p class="lede">${repEsc(`Heat, chemistry, gas and stress solved together: the holder heated by the hot zone at the program's temperature and the argon, the GO's own heat as its labile oxygen leaves (${MAT.furn.Hr.v} kJ/g). At the program's own temperature the labile oxygen is half gone at ${ref ? ref.Tprog.toFixed(0) + ' °C' : '—'}.`)}</p>`
+        + repRows(rows.map(([l, f]) => [repEsc(l), ...dims.map(d => repEsc(f(d)))]), ['', ...dims.map(d => MP_DIMS[d])]);
+    }
+  }
   return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
     + drying
     + film + piece + furn
