@@ -56,13 +56,36 @@ What was added (cfd-3d-mesh.js, pure, cfd-3d-mesh.validate.js; ui-3d.js, cfd-ste
   (in the x-y plane, and 3D), equiangle skewness, non-orthogonality, wall-layer elements, invalid elements, quality.
 - Errors and warnings: errors -- invalid elements, more memory than a page, edge strips that do not fit; warnings
   (M3_WARN, each explained) -- fewer than 3 across the gap or the region, skewness above 0.85 near the edge, x-y
-  aspect ratio above 20 near the meniscus or 100 anywhere, non-orthogonality above 70 deg.
+  aspect ratio above 20 near the meniscus or 100 anywhere, non-orthogonality above 70 deg (near a contact line up
+  the exit face told apart, with why: see the solved mesh's quality below).
 - Sections (display only): X–Y at the middle station, X–Z on the web, Y–Z at the edge, gap zoom, edge zoom.
 - Results: the cross-flow diagnostic (largest |u_x|, |u_y|, |u_z|, |u_z| / |u_x|).
 - The mesh-independence study: the strip on Coarse, Medium, Fine, the physics checked the same before each solve
   (c3dPhysicsKey), the film, flow rate, pressures, shear rate, wall shear stress, contact line and its curvature,
   speeds, with the change from one mesh to the next; saved with the project.
 - Each solve keeps its mesh (preset, counts, zones, statistics in brief, warnings, time) in its result and project.
+
+The solved mesh's quality and the web's wall shear stress (the mesh study's two open points; default strip at L1):
+- Before solving the layout's worst quality is 0.89, no warnings; solved, 0.39 and non-orthogonality 72.9 deg. All
+  of it is in the liquid under the exit face once the contact line has climbed it (0.81-0.86 mm up): the fan of
+  spines from the web to the face (element columns 26-27) and the first column past the contact line (28). The fan's
+  rows follow the vertical face while its spines rise almost along it: corners of 16-24 and 154-166 deg. At the
+  contact line the liquid's wedge is the contact angle (36.9 deg), which the spine through it splits 17.9 + 19.0.
+  The 2D solver's own final mesh has the same elements (quality 0.597 at the Gauss points in both; the 3D's 0.39 is
+  the stricter measure at the 27 nodes); the 2D already keeps the best-shaped of the 108 fan layouts it tries.
+  Refining keeps it: Coarse 68.4 deg, Medium 72.9, Fine 73.9. Not a layout defect, so no change to the layout; the
+  warning now says where it is and why (nonOrthMeniscus: the worst face under the exit face or within 2 elements
+  past the contact line, the contact line up the face), and the statistics give that region's largest apart.
+- The web's wall shear stress (44.5 / 47.1 / 49.1 Pa, Coarse / Medium / Fine) peaks under the blade 0.7-1.2 mm
+  before the metering edge. What limits it is the rows across the gap, not the length along: the middle station
+  in 2D with the along counts fixed (Medium) and 3, 4, 5, 6, 8, 12, 16 across gives 42.75, 44.44, 46.70, 46.35,
+  46.61, 46.72, 46.72 Pa 2 mm before the edge; with 16 across and 16 to 80 along the blade, the peak settles at
+  49.3 +- 0.3 Pa. The rows are graded toward the blade (gradeY 1.5: the web's row 1.5 times the even size), which
+  helps the contact line and costs the web: even rows at 4 across give 46.3 (-0.9 %), Chebyshev rows (fine at both
+  walls) 46.4 (-0.7 %). The metering edge zone (0.1 mm) does not help (47.0 Pa, 219 s against 92 s). Medium with
+  5 across: 46.70 Pa at 2 mm (-0.04 %), peak 48.7 Pa, the 3D 101 s and 0.65 GB against 92 s and 0.44 GB (Node,
+  one thread), film unchanged (0.002 %). Flow › 2D's default has 6 across (at these along counts -0.8 %). The film moves 0.3 % over the
+  whole sweep; the contact line is the least converged quantity (1.04 / 0.81 / 0.75 mm, as D1 found in 2D).
 
 ### Phase 4 (design): the blade across the web (in progress)
 

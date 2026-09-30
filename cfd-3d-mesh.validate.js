@@ -66,6 +66,17 @@ function box(Lx, Ly, Lz, nEx, nEy, nEz, f = (x, y, z) => [x, y, z]) {
   // (long across the web only -- 0.5 along and up, 20 across: the flow's plane square -- not warned: across, the elements' number is)
   const W4 = G.m3Warnings(G.m3Stats(box(2, 2, 80, 4, 4, 4), { zone: () => ['meniscus'] }));
   check('long across the web only: no aspect warning (its 3D aspect ratio reported)', !W4.some(w => w.code === 'arMeniscus' || w.code === 'ar') && G.m3Stats(box(2, 2, 80, 4, 4, 4)).ar.max === 40, W4.map(w => w.code).join(', ') || 'none');
+  // (sheared up the gap by 3 along per 1 up: every face atan 3 = 71.57° from orthogonal, the worst taken where first met,
+  // at the first element. Its contact line up the exit face there (cCorner 0, cCL 2: element 0 under the face): told
+  // apart, with why; the contact line up the face further along (the worst not under it), or at the edge: the plain one)
+  const shear = (x, y, z) => [x + 3 * y, y, z], t = Math.atan(3) * 180 / Math.PI, sheared = (cC, cL) => { const M = box(2, 0.5, 1, 4, 4, 4, shear); M.cCorner = cC; M.cCL = cL; return M; };
+  const Sm = G.m3Stats(sheared(0, 2)), Wm = G.m3Warnings(Sm), Sn = G.m3Stats(sheared(4, 6)), Wn = G.m3Warnings(Sn), Sp = G.m3Stats(sheared(0, 0)), Wp = G.m3Warnings(Sp);
+  check('non-orthogonal faces under a climbed contact line told apart (where, why); elsewhere or pinned, the plain warning',
+    rel(Sm.nonOrth.max, t) < 1e-9 && rel(Sm.nonOrth.cl, t) < 1e-9 && Sm.climbed && Sm.nonOrth.at.cl && Sm.nonOrth.at.ex === 0
+    && Wm.some(w => w.code === 'nonOrthMeniscus' && w.level === 'warning') && !Wm.some(w => w.code === 'nonOrth')
+    && Sn.climbed && !Sn.nonOrth.at.cl && Wn.some(w => w.code === 'nonOrth') && !Wn.some(w => w.code === 'nonOrthMeniscus')
+    && !Sp.climbed && Sp.nonOrth.cl === null && Wp.some(w => w.code === 'nonOrth') && !Wp.some(w => w.code === 'nonOrthMeniscus'),
+    `${Sm.nonOrth.max.toFixed(3)}° (atan 3 = ${t.toFixed(3)}°) at ${JSON.stringify(Sm.nonOrth.at)}: ${Wm.map(w => w.code).join(', ')} | up the face further along: ${Wn.map(w => w.code).join(', ')} | pinned: ${Wp.map(w => w.code).join(', ')}`);
 }
 // 6. a station's 2D layout repeated across: the same mesh as the box built directly; each station's heights scaled
 {

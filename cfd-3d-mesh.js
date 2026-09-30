@@ -134,17 +134,27 @@ function m3Stats(M, opts = {}) {
     skSum += e.skew; if (e.skew > skMax) { skMax = e.skew; skAt = { ex, ez, ey }; }
     for (const zn of opts.zone ? opts.zone(ex) : []) { const Z = zoneMax[zn] || (zoneMax[zn] = { ar: 0, arXY: 0, skew: 0, n: 0 }); Z.ar = Math.max(Z.ar, e.ar); Z.arXY = Math.max(Z.arXY, e.arXY); Z.skew = Math.max(Z.skew, e.skew); Z.n++; }
   }
-  // (non-orthogonality: every face shared by two elements, along, across and up)
-  let noMax = 0, noSum = 0, noN = 0;
+  // (non-orthogonality: every face shared by two elements, along, across and up. With the contact line up the exit face,
+  // the faces of the elements under the face and the next M3_ZONE_REACH beyond the contact line apart too: where the
+  // worst is, at.cl)
+  const climbed = M.cCorner != null && M.cCL != null && M.cCL > M.cCorner;
+  const underFace = ex => climbed && ex >= M.cCorner / 2 && ex < M.cCL / 2 + M3_ZONE_REACH;
+  let noMax = 0, noSum = 0, noN = 0, noAt = null, noCl = 0;
   const cen = (ex, ez, ey) => { const e = cells[(ex * nEz + ez) * nEy + ey]; return e ? e.c : null; };
   const faceNormal = (ps) => m3Cross(m3Sub(ps[2], ps[0]), m3Sub(ps[3], ps[1]));
   const P = (c, l, k) => m3P(M, m3Id(M, c, l, k));
-  const addFace = (c1, c2, ps) => { if (!c1 || !c2) return; const a = m3Angle(m3Sub(c2, c1), faceNormal(ps)), t = Math.min(a, 180 - a); noMax = Math.max(noMax, t); noSum += t; noN++; };
+  const addFace = (c1, c2, ps, at, ex2) => {
+    if (!c1 || !c2) return;
+    const a = m3Angle(m3Sub(c2, c1), faceNormal(ps)), t = Math.min(a, 180 - a), cl = underFace(at.ex) || underFace(ex2);
+    if (t > noMax) { noMax = t; noAt = { ...at, cl }; }
+    if (cl) noCl = Math.max(noCl, t);
+    noSum += t; noN++;
+  };
   for (let ex = 0; ex < nEx; ex++) for (let ez = 0; ez < nEz; ez++) for (let ey = 0; ey < nEy; ey++) {
     const c = 2 * ex, l = 2 * ez, k = 2 * ey;
-    if (ex + 1 < nEx) addFace(cen(ex, ez, ey), cen(ex + 1, ez, ey), [P(c + 2, l, k), P(c + 2, l + 2, k), P(c + 2, l + 2, k + 2), P(c + 2, l, k + 2)]);
-    if (ez + 1 < nEz) addFace(cen(ex, ez, ey), cen(ex, ez + 1, ey), [P(c, l + 2, k), P(c + 2, l + 2, k), P(c + 2, l + 2, k + 2), P(c, l + 2, k + 2)]);
-    if (ey + 1 < nEy) addFace(cen(ex, ez, ey), cen(ex, ez, ey + 1), [P(c, l, k + 2), P(c + 2, l, k + 2), P(c + 2, l + 2, k + 2), P(c, l + 2, k + 2)]);
+    if (ex + 1 < nEx) addFace(cen(ex, ez, ey), cen(ex + 1, ez, ey), [P(c + 2, l, k), P(c + 2, l + 2, k), P(c + 2, l + 2, k + 2), P(c + 2, l, k + 2)], { ex, ez, ey, dir: 'along' }, ex + 1);
+    if (ez + 1 < nEz) addFace(cen(ex, ez, ey), cen(ex, ez + 1, ey), [P(c, l + 2, k), P(c + 2, l + 2, k), P(c + 2, l + 2, k + 2), P(c, l + 2, k + 2)], { ex, ez, ey, dir: 'across' }, ex);
+    if (ey + 1 < nEy) addFace(cen(ex, ez, ey), cen(ex, ez, ey + 1), [P(c, l, k + 2), P(c + 2, l, k + 2), P(c + 2, l + 2, k + 2), P(c, l + 2, k + 2)], { ex, ez, ey, dir: 'up' }, ex);
   }
   // (the minimum gap: up the spine at the metering edge's column, every station; its elements' heights)
   let gapCells = nEy, gapHmin = Infinity, gapHmax = 0, gap = null;
@@ -166,7 +176,7 @@ function m3Stats(M, opts = {}) {
   return { cells: n, wedges, nodes: M.NC * M.NL * M.NR, nodesP: (nEx + 1) * (nEz + 1) * (nEy + 1), nEx, nEy, nEz,
     q: { min: qMin, mean: qSum / used, below, hist, at: worst }, invalid, invalidAt,
     vol: { min: vMin, max: vMax, total: vSum }, edge: { min: eMin, max: eMax }, ar: { max: arMax, at: arAt }, arXY: { max: arXYMax, at: arXYAt }, skew: { max: skMax, mean: skSum / used, at: skAt },
-    nonOrth: { max: noMax, mean: noN ? noSum / noN : 0, faces: noN },
+    nonOrth: { max: noMax, mean: noN ? noSum / noN : 0, faces: noN, at: noAt, cl: climbed ? noCl : null }, climbed,
     gap: { H: gap, cells: gapCells, hMin: gapHmin, hMax: gapHmax, nodes: 2 * gapCells + 1 },
     across: { width: zE[zE.length - 1] - zE[0], cells: nEz, dzMin: dz.length ? Math.min(...dz) : 0, dzMax: dz.length ? Math.max(...dz) : 0, nodes: M.NL },
     layerRows: rows, layerCells: lay * nEx * nEz, zones: zoneMax };
@@ -189,7 +199,7 @@ const M3_WARN = {
   arMeniscus: 20,
   // (anywhere, in the plane of the flow: beyond 100 the element's shape dominates its conditioning)
   ar: 100,
-  // (a face's normal more than 70° from the line joining the cells' centres)
+  // (a face's normal more than 70° from the line joining the cells' centres; near a contact line up the exit face, told apart)
   nonOrth: 70,
 };
 function m3Warnings(S, ctx = {}) {
@@ -202,7 +212,10 @@ function m3Warnings(S, ctx = {}) {
   else if (S.skew.max > M3_WARN.skew) out.push({ level: 'warning', code: 'skew', text: `High skewness: ${f(S.skew.max)} at its worst (above ${M3_WARN.skew}).` });
   if (Zm && Zm.arXY > M3_WARN.arMeniscus) out.push({ level: 'warning', code: 'arMeniscus', text: `Extreme aspect ratio near the meniscus: ${f(Zm.arXY)} in the plane of the flow (above ${M3_WARN.arMeniscus}): the surface's curvature there, and so its capillary pressure, is taken from long thin elements.` });
   if (S.arXY.max > M3_WARN.ar) out.push({ level: 'warning', code: 'ar', text: `Extreme aspect ratio: ${f(S.arXY.max)} in the plane of the flow at its worst (above ${M3_WARN.ar}).` });
-  if (S.nonOrth.max > M3_WARN.nonOrth) out.push({ level: 'warning', code: 'nonOrth', text: `Strongly non-orthogonal faces: ${f(S.nonOrth.max)}° at the worst (above ${M3_WARN.nonOrth}°).` });
+  // (the worst under the exit face, the contact line up it: the liquid there is a fan of spines from the web up to the
+  // face, its rows following the face, so the two cross at small angles -- the layout's shape there, which refining keeps)
+  if (S.nonOrth.max > M3_WARN.nonOrth && S.nonOrth.at && S.nonOrth.at.cl) out.push({ level: 'warning', code: 'nonOrthMeniscus', text: `Strongly non-orthogonal faces at the contact line: ${f(S.nonOrth.max)}° at the worst (above ${M3_WARN.nonOrth}°). The contact line has climbed the exit face, and the liquid under the face is meshed as a fan of spines from the web up to the face with rows that follow the face, so the two cross at small angles there. Refining does not remove it. The elements stay valid; what it can cost is accuracy at the contact line, which the mesh study measures.` });
+  else if (S.nonOrth.max > M3_WARN.nonOrth) out.push({ level: 'warning', code: 'nonOrth', text: `Strongly non-orthogonal faces: ${f(S.nonOrth.max)}° at the worst (above ${M3_WARN.nonOrth}°).` });
   return out;
 }
 
