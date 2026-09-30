@@ -221,7 +221,10 @@ function smpStack(o) {
     for (const i of follow) { const pl = planes[i]; Xs[i] = [meanOn(pl.X), pl.X[0]]; pull[i] = st[i].peak / 1e6; }
     series.push({ t, stage, Tair, T, X: Xs, pull });
   };
-  const snap = t => snaps.push({ t, stage, T: Float64Array.from(hm.T), X: Float64Array.from(X),
+  // (a section through the stack at its middle across (y = 0): rows up the stack (z), columns from its middle out (x))
+  const nzN = M.coord[zi].length, nxN = dim > 1 ? M.coord[0].length : 1;
+  const section = f => Array.from({ length: nzN }, (_, kz) => Array.from({ length: nxN }, (_, kx) => f[M.node(dim === 1 ? [kz] : dim === 2 ? [kx, kz] : [kx, 0, kz])]));
+  const snap = t => snaps.push({ t, stage, secT: section(hm.T), secX: section(X), T: Float64Array.from(hm.T), X: Float64Array.from(X),
     pieces: Object.fromEntries(follow.map(i => [i, { s1: st[i].s1 ? Float64Array.from(st[i].s1) : null, strip: st[i].strip, X: Float64Array.from(planes[i].X), T: Float64Array.from(planes[i].T) }])) });
   for (const i of follow) planes[i] = planeOf(i, X);
   // the balances: the heat in through the faces and the water out, against what the stack holds

@@ -147,7 +147,7 @@ function filmStage() {
 /** The film stage's parts, one at a time -- the film peeled off, a piece cut from it in 3D, the pieces in the pressed stack;
  *  WF-2: each part is a tab of its own (4 Peel and wind, 5 Cutting, 6 Pre heat treatment): its title, and the rows of After the
  *  oven it sets (the stretch to the peel and the winder's core; the pieces' size; the pre heat treatment). */
-const FILM_PART = { film: [4, 'The film, peeled off', ['len', 'core']], piece: [5, 'A piece cut from the roll', ['pieceL', 'pieceW']], stack: [6, 'The pieces in the pressed stack', ['dryT', 'tOven', 'tRest']] };
+const FILM_PART = { film: [4, 'The film, peeled off', ['len', 'core']], piece: [5, 'A piece cut from the roll', ['pieceL', 'pieceW']], stack: [6, 'The pieces in the pressed stack', ['dryT', 'tOven', 'tRest', 'plateT', 'stackAirU', 'epsPl']] };
 const filmPartOf = k => Object.keys(FILM_PART).find(v => FILM_PART[v][2].includes(k)) || 'film';
 function filmSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
@@ -157,7 +157,8 @@ function filmSectionHTML() {
       <div class="seg" role="tablist" aria-label="Which film" id="filmSel">${seg.map(([k, t]) => `<button type="button" role="tab" data-film="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="filmPeelBtn" data-chain="peel" title="${{ film: 'After the oven: the stretch to the peel and the winder\'s core', piece: 'The pieces\' size', stack: 'The pre heat treatment: its temperature and times' }[FILM.view || 'film']}, in the inputs bar">${uiIco('oven')}${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[FILM.view || 'film']}</button><button type="button" class="btn btn-secondary btn-sm" id="filmCsv">Export CSV</button></header>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>After the oven</h4></div>
-      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr data-fview="${filmPartOf(k)}"><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td><td class="fv-why">${OVEN.peel[flag] ? 'from you' : 'assumed'}</td></tr>`).join('')}</tbody></table>
+      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr data-fview="${filmPartOf(k)}"><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td><td class="fv-why">${OVEN.peel[flag] ? 'from you' : 'assumed'}</td></tr>`).join('')}
+        <tr data-fview="stack"><th>What it stands on</th><td>${OVEN_SHELVES[OVEN.peel.shelf]}</td><td class="fv-why">${OVEN.peel.shelfSet ? 'from you' : 'assumed'}</td></tr></tbody></table>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="peel">${uiIco('oven')}Change them (inputs bar)</button></div></div>
     <div class="dry-ways" data-pstep="setup" data-fview="film">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">As the drying: where the water leaves decides when each layer of the film sets and how wet it is, so both are followed to the peel.</p></div>
@@ -176,6 +177,7 @@ function filmSectionHTML() {
     <div id="filmTable" data-pstep="results" data-fview="film"></div>
     <div id="filmMeas" data-pstep="results" data-fview="film"></div>
     <div data-pstep="results">${typeof sheetSectionHTML === 'function' ? sheetSectionHTML() : ''}</div>
+    <div data-pstep="multi" data-fview="stack">${typeof mpStackHTML === 'function' ? mpStackHTML() : ''}</div>
     <p class="fv-note" id="filmNote" data-pstep="solve"></p>
   </section>`;
 }
@@ -189,6 +191,7 @@ function filmRender() {
   if (!sec) return;
   if (!sec.dataset.wired) filmWire(sec);
   if (typeof sheetRender === 'function') sheetRender();   // (the piece in 3D, GO-4d: after the film, the film shown)
+  if (typeof mpStackRender === 'function' && FILM.view === 'stack') mpStackRender();   // (the stack's multiphysics, MP-1)
   sec.querySelectorAll('[data-film]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.film === DRY.sel)));
   const st = document.getElementById('filmState');
   if (!dryFilms().length) { st.innerHTML = `<p class="dry-msg">${pill('Waiting for the 1D: the film starts from the wet film', '')}</p>`; filmClear(); return; }
@@ -525,10 +528,19 @@ function filmPeelTreeHTML(prop, part = null) {
     ${has('stack') ? `<div class="ovz-pic">${filmPicDryStack()}</div>
     ${row(4, 'ovzDryT')}${row(5, 'ovzTOven')}
     ${typeof filmPicStackRest === 'function' ? `<div class="ovz-pic">${filmPicStackRest()}</div>` : ''}
-    ${row(6, 'ovzTRest')}` : ''}
+    ${row(6, 'ovzTRest')}
+    <div class="ovz-h ovz-sub"><span>The stack's heat <small>the multiphysics solver (MP-1)</small></span></div>
+    ${row(7, 'ovzPlateT')}${row(8, 'ovzStackAir')}${row(9, 'ovzEpsPl')}
+    <div class="prop"><span class="prop-l" id="ovzShelfL">What it stands on${pl.shelfSet ? '' : ' <small>assumed</small>'}</span><span class="prop-v"><span class="seg seg-sm" role="radiogroup" aria-labelledby="ovzShelfL" id="ovzShelf">${Object.entries(OVEN_SHELVES).map(([k, t]) => `<button type="button" role="radio" data-ovshelf="${k}" aria-checked="${k === pl.shelf}">${t}</button>`).join('')}</span></span></div>` : ''}
     ${has('piece') || has('stack') ? '<p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film\'s section).</p>' : ''}</div>`;
 }
 function wireFilmPeel(changed) {
+  document.querySelectorAll('#setupExtra [data-ovshelf]').forEach(b => b.addEventListener('click', () => {
+    if (OVEN.peel.shelf === b.dataset.ovshelf && OVEN.peel.shelfSet) return;
+    OVEN.peel = { ...OVEN.peel, shelf: b.dataset.ovshelf, shelfSet: true };
+    document.querySelectorAll('#setupExtra [data-ovshelf]').forEach(x => x.setAttribute('aria-checked', String(x.dataset.ovshelf === OVEN.peel.shelf)));
+    changed();
+  }));
   document.querySelectorAll('#setupExtra input[data-ovpeel]').forEach(el => {
     const k = el.dataset.ovpeel, [, l, u, lo, hi, , , flag] = OVEN_PEEL_FIELDS.find(f => f[0] === k);
     el.addEventListener('change', () => {

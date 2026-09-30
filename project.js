@@ -164,6 +164,8 @@ function applyOven(o, cfdSetup) {
   // (after the oven, to the peel and the winder, GO-4: a project from before has none -- the defaults, assumed)
   const pl = o && o.peel;
   if (pl) for (const [k, , , lo, hi, , , flag] of OVEN_PEEL_FIELDS) { if (Number.isFinite(pl[k]) && pl[k] >= lo && pl[k] <= hi) OVEN.peel[k] = pl[k]; OVEN.peel[flag] = typeof pl[flag] === 'boolean' ? pl[flag] : OVEN_PEEL_DEFAULT[flag]; }
+  // (the stack's shelf, MP-1: a project from before has none -- the default, assumed)
+  if (pl) { OVEN.peel.shelf = OVEN_SHELVES[pl.shelf] ? pl.shelf : OVEN_PEEL_DEFAULT.shelf; OVEN.peel.shelfSet = typeof pl.shelfSet === 'boolean' ? pl.shelfSet : OVEN_PEEL_DEFAULT.shelfSet; }
   // (the furnace, GO-5: a project from before has none -- the defaults, assumed)
   OVEN.furn = applyFurn(o && o.furn);
   if (o && Array.isArray(o.zones) && o.zones.length) { OVEN.zones = o.zones.slice(0, OVEN_MAX_ZONES).map(z => ({ ...OVEN_ZONE_DEFAULT, ...z })); return; }

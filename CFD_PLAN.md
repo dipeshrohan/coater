@@ -46,8 +46,7 @@ materials and their coupling, and a stage's 1D, 2D and 3D are the same physics i
 - Then a stage at a time, each its own PR, each validated (its 1D against the stage's own solver where one exists, its
   2D and 3D against the 1D where they must agree), each page with a solver card (1D | 2D | 3D; the physics solved and
   how they couple; fields on a section and in 3D; the checks):
-  - MP-1 Pre heat treatment: the stack in the oven -- heat (the plate, the pieces, the shelf: its heat-up), the water
-    (1D through a piece, 2D its plane = press.js, 3D the stack), the stress each piece holds (hygral and thermal).
+  - MP-1 Pre heat treatment (built, below): the stack in the oven -- its heat-up, its water, its stress, together.
   - MP-2 Furnace: the holder and the stack under the program -- heat (radiation in the furnace, conduction through the
     graphite: the pieces' lag and gradient against the program), the gas (1D across, 2D along the paper = furnace.js,
     3D the piece between its papers), the stress (the pull along the piece, 3D).
@@ -59,6 +58,37 @@ materials and their coupling, and a stage's 1D, 2D and 3D are the same physics i
     solid).
   - MP-7 Mixing: the flow and heat in the mixer (needs the mixer's geometry), the flakes' breakage.
   - MP-8 Graphene film: heat through the anisotropic product (its test or its use).
+
+### MP-1: the pressed stack in 1D, 2D and 3D (stack-mp.js, stack-mp-ui.js, cfd-mp-worker.js)
+
+Built on MP-0's core, with two additions to it:
+- mpHeatMoisture: heat and moisture solved together at every node (T and the vapour's pressure p; Künzel's formulation,
+  vapour only): ∂(C_T T − L S)/∂t = ∇·(k ∇T), ∂S/∂t = ∇·(K_v ∇p), S(p, T) the water held (an isotherm at the local
+  temperature). Why together: stepping the heat and the water apart blew up here -- the fitted in-plane permeability
+  dries a piece faster than the heat can arrive, so the drying is heat-limited and the latent heat is a stiff coupling.
+  Newton on the storage each step (its first factors reused: the chord method, refactored when it slows); the flows
+  integrated at the nodes (nodal quadrature: the 5-point stencil, never below the air's water however thin and long the
+  elements -- Gauss points undershot 5 % on the graded stack); the storage at the nodes; BDF2 in time (variable step,
+  second order: press.js's schedule keeps its last step a twentieth of the stage whatever the count, so implicit Euler's
+  error never shrank -- 2 % against an independent explicit solve; BDF2 0.06 %); the balance exact step by step.
+- mpTransport (the stepper), with a stored amount S (Celia's mass-conserving Picard), lumping and fields; mpElastic with
+  a stiffness scale and the Gauss point per call (creep); nonsymmetric band LU.
+The stack (Q77, Q78): 20 pieces under an aluminium plate the pieces' size, into the oven at the room's temperature; the
+oven's air by natural convection (the correlations) or a fan, radiation to the walls, a wire or a solid shelf; the pieces
+conduct along and through (the Drying card), their vapour along (the Film card's stack permeability) and through (the
+skin permeability); each followed piece's stress as press.js's (held flat, free in its plane, creep with its water).
+1D through the middle, 2D a section to the edge, 3D a quarter (about 50 s). Checks: stack-mp.validate.js (11) and
+mp-core.validate.js (now 33).
+
+Found (the physics not aligned before): press.js takes the pieces at the oven's temperature from the first second. With
+a plate that presses 1 kPa (37.8 mm of aluminium the pieces' size) in still air, the stack heats slowly and its drying
+cools it: the middle piece reaches about 65–69 °C by the end of 1.5 h (not 100), its middle is not dry through in the
+oven (press.js: 3.3 min), and it comes out with about 2 % water (press.js 0.7 %). How far this holds depends on what is
+assumed here -- the plate, the oven's air, the shelf, the stack going in cold -- so they are inputs (assumed, flagged),
+and the questions go to the user. The fitted in-plane permeability (3 × 10⁻⁷ kg/(m·s·Pa), to dry all over in an hour at
+100 °C) is about 1500 times still air's own (2 × 10⁻¹⁰): water that leaves that fast along a pressed stack is not
+diffusing through its gaps; either the pieces are not tight (air between them), or near 100 °C the water leaves as a
+flow of vapour -- a question for the user too.
 
 ### Workflow, phase WF-2: the tabs in the process's order (ui.js NAV/SECTIONS, line-ui.js)
 

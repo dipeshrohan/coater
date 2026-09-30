@@ -1849,7 +1849,8 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .proc-stage .dry-head > h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .proc-stage[data-step="setup"] [data-pstep]:not([data-pstep~="setup"]),
 .proc-stage[data-step="solve"] [data-pstep]:not([data-pstep~="solve"]),
-.proc-stage[data-step="results"] [data-pstep]:not([data-pstep~="results"]) { display: none !important; }
+.proc-stage[data-step="results"] [data-pstep]:not([data-pstep~="results"]),
+.proc-stage[data-step="multi"] [data-pstep]:not([data-pstep~="multi"]) { display: none !important; }
 #modWb[data-proc-stage="dry"] .verdict, #modWb[data-proc-stage="dry"] .mod-results,
 #modWb[data-proc-stage="film"] .verdict, #modWb[data-proc-stage="film"] .mod-results,
 #modWb[data-proc-stage="furn"] .verdict, #modWb[data-proc-stage="furn"] .mod-results { display: none; }
@@ -1917,7 +1918,8 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .proc-stage[data-step] .furn-sec[data-fpart="product"] [data-fpart]:not([data-fpart="product"]) { display: none !important; }
 .proc-stage[data-step="results"] .film-sec[data-fview="film"] [data-fview]:not([data-fview="film"]),
 .proc-stage[data-step="results"] .film-sec[data-fview="piece"] [data-fview]:not([data-fview="piece"]),
-.proc-stage[data-step="results"] .film-sec[data-fview="stack"] [data-fview]:not([data-fview="stack"]) { display: none !important; }
+.proc-stage[data-step="results"] .film-sec[data-fview="stack"] [data-fview]:not([data-fview="stack"]),
+.proc-stage[data-step="multi"] .film-sec [data-fview]:not([data-fview="stack"]) { display: none !important; }
 .film-sec[data-fview="stack"] .sheet-sec > [data-fview="stack"] { margin-top: 0; }
 .proc-go { margin: 10px 0 4px; flex-wrap: wrap; }
 
@@ -2176,3 +2178,44 @@ body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"
 /* (Coating's 1D / 2D / 3D / Results beside the step bar: on a laptop's width the steps' second lines are cut short --
    their whole text on hover -- so the toolbar stays one row and the plot keeps its height) */
 @media (max-width: 1700px) { #view > .flow-head .step-bar button small, #view .pg-bar .step-bar button small { max-width: 128px; } }
+
+/* ---- MP-1: the multiphysics solver on the Pre heat treatment page ---- */
+.mp-sec { display: grid; gap: 12px; }
+.mp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.mp-bar h4 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+.mp-bar h4 small { font-weight: 400; font-size: 12px; color: var(--muted); }
+.mp-state .pill { white-space: nowrap; }
+.mp-prog { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.mp-prog-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+.mp-prog-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.mp-model { display: grid; gap: 8px; }
+.mp-kv, .mp-phys, .mp-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mp-kv th, .mp-kv td, .mp-phys th, .mp-phys td, .mp-cmp th, .mp-cmp td { text-align: left; vertical-align: top; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line-soft); }
+.mp-kv th, .mp-phys tbody th, .mp-cmp tbody th { width: 150px; font-weight: 500; color: var(--muted); }
+.mp-phys thead th, .mp-cmp thead th { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: none; border-bottom: 1px solid var(--line); }
+.mp-cmp thead th small { display: block; font-weight: 400; }
+.mp-phys .mp-eq { font-family: var(--mono); font-size: 12px; white-space: nowrap; color: var(--ink); }
+.mp-as { color: var(--warn); font-size: 11px; }
+.mp-couple { margin: 0; font-size: 12.5px; color: var(--ink); }
+.mp-couple b { font-weight: 600; margin-right: 4px; }
+.mp-stats { margin: 0; }
+.mp-stats .stat strong { display: block; margin-top: 2px; }
+.mp-stats .stat small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+.mp-stats .stat-warn { border-color: var(--warn); }
+.mp-grid { margin: 0; }
+.mp-field figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-right: 34px; }
+.mp-field figcaption .seg { flex-wrap: wrap; }
+.mp-cbar { display: grid; gap: 2px; flex: 0 0 320px; width: 320px; max-width: 100%; margin: 6px 0 2px; }
+#mp3Lg { display: block; }
+.mp-cbar-scale { display: block; height: 10px; border-radius: 3px; border: 1px solid var(--line-soft); }
+.mp-cbar-t { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+.mp-h { margin: 4px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.mp-empty { padding: 18px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
+.proc-stage[data-step="multi"] #filmCsv { display: none; }
+.ovz-sub { margin-top: 6px; border-top: 1px solid var(--line-soft); padding-top: 8px; }
+@media (max-width: 700px) {
+  .mp-phys thead { display: none; }
+  .mp-phys tr, .mp-phys td, .mp-phys th { display: block; width: auto; }
+  .mp-phys .mp-eq { white-space: normal; }
+  .mp-kv th, .mp-cmp tbody th { width: 110px; }
+}

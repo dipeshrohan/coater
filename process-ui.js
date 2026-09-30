@@ -65,9 +65,9 @@ let PROC_ALL = false;
 const procStepKey = (k = PROC.stage) => k === 'film' ? `film:${FILM.view || 'film'}` : k === 'furn' ? `furn:${FURN.part || 'runs'}` : k;
 /** The pages that are computed here, with their steps (the cut piece and the stack are solved after the film, on their own;
  *  the graphene film is the furnace's result); the others show their one page. */
-const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results'],
+const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results', 'multi'],
   'furn:runs': ['setup', 'solve', 'results'], 'furn:product': ['results'] };
-const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results' };
+const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results', multi: 'Multiphysics' };
 /** A solve's state as a stage's: solved, solving, failed or not yet. */
 const procSolveSt = (cur, R) => cur ? 'solved' : R.busy ? 'busy' : R.error ? 'failed' : 'todo';
 /** The Line's rows for a stage, as one line (the cut piece, the stack, the graphene film: the same words as the Line's map). */

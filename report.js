@@ -181,7 +181,8 @@ async function repProcessAll() {
     + (fStats.length ? repRows(fStats, ['', 'Top only · top and bottom']) : '')
     + (ft ? repTable(ft, { max: 12 }) : '')
     + (fmRows.length ? '<h4>Measured film</h4>' + repRows(fmRows, ['Measured', 'What', '']) + (fImp.length ? `<ul class="checks">${fImp.join('')}</ul>` : '') : '')
-    + '<h4>After the oven</h4>' + repRows(OVEN_PEEL_FIELDS.map(([k, l, u, , , , d, flag]) => [repEsc(l), repEsc(repUnit(repNum(pl[k], d), u)), pl[flag] ? 'From you' : 'Assumed']), ['', 'Value', 'From'])
+    + '<h4>After the oven</h4>' + repRows([...OVEN_PEEL_FIELDS.map(([k, l, u, , , , d, flag]) => [repEsc(l), repEsc(repUnit(repNum(pl[k], d), u)), pl[flag] ? 'From you' : 'Assumed']),
+      ['The stack stands on', repEsc(OVEN_SHELVES[pl.shelf] || ''), pl.shelfSet ? 'From you' : 'Assumed']], ['', 'Value', 'From'])
     + (fNote && cleanText(fNote) ? `<p class="lede">${repEsc(cleanText(fNote))}</p>` : '');
   // a piece in 3D (GO-4d): its state line, the two shapes in words, the measured size and what it implies (the drawings go with the plots)
   const sSt = document.getElementById('sheetState'), sL = ['sh1Lg', 'sh2Lg'].map(id => document.getElementById(id)).filter(Boolean);
@@ -204,6 +205,18 @@ async function repProcessAll() {
     }
   }
   if (keepState) { SHEET.state = keepState; sheetRender(); }
+  // the stack's multiphysics (MP-1): each dimension solved for the inputs as they are, its answers side by side
+  if (typeof mpCurrent === 'function') {
+    const dims = [1, 2, 3].filter(d => mpCurrent(d)), mid = MP_N / 2;
+    if (dims.length) {
+      const S = d => MPS.res[d].summary, X = (d, k) => S(d)[k].find(q => q.i === mid);
+      const rows = [['Middle piece at the oven\'s end', d => `${S(d).ovenEnd.mid.toFixed(1)} °C`], ['Middle piece within 2 °C of the air', d => (S(d).midWithin2 != null ? mpMin(S(d).midWithin2 / 60) : 'not in the oven')],
+        ['Middle piece\'s middle dry after', d => (S(d).dryThrough != null ? mpMin(S(d).dryThrough / 60) : 'not in the oven')], ['Middle piece out of the oven (mean)', d => mpPct(X(d, 'Xoven').mean)],
+        ['Middle piece when taken out (mean)', d => mpPct(X(d, 'Xout').mean)], ['Largest pull, held flat', d => (d === 1 ? 'none' : `${S(d).pull.toFixed(0)} MPa`)], ['Solved in', d => `${(MPS.res[d].ms / 1000).toFixed(1)} s`]];
+      piece += `<h4>The stack's multiphysics (MP-1)</h4><p class="lede">${repEsc(`Heat, water and stress solved together (${OVEN.peel.plateT} mm aluminium plate, ${OVEN.peel.stackAirU > 0 ? `a fan's air at ${OVEN.peel.stackAirU} m/s` : 'still air'}, ${OVEN_SHELVES[OVEN.peel.shelf].toLowerCase()}).`)}</p>`
+        + repRows(rows.map(([l, f]) => [repEsc(l), ...dims.map(d => repEsc(f(d)))]), ['', ...dims.map(d => MP_DIMS[d])]);
+    }
+  }
   // the furnace and the graphene film (GO-5): its line and warnings, the five checks, the tiles, the measured and what
   // they mean, the runs and the stack as set, its note (its six charts go with the plots)
   let furn = '';
