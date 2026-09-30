@@ -241,11 +241,12 @@ function c3dGapAt(z) {
   if (C3D.region === 'strip') { const i = C3D.loc; return (cfdLocalGapMm(zmm) + (locInput(i, 'gap') - cfdLocalGapMm(CFD_LOCS[i].z))) / 1000; }
   return cfdLocalGapMm(zmm) / 1000;
 }
-/** The film beyond the edge (m) at distance d (m) from it: the 1D's film at the strip's location when solved, else its settled height. */
+/** The film beyond the edge (m) at distance d (m) from it, for the drawing before the 3D is solved: the 1D's film at the
+ *  strip's location when solved, else its settled height; until the 1D has solved, half the gap (drawn again when it has). */
 function c3dFilm(d) {
   const L = ONE_D.res && ONE_D.res.locs[C3D.region === 'strip' ? C3D.loc : 0], F = L && L.filmToOven;
   if (F && F.x) { const xs = F.x; let k = 1; while (k < xs.length - 1 && xs[k] < d) k++; const t = Math.min(1, Math.max(0, (d - xs[k - 1]) / (xs[k] - xs[k - 1]))); return F.h[k - 1] + t * (F.h[k] - F.h[k - 1]); }
-  return L ? L.film : contactLine(gapHeight(), P.th).h / 1000;
+  return L ? L.film : gapHeight() / 2000;
 }
 /** Build (or reuse) the 3D geometry: the blade's triangles, its underside over the gap, the mesh, and the checks. */
 function c3dBuild() {

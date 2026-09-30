@@ -609,6 +609,7 @@ function runLocation(i) {
     renderRunChips();
     renderCFD();
     stepAfterRuns2D();
+    ansRefresh();
   };
   // (a worker stopped while its scripts load reports their load failing afterwards: not an error of the run)
   worker.onerror = e => { if (cfdWorkers[i] !== worker) return; finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
@@ -2969,7 +2970,6 @@ function renderProfiles() {
       ['Film at oven', filmOk ? (hOven * 1000).toFixed(3) + ' mm' + (r.film.converged ? '' : ' (still relaxing)') : '—'],
       ['Gap at edge / film', filmOk ? (geo.H / hOven).toFixed(3) : '—'],
       ['Lubrication estimate, one viscosity', (r.qLub / geo.U * 1000).toFixed(3) + ' mm'],
-      ...(round ? [] : [['physics.js filmThickness()', (filmThickness(geo.H * 1000)).toFixed(3) + ' mm']]),
     ].map(a => `<div class="stat"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('')}</div>
     <div class="dock-grid">
       <figure class="dock-fig"><canvas id="cfdProfile" role="img" aria-label="Velocity profiles across the gap at three stations"></canvas>

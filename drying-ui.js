@@ -40,12 +40,12 @@ function dryWaySketch(way, w = 132, h = 70) {
 }
 
 // ---- the inputs ----
-/** The films the drying starts from: each location's (3D, else 2D, else 1D) and the web's mean (the 1D across it). */
+/** The films the drying starts from: each location's (3D, else 2D, else 1D) and the web's mean (answers.js: across the web). */
 function dryFilms() {
   const out = [];
   CFD_LOCS.forEach((l, i) => { const f = processFilmAt(i); if (f) out.push({ key: `L${i + 1}`, i, h0: f.h, src: f.src }); });
   const web = processWeb();
-  if (web) out.push({ key: 'web', i: null, h0: web.mean, src: '1D across the web' });
+  if (web) out.push({ key: 'web', i: null, h0: web.mean, src: web.tag });
   return out;
 }
 /** drying.js's strip inputs (SI), without the film and the way out: the cards, the fibre web, the line, the room and the oven. */

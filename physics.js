@@ -30,7 +30,7 @@ const CFG = [
   { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'assumed, not measured' },
   { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'assumed, water-like' },
 
-  { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.02, u: 'kPa', d: 2, v: 0.72, h: 'set to give 1.45 mm at default' },
+  { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.01, u: 'kPa', d: 2, v: 0.49, h: 'not measured: set so the 2D gives the design wet film, 1.45 mm, at L1' },
   { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed' },
   { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed' },
   { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed; where the slurry\'s side meets the bare web (3D, open edges)' },
@@ -176,10 +176,9 @@ function meniscusProfile(xq, filmY, phic) {
  * reference shear rate (0.1 1/s) is used for mu_eff — the same function
  * used everywhere else, so the yield stress correctly slows edge growth
  * here too.
+ * h: the wet film at the web's edge (m) -- the solved answer (answers.js), not an estimate.
  */
-function edgeBead() {
-  const H = gapHeight();
-  const h = contactLine(H, P.th).h / 1000; // mm -> m
+function edgeBead(h) {
   const R = h / 2;                         // bead treated as a half-round ridge
   const gd = 0.1;                          // slow, near-static relaxation
   const capillaryPressure = P.g / R;           // Pa, Laplace pressure of the ridge
@@ -201,9 +200,9 @@ function edgeBead() {
   return { h, R, mu, sig: growthRate, lam: wavelength, pc: capillaryPressure, arrest: arrested };
 }
 
-/** Edge scallop amplitude (mm) at x mm downstream of the blade (the Web edge tab's curve). */
-function edgeAmplitudeAt(xmm) {
-  const e = edgeBead(), U = P.U / 60;
+/** Edge scallop amplitude (mm) at x mm downstream of the blade (the Web edge tab's curve), on the wet film h (m) at the edge. */
+function edgeAmplitudeAt(xmm, h) {
+  const e = edgeBead(h), U = P.U / 60;
   if (e.arrest) return P.a0e / 1000;
   return Math.min(P.a0e / 1000 * Math.exp(e.growth ? e.growth(xmm / 1000 / U) : e.sig * xmm / 1000 / U), e.lam / 4);
 }
@@ -217,35 +216,6 @@ function rebuildOnWeb() {
   const S = typeof matStruct === 'function' ? matStruct() : null;
   if (!S) return null;
   return { S, law: rheoCompile(P.mu, P.ty, P.n), lam0: rheoLamEq((P.U / 60) / (gapHeight() / 1000), S) };
-}
-
-/**
- * Levelling of the film-surface ripple (the Film surface tab): the starting amplitude a0 (m, from
- * the gap wobble through dh/dH plus vibration), the levelling time constant tau (s), the residual
- * amplitude a yield stress leaves (m), the residence time to the oven (s), and the amplitude at
- * time t after the blade: at(t), m.
- */
-function rippleLevelling() {
-  const H = gapHeight(), h = contactLine(H, P.th).h / 1000;
-  const dhdH = (filmThickness(H + 0.01) - filmThickness(H - 0.01)) / 0.02; // film sensitivity to gap wobble
-  const a0 = (Math.abs(dhdH) * P.dH + P.vib) / 1e6;                          // starting ripple amplitude, m
-  const k = 2 * Math.PI / (P.lam / 1000);                                    // ripple wavenumber, 1/m
-  const mu = muEff(0.5);                                                     // slow, surface-tension-driven levelling
-  const tau = 3 * mu / (h * h * h * (P.g * k ** 4 + slurryRho() * GRAVITY * k * k)); // levelling time constant, s
-  const residual = P.ty / (h * (P.g * k ** 3 + slurryRho() * GRAVITY * k));
-  const asymptote = Math.min(a0, residual);
-  const tRes = P.oven / (P.U / 60);                                          // residence time to the oven, s
-  const st = rebuildOnWeb();
-  if (st) {
-    // the slurry rebuilding at rest on the web (GO-1): mu and the yield stress follow lambda(t) from just after the blade
-    // (rheo.js's rheoLevel); tau and residual are their values just after the blade
-    const { S, law, lam0 } = st, rho = slurryRho();
-    const tauOf = l => 3 * rheoMuStruct(0.5, l, law, S) / (h * h * h * (P.g * k ** 4 + rho * GRAVITY * k * k));
-    const resOf = l => rheoYieldStruct(l, law, S) / (h * (P.g * k ** 3 + rho * GRAVITY * k));
-    const lv = rheoLevel(a0, lam0, S, tauOf, resOf);
-    return { h, dhdH, a0, tau: tauOf(lam0), residual: resOf(lam0), asymptote: lv.final(), tRes, at: lv.at, lam0, tFrozen: lv.frozen(), tauRested: tauOf(1), residualRested: resOf(1) };
-  }
-  return { h, dhdH, a0, tau, residual, asymptote, tRes, at: t => asymptote + (a0 - asymptote) * Math.exp(-t / tau) };
 }
 
 /** Local gap (mm) and contact angle (deg) at position z (mm) across the web (0 to 300 mm): waviness, the blade's tilt
@@ -263,12 +233,13 @@ const skewRad = () => (P.skew || 0) * Math.PI / 180;
  * Dimensionless checks on whether the thin-film/lubrication assumptions
  * still hold for the current inputs. Used to gate the "model validity"
  * message shown throughout the UI — see updateScope() in ui.js.
+ * The film checked is the solved answer at L1 (answers.js) once there is one.
  */
 function modelScope() {
   const H = gapHeight() / 1000;
   const U = P.U / 60;
   const mu = muEff(U / H);
-  const h = contactLine(gapHeight(), P.th).h / 1000;
+  const a = typeof ansAt === 'function' ? ansAt(0) : null, h = a ? a.film : 1;
   const Re = slurryRho() * U * H / mu;          // inertia vs viscous forces
   const Ca = mu * U / P.g;              // viscous vs capillary forces
   const aspect = H / (P.L / 1000);      // gap / land length

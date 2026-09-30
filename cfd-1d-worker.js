@@ -8,6 +8,8 @@
  *              carries it along the blade (struct1D) and the ripple levels as the slurry rebuilds at rest on the web.
  * Message out: { id, ok: true, locs: [result], across: [result] | null, ms } or { id, ok: false, error }.
  * Or the crown (crownRun below): { id, crown: {...} } in, progress then { id, ok: true, crown } out.
+ * Or points (measured data, its fit: onePoint below): { id, points: [geo], res ({ nx, ny }, or null for the page's),
+ * ripple (also the film's sensitivity dh/dH and the structure leaving the edge) } in, { id, ok: true, points: [out] } out.
  */
 importScripts('rheo.js', 'cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-across.js');
 
@@ -39,6 +41,21 @@ function oneLocation(geo, ripple, full) {
   return out;
 }
 
+/** A point (measured data and its fit): the wet film, the contact line up the exit face, and with ripple the film's
+ *  sensitivity to the gap (dh/dH, from the gap +- 10 um) and the structure leaving the edge (lambda). */
+function onePoint(geo, res, ripple) {
+  const r = gapFlow1D(geo, res || {});
+  const men = r.blade ? meniscus1DPath(r.film, r.blade, geo.contactDeg, geo.gamma, geo.rho, geo.g) : meniscus1D(r.film, geo.H, geo.contactDeg, geo.exitAngle, geo.gamma, geo.rho, geo.g);
+  const out = { film: r.film, s: men.pinned ? 0 : men.s, converged: r.converged };
+  if (ripple) {
+    const up = gapFlow1D({ ...geo, H: geo.H + 1e-5 }, res || {}), dn = gapFlow1D({ ...geo, H: geo.H - 1e-5 }, res || {});
+    out.dhdH = (up.film - dn.film) / 2e-5;
+    const sb = geo.struct ? struct1D(r, geo.struct) : null;
+    out.lam0 = sb ? sb.exit : null;
+  }
+  return out;
+}
+
 /**
  * The crown (Phase 4): { id, crown: { geos (each position's 1D inputs, the gap without a crown), counted, p } }. Found on a
  * lighter 1D (60 x 80: the film within 0.02 % of the page's), then each variant solved at the page's resolution.
@@ -57,6 +74,11 @@ function crownRun(id, c) {
 
 onmessage = e => {
   if (e.data.crown) { try { crownRun(e.data.id, e.data.crown); } catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); } return; }
+  if (e.data.points) {
+    try { const t0 = performance.now(); postMessage({ id: e.data.id, ok: true, points: e.data.points.map((g, k) => onePoint(g, e.data.res, e.data.ripple && e.data.ripple[k])), ms: performance.now() - t0 }); }
+    catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); }
+    return;
+  }
   const { id, locs, across, ripple } = e.data;
   try {
     const t0 = performance.now();

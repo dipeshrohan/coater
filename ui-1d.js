@@ -9,12 +9,11 @@
 const ONE_D = { loc: 0, res: null, key: null, across: null, acrossKey: null, busy: false, again: false, worker: null, id: 0, error: null, ms: 0 };
 const ACROSS_N = 61, ACROSS_W = 300;   // positions across the web (mm) for Across the web
 
+/** The 1D's inputs from a 2D geometry (cfd-ui.js's cfdGeometry), SI. */
+const oneDFromGeo = g => ({ z: g.z, shape: g.shape, U: g.U, H: g.H, L: g.L, R: g.R, Xup: g.Xup, exitAngle: g.exitAngle, contactDeg: g.contactDeg, webSlip: g.webSlip,
+  Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}), ...(g.rheoX ? { rheoX: g.rheoX } : {}), ...(g.struct ? { struct: g.struct } : {}) });
 /** A location's 1D inputs: the 2D's (its own values where it has them), SI. */
-function oneDGeo(i) {
-  const g = cfdGeometry(i);
-  return { z: g.z, shape: g.shape, U: g.U, H: g.H, L: g.L, R: g.R, Xup: g.Xup, exitAngle: g.exitAngle, contactDeg: g.contactDeg, webSlip: g.webSlip,
-    Pup: g.Pup, muRef: g.muRef, ty: g.ty, n: g.n, gamma: g.gamma, rho: g.rho, g: g.g, ovenDistance: g.ovenDistance, ...(g.blade ? { blade: g.blade } : {}), ...(g.rheoX ? { rheoX: g.rheoX } : {}), ...(g.struct ? { struct: g.struct } : {}) };
-}
+const oneDGeo = i => oneDFromGeo(cfdGeometry(i));
 /** At z (mm) across the web: the shared inputs with that position's gap and contact angle (no location's own values). */
 function oneDGeoAt(z) {
   const uses = RHEO_MODELS[CFDG.model].uses;
@@ -46,9 +45,9 @@ function oneDRequest(needAcross) {
       ONE_D.res = { locs: e.data.locs }; ONE_D.key = key; ONE_D.error = null; ONE_D.ms = e.data.ms;
       if (e.data.across) { ONE_D.across = e.data.across; ONE_D.acrossKey = aKey; }
     } else ONE_D.error = e.data.error;
-    if (ONE_D.again || [8, 9, 10, 11, 12].includes(tab)) render();
+    if (ONE_D.again || [1, 2, 3, 6, 7, 8, 9, 10, 11, 12].includes(tab)) render();
   };
-  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([8, 9, 10, 11, 12].includes(tab)) render(); };
+  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([1, 2, 3, 6, 7, 8, 9, 10, 11, 12].includes(tab)) render(); };
   ONE_D.worker.postMessage({ id, locs, across: needAcross && aKey !== ONE_D.acrossKey ? across : null, ripple });
 }
 /** The 1D across the web, if it is for the inputs as they are (else null). */
