@@ -309,5 +309,21 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
     `the surface round the edge within ${(dd * 1e9).toFixed(3)} nm, the web's contact line ${(E0.web * 1e3).toFixed(4)} / ${(E1.web * 1e3).toFixed(4)} mm (at 5 Pa ${(a5.open[0].web * 1e3).toFixed(4)})`);
 }
 
+// 10. the band in blocks of rows (a matrix larger than one array a browser gives, 2^31 bytes): the same solve, bit for bit.
+// Forced here into blocks of 37 rows: the coating strip (free surface, contact line, slip, gap varying) and an open side.
+{
+  const { coaterStations, stationState, coaterStrip3D } = require('./cfd-fem3d.js');
+  const all = r => ['u', 'v', 'w', 'p', 'x', 'y', 'z'].flatMap(k => Array.from(r[k] || []));
+  const both = f => { global.bandAlloc = (n, W) => gap.bandAlloc(n, W); const a = f(); let nb = 0;
+    global.bandAlloc = (n, W) => { const B = gap.bandAlloc(n, W, 8 * W * 37); nb = Math.max(nb, B.blocks ? B.blocks.length : 1); return B; }; const b = f(); delete global.bandAlloc;
+    const x = all(a), y = all(b); let d = 0; for (let i = 0; i < x.length; i++) if (!Object.is(x[i], y[i])) d++; return { n: x.length, d, nb, ok: a.converged && b.converged }; };
+  const H = 1.7e-3, base = { hFn: () => H, xe: 5e-3, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 0, rho: 1020, g: 9.81, gamma: 0.07, mu: () => 1, Ld: 8e-3, nEb: 3, nEf: 2, nEs: 4, nEy: 2, fInfGuess: 0.5 * H };
+  const strip = both(() => solveCoater3D({ ...base, width: 0.02, nEz: 2, dH: z => 30e-6 * Math.sin(2 * Math.PI * z / 0.04), webSlip: 1 / 20e-6 }).r3);
+  const W = 0.006, nEz = 3, NL = 2 * nEz + 1, zs = Array.from({ length: NL }, (_, l) => -W / 2 + W * l / (NL - 1)), eb = { ...base, width: W, nEz };
+  const open = both(() => { const S = coaterStations(eb, zs); return coaterStrip3D(eb, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, { maxIter: 60, open: { hi: { m: 2, zEnd: W / 2, thWeb: 35, thBlade: 35 } } }); });
+  check('the band in blocks of rows (for a matrix over 2^31 bytes): the same solve, every number bit for bit', strip.ok && open.ok && strip.d === 0 && open.d === 0 && strip.nb > 1 && open.nb > 1,
+    `coating strip ${strip.n} numbers in ${strip.nb} blocks, ${strip.d} differ; open side ${open.n} in ${open.nb} blocks, ${open.d} differ`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

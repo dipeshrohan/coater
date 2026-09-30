@@ -691,13 +691,17 @@ function solveFEM3D(o) {
     kl = Math.max(kl, hi - lo);
   }
   const ku = kl, W = 2 * kl + ku + 1;
-  const LU = new Float64Array(ND * W);
-  const addK = (r, c, v) => { if (!isDir[r]) LU[r * W + c - r + kl] += v; };
+  // (in blocks of rows when larger than one array a browser gives -- cfd-gap-solver.js's bandAlloc; one array otherwise, as before)
+  const LU = typeof bandAlloc === 'function' ? bandAlloc(ND, W, o.bandBlockBytes) : new Float64Array(ND * W);
+  // (row r of the band: its array, and where its column c is in it, at rOff(r) + c)
+  const LUR = LU.blocks ? LU.R : ND, LUB = LU.blocks || [LU];
+  const rArr = r => LUB[(r / LUR) | 0], rOff = r => (r % LUR) * W - r + kl;
+  const addK = (r, c, v) => { if (!isDir[r]) rArr(r)[rOff(r) + c] += v; };
 
   // ---- Jacobian: analytic flow part, finite-difference geometry columns; contact-line unknowns bordered ----
   let colS = null, rowS = null, dss = null;
   function jacobian(newton) {
-    LU.fill(0);
+    for (const b of LUB) b.fill(0);
     placeNodes();
     const rs0 = hasS ? Float64Array.from({ length: NL }, (_, l) => contactResidual(l)) : null;
     for (let ex = 0; ex < nEx; ex++) for (let ez = 0; ez < nEz; ez++) for (let ey = 0; ey < nEy; ey++) {
@@ -705,8 +709,8 @@ function solveFEM3D(o) {
       for (let a = 0; a < NL89; a++) {
         const r = ldT[a];
         if (isDir[r]) continue;
-        const base = r * W - r + kl, row = a * NL89;
-        for (let b = 0; b < NL89; b++) { const v = KL[row + b]; if (v !== 0) LU[base + ldT[b]] += v; }
+        const Ar = rArr(r), base = rOff(r), row = a * NL89;
+        for (let b = 0; b < NL89; b++) { const v = KL[row + b]; if (v !== 0) Ar[base + ldT[b]] += v; }
       }
     }
     // boundary terms (kinematic rows' flow part analytic)
@@ -736,7 +740,7 @@ function solveFEM3D(o) {
         }
       }
     }
-    for (let d = 0; d < ND; d++) if (isDir[d]) LU[d * W + kl] = 1;
+    for (let d = 0; d < ND; d++) if (isDir[d]) rArr(d)[rOff(d) + d] = 1;
     // geometry columns: a spine's height moves that spine's nodes only; s at station l moves the face spines there
     const Rb = new Float64Array(ND), Rp = new Float64Array(ND);
     const around = (i, n) => [Math.max(0, Math.ceil(i / 2) - 1), Math.min(n - 1, Math.floor(i / 2))];
@@ -754,7 +758,7 @@ function solveFEM3D(o) {
       for (let r = Math.max(0, d - kl), rEnd = Math.min(ND - 1, d + kl); r <= rEnd; r++) {
         if (isDir[r]) continue;
         const v = (Rp[r] - Rb[r]) / dh;
-        if (v !== 0) LU[r * W + d - r + kl] += v;
+        if (v !== 0) rArr(r)[rOff(r) + d] += v;
       }
       if (hasS && c <= CL.spine + 2) rowS[l][d] = (rsl - rs0[l]) / dh;
     }
@@ -774,7 +778,7 @@ function solveFEM3D(o) {
         for (let r = Math.max(0, d - kl), rEnd = Math.min(ND - 1, d + kl); r <= rEnd; r++) {
           if (isDir[r]) continue;
           const v = (Rp[r] - Rb[r]) / dz;
-          if (v !== 0) LU[r * W + d - r + kl] += v;
+          if (v !== 0) rArr(r)[rOff(r) + d] += v;
         }
         if (touchS) for (let l = 0; l < NL; l++) if (blockOf[l] === E) rowS[l][d] = (rsl[l] - rs0[l]) / dz;
       }

@@ -549,8 +549,8 @@ async function acc3Run() {
           nzStrip: lim('nzStrip', O.nzStrip * f), nzFull: lim('nzFull', O.nzFull * f), zZones: O.zZones ? z : null, frac3: null, zFrac: null, zFracFor: null, zoneScale: (O.zoneScale || 1) * f };
       }
       await acc3Set(next);
-      // (a strip's next mesh beyond what a browser page can hold: stop here, the last mesh kept on offer)
-      if (C3D.region !== 'full' && c3dEstimate().bytes > C3D_MAX_BYTES) { ACC3.status = 'limit'; break; }
+      // (a strip's next mesh beyond half this computer's memory (c3dMemWarn): stop here, the last mesh kept on offer)
+      if (C3D.region !== 'full' && c3dEstimate().bytes > c3dMemWarn()) { ACC3.status = 'limit'; break; }
     }
   } catch (e) { ACC3.status = 'error'; ACC3.error = e.message; }
   if (ACC3.status === 'running') ACC3.status = 'stopped';
@@ -602,7 +602,7 @@ function acc3HTML() {
   const r = ACC3.run, last = ACC3.cycles[ACC3.cycles.length - 1];
   const verdict = ACC3.status === 'met' ? `<span class="ok-text">Met</span> on mesh ${ACC3.cycles.length} (target ${(r.target * 100).toFixed(2)} %).`
     : ACC3.status === 'notmet' ? `<span class="warn-text">Not met</span> after ${ACC3.cycles.length} meshes.`
-      : ACC3.status === 'limit' ? `<span class="warn-text">Not met</span> after ${ACC3.cycles.length} meshes: the next would need more memory than a browser can give one page.` : ACC3.status === 'stopped' ? 'Stopped.' : ACC3.status === 'error' ? `<span class="warn-text">Failed:</span> ${escAttr(ACC3.error || '')}` : '';
+      : ACC3.status === 'limit' ? `<span class="warn-text">Not met</span> after ${ACC3.cycles.length} meshes: the next would need more than half this computer's memory (${c3dMem(c3dMemWarn() * 2)}${c3dDeviceGB() ? '' : ', taken as 8 GB: the browser does not tell'}).` : ACC3.status === 'stopped' ? 'Stopped.' : ACC3.status === 'error' ? `<span class="warn-text">Failed:</span> ${escAttr(ACC3.error || '')}` : '';
   const rich = ACC3.rich && ACC3.rich.film ? `<p class="side-note">Richardson: film → ${(ACC3.rich.film.extrapolated * 1000).toFixed(4)} mm (order ${ACC3.rich.film.p.toFixed(2)}, index ${(ACC3.rich.film.gci * 100).toFixed(3)} %).</p>` : '';
   const adapted = C3D.frac3 || c3dZAdapted() || C3D.zoneScale !== 1;
   return `<h4>${uiBadge('tolerance')}Mesh to an accuracy</h4>
@@ -676,7 +676,7 @@ async function m3StudyRun() {
       const key = c3dPhysicsKey();
       if (M3S.key == null) M3S.key = key;
       else if (key !== M3S.key) { M3S.status = 'error'; M3S.error = `the solve for ${C3D_MESH_PRESETS[p].l} would not have the same physics as the first: stopped`; break; }
-      if (c3dEstimate().bytes > C3D_MAX_BYTES) { M3S.status = 'error'; M3S.error = `${C3D_MESH_PRESETS[p].l} needs more memory than a browser gives one page (about ${c3dMem(c3dEstimate().bytes)}): a narrower strip`; break; }
+      if (c3dEstimate().bytes > c3dMemWarn()) { M3S.status = 'error'; M3S.error = `${C3D_MESH_PRESETS[p].l} needs about ${c3dMem(c3dEstimate().bytes)}, more than half this computer's memory: a narrower strip, or solve it on its own (Simulation › 3D CFD)`; break; }
       M3S.cur = p; M3S.tNow = performance.now(); render();
       const res = await m3sSolve();
       if (!res) break;

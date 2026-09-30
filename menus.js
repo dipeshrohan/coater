@@ -601,7 +601,8 @@ function mbAbout() {
     <table class="kv"><tr><td>Version</td><td>${mbEsc(APP_VERSION)}</td></tr><tr><td>Project file format</td><td>${PROJ_FORMAT} (.bcdl)</td></tr>
       <tr><td>Browser</td><td>${mbEsc(br || 'unknown')}</td></tr><tr><td>Processor threads</td><td>${navigator.hardwareConcurrency || 'unknown'}</td></tr>
       <tr><td>Saving to files</td><td>${projUseFS() ? 'yes (recent projects kept)' : 'download and upload'}</td></tr>
-      <tr><td>A 3D solve's matrix</td><td>up to ${c3dMem(C3D_MAX_BYTES)} (one block of a browser's memory)</td></tr></table>
+      <tr><td>This computer's memory</td><td>${c3dDeviceGB() ? `${c3dDeviceGB() >= 8 ? 'at least ' : ''}${c3dDeviceGB()} GB (as the browser reports it)` : 'not reported by this browser'}</td></tr>
+      <tr><td>A 3D solve's matrix</td><td>in blocks of ${c3dMem(C3D_BLOCK_BYTES)}: no 2 GB limit; the free memory is the limit</td></tr></table>
     <p class="img-note">Every solver runs here, in this browser, off the page's thread; nothing is sent anywhere.</p>
     <div class="img-actions"><button type="button" class="btn btn-primary" id="mbAboutClose">Close</button></div>`;
   dlg.querySelector('#mbAboutClose').onclick = () => dlg.close();

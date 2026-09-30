@@ -54,13 +54,13 @@ const C3D_MESH_LIMITS = { nxGap: [6, 80], nxFace: [1, 12], nxFilm: [6, 60], ny: 
  * The 3D mesh's presets: the element counts each sets, stored here and nowhere else (the Mesh step's Coarse / Medium /
  * Fine; any other counts are Custom, shown as such). Chosen from the solve's cost as c3dEstimate gives it for a 20 mm
  * strip at the app's defaults: Coarse about 110 MB and 20 s, Medium (the defaults) about 690 MB and 2 min, Fine about
- * 1.4 GB and 4.5 min -- Fine near the 2 GB a browser gives one page (C3D_MAX_BYTES). Every preset has at least 3
+ * 1.4 GB and 4.5 min (the matrix in blocks: no 2 GB limit, c3dMemWarn). Every preset has at least 3
  * elements across the strip (7 stations) and across the gap (7 velocity nodes). Medium has 5 across the gap: 4 read the
  * web's wall shear stress about 5 % low at the defaults (the rows thinner toward the blade), 5 within about 1 % (measured,
- * the strip's solve 92 s to 101 s; CFD_PLAN.md) -- the same as Fine, which cannot take 6 within a page. An edge strip's counts across (edgeNz,
- * edgeM, edgeSize) are its own, not a preset's: its open side already takes most of what a page can hold. So are its rows
- * across the gap wherever the web's edges are open (edgeNy, 4: at 5 an edge strip of 8 across needs 2.45 GB; the full
- * width's strips then take the same, its edge strips being its end strips).
+ * the strip's solve 92 s to 101 s; CFD_PLAN.md) -- the same as Fine (6 across, 1.9 GB, chosen when a page held 2 GB). An edge
+ * strip's counts across (edgeNz, edgeM, edgeSize) are its own, not a preset's: its open side makes it the largest solve. So are
+ * its rows across the gap wherever the web's edges are open (edgeNy, 4: at 5 an edge strip of 8 across needs 2.45 GB -- chosen
+ * when a page held 2 GB; the full width's strips then take the same, its edge strips being its end strips).
  */
 const C3D_MESH_PRESETS = {
   coarse: { l: 'Coarse', nxGap: 16, nxFace: 3, nxFilm: 10, ny: 3, nzStrip: 3, nzFull: 20 },
@@ -80,7 +80,7 @@ function c3dSetPreset(p) {
 }
 /**
  * The solve's size class, from its estimated memory (c3dEstimate): the limits between the classes, bytes. Very large is
- * beyond what a browser gives one page (a strip or an edge strip that large is not solved).
+ * beyond 2 GB (kept in blocks: the computer's free memory the limit, c3dMemWarn).
  */
 const C3D_SIZE_CLASSES = [[250e6, 'Small'], [1e9, 'Medium'], [2e9, 'Large'], [Infinity, 'Very large']];
 const c3dSizeClass = bytes => C3D_SIZE_CLASSES.find(([b]) => bytes < b)[1];
@@ -432,7 +432,16 @@ function c3dEstimate(nEz = c3dNz()) {
   const bytes = ND * 3 * kl * 8, flops = ND * kl * 2 * kl, secs3 = 1.3 * 4 * flops / 2.8e9;
   return { ND, bytes, secs3, secs: secs3 + NL * 1.7, NL };
 }
-const C3D_MAX_BYTES = 2e9;
+/**
+ * Memory. A solve's matrix is kept in blocks (cfd-gap-solver.js's bandAlloc), so the 2 GB one array can have in a browser is no
+ * limit; the computer's free memory is. The browser tells this computer's memory in Chrome and Edge only (navigator.deviceMemory,
+ * GB, at most 8). A solve above half of it (half of 8 GB when not told) is warned about, not refused; the meshes the app refines by
+ * itself (the mesh study, mesh to an accuracy) stop there. A solve that finds too little free stops, and says so.
+ */
+const C3D_BLOCK_BYTES = 1 << 30;   // (the workers' cfd-gap-solver.js BAND_BLOCK_BYTES: the page does not load that file)
+const c3dDeviceGB = () => (typeof navigator !== 'undefined' && navigator.deviceMemory) || null;
+const c3dMemWarn = () => (c3dDeviceGB() || 8) / 2 * 1e9;
+const c3dMemNote = bytes => `About ${c3dMem(bytes)} for the solve: more than half this computer's memory${c3dDeviceGB() ? ` (the browser reports ${c3dDeviceGB() >= 8 ? 'at least ' : ''}${c3dDeviceGB()} GB)` : ''}. It runs if that much is free; if not, it stops and says so.`;
 /** The full width: overlapping strips (elements across each, overlap), their count, the workers solving them at once. */
 const C3D_WIDE_CFG = { sub: 2, overlap: 1, maxSweeps: 12, tol: 1e-5 };
 function c3dWideLayout(nEz = c3dNz(), nE = C3D.region === 'full' && C3D.webEdges === 'open' ? C3D.edgeNz : 0) {
@@ -459,8 +468,8 @@ function c3dEstimateText() {
   }
   const e = c3dEstimate();
   // (an edge: a 3D solve for each step of the bead pressure; the first, from the stations' 2D, the longest)
-  if (C3D.region === 'edge') return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${c3dMem(e.bytes)} for the solve. The 2D at its ${e.NL} stations, then a 3D solve for each step of the bead pressure: the first, with none, about ${c3dTime(e.NL * 1.7 + 3 * e.secs3)}, each later one about ${c3dTime(e.secs3)} (a few steps up to the set pressure; more, halved, where the end stops holding it).${e.bytes > C3D_MAX_BYTES ? ' <b>More memory than a browser can give one page: fewer elements across the strip or the gap.</b>' : ''}`;
-  return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${c3dMem(e.bytes)} for the solve, about ${c3dTime(e.secs)}.${e.bytes > C3D_MAX_BYTES ? ' <b>More memory than a browser can give one page: fewer elements across the strip or the gap.</b>' : ''}`;
+  if (C3D.region === 'edge') return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${c3dMem(e.bytes)} for the solve. The 2D at its ${e.NL} stations, then a 3D solve for each step of the bead pressure: the first, with none, about ${c3dTime(e.NL * 1.7 + 3 * e.secs3)}, each later one about ${c3dTime(e.secs3)} (a few steps up to the set pressure; more, halved, where the end stops holding it).${e.bytes > c3dMemWarn() ? ` <b>${c3dMemNote(e.bytes)}</b>` : ''}`;
+  return `This mesh: about ${Math.round(e.ND / 1000)} thousand unknowns, ${c3dMem(e.bytes)} for the solve, about ${c3dTime(e.secs)}.${e.bytes > c3dMemWarn() ? ` <b>${c3dMemNote(e.bytes)}</b>` : ''}`;
 }
 const C3D_RUN = { worker: null, id: 0, status: 'idle', progress: null, error: null, t0: 0 };
 let C3D_RES = null;   // the last 3D solve: { key, loc, width, source, fileName, ms, when, result }
@@ -618,7 +627,6 @@ function c3dRun(stay = false) {
   }
   if (P.skew && c3dOpenEdges()) return stop(`a skewed blade (${P.skew}°) with an open web edge is not modelled: set the skew to 0 (Inputs › Blade), or ${C3D.region === 'edge' ? 'solve a strip or the full width' : 'the web edges to Symmetry'}`);
   const est = c3dEstimate();
-  if (C3D.region !== 'full' && est.bytes > C3D_MAX_BYTES) return stop('this mesh needs more memory than a browser can give one page (3D mesh, in the inputs)');
   const m = c3dSolveMessage(true), key = c3dSolveKey();
   C3D_RUN.meshRec = c3dMeshRecord();   // (the mesh this solve starts on, kept with its result)
   if (C3D.region === 'full') { c3dRunWide(m, key); return; }

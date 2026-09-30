@@ -1082,7 +1082,7 @@ const c3dWhere = () => C3D.region === 'strip' ? 'strip' : C3D.region === 'edge' 
  */
 function c3dMeshProblems(ms = c3dMeshStats()) {
   const out = [], e = c3dEstimate();
-  if (C3D.region !== 'full' && e.bytes > C3D_MAX_BYTES) out.push({ level: 'error', code: 'memory', text: `This mesh needs about ${c3dMem(e.bytes)} for the solve, more than a browser gives one page (${c3dMem(C3D_MAX_BYTES)}): the solve will not start. Fewer elements across the ${c3dWhere()} or the gap, or a coarser preset.` });
+  if (C3D.region !== 'full' && e.bytes > c3dMemWarn()) out.push({ level: 'warning', code: 'memory', text: `${c3dMemNote(e.bytes)} Fewer elements across the ${c3dWhere()} or the gap, or a coarser preset, need less.` });
   if (C3D.region === 'full' && C3D.webEdges === 'open') {
     const rg = c3dRegion();
     if (!((rg.z1 - rg.z0) * 1000 > 2 * C3D.edgeW)) out.push({ level: 'error', code: 'edgeFit', text: `The two edge strips (${C3D.edgeW} mm each) do not fit across the ${((rg.z1 - rg.z0) * 1000).toFixed(0)} mm between the blade's ends: the solve will not start.` });
@@ -1191,7 +1191,7 @@ function c3dMeshSideHTML() {
     <table class="kv"><tr><td>Size class (by memory)</td><td>${c3dSizeClass(mem)}</td></tr>
     <tr><td>Unknowns${L ? ', a strip' : ''}</td><td>${R && R.size ? R.size.unknowns.toLocaleString() : `≈ ${Math.round(eS.ND / 1000)} thousand`}</td></tr>
     <tr><td>Memory, time (estimated)</td><td>${L ? `${c3dMem(mem)} (${L.workers} strips at once); time: Solve` : `${c3dMem(mem)}, ${c3dTime(e.secs)}${C3D.region === 'edge' ? ' a step' : ''}`}</td></tr></table>
-    <p class="side-note">Size: by the memory the solve takes: ${C3D_SIZE_CLASSES.map(([b, l], k) => `${l} ${k === 0 ? `below ${c3dMem(b)}` : Number.isFinite(b) ? `to ${c3dMem(b)}` : `beyond (more than a browser gives one page${C3D.region === 'full' ? '' : ': not solved'})`}`).join(', ')}.</p>`;
+    <p class="side-note">Size: by the memory the solve takes: ${C3D_SIZE_CLASSES.map(([b, l], k) => `${l} ${k === 0 ? `below ${c3dMem(b)}` : Number.isFinite(b) ? `to ${c3dMem(b)}` : `beyond (the matrix kept in blocks: this computer's free memory the limit)`}`).join(', ')}.</p>`;
   // the metering gap: the elements across it, the gap, the spacing
   const nyKey = c3dOpenEdges() ? 'edgeNy' : 'ny', Nset = C3D[nyKey], N = m.ny, H = G && Number.isFinite(G.gMin) ? G.gMin : null;
   const gap = `<table class="kv"><tr><td>Elements across the gap${nyKey === 'edgeNy' ? ', open edges' : ''}, set</td><td>${adapted ? `${N} (adapted)` : numIn(nyKey, 'Elements across the gap')}</td></tr>
@@ -1200,7 +1200,7 @@ function c3dMeshSideHTML() {
     <tr><td>H<sub>eff</sub> / N</td><td>${H != null ? c3dLen(H / N) : '—'}</td></tr>
     <tr><td>Velocity nodes across</td><td>${2 * N + 1}${H != null ? `, every ${c3dLen(H / (2 * N))} if even` : ''}</td></tr>
     ${St && Number.isFinite(St.gap.hMin) ? `<tr><td>Element heights there</td><td>${c3dLen(St.gap.hMin)} to ${c3dLen(St.gap.hMax)}</td></tr>` : ''}</table>
-    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Flow › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.${nyKey === 'edgeNy' ? ` With the web's edges open the gap has its own count (the edge strips take most of a page's memory): ${C3D.edgeNy} here, the preset's ${C3D.ny} elsewhere.` : ''}</p>
+    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Flow › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.${nyKey === 'edgeNy' ? ` With the web's edges open the gap has its own count (the edge strips are the largest solves: at 5 across about 2.5 GB each): ${C3D.edgeNy} here, the preset's ${C3D.ny} elsewhere.` : ''}</p>
     ${ms && ms.layers && (ms.layers.web || ms.layers.top) ? `<p class="side-note">Wall layers: ${[ms.layers.web ? `${ms.layers.n.web} at the web, ${c3dLen(ms.layers.thick.web)} thick` : '', ms.layers.top ? `${ms.layers.n.top} at the blade and surface, ${c3dLen(ms.layers.thick.top)} thick` : ''].filter(Boolean).join('; ')}: laid out by their sizes, ${St ? `${St.layerRows.web + St.layerRows.top} rows lie within them` : 'the rows within them counted once laid out'}.</p>` : ''}`;
   // across the web: the elements, the stations, their spacing
   const zE = c3dZEnds(), dz = zE.slice(1).map((v, k) => v - zE[k]), rg = c3dRegion();
