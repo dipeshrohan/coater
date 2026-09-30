@@ -1200,7 +1200,7 @@ function c3dMeshSideHTML() {
     <tr><td>H<sub>eff</sub> / N</td><td>${H != null ? c3dLen(H / N) : '—'}</td></tr>
     <tr><td>Velocity nodes across</td><td>${2 * N + 1}${H != null ? `, every ${c3dLen(H / (2 * N))} if even` : ''}</td></tr>
     ${St && Number.isFinite(St.gap.hMin) ? `<tr><td>Element heights there</td><td>${c3dLen(St.gap.hMin)} to ${c3dLen(St.gap.hMax)}</td></tr>` : ''}</table>
-    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows are graded toward the web and the blade (and the layers, when on), so they are not all H<sub>eff</sub> / N.</p>
+    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Flow › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.</p>
     ${ms && ms.layers && (ms.layers.web || ms.layers.top) ? `<p class="side-note">Wall layers: ${[ms.layers.web ? `${ms.layers.n.web} at the web, ${c3dLen(ms.layers.thick.web)} thick` : '', ms.layers.top ? `${ms.layers.n.top} at the blade and surface, ${c3dLen(ms.layers.thick.top)} thick` : ''].filter(Boolean).join('; ')}: laid out by their sizes, ${St ? `${St.layerRows.web + St.layerRows.top} rows lie within them` : 'the rows within them counted once laid out'}.</p>` : ''}`;
   // across the web: the elements, the stations, their spacing
   const zE = c3dZEnds(), dz = zE.slice(1).map((v, k) => v - zE[k]), rg = c3dRegion();
@@ -1228,7 +1228,8 @@ function c3dMeshSideHTML() {
     <tr><td>Elements across the minimum gap</td><td>${St.gap.cells}</td></tr>
     <tr><td>Aspect ratio, largest: x–y plane · 3D</td><td>${f3(St.arXY.max)}${Z.meniscus ? ` (meniscus ${f3(Z.meniscus.arXY)})` : ''} · ${f3(St.ar.max)}</td></tr>
     <tr><td>Skewness, largest · mean</td><td>${f3(St.skew.max)} · ${f3(St.skew.mean)}${Z.edge ? ` (edge ${f3(Z.edge.skew)})` : ''}</td></tr>
-    <tr><td>Non-orthogonality, largest · mean</td><td>${f3(St.nonOrth.max)}° · ${f3(St.nonOrth.mean)}°</td></tr>
+    <tr><td>Non-orthogonality, largest · mean</td><td>${f3(St.nonOrth.max)}° · ${f3(St.nonOrth.mean)}°</td></tr>${St.nonOrth.cl != null ? `
+    <tr><td>Non-orthogonality at the contact line, largest</td><td>${f3(St.nonOrth.cl)}°</td></tr>` : ''}
     <tr><td>Wall-layer elements</td><td>${!ms.layers ? '— (adapted mesh)' : ms.layers.web + ms.layers.top ? `${St.layerCells.toLocaleString()} (rows: ${St.layerRows.web} at the web, ${St.layerRows.top} at the blade and surface)` : 'none (layers off)'}</td></tr>
     <tr><td>Invalid elements</td><td>${St.invalid}${St.wedges ? ` (${St.wedges} wedges round the edge left out)` : ''}</td></tr>` : ''}
     <tr><td>Quality, worst · mean</td><td>${q ? `${q.worst.toFixed(2)} · ${q.mean.toFixed(2)}` : '—'}</td></tr></table>
