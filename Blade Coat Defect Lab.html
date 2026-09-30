@@ -24,7 +24,8 @@
       <span class="tb-logo" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M2 12.5h12" stroke="currentColor" stroke-width="1.5"/><path d="M3 12.5c2.5-.2 4-1.6 5.2-4.4L10 3.5h3.5l-2.6 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
       <h1 class="brand">Blade Coat Defect Lab</h1>
     </div>
-    <details class="vp-pop tb-file" id="fileMenu"><summary class="tb-menu">File</summary>
+    <nav class="menubar" id="menubar" aria-label="Menu bar">
+    <details class="vp-pop tb-file mb-menu" id="fileMenu" data-mbk="file"><summary class="tb-menu">File</summary>
       <div class="pop-body pop-menu" role="menu" aria-label="File">
         <button class="menu-item" type="button" id="fmNew" role="menuitem">New project<kbd data-key="file.new"></kbd></button>
         <button class="menu-item" type="button" id="fmOpen" role="menuitem">Open…<kbd data-key="file.open">Ctrl+O</kbd></button>
@@ -33,27 +34,55 @@
         <div class="menu-sep menu-sep-plain" aria-hidden="true"></div>
         <button class="menu-item" type="button" id="fmImport" role="menuitem">Import measured data…<kbd data-key="file.import"></kbd></button>
         <button class="menu-item" type="button" id="fmReport" role="menuitem">Report…<kbd data-key="file.report"></kbd></button>
+        <div data-mbx="file"></div>
         <div class="menu-sep" id="fmRecentSep" hidden><span>Recent projects</span></div>
         <div id="fmRecent"></div>
       </div>
     </details>
-    <details class="vp-pop tb-file" id="editMenu"><summary class="tb-menu">Edit</summary>
+    <details class="vp-pop tb-file mb-menu" id="editMenu" data-mbk="edit"><summary class="tb-menu">Edit</summary>
       <div class="pop-body pop-menu" role="menu" aria-label="Edit">
         <button class="menu-item" type="button" id="emUndo" role="menuitem" disabled><span class="mi-l">Undo</span><kbd data-key="edit.undo">Ctrl+Z</kbd></button>
         <button class="menu-item" type="button" id="emRedo" role="menuitem" disabled><span class="mi-l">Redo</span><kbd data-key="edit.redo">Ctrl+Y</kbd></button>
         <div class="menu-sep"><span>This view</span></div>
         <button class="menu-item" type="button" id="emHistory" role="menuitem">History</button>
+        <div data-mbx="edit"></div>
       </div>
     </details>
-    <details class="vp-pop tb-file" id="helpMenu"><summary class="tb-menu">Help</summary>
+    <details class="vp-pop tb-file mb-menu" id="mbViewMenu" data-mbk="view"><summary class="tb-menu">View</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="View"><div data-mbx="view"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbGeometryMenu" data-mbk="geometry"><summary class="tb-menu">Geometry</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Geometry"><div data-mbx="geometry"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbPhysicsMenu" data-mbk="physics"><summary class="tb-menu">Physics</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Physics"><div data-mbx="physics"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbMeshMenu" data-mbk="mesh"><summary class="tb-menu">Mesh</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Mesh"><div data-mbx="mesh"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbSimulationMenu" data-mbk="simulation"><summary class="tb-menu">Simulation</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Simulation"><div data-mbx="simulation"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbResultsMenu" data-mbk="results"><summary class="tb-menu">Results</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Results"><div data-mbx="results"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbToolsMenu" data-mbk="tools"><summary class="tb-menu">Tools</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Tools"><div data-mbx="tools"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="mbWindowMenu" data-mbk="window"><summary class="tb-menu">Window</summary>
+      <div class="pop-body pop-menu" role="menu" aria-label="Window"><div data-mbx="window"></div></div>
+    </details>
+    <details class="vp-pop tb-file mb-menu" id="helpMenu" data-mbk="help"><summary class="tb-menu">Help</summary>
       <div class="pop-body pop-menu" role="menu" aria-label="Help">
         <button class="menu-item" type="button" role="menuitem" id="hmWelcome">Welcome…</button>
         <button class="menu-item" type="button" role="menuitem" data-help-sec="guide">Module guide<kbd data-key="help.open"></kbd></button>
         <button class="menu-item" type="button" role="menuitem" data-help-sec="methods">Methods and limits</button>
         <button class="menu-item" type="button" role="menuitem" data-help-sec="keys">Keyboard shortcuts<kbd data-key="help.keys"></kbd></button>
         <button class="menu-item" type="button" role="menuitem" data-help-sec="search">Search help…</button>
+        <div data-mbx="help"></div>
       </div>
     </details>
+    </nav>
     <span class="tb-grow" aria-hidden="true"></span>
     <span class="tb-proj" id="projName">Untitled</span>
     <span class="tb-vsep" aria-hidden="true"></span>
@@ -110,6 +139,7 @@
   <footer class="statusbar" aria-label="Status">
     <div class="sb-item sb-prog" id="sbProg" hidden></div>
     <p class="scope sb-item" id="scope" role="status" aria-live="polite"></p>
+    <div class="sb-item sb-tip" id="sbTip" hidden></div>
     <div class="sb-item sb-coord" id="sbCoord" aria-live="off"></div>
     <div class="sb-item sb-cfd" id="cfdStatus" aria-label="CFD runs"></div>
   </footer>
@@ -165,5 +195,6 @@
 <script src="furnace-stage-ui.js"></script>
 <script src="process-ui.js"></script>
 <script src="ui.js"></script>
+<script src="menus.js"></script>
 </body>
 </html>

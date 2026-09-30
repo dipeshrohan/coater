@@ -12,6 +12,32 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Menu bar, command palette, right-click menus (menus.js)
+
+User spec: a CAE-style menu bar (File, Edit, View, Geometry, Physics, Mesh, Simulation, Results, Tools, Window, Help) as an
+extra layer over the app; nothing deleted, no dead items, disabled and checked states, shortcuts with a clash check,
+right-click menus, a command palette, recent items, preferences, the status bar. Built as:
+- One registry (MB_ACT in menus.js): each command is { l, tip, run, on(), why(), chk(), key }. run is the app's own
+  function (runAllLocations, c3dRun, c3dSet, goStep2D, exportField, openReportDialog …) or the page's own control
+  operated where it is (its page opened first: #fvBase, #fvStream, #cfdProbePlace, #c3dImport …), never a second path.
+  A command that is a key's action (keys.js KEY_ACTIONS) runs that action and shows its key. Menus are built when they
+  open, so enabled/checked is the page's state then; a disabled command says why (title and the status bar).
+- File, Edit and Help keep their items and ids; the new items follow them. The bar is a nav around the old details.
+- Keys added (keys.js): F (fit the 2D flow plots, or the 3D view's camera), F1 (help), F10 (the bar to the keyboard),
+  Ctrl+Shift+P (palette); F1-F12 now also work from an input box. keyClashes() lists keys given to two actions (a warning
+  on load; the key list already marks them). Ctrl+N is not given (browsers keep it for a new window); New has no key, as
+  before, and one can be set. No Delete/Space: no selection model; Space is a button's own key.
+- Right-click menus: the 2D flow plots, the 2D Geometry / Mesh / Solve drawings, the 3D view and its mesh sections
+  (Shift + right-click keeps the browser's own). Palette: every command by name, words users type (run, generate, show,
+  export results), recent commands first (localStorage bladeCoatDefectLab.commands.v1). Preferences and About dialogs.
+- Fixed on the way (shared by the key and the menu): Alt+] / Alt+[ (next / previous bottom-panel tab) left no tab
+  selected on the 2D, DOE and Measured pages -- dockCycle clicked a button the redraw had replaced.
+- Not offered (the app has none): Cut/Copy/Paste/Delete/Select all (no selection model), Pause/Resume (the solvers run to
+  the end or are stopped), orthographic projection (perspective camera only), Exit (a browser page), mesh import/export.
+- Verified in Chromium: every command clicked through its menus (213 commands, 27 submenus) with its effect checked and
+  the page's own control showing the same state; 2D and 3D solves, stops, exports, the palette, keys, right-click
+  menus, Preferences, Save/Open, an old project, Recent projects; the census against main: nothing missing.
+
 ### 3D streamlines: audit and seeding (Flow › 3D, Results)
 
 User report: the 3D streamlines stay in planes. Audited before changing anything (not assumed):

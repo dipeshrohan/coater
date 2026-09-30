@@ -1961,3 +1961,54 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .m3-uz .acc3-bar { margin-bottom: 6px; }
 .m3-uz-host { position: relative; height: 260px; }
 .m3-uz-host canvas { display: block; }
+
+/* ---- the menu bar (menus.js): File … Help, their submenus, the right-click menu, the command palette ---- */
+.menubar { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.menubar::-webkit-scrollbar { display: none; }
+.menubar .tb-menu { padding: 0 9px; white-space: nowrap; }
+.menubar .tb-menu:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mb-menu > .pop-body { position: fixed; z-index: 60; overflow-y: auto; overscroll-behavior: contain; }
+.pop-menu > [data-mbx], .mb-sub { display: grid; gap: 1px; }
+.mb-menu > .pop-body, .mb-pop, .mb-ctx { min-width: 240px; max-width: min(460px, calc(100vw - 12px)); }
+.mb-pop { position: fixed; z-index: 61; overflow-y: auto; }
+.mb-ctx { position: fixed; z-index: 80; max-height: calc(100vh - 12px); overflow-y: auto; }
+.mb-ctx[hidden], .mb-pop[hidden] { display: none; }
+.menu-item .mb-chk { flex: 0 0 16px; margin-right: 6px; color: var(--accent); font-weight: 700; text-align: center; }
+.menu-item[aria-checked=true] .mi-l { color: var(--ink); font-weight: 550; }
+.mb-arrow { margin-left: auto; padding-left: 16px; color: var(--muted); font-size: 14px; line-height: 1; }
+.mb-sub.open > .mb-subbtn { background: var(--soft); }
+.menu-item:disabled .mb-chk, .menu-item:disabled kbd { opacity: .6; }
+.mb-h { pointer-events: none; }
+.pop-menu > .mb-h:first-child, .pop-menu > [data-mbx]:first-child > .mb-h:first-child { margin-top: 0; border-top: 0; padding-top: 4px; }
+.menu-item:focus { outline: none; }
+.menu-item:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+.sb-tip { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.statusbar.mb-tipping .scope, .statusbar.mb-tipping .sb-coord { display: none; }
+/* the palette */
+.mb-pal { width: min(640px, calc(100vw - 24px)); margin-top: 10vh; padding: 0; }
+.mb-pal input[type=search] { box-sizing: border-box; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); font: inherit; font-size: 14.5px; outline: none; }
+.mb-pal-l { max-height: min(52vh, 440px); overflow-y: auto; padding: 4px; }
+.mb-pal-r { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.mb-pal-r.sel { background: var(--soft); }
+.mb-pal-r.off { color: var(--muted); cursor: default; }
+.mb-pal-n { flex: 0 1 auto; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb-pal-p { flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb-pal-r kbd { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+.mb-pal-f, .mb-pal-none { margin: 0; padding: 8px 14px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line-soft); }
+.mb-pal-none { border: 0; }
+/* Preferences, About */
+.mb-dlg { width: min(460px, calc(100vw - 32px)); padding: 16px 18px; }
+.mb-dlg h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.mb-dlg .img-note { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.mb-f { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 0 0 12px; padding: 0; border: 0; }
+.mb-f legend { padding: 0; margin-bottom: 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.mb-dlg .kv { margin-bottom: 10px; font-size: 13px; }
+.mb-dlg .img-actions { margin-top: 12px; }
+/* narrow windows: the bar scrolls sideways; on a phone a submenu opens inside its menu */
+@media (max-width: 1439px) { .menubar ~ .tb-grow { min-width: 4px; } .titlebar .brand { display: none; } }
+@media (max-width: 1023px) { .menubar .tb-menu { padding: 0 7px; font-size: 13px; } }
+@media (max-width: 639px) {
+  .mb-menu > .pop-body { max-width: none; min-width: 0; }
+  .mb-sub.open > .mb-subbtn .mb-arrow { transform: rotate(90deg); }
+  .mb-pop { position: static; width: auto; max-width: none; min-width: 0; margin: 2px 0 4px 14px; box-shadow: none; border-width: 0 0 0 2px; border-radius: 0; padding: 0 0 0 4px; }
+}
