@@ -12,23 +12,22 @@
  */
 
 // ---- the films the chain starts from ----
-/** At location i, the most detailed film solved for the inputs as they are: 3D, else 2D, else the 1D (m); null while the 1D solves. */
+/** At location i, the wet film (m) of the most detailed model solved for the inputs as they are (answers.js: 3D, else 2D,
+ *  else the 1D) and which; null while the 1D solves. */
 function processFilmAt(i) {
-  const th = threeDAt(i), st = th && !th.stale && Number.isInteger(th.m) && th.m >= 0 ? th.R.stations[th.m] : null;
-  if (st && Number.isFinite(st.film)) return { h: st.film, src: '3D' };
-  const two = twoDAt(i);
-  if (two && !two.stale) return { h: two.r.Q / two.geo.U, src: '2D' };
-  const R = ONE_D.res;
-  return R && oneDCurrent() && R.locs[i] ? { h: R.locs[i].film, src: '1D' } : null;
+  const a = ansAt(i);
+  return a ? { h: a.film, src: a.src } : null;
 }
-/** The 1D across the web as a wet film over the width it covers (where the blade is): ∫ h dz (m²), that width (m), the mean, the range. */
+/** The wet film across the web (answers.js: the 1D's profile at the level of the models solved at the locations) over the
+ *  width it covers (where the blade is): ∫ h dz (m²), that width (m), the mean, the range, and where it is from. */
 function processWeb() {
-  const A = oneDAcrossNow();
-  if (!A || A.length < 2) return null;
+  const X = ansAcross();
+  if (!X || X.z.length < 2) return null;
+  const A = X.z.map((z, k) => ({ z, film: X.film[k] }));
   let area = 0;
   for (let k = 1; k < A.length; k++) area += (A[k].film + A[k - 1].film) / 2 * (A[k].z - A[k - 1].z) / 1000;
   const width = (A[A.length - 1].z - A[0].z) / 1000, films = A.map(r => r.film);
-  return { A, area, width, mean: area / width, min: Math.min(...films), max: Math.max(...films) };
+  return { A, area, width, mean: area / width, min: Math.min(...films), max: Math.max(...films), src: X.src, label: X.label, tag: X.src === '1D' ? '1D across the web' : `1D across the web, scaled to the ${ANS_SRC[X.src]}` };
 }
 /** The line speed (m/s): the web's, through the oven. */
 const lineSpeed = () => P.U / 60;
@@ -45,7 +44,7 @@ function processStages() {
   return [
     { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids; ${nA} of ${keys.length} values assumed` },
     { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : 'busy',
-      s: [one ? 'wet film from the 1D' : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
+      s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
     (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
       return { k: 'align', t: 'Flake alignment', go: 4, st: !MAT.orient.on ? 'set' : o.length ? 'solved' : 'wait',
         s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')}${o.every(q => q.film.dried) ? `, dried ${o.map(q => q.film.dried.Sy.toFixed(2)).join(', ')}` : ''} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].charAt(0).toLowerCase() + OR_MODELS[MAT.orient.model].slice(1)}: computed with each 2D run` }; })(),
@@ -188,7 +187,7 @@ function processPageBody() {
       + `<div class="proc-stage" data-stage-of="film">${filmSectionHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="furn">${furnSectionHTML()}</div>`,
     panes: [{ id: 'pr1', icon: 'film', title: 'Wet and dry film across the web', aria: 'Wet film and dry film against position across the web',
-      legend: oneDLegend([['wet film (1D)', mut, 'dash'], ['dry film (mass balance)', acc]]),
+      legend: oneDLegend([['wet film', mut, 'dash'], ['dry film (mass balance)', acc]]),
       note: 'The wet film is the 1D gap flow at every position across the web (Flow › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
     extra: `<div class="proc-table" id="procTable"></div><div class="prop-actions proc-go"><button type="button" class="btn btn-secondary btn-sm" data-chain="8">${uiIco(8)}Flow › 1D: the gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-chain="11">${uiIco(11)}Across the web</button><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Flow › 2D</button></div>`,
   });
@@ -225,12 +224,12 @@ function processPageBody() {
   }
   const web = processWeb(), U = lineSpeed(), W = ACROSS_W / 1000, o = ovenTime(U), c = MAT.slurry;
   const st = document.getElementById('st'), ss = document.getElementById('ss');
-  // (the web: the 1D across it; until it is solved, the four locations' mean)
+  // (the web: across it (answers.js); until the 1D across it is solved, the four locations' mean)
   const locs = CFD_LOCS.map((_, i) => processFilmAt(i));
   const known = locs.filter(Boolean), hWeb = web ? web.mean : known.length ? known.reduce((a, q) => a + q.h, 0) / known.length : null;
   if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', ''); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); filmRender(); furnRender(); return; }
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
-  let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film`, '');
+  let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film${web ? ` (${web.tag})` : ''}`, '');
   pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${ACROSS_W} mm web at ${P.U} m/min`, '');
   if (wetTooLoose) pills += pill(`Dry film packing ${c.phiDry.v} is below the slurry's solids fraction (${c.phi.v} vol%): the film would not shrink as it dries`, 'bad');
   const fib = FIBRES[CFDG.fibre], hot = OVEN.zones.filter(z => z.airT > fib.tUse);
@@ -264,7 +263,7 @@ function drawProcessTable(locs, web) {
   const host = document.getElementById('procTable');
   if (!host) return;
   const U = lineSpeed(), W = ACROSS_W / 1000;
-  const cols = [...locs.map((q, i) => ({ h: q && q.h, head: `L${i + 1}<small>z ${CFD_LOCS[i].z} mm${q ? ` · ${q.src}` : ''}</small>` })), { h: web && web.mean, head: `The web<small>mean, 1D across it</small>` }];
+  const cols = [...locs.map((q, i) => ({ h: q && q.h, head: `L${i + 1}<small>z ${CFD_LOCS[i].z} mm${q ? ` · ${q.src}` : ''}</small>` })), { h: web && web.mean, head: `The web<small>mean${web ? ` · ${web.tag}` : ''}</small>` }];
   const rows = [
     ['Wet film', 'mm', h => (h * 1000).toFixed(3)],
     ['Dry film', 'µm', h => um0(massBalance(h, U, W).dry)],

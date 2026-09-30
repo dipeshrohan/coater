@@ -5,10 +5,11 @@
  * changed in a preview), and kept as a dataset of one kind: wet film across the web, wet film vs
  * settings, contact line across the web, meniscus shape, edge scallop amplitude or surface ripple
  * along the line. Coat weight (g/m², wet or dry) is turned into wet film with the slurry's density
- * and solids. Each point is compared with the fast models of the other tabs (instantly) and, on
- * request, with the CFD (each point solved like a DOE run): a table with the errors, and a parity
- * plot. A fit adjusts 1–3 inputs to minimise the RMS % error on the fast model, then checks the
- * best fit in the CFD; Apply sets the fitted values (undoable). Datasets are saved in the project.
+ * and solids. Each point is compared with the model (the solved answers of the other pages, answers.js: the most detailed
+ * model solved; the 1D at a point's own settings) and, on request, with the CFD (each point solved like a DOE run): a
+ * table with the errors, and a parity plot. A fit adjusts 1–3 inputs to minimise the RMS % error on the 1D (a response
+ * surface, in a worker, with Stop), then checks the best fit in the CFD; Apply sets the fitted values (undoable).
+ * Datasets are saved in the project.
  */
 
 const MEAS_KINDS = {
@@ -170,7 +171,8 @@ function measBuildRows(parsed, cols, kind, cw) {
 }
 
 // ---------------------------------------------------------------------
-// Predictions: the fast models (any inputs set for the moment), and the CFD
+// Predictions: the model (the solved answers, answers.js, at the inputs as they are; the 1D at a point's own settings),
+// and the CFD (each point solved in the 2D on request)
 // ---------------------------------------------------------------------
 /** Run f with some inputs set (P) and put them back. */
 function measWithP(over, f) {
@@ -180,30 +182,63 @@ function measWithP(over, f) {
     return f();
   } finally { for (const k in keep) P[k] = keep[k]; }
 }
-/** The fast model's value at one point (the dataset's unit), or null where it has none. */
-function measFastPoint(kind, p) {
-  const set = p.set || {}, over = {};
-  for (const k in set) if (k !== 'gap') over[k] = set[k];
-  return measWithP(over, () => {
-    if (kind === 'film_z') return contactLine(localGap(p.z), localContactAngle(p.z)).h;
-    if (kind === 'film_set') {
-      const H = set.gap ?? (p.z != null ? localGap(p.z) : gapHeight()), th = p.z != null && set.th == null ? localContactAngle(p.z) : P.th;
-      return contactLine(H, th).h;
+/** The free surface's height above the web (mm) at x (mm downstream of the metering edge): the static meniscus from the
+ *  contact line (s mm up the exit face at faceDeg, the gap H mm) down to the film h (mm); null under the exit face. */
+function measMeniscusAt(x, H, h, s, faceDeg) {
+  const a = faceDeg * Math.PI / 180, qx = s * Math.cos(a), qy = H + s * Math.sin(a);
+  if (x < qx - 1e-9) return null;
+  const rise = Math.max(0, qy - h), phic = 2 * Math.asin(Math.min(1, rise / (2 * capillaryLength())));
+  const men = meniscusProfile(qx, h, phic);
+  for (let i = 1; i < men.length; i++) if (men[i][0] >= x) { const [xa, ya] = men[i - 1], [xb, yb] = men[i]; return ya + (yb - ya) * (x - xa) / ((xb - xa) || 1); }
+  return h;
+}
+/** The 1D at points (a worker of its own, the page's 1D left free): a promise of [{ film, s, dhdH?, lam0? }] (m). */
+const MEAS_1D = { worker: null, id: 0, pending: new Map(), set: new Map() };
+function meas1D(geos, res, ripple) {
+  return new Promise((resolve, reject) => {
+    if (!MEAS_1D.worker) {
+      MEAS_1D.worker = makeWorker('cfd-1d-worker.js');
+      MEAS_1D.worker.onmessage = e => { const q = MEAS_1D.pending.get(e.data.id); if (!q) return; MEAS_1D.pending.delete(e.data.id); if (e.data.ok) q.resolve(e.data.points); else q.reject(new Error(e.data.error)); };
+      MEAS_1D.worker.onerror = e => { const all = [...MEAS_1D.pending.values()]; MEAS_1D.pending.clear(); MEAS_1D.worker = null; all.forEach(q => q.reject(new Error(e.message || 'the 1D worker failed'))); };
     }
-    if (kind === 'cl_z') return contactLine(localGap(p.z), localContactAngle(p.z)).s;
-    if (kind === 'menisc') {
-      const st = contactLine(gapHeight(), P.th), x0 = st.s * SIN45;
-      if (p.x < x0 - 1e-9) return null;   // (under the face: no free surface there)
-      const men = meniscusProfile(x0, st.h, st.phi);
-      for (let i = 1; i < men.length; i++) if (men[i][0] >= p.x) { const [xa, ya] = men[i - 1], [xb, yb] = men[i]; return ya + (yb - ya) * (p.x - xa) / ((xb - xa) || 1); }
-      return st.h;
-    }
-    if (kind === 'edge_x') return edgeAmplitudeAt(p.x);
-    if (kind === 'ripple_x') return rippleLevelling().at(p.t ?? p.x / 1000 / (P.U / 60)) * 1e6;
-    return null;
+    const id = ++MEAS_1D.id;
+    MEAS_1D.pending.set(id, { resolve, reject });
+    MEAS_1D.worker.postMessage({ id, points: geos, res, ripple });
   });
 }
-const measFast = (ds, over) => measWithP(over, () => ds.rows.map(p => { const v = measFastPoint(ds.kind, p); return v != null && Number.isFinite(v) ? v : null; }));
+/** Stop the 1D at points (a fit): its worker ended, what waits on it told so. */
+function meas1DStop() {
+  if (MEAS_1D.worker) MEAS_1D.worker.terminate();
+  MEAS_1D.worker = null;
+  const all = [...MEAS_1D.pending.values()]; MEAS_1D.pending.clear();
+  all.forEach(q => q.reject(new Error('stopped')));
+}
+/**
+ * The model's value at each point of a dataset, at the inputs as they are: the solved answers (answers.js: the most
+ * detailed model solved, across the web the 1D's profile at its level) for the film and the contact line across the web,
+ * the meniscus at the web's centre, the web edge and the ripple; for the film against settings, the 1D at each point's
+ * own settings (solved in the background; null until then). { vals, src } or null while solving.
+ */
+function measModel(ds) {
+  const K = ds.kind, rows = ds.rows;
+  if (K === 'film_z' || K === 'cl_z') {
+    const X = ansAcross(); if (!X) return null;
+    return { vals: rows.map(p => (K === 'film_z' ? ansInterp(X.z, X.film, p.z ?? 150) : ansInterp(X.z, X.s, p.z ?? 150)) * 1000), src: X.label };
+  }
+  if (K === 'menisc') {
+    const a = ansAcrossAt(150); if (!a) return null;
+    return { vals: rows.map(p => measMeniscusAt(p.x, localGap(150), a.film * 1000, a.s * 1000, CFDG.exitAngle)), src: `${a.label}, at the web's centre; the static meniscus from its contact line` };
+  }
+  if (K === 'edge_x') { const ed = edgeOutlook(); if (!ed) return null; return { vals: rows.map(p => edgeAmplitudeAt(p.x, ed.h)), src: `the edge bead on the film at the ${ed.side} edge, ${ed.label}` }; }
+  if (K === 'ripple_x') { const sf = surfaceOutlook(); if (!sf) return null; return { vals: rows.map(p => sf.lv.at(p.t ?? p.x / 1000 / (P.U / 60)) * 1e6), src: `the 1D's levelling at L${sf.loc + 1}, on the film ${ansFrom(sf.src)}` }; }
+  // (film against settings: the 1D at each point's settings)
+  const geos = rows.map(p => oneDFromGeo(measGeometry(ds, p, null))), key = JSON.stringify(geos), c = MEAS_1D.set.get(ds.id);
+  if (c && c.key === key) return c.vals ? { vals: c.vals, src: '1D at each point\'s settings' } : null;
+  const job = { key, vals: null };
+  MEAS_1D.set.set(ds.id, job);
+  meas1D(geos, null, null).then(out => { job.vals = out.map(o => o && Number.isFinite(o.film) ? o.film * 1000 : null); if (MEAS_1D.set.get(ds.id) === job && tab === 6) renderMeasured(); }).catch(() => { if (MEAS_1D.set.get(ds.id) === job) MEAS_1D.set.delete(ds.id); });
+  return null;
+}
 /** The CFD geometry for a point (a location at its position across the web, its settings; others as in 2D CFD). */
 function measGeometry(ds, p, over) {
   const loc = CFD_LOCS[0], keep = { z: loc.z, over: loc.over, solver: loc.solver };
@@ -323,7 +358,7 @@ function measRunCfd(ds) {
 const measCfdStale = ds => !!(ds.cfd && ds.cfd.status !== 'running' && ds.cfd.key !== measCfdKey(ds));
 
 // ---------------------------------------------------------------------
-// Fit: Nelder–Mead on the fast model, in each input's range scaled to 0..1; several starts
+// Fit: on the 1D, each input's range scaled to 0..1 (a response surface, Nelder–Mead on it; nelderMead below)
 // ---------------------------------------------------------------------
 function nelderMead(f, x0, { maxIter = 300, tol = 1e-7, step = 0.15 } = {}) {
   const n = x0.length;
@@ -349,43 +384,134 @@ function nelderMead(f, x0, { maxIter = 300, tol = 1e-7, step = 0.15 } = {}) {
   return { x: simplex[b], f: fs[b] };
 }
 function measFitRange(k) { const c = CFG.find(q => q.k === k), r = MEAS.fitRange[k] || {}; return { lo: r.lo ?? c.min, hi: r.hi ?? c.max }; }
-/** RMS % error of the fast model over the datasets' points, with inputs set. */
-function measFitError(sets, over) {
+/** RMS % error over the datasets' points of predictions vals (per dataset, at its points); 1e6 when under half have one. */
+function measFitErrorOf(sets, vals) {
   const e = [];
-  for (const ds of sets) for (const v of measErrors(ds, measFast(ds, over))) e.push(v == null ? null : v);
+  sets.forEach((ds, j) => { for (const v of measErrors(ds, vals[j] || ds.rows.map(() => null))) e.push(v); });
   const ok = e.filter(v => v != null && Number.isFinite(v));
   if (ok.length < Math.max(1, e.length * 0.5)) return 1e6;
   return Math.sqrt(ok.reduce((a, v) => a + v * v, 0) / ok.length);
 }
-function measRunFit() {
+/**
+ * The fit's model: the 1D (60 × 80, within 0.02 % of the page's) with inputs set, for each `over` in overs: per over, per
+ * dataset, the values at its points. The 1D at every point (the film, the contact line), at the web's centre (the
+ * meniscus), at its two edges (the edge bead: the one larger at the oven, as the Web edge page) and at the four locations
+ * (the ripple: where the most is left at the oven, as the Film surface page). Every different geometry is solved once.
+ */
+async function measFitEval(sets, overs) {
+  const geos = [], rip = [], idx = new Map();
+  const add = (g, r) => { const k = JSON.stringify(g); if (!idx.has(k)) { idx.set(k, geos.length); geos.push(g); rip.push(!!r); } else if (r) rip[idx.get(k)] = true; return idx.get(k); };
+  const plans = overs.map(over => sets.map(ds => {
+    const K = ds.kind;
+    if (K === 'film_z' || K === 'cl_z' || K === 'film_set') return { rows: ds.rows.map(p => add(oneDFromGeo(measGeometry(ds, p, over)))) };
+    if (K === 'menisc') { const g = oneDFromGeo(measGeometry(ds, {}, over)); return { g, i: add(g) }; }
+    if (K === 'edge_x') { const zs = acrossPositions(); return { ends: [zs[0], zs[zs.length - 1]].map(z => add(oneDFromGeo(measGeometry(ds, { z }, over)))) }; }
+    if (K === 'ripple_x') { const gs = measWithP(over, () => CFD_LOCS.map((_, i) => oneDGeo(i))); return { gs, locs: gs.map(g => add(g, true)) }; }
+    return null;
+  }));
+  const out = await meas1D(geos, { nx: 60, ny: 80 }, rip);
+  const got = i => out[i] && Number.isFinite(out[i].film) ? out[i] : null;
+  return overs.map((over, o) => sets.map((ds, j) => measWithP(over, () => {
+    const K = ds.kind, pl = plans[o][j], none = () => ds.rows.map(() => null);
+    if (!pl) return none();
+    if (pl.rows) return pl.rows.map(i => { const r = got(i); return r ? (K === 'cl_z' ? r.s : r.film) * 1000 : null; });
+    if (K === 'menisc') { const r = got(pl.i); return r ? ds.rows.map(p => measMeniscusAt(p.x, pl.g.H * 1000, r.film * 1000, r.s * 1000, pl.g.exitAngle)) : none(); }
+    if (K === 'edge_x') {
+      const hs = pl.ends.map(got).filter(Boolean).map(r => r.film);
+      if (!hs.length) return none();
+      const h = hs.reduce((b, q) => edgeAmplitudeAt(P.oven * 1000, q) > edgeAmplitudeAt(P.oven * 1000, b) ? q : b);
+      return ds.rows.map(p => edgeAmplitudeAt(p.x, h));
+    }
+    let best = null;   // (the ripple)
+    pl.locs.forEach((i, k) => { const r = got(i); if (!r || !Number.isFinite(r.dhdH)) return; const rp = ripple1D(pl.gs[k], r.film, r.dhdH, oneDRipple(), r.lam0); const end = rp.at(rp.tRes); if (!best || end > best.end) best = { rp, end }; });
+    return best ? ds.rows.map(p => best.rp.at(p.t ?? p.x / 1000 / (P.U / 60)) * 1e6) : none();
+  })));
+}
+/** A quadratic's terms at u (0..1 each): 1, u_i, u_i u_j (i <= j). */
+const measQuadTerms = u => { const t = [1, ...u]; for (let i = 0; i < u.length; i++) for (let j = i; j < u.length; j++) t.push(u[i] * u[j]); return t; };
+/** Least squares of ys (nulls left out) on the design points U's quadratic terms: its coefficients, or null with too few. */
+function measQuadFit(U, ys) {
+  const rows = [];
+  U.forEach((u, k) => { if (ys[k] != null && Number.isFinite(ys[k])) rows.push([measQuadTerms(u), ys[k]]); });
+  const m = measQuadTerms(U[0]).length;
+  if (rows.length < m) return null;
+  const A = Array.from({ length: m }, () => new Array(m).fill(0)), b = new Array(m).fill(0);
+  for (const [t, y] of rows) for (let i = 0; i < m; i++) { b[i] += t[i] * y; for (let j = 0; j < m; j++) A[i][j] += t[i] * t[j]; }
+  for (let i = 0; i < m; i++) A[i][i] += 1e-12 * (Math.abs(A[i][i]) || 1);
+  for (let k = 0; k < m; k++) {
+    let piv = k; for (let i = k + 1; i < m; i++) if (Math.abs(A[i][k]) > Math.abs(A[piv][k])) piv = i;
+    [A[k], A[piv]] = [A[piv], A[k]]; [b[k], b[piv]] = [b[piv], b[k]];
+    if (!A[k][k]) return null;
+    for (let i = k + 1; i < m; i++) { const f = A[i][k] / A[k][k]; if (f) { for (let j = k; j < m; j++) A[i][j] -= f * A[k][j]; b[i] -= f * b[k]; } }
+  }
+  const x = new Array(m).fill(0);
+  for (let k = m - 1; k >= 0; k--) { let t = b[k]; for (let j = k + 1; j < m; j++) t -= A[k][j] * x[j]; x[k] = t / A[k][k]; }
+  return x;
+}
+/** The design points of a round: `levels` levels (3, or 5 for one input) in each input over the box c ± w (kept in 0..1). */
+function measDesign(c, w, levels) {
+  const lv = levels === 5 ? [-1, -0.5, 0, 0.5, 1] : [-1, 0, 1], seen = new Set();
+  let D = [[]];
+  c.forEach(ci => { D = D.flatMap(d => lv.map(v => [...d, Math.min(1, Math.max(0, ci + w * v))])); });
+  return D.filter(u => { const k = u.map(x => x.toFixed(9)).join(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+/**
+ * The fit: 1–3 inputs adjusted, each in its range (scaled 0..1), to minimise the RMS % error over the chosen datasets, on
+ * the 1D. A response surface: the 1D at a 3-level design (5 levels for one input) over a box about the current values,
+ * a quadratic fitted to each point's value, its best found (Nelder–Mead from the best design points), and the box halved
+ * about it, three times; then the 1D itself at the surface's best and at the best point solved, the better kept. Then the
+ * best fit is solved in the CFD to check it (measFitCfdCheck). A promise of the fit (MEAS.fit); stopped: rejected.
+ */
+async function measRunFit() {
   const sets = MEAS.sets.filter(d => (MEAS.fitSets || [MEAS.sel]).includes(d.id));
   const keys = MEAS.fitKeys.slice(0, 3);
-  if (!sets.length || !keys.length) return;
+  if (!sets.length || !keys.length) return null;
   if (MEAS.fit) measDropOwner(MEAS.fit);   // (the previous fit's CFD check: not needed any more)
   const rng = keys.map(measFitRange), cfg = keys.map(k => CFG.find(c => c.k === k));
   const toVals = u => Object.fromEntries(keys.map((k, j) => { const x = Math.min(1, Math.max(0, u[j])); return [k, +(rng[j].lo + x * (rng[j].hi - rng[j].lo)).toPrecision(6)]; }));
-  const f = u => measFitError(sets, toVals(u)) + u.reduce((a, x) => a + (x < 0 ? -x : x > 1 ? x - 1 : 0), 0) * 1e3;
-  const start = keys.map((k, j) => Math.min(1, Math.max(0, (P[k] - rng[j].lo) / ((rng[j].hi - rng[j].lo) || 1))));
-  let best = nelderMead(f, start);
-  let seed = 7;
-  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  for (let s = 0; s < 8; s++) { const r = nelderMead(f, keys.map(() => rand())); if (r.f < best.f) best = r; }
-  best = nelderMead(f, best.x, { step: 0.03, maxIter: 400 });
-  const vals = toVals(best.x);
   // (a value snapped to the input's step, as the slider would hold it)
-  keys.forEach((k, j) => { const st = cfg[j].step; vals[k] = Math.min(rng[j].hi, Math.max(rng[j].lo, +(Math.round(vals[k] / st) * st).toFixed(cfg[j].d))); });
+  const snap = u => { const v = toVals(u); keys.forEach((k, j) => { const st = cfg[j].step; v[k] = Math.min(rng[j].hi, Math.max(rng[j].lo, +(Math.round(v[k] / st) * st).toFixed(cfg[j].d))); }); return v; };
+  const start = keys.map((k, j) => Math.min(1, Math.max(0, (P[k] - rng[j].lo) / ((rng[j].hi - rng[j].lo) || 1))));
+  const levels = keys.length === 1 ? 5 : 3, rounds = 3, errOf = V => measFitErrorOf(sets, V);
+  const run = MEAS.fitRun = { status: 'running', done: 0, total: rounds + 1, solves: 0 };
+  renderMeasFit();
   const before = Object.fromEntries(keys.map(k => [k, P[k]]));
+  const Vbefore = (await measFitEval(sets, [{}]))[0];
+  const tried = [];
+  let c = start.slice(), w = 0.5;
+  for (let r = 0; r < rounds; r++) {
+    const D = measDesign(c, w, levels), V = await measFitEval(sets, D.map(toVals));
+    run.solves += D.length;
+    D.forEach((u, j) => tried.push({ u, err: errOf(V[j]) }));
+    const coef = sets.map((ds, si) => ds.rows.map((_, i) => measQuadFit(D, V.map(v => v[si][i]))));
+    const lo = c.map(x => Math.max(0, x - w)), hi = c.map(x => Math.min(1, x + w));
+    const pred = u => { const t = measQuadTerms(u); return coef.map(cs => cs.map(q => q ? t.reduce((a, x, i) => a + x * q[i], 0) : null)); };
+    const fs = u => errOf(pred(u)) + u.reduce((a, x, i) => a + (x < lo[i] ? lo[i] - x : x > hi[i] ? x - hi[i] : 0), 0) * 1e3;
+    let best = null;
+    for (const s0 of [...tried.slice().sort((p, q) => p.err - q.err).slice(0, 3).map(t => t.u), c]) { const q = nelderMead(fs, s0, { step: Math.max(0.02, w / 2) }); if (!best || q.f < best.f) best = q; }
+    c = best.x.map((x, i) => Math.min(hi[i], Math.max(lo[i], x)));
+    w /= 2; run.done = r + 1; renderMeasFit();
+  }
+  // (the 1D itself at the surface's best and at the best point solved, each snapped to the inputs' steps: the better kept)
+  const bestTried = tried.slice().sort((p, q) => p.err - q.err)[0];
+  const cand = [snap(c), snap(bestTried.u)], Vc = await measFitEval(sets, cand);
+  run.done = rounds + 1;
+  const pick = errOf(Vc[0]) <= errOf(Vc[1]) ? 0 : 1, vals = cand[pick], Vafter = Vc[pick];
+  MEAS.fitRun = null;
   MEAS.fit = {
-    sets: sets.map(d => d.id), keys, before, vals, t: Date.now(),
-    rmsBefore: measFitError(sets, {}), rmsAfter: measFitError(sets, vals),
-    per: sets.map(d => ({ id: d.id, before: measStats(measErrors(d, measFast(d, {}))), after: measStats(measErrors(d, measFast(d, vals))) })),
+    sets: sets.map(d => d.id), keys, before, vals, t: Date.now(), model: '1D', solves: run.solves + 3,
+    rmsBefore: errOf(Vbefore), rmsAfter: errOf(Vafter),
+    per: sets.map((d, si) => ({ id: d.id, before: measStats(measErrors(d, Vbefore[si])), after: measStats(measErrors(d, Vafter[si])) })),
     atBound: keys.filter((k, j) => vals[k] <= rng[j].lo + 1e-9 || vals[k] >= rng[j].hi - 1e-9),
     cfd: null,
   };
-  logCFD(null, `fit to measured data: ${keys.map(k => `${measSetName(k).toLowerCase()} ${before[k]} → ${vals[k]}`).join(', ')}; RMS error ${MEAS.fit.rmsBefore.toFixed(1)} % → ${MEAS.fit.rmsAfter.toFixed(1)} % (fast model)`);
+  logCFD(null, `fit to measured data: ${keys.map(k => `${measSetName(k).toLowerCase()} ${before[k]} → ${vals[k]}`).join(', ')}; RMS error ${MEAS.fit.rmsBefore.toFixed(1)} % → ${MEAS.fit.rmsAfter.toFixed(1)} % (1D)`);
   measFitCfdCheck();
   renderMeasured();
+  return MEAS.fit;
 }
+/** Stop a fit that is running (its 1D's worker ended). */
+function measStopFit() { if (!MEAS.fitRun) return; MEAS.fitRun = null; meas1DStop(); renderMeasFit(); }
 /** The fit's check: its datasets solved in the CFD with the fitted inputs. */
 function measFitCfdCheck() {
   const fit = MEAS.fit;
@@ -461,7 +587,7 @@ function measPreview(text, fileName) {
         <label class="fv-ctl">Slurry density <input type="number" id="measRho" min="500" max="3000" step="10" value="${cw.rho}"> kg/m³</label>
         ${cw.dry ? `<label class="fv-ctl">Solids <input type="number" id="measSolids" min="1" max="100" step="0.5" value="${cw.solids}"> %</label>` : ''}
         <p class="fv-why">Wet film (mm) = coat weight (g/m²) ÷ density (kg/m³)${cw.dry ? ' ÷ solids fraction' : ''}.</p></fieldset>` : ''}
-      <p class="fv-note${miss ? ' warn-text' : ''}" id="measMsg">${miss ? `Needs ${mEsc(miss)}.` : `${built.rows.length} points${built.skipped ? `; ${built.skipped} rows skipped (empty or not numbers)` : ''}. ${mEsc(MEAS_KINDS[kind].l)}${MEAS_KINDS[kind].cfd ? ': compared with the fast model and, on request, the CFD.' : ': compared with the fast model (the CFD does not model it).'}`}</p>
+      <p class="fv-note${miss ? ' warn-text' : ''}" id="measMsg">${miss ? `Needs ${mEsc(miss)}.` : `${built.rows.length} points${built.skipped ? `; ${built.skipped} rows skipped (empty or not numbers)` : ''}. ${mEsc(MEAS_KINDS[kind].l)}${MEAS_KINDS[kind].cfd ? ': compared with the model and, on request, the CFD.' : ': compared with the model (the CFD does not model it).'}`}</p>
       <div class="img-actions"><button type="button" class="btn btn-secondary btn-sm" data-close>Cancel</button><button type="submit" class="btn btn-primary btn-sm" id="measGo"${miss || !built.rows.length ? ' disabled' : ''}>Import</button></div>
     </form>`;
     dlg.querySelectorAll('[data-close]').forEach(b => { b.onclick = () => dlg.close(); });
@@ -512,6 +638,7 @@ function measRemove(id) {
 // The module
 // ---------------------------------------------------------------------
 function viewMeasured() {
+  oneDRequest(true);   // (the model: the solved answers across the web)
   const ds = measSelected();
   if (ds) MEAS.sel = ds.id;
   const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${MEAS.dock === k}" aria-controls="meas-${k}">${uiIco(DOCK_ICON[k])}${t}${k === 'history' || k === 'msgs' ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
@@ -581,7 +708,7 @@ function renderMeasured() {
   const b = document.getElementById('measCfd');
   b.hidden = running; b.disabled = !cfdOk;
   document.getElementById('measCsv').disabled = !ds; document.getElementById('measSel').disabled = !ds;
-  b.title = !ds ? 'Import a dataset first' : cfdOk ? 'Solve each point of this dataset in the CFD (each different point is one run)' : 'The CFD does not model this quantity (only the fast model does)';
+  b.title = !ds ? 'Import a dataset first' : cfdOk ? 'Solve each point of this dataset in the CFD (each different point is one run)' : 'The CFD does not model this quantity (the model does: the 1D and the web-edge and levelling models on its film)';
   document.getElementById('measStop').hidden = !running;
   const st = document.getElementById('measStatus');
   const c = ds && ds.cfd;
@@ -595,9 +722,9 @@ function renderMeasured() {
   updateProjectTitle();
 }
 function measRows(ds) {
-  const K = MEAS_KINDS[ds.kind], fast = measFast(ds), fe = measErrors(ds, fast);
+  const K = MEAS_KINDS[ds.kind], m = measModel(ds), fast = m ? m.vals.map(v => v != null && Number.isFinite(v) ? v : null) : ds.rows.map(() => null), fe = measErrors(ds, fast);
   const c = ds.cfd && ds.cfd.vals ? ds.cfd : null, ce = c ? measErrors(ds, c.vals) : null;
-  return { K, fast, fe, c, ce, stale: measCfdStale(ds) };
+  return { K, fast, fe, c, ce, stale: measCfdStale(ds), src: m ? m.src : null };
 }
 const measPosText = (ds, p) => [p.z != null ? `z ${mFmt(p.z, 1)} mm` : '', p.x != null ? `x ${mFmt(p.x, 2)} mm` : '', p.t != null ? `t ${mFmt(p.t, 2)} s` : '', ...Object.entries(p.set || {}).map(([k, v]) => `${measSetName(k).toLowerCase()} ${mFmt(v, 3)}${measSetUnit(k) ? ' ' + measSetUnit(k) : ''}`)].filter(Boolean).join(', ');
 function renderMeasTable() {
@@ -605,19 +732,19 @@ function renderMeasTable() {
   if (!host) return;
   const ds = measSelected();
   if (!ds) { host.innerHTML = '<p class="cap">No measured data yet: File > Import measured data…, or Import CSV above. A CSV with a header row: for example <span class="mono">z (mm), wet film (µm)</span>, or <span class="mono">web speed, viscosity, coat weight (g/m²)</span>.</p>'; return; }
-  const { K, fast, fe, c, ce, stale } = measRows(ds);
+  const { K, fast, fe, c, ce, stale, src } = measRows(ds);
   const sf = measStats(fe), sc = ce ? measStats(ce) : null, u = K.yu, pct = v => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
   const set = K.settings ? [...new Set(ds.rows.flatMap(p => Object.keys(p.set || {})))] : [];
   const posK = ['z', 'x', 't'].filter(k => ds.rows.some(p => p[k] != null));
   const cfdCell = i => !c ? '—' : c.vals[i] != null ? mFmt(c.vals[i], K.d) : c.errs[i] ? `<span class="warn-text" title="${mEsc(c.errs[i])}">failed</span>` : c.status === 'running' ? '…' : '—';
   const sum = (s, l) => s ? `<b>${l}</b> RMS ${s.rms.toFixed(1)} %, mean ${pct(s.bias)} %, largest ${s.max.toFixed(1)} % (${s.n} point${s.n === 1 ? '' : 's'})` : `<b>${l}</b> —`;
-  host.innerHTML = `<p class="cap meas-sum">${sum(sf, 'Fast model:')}${K.cfd ? ` · ${c ? sum(sc, 'CFD:') : '<b>CFD:</b> not solved (Solve in CFD)'}${stale ? ' <span class="warn-text">out of date: inputs changed since</span>' : ''}` : ' · CFD: does not model this'}</p>
+  host.innerHTML = `<p class="cap meas-sum">${src ? sum(sf, 'Model:') : '<b>Model:</b> solving the 1D…'}${K.cfd ? ` · ${c ? sum(sc, 'CFD:') : '<b>CFD:</b> not solved (Solve in CFD)'}${stale ? ' <span class="warn-text">out of date: inputs changed since</span>' : ''}` : ' · CFD: does not model this'}</p>
     <div class="table-wrap"><table class="cfd-table meas-table"><thead><tr><th>#</th>${posK.map(k => `<th>${MEAS_POS[k].l}<small>${MEAS_POS[k].u}</small></th>`).join('')}${set.map(k => `<th>${mEsc(measSetName(k))}<small>${mEsc(measSetUnit(k))}</small></th>`).join('')}
-      <th>Measured<small>${u}</small></th><th>Fast model<small>${u}</small></th><th>Error<small>%</small></th>${K.cfd ? `<th>CFD<small>${u}</small></th><th>Error<small>%</small></th>` : ''}</tr></thead><tbody>
+      <th>Measured<small>${u}</small></th><th>Model<small>${u}</small></th><th>Error<small>%</small></th>${K.cfd ? `<th>CFD<small>${u}</small></th><th>Error<small>%</small></th>` : ''}</tr></thead><tbody>
       ${ds.rows.map((p, i) => `<tr><th scope="row">${i + 1}</th>${posK.map(k => `<td>${mFmt(p[k], k === 'z' ? 1 : 2)}</td>`).join('')}${set.map(k => `<td>${mFmt((p.set || {})[k], 3)}</td>`).join('')}
         <td>${mFmt(p.y, K.d)}</td><td>${mFmt(fast[i], K.d)}</td><td>${pct(fe[i])}</td>${K.cfd ? `<td>${cfdCell(i)}</td><td>${ce ? pct(ce[i]) : '—'}</td>` : ''}</tr>`).join('')}
     </tbody></table></div>
-    <p class="fv-note">${mEsc(ds.file)}${ds.skipped ? ` · ${ds.skipped} rows skipped` : ''}${ds.cw ? ` · from ${ds.cw.dry ? 'dry' : 'wet'} coat weight, density ${ds.cw.rho} kg/m³${ds.cw.dry ? `, solids ${ds.cw.solids} %` : ''}` : ''}. Error = (predicted − measured) / measured${ds.rows.some(p => p.y === 0) ? '; points measured as 0 use the mean measured size' : ''}. ${K.pos === 'z' || (K.settings && posK.includes('z')) ? 'Fast model at each position: the local gap and contact angle there (waviness, fibre thickness, wetting variation).' : ''}</p>`;
+    <p class="fv-note">${mEsc(ds.file)}${ds.skipped ? ` · ${ds.skipped} rows skipped` : ''}${ds.cw ? ` · from ${ds.cw.dry ? 'dry' : 'wet'} coat weight, density ${ds.cw.rho} kg/m³${ds.cw.dry ? `, solids ${ds.cw.solids} %` : ''}` : ''}. Error = (predicted − measured) / measured${ds.rows.some(p => p.y === 0) ? '; points measured as 0 use the mean measured size' : ''}. ${src ? `Model: ${mEsc(src)}.` : ''}</p>`;
 }
 /** The parity plot: predicted against measured, the 1:1 line and ±10 %. */
 function renderMeasPlot() {
@@ -656,10 +783,10 @@ function renderMeasPlot() {
       ...(ptsC.length ? [{ p: ptsC.map(q => [q[0], q[1]]), c: colC, line: false, dots: true }] : []),
     ],
   });
-  lg.innerHTML = `<span class="lg"><i class="xl-sw" style="background:${colF}"></i>Fast model</span>${K.cfd ? `<span class="lg"><i class="xl-sw" style="background:${colC}"></i>CFD${c ? stale ? ' (out of date)' : '' : ' (not solved)'}</span>` : ''}<span class="lg"><i class="lg-line"></i>1:1, predicted = measured</span><span class="lg"><i class="lg-line" style="background:${muted};height:1px"></i>±10 % (dashed)</span>`;
+  lg.innerHTML = `<span class="lg"><i class="xl-sw" style="background:${colF}"></i>Model</span>${K.cfd ? `<span class="lg"><i class="xl-sw" style="background:${colC}"></i>CFD${c ? stale ? ' (out of date)' : '' : ' (not solved)'}</span>` : ''}<span class="lg"><i class="lg-line"></i>1:1, predicted = measured</span><span class="lg"><i class="lg-line" style="background:${muted};height:1px"></i>±10 % (dashed)</span>`;
   // (hover: the nearest point)
   const wrap = cv.parentElement, tip = wrap.querySelector('.fv-tip');
-  const pts = [...ptsF.map(q => ({ q, m: 'Fast model', col: colF })), ...ptsC.map(q => ({ q, m: 'CFD', col: colC }))];
+  const pts = [...ptsF.map(q => ({ q, m: 'Model', col: colF })), ...ptsC.map(q => ({ q, m: 'CFD', col: colC }))];
   cv.addEventListener('pointermove', e => {
     const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
     let best = null, bd = 144;
@@ -690,12 +817,12 @@ function renderMeasFit() {
       <div class="table-wrap"><table class="cfd-table"><thead><tr><th>Input</th><th>Before</th><th>Fitted</th></tr></thead><tbody>
       ${f.keys.map(k => `<tr><th scope="row">${mEsc(cfg(k).l)}</th><td>${f.before[k]} ${mEsc(cfg(k).u)}</td><td><b>${f.vals[k]}</b> ${mEsc(cfg(k).u)}${f.atBound.includes(k) ? ' <span class="warn-text">at the end of its range</span>' : ''}</td></tr>`).join('')}
       </tbody></table></div>
-      <div class="table-wrap"><table class="cfd-table"><thead><tr><th>RMS error, %</th><th>Fast model before</th><th>Fast model fitted</th><th>CFD fitted</th></tr></thead><tbody>
+      <div class="table-wrap"><table class="cfd-table"><thead><tr><th>RMS error, %</th><th>${f.model || 'Fast model'} before</th><th>${f.model || 'Fast model'} fitted</th><th>CFD fitted</th></tr></thead><tbody>
       ${f.per.map(p => { const d = MEAS.sets.find(x => x.id === p.id); const cp = chk && chk.per ? chk.per.find(x => x.id === p.id) : null; return d ? `<tr><th scope="row">${mEsc(d.name)}</th><td>${p.before ? p.before.rms.toFixed(1) : '—'}</td><td><b>${p.after ? p.after.rms.toFixed(1) : '—'}</b></td><td>${!MEAS_KINDS[d.kind].cfd ? 'not modelled' : cp && cp.st ? cp.st.rms.toFixed(1) : chk && chk.status === 'running' ? '…' : '—'}</td></tr>` : ''; }).join('')}
       <tr><th scope="row">All</th><td>${f.rmsBefore.toFixed(1)}</td><td><b>${f.rmsAfter.toFixed(1)}</b></td><td>${chk && chk.status === 'done' && chk.rms != null ? `<b>${chk.rms.toFixed(1)}</b>` : chk && chk.status === 'running' ? `solving ${chk.done} of ${chk.total}…` : chk && chk.status === 'stopped' ? 'stopped' : '—'}</td></tr>
       </tbody></table></div>
       <div class="prop-actions meas-fit-act"><button type="button" class="btn btn-primary btn-sm" id="measApply"${f.applied ? ' disabled' : ''}>${f.applied ? 'Applied' : 'Apply fitted values'}</button>${chk && chk.status === 'running' ? '<button type="button" class="btn btn-secondary btn-sm" id="measFitStop">Stop the CFD check</button>' : ''}
-        <span class="fv-why">${sets.length} dataset${sets.length === 1 ? '' : 's'}; the fit uses the fast model, the CFD column checks the fitted values. Apply sets the inputs (Undo takes them back).</span></div>`;
+        <span class="fv-why">${sets.length} dataset${sets.length === 1 ? '' : 's'}; the fit uses the ${f.model ? `${f.model} (${f.solves} solves of each point)` : 'fast model'}, the CFD column checks the fitted values. Apply sets the inputs (Undo takes them back).</span></div>`;
   })();
   host.innerHTML = `<div class="meas-fit">
     <div><h3 class="dock-h">Fit to</h3><div class="meas-fsets">${MEAS.sets.map(d => `<label class="fv-chk"><input type="checkbox" data-fset="${d.id}"${chosen.has(d.id) ? ' checked' : ''}> ${mEsc(d.name)} <span class="fv-why">${mEsc(MEAS_KINDS[d.kind].l.toLowerCase())}</span></label>`).join('')}</div>
@@ -703,7 +830,7 @@ function renderMeasFit() {
     <div class="fv-bar"><button type="button" class="btn btn-secondary btn-sm" data-grp="angle">Contact angle</button><button type="button" class="btn btn-secondary btn-sm" data-grp="rheo">Rheology</button><button type="button" class="btn btn-secondary btn-sm" data-grp="bead">Bead pressure</button>
       <label class="fv-ctl">or any <select id="measFitAdd"><option value="">add an input…</option>${CFG.filter(c => !keys.includes(c.k)).map(c => `<option value="${c.k}">${mEsc(c.l)}</option>`).join('')}</select></label></div>
     ${keys.length ? `<div class="table-wrap"><table class="cfd-table"><thead><tr><th>Input</th><th>Now</th><th>Range searched</th><th></th></tr></thead><tbody>${keys.map(inputRow).join('')}</tbody></table></div>` : '<p class="cap">Pick an input to adjust.</p>'}
-    <div class="prop-actions meas-fit-act"><button type="button" class="btn btn-primary btn-sm" id="measFitGo"${keys.length && chosen.size ? '' : ' disabled'}>Fit</button><span class="fv-why">Minimises the RMS % error of the fast model over the chosen datasets, then solves the best fit in the CFD to check it.</span></div></div>
+    <div class="prop-actions meas-fit-act">${MEAS.fitRun ? `<button type="button" class="btn btn-secondary btn-sm" id="measFitHalt">Stop the fit</button><span class="fv-why"><i class="spin" aria-hidden="true"></i>Fitting on the 1D: round ${Math.min(MEAS.fitRun.done + 1, MEAS.fitRun.total)} of ${MEAS.fitRun.total}</span>` : `<button type="button" class="btn btn-primary btn-sm" id="measFitGo"${keys.length && chosen.size ? '' : ' disabled'}>Fit</button><span class="fv-why">Minimises the RMS % error of the 1D over the chosen datasets (a response surface over the inputs, narrowed three times, then the 1D itself at its best), then solves the best fit in the CFD to check it.</span>`}</div></div>
     <div>${fitRes}</div></div>`;
   host.querySelectorAll('[data-fset]').forEach(i => { i.onchange = () => { const s = new Set(MEAS.fitSets || [MEAS.sel]); if (i.checked) s.add(i.dataset.fset); else s.delete(i.dataset.fset); MEAS.fitSets = [...s]; renderMeasFit(); }; });
   host.querySelectorAll('[data-grp]').forEach(b => { b.onclick = () => { MEAS.fitKeys = [...new Set([...MEAS_FIT_GROUPS[b.dataset.grp], ...MEAS.fitKeys])].slice(0, 3); renderMeasFit(); }; });
@@ -718,7 +845,9 @@ function renderMeasFit() {
       renderMeasFit();
     };
   });
-  host.querySelector('#measFitGo').onclick = () => { imgToast('Fitting…', 'busy'); setTimeout(() => { try { measRunFit(); imgToast(`Fitted: RMS error ${MEAS.fit.rmsBefore.toFixed(1)} % → ${MEAS.fit.rmsAfter.toFixed(1)} % (fast model)`); } catch (e) { imgToast(`Fit failed: ${e.message}`, 'error'); } }, 30); };
+  const go = host.querySelector('#measFitGo');
+  if (go) go.onclick = () => { imgToast('Fitting on the 1D…', 'busy'); measRunFit().then(f => { if (f) imgToast(`Fitted: RMS error ${f.rmsBefore.toFixed(1)} % → ${f.rmsAfter.toFixed(1)} % (1D)`); }).catch(e => { MEAS.fitRun = null; renderMeasFit(); imgToast(e.message === 'stopped' ? 'Fit stopped' : `Fit failed: ${e.message}`, e.message === 'stopped' ? '' : 'error'); }); };
+  const halt = host.querySelector('#measFitHalt'); if (halt) halt.onclick = measStopFit;
   const ap = host.querySelector('#measApply'); if (ap) ap.onclick = measApplyFit;
   const fs = host.querySelector('#measFitStop'); if (fs) fs.onclick = measStopCfd;
   applyHelp();
@@ -729,7 +858,7 @@ function exportMeasured() {
   const { K, fast, fe, c, ce } = measRows(ds), u = K.yu.replace('µ', 'u');
   const set = K.settings ? [...new Set(ds.rows.flatMap(p => Object.keys(p.set || {})))] : [];
   const posK = ['z', 'x', 't'].filter(k => ds.rows.some(p => p[k] != null));
-  const rows = [['point', ...posK.map(k => `${k}_${MEAS_POS[k].u}`), ...set, `measured_${u}`, `fast_${u}`, 'fast_error_pct', ...(K.cfd ? [`cfd_${u}`, 'cfd_error_pct'] : [])]];
+  const rows = [['point', ...posK.map(k => `${k}_${MEAS_POS[k].u}`), ...set, `measured_${u}`, `model_${u}`, 'model_error_pct', ...(K.cfd ? [`cfd_${u}`, 'cfd_error_pct'] : [])]];
   ds.rows.forEach((p, i) => rows.push([i + 1, ...posK.map(k => p[k]), ...set.map(k => (p.set || {})[k]), p.y, fast[i] ?? '', fe[i] ?? '', ...(K.cfd ? [c ? c.vals[i] ?? '' : '', ce ? ce[i] ?? '' : ''] : [])]));
   downloadCSV(`measured-${ds.name.replace(/[^\w-]+/g, '_')}-${csvStamp()}.csv`, rows);
 }

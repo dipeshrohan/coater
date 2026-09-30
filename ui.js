@@ -81,11 +81,18 @@ function updateScope(extra = '') {
   if (pg) { pg.className = 'pg-scope ' + el.className.replace('scope', '').trim(); pg.innerHTML = el.innerHTML; }
 }
 
-/** Draw the static cross-section (blade, bead, meniscus, film) for the "Contact line at the blade" tab. */
-function drawSection(cv, aspect = 0.66) {
+/**
+ * Draw the cross-section at the metering edge (blade, bead, meniscus, film) for the Contact line page: a schematic -- the
+ * exit face at its angle (CFDG.exitAngle) up to the notch corner (P.face), the underside a round sketch -- with the solved
+ * answer drawn on it: a = { H (gap, mm), h (wet film, mm), s (contact line up the face, mm; 0 pinned) }. The meniscus from
+ * the contact line down to the film is the static (Young–Laplace) shape through those two heights.
+ */
+function drawSection(cv, aspect = 0.66, a) {
   const { c, w, h } = setupCanvas(cv, aspect);
-  const H = gapHeight(), st = contactLine(H, P.th);
-  const sc = w / 16, x0 = 4, y0 = h - 70;
+  const H = a.H, fa = (typeof CFDG !== 'undefined' ? CFDG.exitAngle : 45) * Math.PI / 180, fc = Math.cos(fa), fs = Math.sin(fa);
+  const lcap = capillaryLength(), rise = Math.max(0, H + a.s * fs - a.h);
+  const st = { h: a.h, s: a.s, pinned: !(a.s > 0), phi: 2 * Math.asin(Math.min(1, rise / (2 * lcap))) };
+  const x0 = 4, sc = Math.min(w / 16, (h - 90) / (H + P.face * fs + 1.2)), y0 = h - 70;
   const X = x => (x + x0) * sc, Y = y => y0 - y * sc;
   c.clearRect(0, 0, w, h);
 
@@ -97,9 +104,9 @@ function drawSection(cv, aspect = 0.66) {
   c.fillStyle = cssVar('--soft'); c.fillRect(0, Y(-P.tf), w, 60);
   c.strokeStyle = ink; c.lineWidth = 1.2; c.strokeRect(0, Y(0), w, P.tf * sc);
 
-  const Qx = st.s * SIN45, E = [0, H], Qp = [Qx, H + st.s * SIN45];
-  const V = [P.face * SIN45, H + P.face * SIN45];
-  const D = [V[0] + P.face * 0.55 * SIN45, V[1] - P.face * 0.55 * SIN45];
+  const E = [0, H], Qp = [st.s * fc, H + st.s * fs];
+  const V = [P.face * fc, H + P.face * fs];
+  const D = [V[0] + P.face * 0.55 * fs, V[1] - P.face * 0.55 * fc];
   const R = 15; // blade roll radius in view units, just for the drawn curvature
   const under = x => H + x * x / (2 * R);
 
@@ -138,7 +145,9 @@ function drawSection(cv, aspect = 0.66) {
   c.strokeStyle = mut; c.setLineDash([3, 3]);
   c.beginPath(); c.moveTo(X(-0.7), Y(0)); c.lineTo(X(-0.7), Y(H)); c.stroke(); c.setLineDash([]);
 
-  outlinedText(c, st.pinned ? 'contact line pinned at the edge' : 'contact line ' + st.s.toFixed(1) + ' mm up the face', X(Qp[0]) + 12, Y(Qp[1]) - 12, acc);
+  outlinedText(c, st.pinned ? 'contact line pinned at the edge' : 'contact line ' + st.s.toFixed(2) + ' mm up the face', X(Qp[0]) + 12, Y(Qp[1]) - 12, acc);
+  c.fillStyle = mut; c.font = '11px ' + cssVar('--sans');
+  c.fillText('schematic: the exit face at ' + (fa * 180 / Math.PI).toFixed(0) + '°, not to scale along the blade', 10, h - 10);
   c.restore();
 }
 
@@ -318,7 +327,7 @@ function fillA() {
 
   document.getElementById('ss').innerHTML = [
     ['Gap at this position', i.H.toFixed(2) + ' mm'],
-    ['Wet film', st.h.toFixed(2) + ' mm'],
+    ['Wet film in the animation', st.h.toFixed(2) + ' mm'],
     ['Film / gap', (st.h / i.H).toFixed(3)],
     ['Shear rate U/H', (P.U / 60 / (i.H / 1000)).toFixed(1) + ' 1/s'],
     ['Numerical state', ANIM.safe ? 'physical bounds passed' : 'surface solve stopped'],
@@ -328,67 +337,78 @@ function fillA() {
 // ---------------------------------------------------------------------
 // The answers of the Results pages, shared by each page and the Summary
 // ---------------------------------------------------------------------
-/** The contact line and the wet film across the web (300 points over 300 mm), their ranges and the verdict. */
+/** The contact line and the wet film across the web (answers.js: the 1D's profile where the blade is, at the level of the
+ *  most detailed model solved), in mm, their ranges and the verdict; null while the 1D solves. */
 function contactAcross() {
-  // (where the blade is: it may end inside the web -- past its end no blade meters the film)
-  const N = 300, WIDTH = 300, pts = [], film = [], sp = acrossSpanNow(), za = Math.max(0, sp[0]), zb = Math.min(WIDTH, sp[1]);
-  let mx = 0, mn = 1e9, over = 0, hmn = 1e9, hmx = 0;
-  for (let i = 0; i < N; i++) {
-    const z = za === 0 && zb === WIDTH ? i / (N - 1) * WIDTH : za + (zb - za) * i / (N - 1);
-    const H = localGap(z), th = localContactAngle(z);
-    const r = contactLine(H, th);
-    pts.push([z, r.s]); film.push([z, r.h]);
-    mx = Math.max(mx, r.s); mn = Math.min(mn, r.s);
-    if (r.s > P.face) over++;
-    hmn = Math.min(hmn, r.h); hmx = Math.max(hmx, r.h);
-  }
+  const X = ansAcross();
+  if (!X) return null;
+  const N = X.z.length, WIDTH = 300, pts = X.z.map((z, k) => [z, X.s[k] * 1000]), film = X.z.map((z, k) => [z, X.film[k] * 1000]);
+  const ss = pts.map(q => q[1]), hs = film.map(q => q[1]);
+  const mx = Math.max(...ss), mn = Math.min(...ss), hmn = Math.min(...hs), hmx = Math.max(...hs), over = ss.filter(s => s > P.face).length;
   const peakToPeak = mx - mn, wetFraction = over / N * 100, filmDeviation = (hmx - hmn) / ((hmx + hmn) / 2) * 100;
   const verdict = over ? ['Slurry reaches the notch corner over ' + wetFraction.toFixed(0) + '% of the width', 'bad']
     : peakToPeak > 0.5 ? ['Uneven contact line: ' + peakToPeak.toFixed(1) + ' mm peak to peak', 'warn']
       : mx === 0 ? ['Pinned at the sharp edge everywhere', 'ok'] : ['Contact line steady', 'ok'];
-  return { N, WIDTH, pts, film, mx, mn, over, hmn, hmx, peakToPeak, wetFraction, filmDeviation, verdict };
+  return { N, WIDTH, pts, film, mx, mn, over, hmn, hmx, peakToPeak, wetFraction, filmDeviation, verdict, src: X.src, label: X.label };
 }
-/** The web edge from the blade to the oven: the bead, the amplitude along the way and at the oven, and the verdict. */
+/** The web edge from the blade to the oven: the bead on the film at the web's edges (answers.js; of the two, the one whose
+ *  scallops are larger at the oven), the amplitude along the way and at the oven, and the verdict; null while the 1D solves. */
 function edgeOutlook() {
-  const e = edgeBead(), ovenDistanceMm = P.oven * 1000;
+  const X = ansAcross();
+  if (!X) return null;
+  const ovenDistanceMm = P.oven * 1000, n = X.z.length - 1;
+  const at = (side, z, h) => { const e = edgeBead(h); return { side, z, h, e, end: e.arrest ? P.a0e / 1000 : edgeAmplitudeAt(ovenDistanceMm, h) }; };
+  const L = at('left', X.z[0], X.film[0]), R = at('right', X.z[n], X.film[n]), pick = R.end > L.end ? R : L, e = pick.e;
   const pts = [];
   for (let i = 0; i <= 100; i++) {
     const x = ovenDistanceMm * i / 100;
-    pts.push([x, e.arrest ? P.a0e / 1000 : edgeAmplitudeAt(x)]);
+    pts.push([x, e.arrest ? P.a0e / 1000 : edgeAmplitudeAt(x, pick.h)]);
   }
-  const endAmplitude = e.arrest ? P.a0e / 1000 : edgeAmplitudeAt(ovenDistanceMm);
+  const endAmplitude = pick.end;
   const visible = endAmplitude > 0.2;
   const verdict = e.arrest ? ['Yield stress freezes the edge', 'ok']
     : visible ? ['Scalloped edge at the oven: ' + (endAmplitude * 2).toFixed(1) + ' mm peak to peak', 'bad']
       : ['Edge stays straight to the oven', 'ok'];
-  return { e, ovenDistanceMm, pts, endAmplitude, visible, verdict };
+  return { e, ovenDistanceMm, pts, endAmplitude, visible, verdict, side: pick.side, z: pick.z, h: pick.h, src: X.src, label: X.label };
 }
-/** The film-surface ripple: its levelling (physics.js), what is left at the oven, and the verdict. */
+/** The film-surface ripple: its levelling (the 1D's model on the answer's film there, answers.js) at the location where
+ *  the most is left at the oven, and the verdict; null while the 1D solves. */
 function surfaceOutlook() {
-  const lv = rippleLevelling(), aEnd = lv.at(lv.tRes), remainMicrons = aEnd * 1e6;
+  let best = null;
+  CFD_LOCS.forEach((l, i) => { const lv = ansRippleAt(i); if (lv) { const aEnd = lv.at(lv.tRes); if (!best || aEnd > best.aEnd) best = { lv, aEnd, i }; } });
+  if (!best) return null;
+  const { lv, aEnd } = best, remainMicrons = aEnd * 1e6;
   const verdict = remainMicrons > 5 ? ['Ripple survives to the oven: ' + remainMicrons.toFixed(0) + ' µm', 'bad']
     : remainMicrons > 1 ? ['Small ripple remains: ' + remainMicrons.toFixed(1) + ' µm', 'warn']
       : ['Film levels out before the oven', 'ok'];
-  return { lv, aEnd, remainMicrons, verdict };
+  return { lv, aEnd, remainMicrons, verdict, loc: best.i, src: lv.src };
+}
+/** A Results page before the 1D has solved: its status and an empty numbers strip (the page redraws when it arrives). */
+function ansWaiting() {
+  document.getElementById('st').innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', '');
+  document.getElementById('ss').innerHTML = '';
 }
 
 // ---------------------------------------------------------------------
 // Tab 2: Contact line at the blade
 // ---------------------------------------------------------------------
 function view1() {
+  oneDRequest(true);
+  const ca = contactAcross(), mid = ca ? ansAcrossAt(150) : null;
   view.innerHTML = moduleFrame({
     cols: workbenchFits() ? 2 : 1,
     panes: [
       { id: 'c1', icon: 'section', title: 'Cross-section at the web centre', aria: 'Cross-section of blade, slurry and meniscus',
-        note: 'The meniscus is the Young–Laplace profile from the contact line down to the flat film. It is pinned at the sharp edge when the contact angle is large, and climbs the flat face when it is small.' },
+        note: `The film and the contact line at the web's centre, ${ca ? ca.label : 'from the solvers'}. The meniscus drawn from the contact line down to the film is the static Young–Laplace shape; it is pinned at the sharp edge when the contact angle is large and climbs the exit face when it is small.` },
       { id: 'c2', icon: 1, title: 'Top view: contact line across the web', aria: 'Contact line position across the web',
-        note: 'Each point is where the contact line sits on the face, from the sharp edge (0) to the notch corner. Gap waviness, fibre thickness and wetting changes push it up and down.' },
+        note: `Where the contact line sits on the exit face, from the metering edge (0) to the notch corner, ${ca ? ca.label : 'from the solvers'}. Gap waviness, fibre thickness and wetting changes push it up and down.` },
     ],
   });
+  if (!ca) { ansWaiting(); return; }
   const c1 = document.getElementById('c1');
-  drawSection(c1, workbenchFits() ? fitAspect(c1, 0.95) : 0.66);
+  drawSection(c1, workbenchFits() ? fitAspect(c1, 0.95) : 0.66, { H: localGap(150), h: mid.film * 1000, s: mid.s * 1000 });
 
-  const { WIDTH, pts, mx, mn, hmn, hmx, peakToPeak, filmDeviation, verdict } = contactAcross();
+  const { WIDTH, pts, mx, mn, hmn, hmx, peakToPeak, filmDeviation, verdict } = ca;
   const c2 = document.getElementById('c2');
   plotChart(c2, fitAspect(c2, 0.95), {
     x0: 0, x1: WIDTH, y0: 0, y1: Math.max(P.face * 1.3, mx * 1.1),
@@ -398,15 +418,15 @@ function view1() {
   });
 
   let statusHtml = pill(...verdict);
-  // Ca is already shown in the persistent validity banner above — no need to restate it here.
+  statusHtml += pill(ca.label.charAt(0).toUpperCase() + ca.label.slice(1), '');
   statusHtml += pill('Capillary length ' + capillaryLength().toFixed(2) + ' mm', '');
   document.getElementById('st').innerHTML = statusHtml;
 
   document.getElementById('ss').innerHTML = [
-    ['Wet film, centre', contactLine(gapHeight(), P.th).h.toFixed(2) + ' mm'],
+    ['Wet film, centre', (mid.film * 1000).toFixed(3) + ' mm'],
     ['Film range across web', hmn.toFixed(2) + ' to ' + hmx.toFixed(2) + ' mm'],
     ['Film variation', filmDeviation.toFixed(1) + ' %'],
-    ['Contact line range', mn.toFixed(1) + ' to ' + mx.toFixed(1) + ' mm'],
+    ['Contact line range', mn.toFixed(2) + ' to ' + mx.toFixed(2) + ' mm'],
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
@@ -414,16 +434,19 @@ function view1() {
 // Tab 3: Web edge
 // ---------------------------------------------------------------------
 function view2() {
-  const U = P.U / 60, { e, ovenDistanceMm, pts, endAmplitude, verdict } = edgeOutlook();
+  oneDRequest(true);
+  const U = P.U / 60, ed = edgeOutlook();
 
   view.innerHTML = moduleFrame({
     panes: [
       { id: 'c1', icon: 2, title: 'Edge growth from the blade to the oven', aria: 'Edge amplitude versus distance',
-        note: 'The wet edge is a ridge of slurry along the fibre margin. Surface tension pulls it into beads (Rayleigh–Plateau), and viscosity slows that down. A yield stress larger than the capillary pressure freezes it.' },
+        note: `The wet edge is a ridge of slurry along the fibre margin, as high as the film there${ed ? ` (${(ed.h * 1000).toFixed(3)} mm at the ${ed.side} edge, ${ed.label})` : ''}. Surface tension pulls it into beads (Rayleigh–Plateau), and viscosity slows that down. A yield stress larger than the capillary pressure freezes it.` },
       { id: 'c2', icon: 'top', title: 'Top view of the edge at the oven entrance', aria: 'Top view of the wet edge',
         note: 'Machine direction left to right.' },
     ],
   });
+  if (!ed) { ansWaiting(); return; }
+  const { e, ovenDistanceMm, pts, endAmplitude, verdict } = ed;
 
   const c1 = document.getElementById('c1');
   plotChart(c1, fitAspect(c1, 0.36), {
@@ -434,6 +457,7 @@ function view2() {
   });
 
   document.getElementById('st').innerHTML = pill(...verdict)
+    + pill(`The ${ed.side} edge (z ${ed.z.toFixed(0)} mm): film ${(ed.h * 1000).toFixed(3)} mm, ${ansFrom(ed.src)}`, '')
     + pill('Capillary pressure ' + e.pc.toFixed(0) + ' Pa vs yield ' + P.ty.toFixed(1) + ' Pa', '')
     // (the structure, GO-1: just sheared at the blade, the slurry rebuilds on the web)
     + (e.lam0 != null ? pill(`Structure λ ${e.lam0.toFixed(2)} just after the blade: grows at ${e.sig.toFixed(2)} 1/s at first (rested ${(P.g / (6 * e.muRested * e.R)).toFixed(2)} 1/s); ${e.arrest ? 'the yield stress holds it from the start' : Number.isFinite(e.tArrest) ? `the rebuilding yield stress holds it from ${e.tArrest.toFixed(0)} s (${(e.tArrest * U * 1000).toFixed(0)} mm)` : 'the rebuilt yield stress does not hold it'}`, '') : '');
@@ -479,16 +503,19 @@ function view2() {
 // Tab 4: Film surface
 // ---------------------------------------------------------------------
 function view3() {
-  const { lv, aEnd, remainMicrons, verdict } = surfaceOutlook(), { h, dhdH, a0, tau, residual: residualFromYield, tRes } = lv;   // (physics.js)
+  oneDRequest(true);
+  const sf = surfaceOutlook(), where = sf ? `at L${sf.loc + 1} (z ${CFD_LOCS[sf.loc].z} mm, where the most is left at the oven), on the wet film ${ansFrom(sf.src)}` : '';
 
   view.innerHTML = moduleFrame({
     panes: [
       { id: 'c1', icon: 3, title: 'Film surface across the web', aria: 'Film surface ripple before and after levelling',
-        note: 'Deviation from the mean, in µm. Dashed: just after the blade. Solid: at the oven entrance.' },
+        note: `Deviation from the mean, in µm, ${where}. Dashed: just after the blade. Solid: at the oven entrance.` },
       { id: 'c2', icon: 'period', title: 'Levelling in time', aria: 'Ripple amplitude versus time',
-        note: `Surface tension smooths the film. A yield stress stops levelling at a residual amplitude that stays into the oven. The ripple source is the gap wobble (through the film sensitivity dh/dH = ${dhdH.toFixed(2)}) plus vibration.` },
+        note: sf ? `Surface tension smooths the film (the 1D's levelling model). A yield stress stops levelling at a residual amplitude that stays into the oven. The ripple source is the gap wobble (through the film sensitivity dh/dH = ${sf.lv.dhdH.toFixed(2)}, the 1D's) plus vibration.` : '' },
     ],
   });
+  if (!sf) { ansWaiting(); return; }
+  const { lv, aEnd, remainMicrons, verdict } = sf, { h, dhdH, a0, tau, residual: residualFromYield, tRes } = lv;
 
   const plotWindow = Math.max(P.lam * 3, 20);
   const p0 = [], p1 = [];
@@ -549,9 +576,17 @@ function sparkline(pts, y0, y1, level) {
   return `<div class="spark" aria-hidden="true"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" x2="${W}" y1="${H - 8}" y2="${H - 8}" class="sp-base"/>${level ? `<line x1="0" x2="${W}" y1="${ly.toFixed(1)}" y2="${ly.toFixed(1)}" class="sp-level" style="stroke: var(${level.c})"/>` : ''}<path d="${d}" class="sp-line"/></svg>${level ? `<span class="sp-lab" style="top: ${(ly - 17).toFixed(0)}px">${level.t}</span>` : ''}</div>`;
 }
 function viewSummary() {
-  const ca = contactAcross(), ed = edgeOutlook(), sf = surfaceOutlook();
+  oneDRequest(true);
+  const ca = contactAcross(), ed = edgeOutlook(), sf = surfaceOutlook(), web = processWeb();
   const cfg = k => CFG.find(c => c.k === k), val = (k, l) => `${l} <b>${P[k].toFixed(cfg(k).d)} ${cfg(k).u}</b>`;
-  const hc = contactLine(gapHeight(), P.th).h;
+  if (!ca || !ed || !sf || !web) {
+    view.innerHTML = `<div class="sum-page">
+      <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}<span class="vp-spacer"></span>${aboutButton()}</div>
+      <div class="sum-body"><div class="sum-top"><div><h1>Your coating at these settings</h1>
+        <p class="sum-set">${[val('U', 'Web speed'), val('Hm', 'Scraper height'), val('mu', 'Viscosity'), val('ty', 'Yield stress')].join(' · ')}</p></div></div>
+      ${emptyHint(ONE_D.error ? 'The 1D could not be solved' : 'Solving the 1D across the web…', ONE_D.error ? escAttr(ONE_D.error) : 'The answers come from the most detailed model solved for these inputs: the 1D across the web, at the level of the 2D and 3D where they are solved.')}</div></div>`;
+    return;
+  }
   const answer = (v, yes, warn) => v[1] === 'bad' ? yes : v[1] === 'warn' ? warn : 'No';
   const tone = v => v[1] === 'bad' ? '--bad' : v[1] === 'warn' ? '--warn' : '--ok';
   const card = (view, label, q, v, badge, value, unit, chart) => `<article class="sum-card" data-view="${view}" style="--c: var(${tone(v)})" title="${v[0]}">
@@ -569,17 +604,17 @@ function viewSummary() {
       <div class="sum-top">
         <div><h1>Your coating at these settings</h1>
           <p class="sum-set">${[val('U', 'Web speed'), val('Hm', 'Scraper height'), val('mu', 'Viscosity'), val('ty', 'Yield stress')].join(' · ')}<button type="button" class="linkish" id="sumInputs">Edit inputs</button></p></div>
-        <div class="sum-film"><span>${uiBadge('film')}Wet film</span><strong>${hc.toFixed(2)} mm</strong><em>${ca.hmn.toFixed(2)} to ${ca.hmx.toFixed(2)} mm across the web</em></div>
+        <div class="sum-film" title="${escAttr(web.label)}"><span>${uiBadge('film')}Wet film, mean</span><strong>${(web.mean * 1000).toFixed(3)} mm</strong><em>${(web.min * 1000).toFixed(3)} to ${(web.max * 1000).toFixed(3)} mm across the web · ${web.tag}</em></div>
       </div>
       <div class="sum-cards">
         ${card(1, 'Contact line', 'Slurry on the dry edge?', ca.verdict, answer(ca.verdict, 'Yes', 'Uneven'),
-          ca.mx === 0 ? '0 mm' : `${ca.mn.toFixed(1)}–${ca.mx.toFixed(1)} mm`, `up the face (dry edge at ${P.face.toFixed(1)} mm)`,
+          ca.mx === 0 ? '0 mm' : `${ca.mn.toFixed(2)}–${ca.mx.toFixed(2)} mm`, `up the face (dry edge at ${P.face.toFixed(1)} mm) · ${ANS_SRC[ca.src]}`,
           sparkline(ca.pts, 0, Math.max(P.face * 1.3, ca.mx * 1.1), { y: P.face, c: '--bad', t: 'dry edge' }))}
         ${card(2, 'Web edge', 'Edge scallops at the oven?', ed.verdict, answer(ed.verdict, 'Yes', 'Some'),
-          `${(ed.endAmplitude * 2).toFixed(1)} mm`, 'peak to peak at the oven',
+          `${(ed.endAmplitude * 2).toFixed(1)} mm`, `peak to peak at the oven (${ed.side} edge)`,
           sparkline(ed.pts, 0, Math.max(ed.e.lam / 4 * 1.1, 0.5), { y: 0.2, c: '--warn', t: 'visible' }))}
         ${card(3, 'Film surface', 'Streaks at the oven?', sf.verdict, answer(sf.verdict, 'Yes', 'Slight'),
-          `${sf.remainMicrons < 10 ? sf.remainMicrons.toFixed(1) : sf.remainMicrons.toFixed(0)} µm`, 'ripple left at the oven',
+          `${sf.remainMicrons < 10 ? sf.remainMicrons.toFixed(1) : sf.remainMicrons.toFixed(0)} µm`, `ripple left at the oven (L${sf.loc + 1}) · ${ANS_SRC[sf.src]}`,
           sparkline(surfPts, 0, Math.max(sf.lv.a0 * 1e6 * 1.1, 5)))}
       </div>
       <p class="pg-scope" id="pgScope"></p>

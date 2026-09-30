@@ -12,6 +12,37 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Workflow, phase WF-1: one answer per quantity (answers.js)
+
+User report (a photo of the Materials page): pages built without being connected. Audited at the defaults on main:
+the Results pages showed the quick algebraic model -- wet film 1.45 mm, contact line 4.5-4.8 mm up the face (drawn on
+a 45 deg face; the blade's is 90 deg) -- while the 1D (which Process used) gave 1.76 mm / 2.1 mm and the 2D CFD
+1.60 mm / 0.7 mm. User's decisions (30 Sep): tabs in process order (WF-2); every page takes the best solved model,
+labelled; the quick contact-line and levelling models removed (the web-edge scallops and the start-up animation stay);
+across the web the 1D's shape at the 2D's level; the Results pages Contact line and Film surface kept, drawn from the
+solvers; the bead pressure default re-derived from the 2D; engineering terms (WF-4/7); the fit on the 1D.
+Built:
+- answers.js: ansAt(i) (location i: 3D strip or full-width station, else 2D, else 1D; film, flow rate, contact line,
+  its source), ansAcross() (the 1D across the web, 61 positions, times the ratio model/1D at the locations solved in more
+  detail, interpolated linearly and held beyond them; film and contact line alike), ansRippleAt(i) (cfd-1d.js's ripple1D
+  on the answer's film, dh/dH and the structure's lambda from the 1D), ansRefresh() (a 2D or 3D solve finishing redraws
+  the pages showing answers). The Results pages ask the 1D for its across-the-web solve and redraw when it arrives.
+- Results: Summary (wet film = the web's mean across it, and its source), Contact line (the cross-section at the web's
+  centre: a schematic with the exit face at its angle, the solved film and contact line, the static meniscus between),
+  Web edge (edgeBead(h) on the film at the web's edge, the edge whose scallops are larger at the oven), Film surface (the
+  1D's levelling on the answer's film at the location where most is left). Process and the drying's films: the same
+  answers (processFilmAt, processWeb). The report waits for the answers. physics.js: rippleLevelling removed; edgeBead and
+  edgeAmplitudeAt take the film; contactLine stays for the start-up animation only (its tile says so). The 2D's dock no
+  longer lists physics.js filmThickness(). The 3D's drawing before a 1D: half the gap (drawn again when the 1D arrives).
+- Measured data: the model column is the solved answer (the 1D at each point's settings for film against settings, in
+  its own worker); the fit runs on the 1D (60 x 80, within 0.02 % of the page's; 7 ms a solve): a 3-level design over a
+  box about the current values (5 levels for one input), a quadratic fitted to each point, Nelder-Mead on it, the box
+  halved about its best, three times; then the 1D at the surface's best and at the best point solved, the better kept;
+  Stop ends it (its worker terminated). Checked on data made by the 1D at known inputs: bead pressure 0.60 kPa and
+  contact angle 30 deg recovered exactly (RMS 5.7 % -> 0.01 %, 1-4 s).
+- Bead pressure default 0.72 -> 0.49 kPa (step 0.01): the 2D gives the design wet film 1.45 mm at L1 (493 Pa exactly;
+  the 1D needs 369 Pa). Not measured.
+
 ### Menu bar, command palette, right-click menus (menus.js)
 
 User spec: a CAE-style menu bar (File, Edit, View, Geometry, Physics, Mesh, Simulation, Results, Tools, Window, Help) as an

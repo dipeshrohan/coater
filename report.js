@@ -111,6 +111,7 @@ function repInputs() {
     <table><thead><tr><th>Input</th><th>Value</th><th>Default</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 async function repModule(m, statsTitle = 'Results') {
+  if ([1, 2, 3, 7].includes(m)) await oneDWait(true);   // (the Results pages: the solved answers across the web)
   tab = m; render(); await repFrame();
   let html = '';
   if (m === 0) {
@@ -440,9 +441,13 @@ async function repDoe() {
 }
 
 async function repMeasured() {
-  let html = '<p class="lede">Measured points against the fast models and, where solved, the CFD. Error = (predicted − measured) / measured.</p>';
+  let html = '<p class="lede">Measured points against the model (the solved answers: the most detailed model solved; the 1D at a point\'s own settings) and, where solved, the CFD. Error = (predicted − measured) / measured.</p>';
+  await oneDWait(true);   // (the model: the solved answers across the web)
   for (const ds of MEAS.sets) {
     MEAS.sel = ds.id; MEAS.dock = 'compare'; tab = TABS.indexOf('Measured data'); render(); await repFrame();
+    // (the film against settings: the 1D at each point, solved in the background)
+    for (let k = 0; k < 400 && ds.kind === 'film_set' && !measModel(ds); k++) await new Promise(r => setTimeout(r, 50));
+    render(); await repFrame();
     const stale = measCfdStale(ds);
     html += `<h3>${repEsc(ds.name)}</h3><p class="lede">${repEsc(MEAS_KINDS[ds.kind].l)} · ${ds.rows.length} points · ${repEsc(ds.file)}${ds.cw ? ` · from ${ds.cw.dry ? 'dry' : 'wet'} coat weight, density ${ds.cw.rho} kg/m³${ds.cw.dry ? `, solids ${ds.cw.solids} %` : ''}` : ''}${stale ? ' · ' + repFlag() + ' CFD values are for earlier inputs' : ''}</p>`;
     const sum = document.querySelector('#measTable .meas-sum');
@@ -454,9 +459,9 @@ async function repMeasured() {
   const f = MEAS.fit;
   if (f) {
     const c = k => CFG.find(q => q.k === k) || { l: k, u: '' };
-    html += `<h3>Fit</h3><p class="lede">${repEsc(new Date(f.t).toLocaleString())} · to ${repEsc(f.sets.map(id => (MEAS.sets.find(d => d.id === id) || { name: '(removed)' }).name).join(', '))} · RMS % error minimised on the fast model${f.applied ? ' · applied' : ' · not applied'}</p>`;
+    html += `<h3>Fit</h3><p class="lede">${repEsc(new Date(f.t).toLocaleString())} · to ${repEsc(f.sets.map(id => (MEAS.sets.find(d => d.id === id) || { name: '(removed)' }).name).join(', '))} · RMS % error minimised on the ${f.model || 'fast model'}${f.applied ? ' · applied' : ' · not applied'}</p>`;
     html += repRows(f.keys.map(k => [repEsc(c(k).l), repEsc(repUnit(f.before[k], c(k).u)), `<b>${repEsc(repUnit(f.vals[k], c(k).u))}</b>${f.atBound.includes(k) ? ' <span class="warn">at the end of its range</span>' : ''}`]), ['Input', 'Before', 'Fitted']);
-    html += repRows([['All chosen data', f.rmsBefore.toFixed(1), f.rmsAfter.toFixed(1), f.cfd && f.cfd.status === 'done' && f.cfd.rms != null ? f.cfd.rms.toFixed(1) : f.cfd && f.cfd.status === 'none' ? 'not modelled' : '—']], ['RMS error, %', 'Fast model before', 'Fast model fitted', 'CFD fitted']);
+    html += repRows([['All chosen data', f.rmsBefore.toFixed(1), f.rmsAfter.toFixed(1), f.cfd && f.cfd.status === 'done' && f.cfd.rms != null ? f.cfd.rms.toFixed(1) : f.cfd && f.cfd.status === 'none' ? 'not modelled' : '—']], ['RMS error, %', `${f.model || 'Fast model'} before`, `${f.model || 'Fast model'} fitted`, 'CFD fitted']);
   }
   return html;
 }

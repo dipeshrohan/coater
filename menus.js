@@ -62,7 +62,7 @@ mbA('exp.cuts', mbExp2D('2D cut lines (CSV)', () => exportCuts(), 'Every field a
 mbA('exp.stl3d', { l: '3D blade (STL)', tip: 'The blade made from the 2D setup, as an STL file (mm).', run: () => mbClick(() => mb3D('geometry'), '#c3dExport'), on: () => C3D.source === 'made', why: () => 'Only a blade made from the 2D setup (not one from a file).' });
 mbA('exp.stream3d', { l: '3D streamlines (CSV)', tip: 'Every 3D streamline\'s points and velocity.', run: () => { mb3D('results'); if (!C3D.stream) c3dSet('stream', true); mbClick(() => {}, '#c3dStreamCsv'); }, on: mbRes3D, why: () => NEED_3D });
 mbA('exp.doe', { l: 'DOE runs (CSV)', tip: 'The runs table: factors, outputs, status, time.', run: () => { mbTab(5); exportDOE(); }, on: () => DOE.runs.length > 0, why: () => 'Run the DOE first.' });
-mbA('exp.meas', { l: 'Measured vs models (CSV)', tip: 'Each measured point with the fast model and the CFD.', run: () => { mbTab(6); exportMeasured(); }, on: () => !!measSelected(), why: () => 'Import a measured dataset first.' });
+mbA('exp.meas', { l: 'Measured vs models (CSV)', tip: 'Each measured point with the model (the most detailed one solved) and the CFD.', run: () => { mbTab(6); exportMeasured(); }, on: () => !!measSelected(), why: () => 'Import a measured dataset first.' });
 mbA('exp.dry', { l: 'Drying (CSV)', tip: 'Every film\'s drying along the oven.', run: () => { processGo('dry', 'results'); dryExportCSV(); }, on: () => !!DRY.res, why: () => 'Solve the drying first (Process › Drying).' });
 mbA('exp.film', { l: 'Dry film (CSV)', tip: 'Stress, cracks and peel along the line.', run: () => { processGo('film', 'results'); filmExportCSV(); }, on: () => !!FILM.res, why: () => 'Solve the film first (Process › Film).' });
 mbA('exp.furn', { l: 'Furnace (CSV)', tip: 'The runs through time: temperature, weight, C/O, thickness …', run: () => { processGo('furn', 'results'); furnExportCSV(); }, on: () => !!FURN.res, why: () => 'Solve the furnace first (Process › Furnace).' });
@@ -142,7 +142,7 @@ mbA('mesh.3d.acc', { l: '3D mesh to an accuracy…', tip: 'Its settings (method,
 mbA('mesh.3d.accStop', { l: 'Stop the 3D mesh to an accuracy', tip: 'As its Stop button.', run: () => acc3Stop(), on: () => ACC3.status === 'running', why: () => 'It is not running.' });
 
 // ===================================================================== Simulation
-[[8, '1D (fast models)'], [4, '2D CFD'], [9, '3D CFD']].forEach(([t, l]) => mbA('sim.dim.' + t, { l, tip: `Flow › ${l}.`, run: () => mbTab(t), chk: () => t === 8 ? [8, 10, 11, 0].includes(tab) : tab === t }));
+[[8, '1D'], [4, '2D CFD'], [9, '3D CFD']].forEach(([t, l]) => mbA('sim.dim.' + t, { l, tip: `Flow › ${l}.`, run: () => mbTab(t), chk: () => t === 8 ? [8, 10, 11, 0].includes(tab) : tab === t }));
 STEPS.forEach(([k, l]) => mbA('sim.2d.' + k, { l: `${l}${k === 'solve' ? ' (boundary conditions, solver settings)' : ''}`, tip: `The 2D's ${l.toLowerCase()} step.`, run: () => mb2D(k), chk: () => tab === 4 && step2D() === k }));
 mbA('sim.2d.runAll', { l: 'Run all four locations', tip: 'Solve the 2D at the four locations.', key: 'run.run', run: () => { mb2D(); runAllLocations(); }, on: () => !cfdRuns.every(r => r.status === 'running'), why: () => 'They are all running.' });
 [0, 1, 2, 3].forEach(i => mbA('sim.2d.run' + i, { l: `Run location ${i + 1}`, tip: `Solve the 2D at location ${i + 1} only.`, run: () => { mb2D(); runLocation(i); }, on: () => cfdRuns[i].status !== 'running', why: () => 'It is running.' }));
