@@ -74,6 +74,7 @@
 // for fill-in from row interchanges) at A[r*W + (c - r + kl)].
 // ---------------------------------------------------------------------
 function bandFactor(A, n, kl, ku) {
+  if (A.blocks) return bandFactorBlocks(A, n, kl, ku);
   const W = 2 * kl + ku + 1, piv = new Int32Array(n);
   // last stored column holding a nonzero, per row: rows are only ever
   // combined up to there, which skips the band's structural zeros (with
@@ -112,6 +113,7 @@ function bandFactor(A, n, kl, ku) {
 }
 
 function bandSolve(A, fac, n, kl, ku, b) {
+  if (A.blocks) return bandSolveBlocks(A, fac, n, kl, ku, b);
   const W = 2 * kl + ku + 1, piv = fac.piv, last = fac.last;
   for (let k = 0; k < n; k++) {
     const p = piv[k];
@@ -126,6 +128,88 @@ function bandSolve(A, fac, n, kl, ku, b) {
     let s = b[k];
     for (let j = k + 1; j <= jEnd; j++) s -= A[rk + j] * b[j];
     b[k] = s / A[rk + k];
+  }
+  return b;
+}
+
+// ---------------------------------------------------------------------
+// The same band in blocks of whole rows. A browser gives one array at most
+// 2^31 bytes (measured in Chromium: 2.14e9 allocated, 2^31 - 8 refused), but
+// one worker holds several (5 x 1.5 GB measured): a matrix larger than one
+// block is kept in blocks of BAND_BLOCK_BYTES, each row inside one block.
+// bandFactor / bandSolve take { R (rows a block), blocks } as well as a
+// plain array; the arithmetic is the plain one's, in the same order, so the
+// factors and the solution are the same numbers bit for bit.
+// ---------------------------------------------------------------------
+const BAND_BLOCK_BYTES = 1 << 30;
+/** Storage for n rows of W: one plain array when it fits one block, else { R, blocks } (every block R rows, the last fewer). */
+function bandAlloc(n, W, blockBytes = BAND_BLOCK_BYTES) {
+  const R = Math.max(1, Math.floor(blockBytes / (8 * W)));
+  try {
+    if (n <= R) return new Float64Array(n * W);
+    const blocks = [];
+    for (let r0 = 0; r0 < n; r0 += R) blocks.push(new Float64Array(Math.min(R, n - r0) * W));
+    return { R, blocks };
+  } catch (e) {
+    // (the computer has not that much free: said so, instead of the browser's "Array buffer allocation failed")
+    throw new Error(`not enough memory for the solve's matrix (about ${(n * W * 8 / 1e9).toFixed(1)} GB): fewer elements, or close other tabs and programs`);
+  }
+}
+/** Every entry of a band's storage to zero. */
+const bandZero = A => { if (A.blocks) for (const b of A.blocks) b.fill(0); else A.fill(0); };
+
+function bandFactorBlocks(A, n, kl, ku) {
+  const W = 2 * kl + ku + 1, piv = new Int32Array(n), R = A.R, B = A.blocks;
+  // (row r: its block, and where its column c is in it -- at off(r) + c)
+  const blk = r => B[(r / R) | 0], off = r => (r % R) * W - r + kl;
+  const last = new Int32Array(n);
+  for (let r = 0; r < n; r++) {
+    const Ar = blk(r), o = off(r);
+    let c = Math.min(n - 1, r + kl + ku);
+    while (c > r && Ar[o + c] === 0) c--;
+    last[r] = c;
+  }
+  for (let k = 0; k < n; k++) {
+    const iEnd = Math.min(n - 1, k + kl);
+    let p = k, amax = Math.abs(blk(k)[off(k) + k]);
+    for (let i = k + 1; i <= iEnd; i++) { const a = Math.abs(blk(i)[off(i) + k]); if (a > amax) { amax = a; p = i; } }
+    piv[k] = p;
+    if (amax === 0) throw new Error('singular matrix in the gap solve');
+    if (p !== k) {
+      const Ak = blk(k), ok = off(k), Ap = blk(p), op = off(p), jEnd = Math.max(last[k], last[p]);
+      for (let j = k; j <= jEnd; j++) { const a = Ak[ok + j]; Ak[ok + j] = Ap[op + j]; Ap[op + j] = a; }
+      const t = last[k]; last[k] = last[p]; last[p] = t;
+    }
+    const Ak = blk(k), rk = off(k), d = Ak[rk + k], jEnd = last[k];
+    for (let i = k + 1; i <= iEnd; i++) {
+      const Ai = blk(i), ri = off(i);
+      const a0 = Ai[ri + k];
+      if (a0 === 0) continue;
+      const m = a0 / d;
+      Ai[ri + k] = m;
+      for (let a = ri + k + 1, b = rk + k + 1, e = rk + jEnd; b <= e; a++, b++) Ai[a] -= m * Ak[b];
+      if (jEnd > last[i]) last[i] = jEnd;
+    }
+  }
+  return { piv, last };
+}
+
+function bandSolveBlocks(A, fac, n, kl, ku, b) {
+  const W = 2 * kl + ku + 1, piv = fac.piv, last = fac.last, R = A.R, B = A.blocks;
+  const blk = r => B[(r / R) | 0], off = r => (r % R) * W - r + kl;
+  for (let k = 0; k < n; k++) {
+    const p = piv[k];
+    if (p !== k) { const t = b[k]; b[k] = b[p]; b[p] = t; }
+    const bk = b[k];
+    if (bk === 0) continue;
+    const iEnd = Math.min(n - 1, k + kl);
+    for (let i = k + 1; i <= iEnd; i++) b[i] -= blk(i)[off(i) + k] * bk;
+  }
+  for (let k = n - 1; k >= 0; k--) {
+    const Ak = blk(k), rk = off(k), jEnd = last[k];
+    let s = b[k];
+    for (let j = k + 1; j <= jEnd; j++) s -= Ak[rk + j] * b[j];
+    b[k] = s / Ak[rk + k];
   }
   return b;
 }
@@ -682,4 +766,4 @@ function recoverPressure(r, rho, pOutlet = 0) {
   return { p, pWeb, pBlade, pBladeWall, dpdxWeb, pathError, pMax, pMaxLoc: loc(kMax), pMin, pMinLoc: loc(kMin) };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { solveGapFlow, sigmaGrid, recoverPressure, bandFactor, bandSolve, makeStencil, invert3 };
+if (typeof module !== 'undefined' && module.exports) module.exports = { solveGapFlow, sigmaGrid, recoverPressure, bandFactor, bandSolve, bandAlloc, bandZero, BAND_BLOCK_BYTES, makeStencil, invert3 };
