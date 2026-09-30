@@ -81,7 +81,10 @@ function numChainRows(kind) {
     ['Time', 'Time', 'Steady: the flow at its operating state (no time derivative)', 'Steady'],
     ['Post-processing', 'Derived fields', d3 ? 'Shear rate and viscosity at the nodes: each element\'s own velocity gradient, averaged over the elements sharing the node' : 'Shear rate, viscosity, stresses, vorticity at the nodes: each element\'s own gradient, averaged; pressure from its linear field', 'Results step'],
     ['Post-processing', 'Interpolation', d3 ? 'Within each element its own triquadratic basis (the solution as solved)' : 'Plots and probes: bilinear between the nodes of the solved mesh', '—'],
-    ['Post-processing', 'Streamlines', d3 ? 'RK4 in the element\'s own coordinates (they cannot leave the fluid), a fixed step of 0.05 of an element' : 'RK4 through the interpolated field, a fixed step; checked against the stream function', 'RK4, fixed step'],
+    ['Post-processing', 'Streamlines', (d3 ? C3D.streamInt : FV.streamInt) === 'rk45'
+      ? `Adaptive Dormand–Prince 5(4) ${d3 ? 'in the element\'s own coordinates (they cannot leave the fluid)' : 'through the interpolated field'}: each step sized so its error estimate stays below 10⁻⁶ of ${d3 ? 'an element' : 'a cell'}; checked against the stream function`
+      : d3 ? 'RK4 in the element\'s own coordinates (they cannot leave the fluid), a fixed step of 0.05 of an element' : 'RK4 through the interpolated field, a fixed step; checked against the stream function',
+      (d3 ? C3D.streamInt : FV.streamInt) === 'rk45' ? 'Adaptive RK45' : 'RK4, fixed step'],
     ['Post-processing', 'Mass balance', d3 ? 'In through the inlet against out through the outlet and the strip\'s sides (web, blade and free surface let none through)' : 'The outflow against the inflow (the stream function at the domain\'s ends)', 'Below'],
   ];
 }

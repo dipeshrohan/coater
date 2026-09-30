@@ -13,7 +13,7 @@
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40, fileFace: 'file',
   nxGap: 26, nxFace: 4, nxFilm: 16, ny: 5, nzStrip: 4, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true, section: '3d',
   stream: false, streamDensity: 'medium', streamMode: 'volume', streamSeeds: 'inlet', streamPlane: 'yz', streamX: null, streamY: null, streamZ: null, streamN: 9,
-  streamPts: '', streamColor: 'field', streamLen: 0, uzView: 'yz', uzX: null, step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1,
+  streamPts: '', streamColor: 'field', streamLen: 0, streamInt: 'auto', uzView: 'yz', uzX: null, step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1,
   edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, edgeNy: 4, webEdges: 'sym', tol3: null, iter3: null };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
@@ -35,7 +35,7 @@ const C3D_UNDO = {
   streamMode: ['3D streamlines', v => (C3D_STREAM_MODES[v] || { l: v }).l], streamSeeds: ['3D streamline seeds', v => (C3D_SEEDS[v] || { l: v }).l], streamPlane: ['3D seed plane', v => v.toUpperCase()],
   streamX: ['3D seeds at x', v => v == null ? 'auto' : v + ' mm'], streamY: ['3D seeds at y', v => v == null ? 'auto' : v + ' mm'], streamZ: ['3D seeds at z', v => v == null ? 'auto' : v + ' mm'],
   streamN: ['3D seeds, how many across', v => v], streamPts: ['3D seed points', v => v ? v.split('\n').filter(Boolean).length + ' points' : 'none'], streamColor: ['3D streamline colour', v => v === 'field' ? 'as the field' : (C3D_FIELDS[v] || { l: v }).l],
-  streamLen: ['3D streamline length', v => v ? v + ' mm' : 'to the outlet'], uzView: ['3D cross-web velocity view', v => v === 'yz' ? 'Y–Z' : 'X–Z'], uzX: ['3D cross-web velocity at x', v => v == null ? 'the metering edge' : v + ' mm'],
+  streamLen: ['3D streamline length', v => v ? v + ' mm' : 'to the outlet'], streamInt: ['3D streamline integration', v => v === 'rk45' ? 'adaptive RK45' : 'Automatic (RK4)'], uzView: ['3D cross-web velocity view', v => v === 'yz' ? 'Y–Z' : 'X–Z'], uzX: ['3D cross-web velocity at x', v => v == null ? 'the metering edge' : v + ' mm'],
   zZones: ['3D zones across the web', v => c3dZonesText(v)],
   frac3: ['3D mesh from meshing to an accuracy', v => v ? `adapted, ${v.b.length - 1 + v.s.length - 1} along × ${v.y.length - 1} up` : 'the counts'],
   zFrac: ['3D mesh across, from meshing to an accuracy', v => v ? `${v.length - 1} elements` : 'the counts'],
@@ -45,7 +45,7 @@ const C3D_UNDO = {
 };
 /** The view settings (not part of "unsaved changes"). */
 const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh', 'stream', 'streamDensity', 'step', 'section', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ',
-  'streamN', 'streamPts', 'streamColor', 'streamLen', 'uzView', 'uzX'];
+  'streamN', 'streamPts', 'streamColor', 'streamLen', 'streamInt', 'uzView', 'uzX'];
 /** Streamline densities: lines [across, up the gap] on a strip and on the full width (the full width is wide and thin). */
 const C3D_STREAM = { low: { l: 'Low', strip: [5, 6], full: [10, 3] }, medium: { l: 'Medium', strip: [6, 10], full: [15, 4] }, high: { l: 'High', strip: [10, 12], full: [24, 5] } };
 const c3dSetupKey = () => JSON.stringify([Object.keys(C3D_DEFAULTS).filter(k => !C3D_DISPLAY.includes(k)).map(k => C3D[k]), C3D_FILE && C3D_FILE.id]);
@@ -1116,7 +1116,7 @@ const C3D_SEEDS = {
   edge: { l: 'Preset: active edge', uses: ['n'] },
   film: { l: 'Preset: downstream wet film', uses: ['n'] },
 };
-const c3dStreamKey = () => JSON.stringify(['streamDensity', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ', 'streamN', 'streamPts', 'streamLen'].map(k => C3D[k]));
+const c3dStreamKey = () => JSON.stringify(['streamDensity', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ', 'streamN', 'streamPts', 'streamLen', 'streamInt'].map(k => C3D[k]));
 const c3dStreamColorKey = () => C3D.streamColor === 'field' ? C3D.field : C3D.streamColor;
 /** The result's frame (m: x from the inlet, y up, z from the region's middle; a skewed blade's solve in its own frame) to the web's (mm: z across the web), and back. */
 function c3dToMachine(R, x, y, z) {
@@ -1183,6 +1183,7 @@ function c3dStreamPanel(R) {
       ${pos}
       <label>Colour by <select data-c3ds="streamColor">${opt('field', 'As the field shown', C3D.streamColor)}${['speed', 'ux', 'uy', 'w', 'p', 'gd', 'mu'].map(k => opt(k, C3D_FIELDS[k].l, C3D.streamColor)).join('')}</select></label>
       <label>Length <input type="number" class="zone-in" data-c3ds="streamLen" min="0" step="any" value="${C3D.streamLen || ''}" placeholder="to the outlet" aria-label="Largest streamline length, mm"> mm</label>
+      <label>Integration <select data-c3ds="streamInt">${opt('auto', 'Automatic (RK4)', C3D.streamInt)}${opt('rk45', 'Adaptive RK45', C3D.streamInt)}</select></label>
       <button type="button" class="btn btn-secondary btn-sm" id="c3dStreamCsv">${uiIco('download')}Streamlines, CSV</button>
     </div>
     ${uses.includes('pts') ? `<textarea class="c3d-pts" data-c3ds="streamPts" rows="3" placeholder="x, y, z in mm, one point a line (x from the inlet, y up from the web, z across the web)" aria-label="Seed points">${mEsc(C3D.streamPts || '')}</textarea>` : ''}
@@ -1720,7 +1721,8 @@ function v3Streamlines(R) {
   if (V3.sl && V3.sl.key === key) return V3.sl.lines;
   const [across, up] = (C3D_STREAM[C3D.streamDensity] || C3D_STREAM.medium)[R.region === 'full' ? 'full' : 'strip'];
   const sp = c3dSeedSpec(R), mode = C3D_STREAM_MODES[C3D.streamMode] || C3D_STREAM_MODES.volume;
-  const res = streamlines3D(R, { across, up, seeds: sp.spec, hold: mode.hold, maxLength: C3D.streamLen > 0 ? C3D.streamLen / 1000 : Infinity });
+  const res = streamlines3D(R, { across, up, seeds: sp.spec, hold: mode.hold, maxLength: C3D.streamLen > 0 ? C3D.streamLen / 1000 : Infinity,
+    ...(C3D.streamInt === 'rk45' ? { integrator: 'rk45' } : {}) });
   const lines = res.lines.filter(l => l.pos.length >= 6);
   // (the seeds where they are, in the web's frame, mm; and those asked for outside the flow)
   const w = sl3Work(), seedsMm = res.seeds.map(q => { sl3Eval(R, q[0], q[1], q[2], w); return c3dToMachine(R, w.x, w.y, w.z); });

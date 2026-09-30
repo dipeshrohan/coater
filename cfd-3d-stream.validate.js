@@ -197,5 +197,23 @@ function curvedMesh(nEx, nEz, nEy, vel, planar = false) {
   check('  a length limit stops a line (3 mm)', S.end === 'length' && len >= 3e-3 && len < 3.5e-3, `${(len * 1e3).toFixed(3)} mm, ${S.end}`);
 }
 
+// 11. NUM-2, the adaptive integrator (Dormand-Prince 5(4)): a rotation about an axis across the web on the curved mesh (the
+// velocity linear in x and y, the mesh's map quadratic: both interpolated exactly), so each line is an exact circle in its
+// station's plane -- what is left of the drift is the integrator's
+{
+  const xc = 6e-3, yc = 1.1e-3, om = 1, R = curvedMesh(6, 2, 3, (x, y) => [-(y - yc) * om, (x - xc) * om, 0], true), r0 = 0.6e-3;
+  const at = locate3D(R, xc + r0, yc, R.z[(0 * R.NL + 2) * R.NR]), L = 2 * Math.PI * r0;
+  const drift = ln => { let d = 0; for (let i = 0; i < ln.pos.length; i += 3) d = Math.max(d, Math.abs(Math.hypot(ln.pos[i] - xc, ln.pos[i + 1] - yc) - r0)); return d / r0; };
+  const rk4 = traceLine3D(R, at, { maxLength: L }), a6 = traceLine3D(R, at, { maxLength: L, integrator: 'rk45', tol: 1e-6 }), a9 = traceLine3D(R, at, { maxLength: L, integrator: 'rk45', tol: 1e-9 });
+  check('adaptive integration (RK45): a rotation\'s lines are circles, the drift falling with the tolerance', at && a9.end === 'length' && drift(a9) < 1e-7 && drift(a9) < drift(a6),
+    `drift of the radius over a turn: tolerance 1e-6 ${drift(a6).toExponential(2)}, 1e-9 ${drift(a9).toExponential(2)} (${a9.pos.length / 3} points); RK4 at its fixed step ${drift(rk4).toExponential(2)} (${rk4.pos.length / 3} points)`);
+  const def = traceLine3D(R, at, { maxLength: L, integrator: 'rk4' });
+  check('  Automatic is the fixed-step RK4, point for point', def.pos.length === rk4.pos.length && def.pos.every((v, i) => v === rk4.pos[i]));
+  // (the uniform flow of 1: straight with the adaptive integrator too)
+  const U = [1e-3, 0, 0.08e-3], Ru = curvedMesh(6, 3, 2, () => U), ln = traceLine3D(Ru, [0, 3, 2], { integrator: 'rk45' }), p = ln.pos;
+  let dev = 0; for (let i = 0; i < p.length; i += 3) dev = Math.max(dev, Math.abs(p[i + 1] - p[1]), Math.abs(p[i + 2] - p[2] - (p[i] - p[0]) * U[2] / U[0]));
+  check('  a uniform flow: straight to the outlet with it too', ln.end === 'outlet' && dev < 1e-6 * (p[p.length - 3] - p[0]), `deviation ${dev.toExponential(1)} m`);
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

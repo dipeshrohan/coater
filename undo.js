@@ -73,7 +73,7 @@ const scalarName = v => v === 'none' ? 'none' : (SCALARS[v] || {}).label || v;
 const FV_UNDO = {
   view: ['Location shown', v => v === 'compare' ? 'Compare' : v === 'diff' ? 'Difference' : `L${v + 1}`], profileLoc: ['Profiles of', v => `L${v + 1}`],
   base: ['Field', scalarName], streamlines: ['Streamlines'], density: ['Streamline density'], customN: ['Streamline count'], seedMode: ['Streamline seeding'],
-  direction: ['Streamline direction'], lineColor: ['Streamline colour'], arrows: ['Streamline arrows'], lineWidth: ['Line width'],
+  direction: ['Streamline direction'], streamInt: ['Streamline integration', v => v === 'rk45' ? 'adaptive RK45' : 'Automatic (RK4)'], lineColor: ['Streamline colour'], arrows: ['Streamline arrows'], lineWidth: ['Line width'],
   vectors: ['Vectors'], vectorDensity: ['Vector density'], vectorScale: ['Vector length'], vectorNormalize: ['Vectors all one length'], vectorColor: ['Vectors coloured'],
   yScale: ['Vertical scale'], manualSeeds: ['Streamline seed points', 0], across: ['Across-web quantity', v => (ACROSS[v] || {}).l || v],
   cutFields: ['Fields along the cut lines', 0], cutSel: ['Cut line charted', v => (cfdCuts[v] || {}).name || v + 1], zoom: ['Zoom', 0],

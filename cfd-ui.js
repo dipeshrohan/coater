@@ -422,7 +422,7 @@ const FV = {
   view: 0,                // 0..3 = one location, 'compare' = all four
   profileLoc: 0,
   base: 'speed',
-  streamlines: true, density: 'medium', customN: 24, seedMode: 'auto', direction: 'forward',
+  streamlines: true, density: 'medium', customN: 24, seedMode: 'auto', direction: 'forward', streamInt: 'auto',
   lineColor: 'none', arrows: true, lineWidth: 'normal',
   vectors: false, vectorDensity: 'medium', vectorScale: 1, vectorNormalize: false, vectorColor: false,
   yScale: 'exaggerated', settingsOpen: false,
@@ -719,11 +719,12 @@ function streamlinesFor(run) {
   const manual = FV.seedMode === 'manual'
     ? FV.manualSeeds.filter(([x, y]) => fieldInside(f, x, y))
     : null;
-  const key = manual ? `m|${FV.direction}|${JSON.stringify(manual)}` : `a|${n}|${FV.direction}`;
+  const rk45 = FV.streamInt === 'rk45';   // NUM-2: adaptive Dormand–Prince 5(4); Automatic keeps the fixed-step RK4 lines
+  const key = (manual ? `m|${FV.direction}|${JSON.stringify(manual)}` : `a|${n}|${FV.direction}`) + (rk45 ? '|rk45' : '');
   let hit = run.streamCache.get(key);
   if (!hit) {
     const seeds = manual || autoSeeds(f, n, FV.direction);
-    const lines = seeds.map(p => traceStreamline(f, p, { direction: FV.direction }));
+    const lines = seeds.map(p => traceStreamline(f, p, { direction: FV.direction, ...(rk45 ? { integrator: 'rk45' } : {}) }));
     for (const l of lines) l.t = streamlineTimes(f, l);
     hit = { seeds, lines, psiDev: lines.length ? Math.max(...lines.map(l => streamlinePsiDeviation(f, l))) : null };
     run.streamCache.set(key, hit);
@@ -833,6 +834,7 @@ function viewCFD() {
               <input type="number" id="fvCustomN" min="2" max="80" step="1" value="${FV.customN}" aria-label="Custom streamline count"${FV.density === 'custom' ? '' : ' hidden'}></label>
             <label class="fv-ctl">Seeds <select id="fvSeedMode">${opt('auto', 'Automatic', FV.seedMode)}${opt('manual', 'Manual', FV.seedMode)}</select></label>
             <label class="fv-ctl">Direction <select id="fvDir">${opt('forward', 'Forward', FV.direction)}${opt('backward', 'Backward', FV.direction)}${opt('both', 'Both', FV.direction)}</select></label>
+            <label class="fv-ctl">Integration <select id="fvStreamInt">${opt('auto', 'Automatic (RK4)', FV.streamInt)}${opt('rk45', 'Adaptive RK45', FV.streamInt)}</select></label>
             <label class="fv-ctl">Colour <select id="fvLineColor">${opt('none', 'Plain', FV.lineColor)}${opt('speed', 'Velocity magnitude', FV.lineColor)}${opt('shear', 'Shear rate', FV.lineColor)}${opt('mu', 'Apparent viscosity', FV.lineColor)}${opt('pressure', 'Pressure', FV.lineColor)}${opt('time', 'Time along the line', FV.lineColor)}</select></label>
             <label class="fv-ctl">Width <select id="fvLineW">${opt('thin', 'Thin', FV.lineWidth)}${opt('normal', 'Normal', FV.lineWidth)}${opt('thick', 'Thick', FV.lineWidth)}</select></label>
             <label class="fv-chk"><input type="checkbox" id="fvArrows"${FV.arrows ? ' checked' : ''}> Direction arrows</label>
@@ -1012,6 +1014,7 @@ function viewCFD() {
   bind('fvCustomN', 'customN', Number);
   bind('fvSeedMode', 'seedMode');
   bind('fvDir', 'direction');
+  bind('fvStreamInt', 'streamInt');
   bind('fvLineColor', 'lineColor');
   bind('fvLineW', 'lineWidth');
   bind('fvArrows', 'arrows', Boolean, 'checked');
