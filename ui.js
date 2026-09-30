@@ -78,21 +78,25 @@ function updateScope(extra = '') {
     : `<strong>Within the thin-film checks.</strong> Re ${q.Re.toFixed(3)}, Ca ${q.Ca.toFixed(2)}, H/L ${q.aspect.toFixed(2)}.${extra}`;
   el.title = el.textContent;   // (the status bar may cut it short)
   const pg = document.getElementById('pgScope');   // (the Results pages show it under their answer)
-  if (pg) { pg.className = 'pg-scope ' + el.className.replace('scope', '').trim(); pg.innerHTML = el.innerHTML; }
+  // (WF-2: the thin-film check is the coating's: not on the map, the materials or the later stages' pages)
+  const coatingPage = ['coat', 'results'].includes(document.body.dataset.sec);
+  if (pg) { pg.className = 'pg-scope ' + el.className.replace('scope', '').trim(); pg.innerHTML = coatingPage ? el.innerHTML : ''; pg.hidden = !coatingPage; }
 }
 
 /**
  * Draw the cross-section at the metering edge (blade, bead, meniscus, film) for the Contact line page: a schematic -- the
  * exit face at its angle (CFDG.exitAngle) up to the notch corner (P.face), the underside a round sketch -- with the solved
  * answer drawn on it: a = { H (gap, mm), h (wet film, mm), s (contact line up the face, mm; 0 pinned) }. The meniscus from
- * the contact line down to the film is the static (Young–Laplace) shape through those two heights.
+ * the contact line down to the film is the static (Young–Laplace) shape through those two heights. a.bare: the drawing
+ * only, no labels (a small card, its numbers beside it).
  */
 function drawSection(cv, aspect = 0.66, a) {
   const { c, w, h } = setupCanvas(cv, aspect);
   const H = a.H, fa = (typeof CFDG !== 'undefined' ? CFDG.exitAngle : 45) * Math.PI / 180, fc = Math.cos(fa), fs = Math.sin(fa);
   const lcap = capillaryLength(), rise = Math.max(0, H + a.s * fs - a.h);
   const st = { h: a.h, s: a.s, pinned: !(a.s > 0), phi: 2 * Math.asin(Math.min(1, rise / (2 * lcap))) };
-  const x0 = 4, sc = Math.min(w / 16, (h - 90) / (H + P.face * fs + 1.2)), y0 = h - 70;
+  const mt = a.bare ? 20 : 90, mb = a.bare ? 16 : 70;   // (margins: the labels' room, none when bare)
+  const x0 = 4, sc = Math.min(w / 16, (h - mt) / (H + P.face * fs + 1.2)), y0 = h - mb;
   const X = x => (x + x0) * sc, Y = y => y0 - y * sc;
   c.clearRect(0, 0, w, h);
 
@@ -131,6 +135,7 @@ function drawSection(cv, aspect = 0.66, a) {
   c.fillStyle = st.s > P.face ? bad : acc;
   c.beginPath(); c.arc(X(Qp[0]), Y(Qp[1]), 5, 0, 7); c.fill();
 
+  if (a.bare) { c.restore(); return; }
   c.fillStyle = ink;
   [[E, 'metering edge', -4, 20], [V, 'notch corner', 6, -8], [D, 'dry edge', 6, 6]].forEach(([p, t, dx, dy]) => {
     c.beginPath(); c.arc(X(p[0]), Y(p[1]), 4, 0, 7); c.fill();
@@ -162,10 +167,10 @@ const workbenchFits = () => innerWidth >= 1024;
 const emptyHint = (title, text, actions = '') => `<div class="empty-hint"><svg class="eh-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 7.5v5.5M12 16.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><b>${title}</b><p>${text}</p>${actions ? `<div class="eh-act">${actions}</div>` : ''}</div>`;
 /** One line at the top of the inputs bar: what its inputs do in the page shown. */
 const TREE_NOTE = [
-  'Inputs this tab uses are bright; dimmed ones do not change it. The animation\'s own settings are at the bottom.',
-  'Inputs this tab uses are bright; dimmed ones do not change it.',
-  'Inputs this tab uses are bright; dimmed ones do not change it.',
-  'Inputs this tab uses are bright; dimmed ones do not change it.',
+  'The inputs this page uses (the others are on the pages that use them); the animation\'s own settings are at the bottom.',
+  'The inputs this page uses (the others are on the pages that use them).',
+  'The inputs this page uses (the others are on the pages that use them).',
+  'The inputs this page uses (the others are on the pages that use them).',
   'The shared inputs, then the CFD setup and the four locations below. Change them, then Run.',
   'The DOE starts from these inputs and the CFD setup (its base case) and varies the factors of its Design tab. Changing an input here changes 2D CFD too.',
   'The predictions use these inputs; the Fit tab can adjust them to your data.',
@@ -175,7 +180,8 @@ const TREE_NOTE = [
   'The 1D uses these inputs and the 2D setup; the ripple comes from the gap waviness and vibration below.',
   'The 1D at every position across the web: the gap and contact angle vary there with the inputs under Variation across the web.',
   'The chain starts from the wet film these inputs give (the 1D, or the 2D and 3D where solved); the oven\'s zones are below.',
-  'The slurry\'s card and the rheology model, its laws\' extras and the structure are edited on the page; viscosity, n, yield stress, surface tension and the fibre web as set here and in Flow › 2D.',
+  'The slurry\'s card and the rheology model, its laws\' extras and the structure are edited on the page; viscosity, n, yield stress, surface tension and the fibre web as set here and in Coating › 2D.',
+  'The line: nothing to set here; each stage\'s page has its own inputs.',
 ];
 /** The (i) of a view's toolbar: this tab's guide in the help. */
 const aboutButton = () => `<button type="button" class="icon-btn vp-about" data-about title="About this tab: what it answers and how to read it" aria-label="About this tab"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="4.9" r=".95" fill="currentColor"/></svg></button>`;
@@ -193,7 +199,7 @@ function moduleFrame({ tools = '', panes, cols = 1, notes = '', extra = '', step
   // checks, the thin-film validity), the key numbers, then the plots; its history opens from Edit > History
   return `<div class="mod-wb" id="modWb" style="--dock-h: ${modDockH}px">
     <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}${steps}${tools ? `<div class="pg-tools">${tools}</div>` : ''}<span class="vp-spacer"></span>${aboutButton()}</div>
-    <div class="verdict"><div class="status" id="st"></div><p class="vq">${TAB_Q[tab]}</p><p class="pg-scope" id="pgScope"></p></div>
+    <div class="verdict"><div class="status" id="st"></div><p class="vq">${navQ(navNow())}</p><p class="pg-scope" id="pgScope"></p></div>
     <div class="mod-results"><div class="stats" id="ss"></div></div>
     <div class="mod-vp" data-cols="${cols}" style="--cols:${cols}">${top ? `<div class="mod-top">${top}</div>` : ''}${panes.map(p => `<figure class="pane${p.center ? ' pane-center' : ''}"><figcaption>${uiBadge(p.icon)}${p.title}${p.note ? paneInfo(p.id) : ''}</figcaption><canvas id="${p.id}" role="img" aria-label="${p.aria}"></canvas>${p.legend ? `<div class="pane-legend">${p.legend}</div>` : ''}${p.note ? `<p class="pane-note" id="note_${p.id}"${PANE_NOTES.has(p.id) ? '' : ' hidden'}>${p.note}</p>` : ''}</figure>`).join('')}${extra ? `<div class="mod-extra">${extra}</div>` : ''}</div>
     <div class="split split-h" id="modSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the history panel" tabindex="0"></div>
@@ -620,15 +626,15 @@ function viewSummary() {
       <p class="pg-scope" id="pgScope"></p>
       <h2 class="sum-h">Go further</h2>
       <div class="sum-more">
-        <button type="button" data-sec="flow">${uiBadge(4)}<b>Flow under the blade</b><span>1D along the blade, 2D CFD at four places across the web.</span></button>
-        <button type="button" data-sec="doe">${uiBadge(5)}<b>What matters most</b><span>DOE: vary up to three settings together.</span></button>
-        <button type="button" data-sec="meas">${uiBadge(6)}<b>Check against your data</b><span>Import measurements and fit the model.</span></button>
+        <button type="button" data-nav="gap">${uiBadge(4)}<b>Flow under the blade</b><span>Coating: 1D along the blade, 2D CFD at four places across the web, 3D.</span></button>
+        <button type="button" data-nav="doe">${uiBadge(5)}<b>What matters most</b><span>Studies › DOE: vary up to three settings together.</span></button>
+        <button type="button" data-nav="meas">${uiBadge(6)}<b>Check against your data</b><span>Studies › Measured data: import measurements and fit the model.</span></button>
       </div>
     </div>
   </div>`;
   document.getElementById('sumInputs').onclick = () => setPanelHidden('model', false);
   view.querySelectorAll('.sum-card').forEach(c => { c.onclick = () => { tab = +c.dataset.view; render(); }; });
-  view.querySelectorAll('.sum-more [data-sec]').forEach(b => { b.onclick = () => goSection(SECTIONS.findIndex(s => s.k === b.dataset.sec)); });
+  view.querySelectorAll('.sum-more [data-nav]').forEach(b => { b.onclick = () => navGo(b.dataset.nav); });
 }
 
 // ---------------------------------------------------------------------
@@ -637,8 +643,8 @@ function viewSummary() {
 // The views, by number (the number is what the project file, the undo history and the help keep):
 // 0 Start-up animation, 1 Contact line, 2 Web edge, 3 Film surface, 4 2D CFD, 5 DOE, 6 Measured data, 7 Summary,
 // 8 1D gap flow, 9 3D, 10 1D to the oven, 11 1D across the web, 12 Process, 13 Materials.
-let tab = 7;
-const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web', 'Process', 'Materials'];
+let tab = 14;   // (WF-2: the app opens on the Line, the map of the process)
+const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web', 'Process', 'Materials', 'Line'];
 /** What each view answers, in plain words (its tooltip, the welcome screen, its About). */
 const TAB_Q = [
   'How the slurry moves under the blade, from start-up (animation)',
@@ -655,6 +661,7 @@ const TAB_Q = [
   'How do the film and the contact line vary across the web? (1D at every position)',
   'From the wet film to the dry GO film: how thick and heavy is it, and how much water must the oven take out?',
   'What is the slurry made of, and what is it coated onto? Each value with its unit, where it is from, and whether it is assumed.',
+  'The process stage by stage, from the mixer to the graphene film: where each stands and its answers.',
 ];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
@@ -671,70 +678,142 @@ const TAB_ICONS = [
   '<path d="M1.5 9c1.2-1.4 2.4-1.4 3.6 0s2.4 1.4 3.6 0 2.4-1.4 3.6 0 1.6 1 2.2.6M3 4.5h10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M3 3v3M13 3v3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>',
   '<rect x="1.2" y="5.8" width="3.6" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="11.2" y="5.8" width="3.6" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M4.8 8h6.4M9.4 6.4 11 8l-1.6 1.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3.5h10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/>',
   '<path d="M6 1.8h4M6.6 1.8v4.3L2.9 12.6a1.1 1.1 0 0 0 1 1.6h8.2a1.1 1.1 0 0 0 1-1.6L9.4 6.1V1.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/><path d="M4.4 10.2h7.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".6"/>',
+  '<path d="M1.5 8h3M11.5 8h3M6 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><rect x="4.5" y="6" width="2" height="4" rx=".6" fill="currentColor"/><rect x="9.5" y="6" width="2" height="4" rx=".6" fill="currentColor"/>',
 ];
 /**
- * The tab bar's sections, each with its pages (views) in order: the first is where the section
- * opens the first time; after that it reopens on the page last shown. Results' pages are its sub
- * tabs; Flow's sub tabs are its stages 1D, 2D, 3D, and 1D's pages a second switch under them.
+ * The pages the tab bar opens (WF-2: the tabs in the process's order). A page is a view -- its number, which the project
+ * file, the undo history and the help keep -- and, on the Process view (12), the stage it shows: for the film's stage its
+ * part (the film peeled off, a piece cut from it, the pieces in the pressed stack), for the furnace's its part (the runs
+ * and their checks, the graphene film that comes out). t: its name where it is not its view's; q: what it answers.
+ */
+const NAV = {
+  line: { v: 14 }, materials: { v: 13 },
+  mix: { v: 12, st: 'slurry', t: 'Mixing', icon: 'drop', note: 'The slurry\'s flow as the mixer makes it: viscosity, n, yield stress, surface tension. Its solids and densities are on Materials.', q: 'The slurry the mixer makes: what it is made of and how it flows (the mixer itself is not modelled yet).' },
+  gap: { v: 8 }, oven1d: { v: 10 }, across: { v: 11 }, startup: { v: 0 }, cfd2d: { v: 4 }, cfd3d: { v: 9 },
+  contact: { v: 1 }, edge: { v: 2 }, surface: { v: 3 },
+  wetdry: { v: 12, st: 'coat', t: 'Wet and dry film', icon: 'film', q: 'The wet film across the web and the dry film it leaves: the coat weight, and the water the oven must take out.' },
+  flakes: { v: 12, st: 'align', t: 'Flakes', icon: 'fibre', note: 'The flakes\' alignment is computed with each 2D run: its inputs are the 2D\'s (Coating › 2D) and the alignment card on Materials.', q: 'How flat the flakes lie in the film at the oven, and dried, at each location (computed with each 2D run).' },
+  dry: { v: 12, st: 'dry', t: 'Drying', icon: 'oven', note: 'The web\'s speed and the room before the oven, then the oven\'s zones: each zone\'s length, its air and what is above the film.', q: 'The film through the room and the oven: its water and temperature, where it skins over, whether it is dry at the exit.' },
+  peel: { v: 12, st: 'film', fv: 'film', t: 'Peel and wind', icon: 'film', note: 'The web\'s speed, and after the oven: the stretch to where the film is peeled, and the winder\'s core.', q: 'The dry film on the web to the peel: its stress, cracks and blisters, the force to peel it, its curl, and the roll it is wound into.' },
+  cut: { v: 12, st: 'film', fv: 'piece', t: 'Cutting', icon: 'cut', note: 'The pieces\' size. A piece starts from the film as it was peeled (Peel and wind).', q: 'A piece cut from the roll, in 3D: how it curls held up and lying on a table.' },
+  stack: { v: 12, st: 'film', fv: 'stack', t: 'Pre heat treatment', icon: 'weight', note: 'The pre heat treatment: its oven\'s temperature, the time in it, and the time under the plate after it.', q: 'The pieces pressed in a stack under the plate and heated: their water and stress, and how they lie when taken out.' },
+  furn: { v: 12, st: 'furn', fp: 'runs', t: 'Furnace', icon: 'oven', note: 'The furnace: the two runs\' programs, the stack in its holder (papers, plates, the room above it).', q: 'The stack in the furnace, run 1 then run 2: its gas, puffing, cracks, sticking and waves, piece by piece.' },
+  gfilm: { v: 12, st: 'furn', fp: 'product', t: 'Graphene film', icon: 'bars', note: 'The graphene film is the furnace\'s result: its inputs are the furnace\'s, with your limit on its thickness\'s spread.', q: 'The graphene film that comes out: its thickness and spread, density, heat conduction, C/O and graphitization.' },
+  summary: { v: 7 }, doe: { v: 5 }, meas: { v: 6 },
+};
+const navTitle = k => NAV[k].t || TABS[NAV[k].v];
+const navQ = k => NAV[k].q || TAB_Q[NAV[k].v];
+/** The page shown: the view, and on the Process view its stage and part. */
+function navNow() {
+  if (tab !== 12) return Object.keys(NAV).find(k => NAV[k].v === tab && !NAV[k].st) || 'line';
+  const fv = typeof FILM !== 'undefined' && FILM.view || 'film', fp = typeof FURN !== 'undefined' && FURN.part || 'runs';
+  return Object.keys(NAV).find(k => { const q = NAV[k]; return q.v === 12 && q.st === PROC.stage && (!q.fv || q.fv === fv) && (!q.fp || q.fp === fp); }) || 'wetdry';
+}
+/** Show page k (a stage page keeps its own step; step, if given, opens that one). */
+function navGo(k, step) {
+  const q = NAV[k];
+  if (!q) return;
+  if (q.st) PROC.stage = q.st;
+  if (q.fv) FILM.view = q.fv;
+  if (q.fp) FURN.part = q.fp;
+  if (step && q.v === 12 && typeof procStepKey === 'function') PROC.step[procStepKey()] = step;
+  tab = q.v;
+  render();
+}
+/**
+ * The tab bar's sections, in the process's order: the Line (the map), Materials, the eight stages (numbered, each with a
+ * dot for where it stands: the Line's), then Results and Studies. A section opens the first time on its first page, after
+ * that on the page last shown. Coating's sub tabs are its models 1D, 2D, 3D and its Results, each with its pages under
+ * them; Studies' are the DOE and Measured data.
  */
 const SECTIONS = [
-  { k: 'results', t: 'Results', icon: 7, views: [7, 1, 2, 3] },
-  { k: 'process', t: 'Process', icon: 12, views: [12] },
-  { k: 'materials', t: 'Materials', icon: 13, views: [13] },
-  { k: 'flow', t: 'Flow', icon: 4, views: [8, 10, 11, 0, 4, 9], groups: [{ k: '1d', t: '1D', views: [8, 10, 11, 0] }, { k: '2d', t: '2D', views: [4] }, { k: '3d', t: '3D', views: [9] }] },
-  { k: 'doe', t: 'DOE', icon: 5, views: [5] },
-  { k: 'meas', t: 'Measured data', icon: 6, views: [6] },
+  { k: 'line', t: 'Line', icon: 14, pages: ['line'] },
+  { k: 'materials', t: 'Materials', icon: 13, pages: ['materials'] },
+  { k: 'mix', n: 1, t: 'Mixing', pages: ['mix'] },
+  { k: 'coat', n: 2, t: 'Coating', groups: [{ k: '1d', t: '1D', pages: ['gap', 'oven1d', 'across', 'startup'] }, { k: '2d', t: '2D', pages: ['cfd2d'] }, { k: '3d', t: '3D', pages: ['cfd3d'] },
+    { k: 'res', t: 'Results', pages: ['contact', 'edge', 'surface', 'wetdry', 'flakes'] }] },
+  { k: 'dry', n: 3, t: 'Drying', pages: ['dry'] },
+  { k: 'peel', n: 4, t: 'Peel and wind', short: 'Peel', pages: ['peel'] },
+  { k: 'cut', n: 5, t: 'Cutting', pages: ['cut'] },
+  { k: 'stack', n: 6, t: 'Pre heat treatment', short: 'Pre heat', pages: ['stack'] },
+  { k: 'furn', n: 7, t: 'Furnace', pages: ['furn'] },
+  { k: 'gfilm', n: 8, t: 'Graphene film', short: 'Graphene', pages: ['gfilm'] },
+  { k: 'results', t: 'Results', icon: 7, pages: ['summary'] },
+  { k: 'studies', t: 'Studies', icon: 5, pages: ['doe', 'meas'] },
 ];
-const secOf = v => SECTIONS.find(s => s.views.includes(v)) || SECTIONS[0];
-const groupOfView = v => { const s = secOf(v); return s.groups ? s.groups.find(g => g.views.includes(v)) : null; };
+SECTIONS.forEach(s => { if (s.groups) s.pages = s.groups.flatMap(g => g.pages); });
+const secOfPage = k => SECTIONS.find(s => s.pages.includes(k)) || SECTIONS[0];
+/** The section shown (or, for another view, the first section with it). */
+const secOf = (v = tab) => v === tab ? secOfPage(navNow()) : SECTIONS.find(s => s.pages.some(k => NAV[k].v === v)) || SECTIONS[0];
+const groupOfPage = k => { const s = secOfPage(k); return s.groups ? s.groups.find(g => g.pages.includes(k)) : null; };
 const SEC_LAST = {}, GROUP_LAST = {};
 const tabsEl = document.getElementById('tabs');
 const tabButtons = () => [...tabsEl.querySelectorAll('button[role="tab"]')];
-const goSection = i => { const s = SECTIONS[i]; tab = SEC_LAST[s.k] ?? s.views[0]; render(); };
+const goSection = i => { const s = SECTIONS[i]; navGo(SEC_LAST[s.k] ?? s.pages[0]); };
+const NAV_TIP = new Map();   // (each tab's own hover text; a stage's gets where it stands after it)
 SECTIONS.forEach((s, i) => {
+  // (a thin line between the map and the materials, the stages, and the results and studies)
+  if (i && (s.n === 1 || (!s.n && SECTIONS[i - 1].n))) tabsEl.insertAdjacentHTML('beforeend', '<span class="tab-sep" aria-hidden="true"></span>');
   const b = document.createElement('button');
-  b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[s.icon]}</svg><span>${s.t}</span>`;
+  // (a narrow window shows a stage's short name; its full name stays for screen readers and on hover)
+  b.innerHTML = s.n ? `<b class="tab-n" aria-hidden="true">${s.n}</b><span class="tab-l">${s.t}</span>${s.short ? `<span class="tab-s" aria-hidden="true">${s.short}</span>` : ''}<i class="tab-dot" aria-hidden="true"></i><span class="sr-only tab-st"></span>`
+    : `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[s.icon]}</svg><span>${s.t}</span>`;
   b.type = 'button';
   b.dataset.sec = s.k;
-  b.title = s.groups ? s.groups.map(g => g.t).join(' · ') : s.views.length > 1 ? s.views.map(v => TABS[v]).join(' · ') : TAB_Q[s.views[0]];
+  b.title = s.groups ? s.groups.map(g => g.t).join(' · ') : s.pages.length > 1 ? s.pages.map(navTitle).join(' · ') : navQ(s.pages[0]);
+  NAV_TIP.set(s.k, b.title);
   b.setAttribute('role', 'tab');
   b.onclick = () => goSection(i);
   b.onkeydown = e => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    const cur = SECTIONS.indexOf(secOf(tab)), n = SECTIONS.length;
+    const cur = i, n = SECTIONS.length;   // (from the tab the keys are on)
     goSection(e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (cur + (e.key === 'ArrowRight' ? 1 : -1) + n) % n);
-    tabButtons()[SECTIONS.indexOf(secOf(tab))].focus();
+    tabButtons()[SECTIONS.indexOf(secOf())].focus();
   };
   tabsEl.appendChild(b);
 });
+/** The stages' dots: where each stands, as the Line shows it (its word for readers). */
+function navDots() {
+  let S;
+  try { S = lineStages(); } catch (e) { return; }   // (a stage's module not ready yet: the dots stay as they were)
+  for (const st of S) {
+    const b = tabsEl.querySelector(`[data-sec="${st.k}"]`);
+    if (!b) continue;
+    const [t, c] = LINE_ST[st.st], d = b.querySelector('.tab-dot'), w = b.querySelector('.tab-st');
+    d.className = `tab-dot pt-dot pt-${c}`;
+    w.textContent = `: ${t}`;
+    b.title = `${NAV_TIP.get(st.k)} (${t})`;
+  }
+}
 /**
- * The sub tabs of the section shown (a pill switch at the top of the page), or '' when it has one
- * page. Flow: its stages (a stage opens on its page last shown), and the stage's pages under them.
+ * The sub tabs of the section shown (a pill switch at the top of the page), or '' when it has one page. Coating: its
+ * models and its Results (a group opens on its page last shown), and the group's pages under them.
  */
 function subTabs() {
-  const s = secOf(tab), btn = (v, t, on, title, row, icon = v) => `<button type="button" role="tab" data-view="${v}" data-row="${row}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${title}">${uiIco(icon)}${t}</button>`;
+  const pg = navNow(), s = secOfPage(pg);
+  const btn = (k, t, on, title, row, icon) => `<button type="button" role="tab" data-nav="${k}" data-view="${NAV[k].v}" data-row="${row}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${title}">${uiIco(icon)}${t}</button>`;
+  const ico = k => NAV[k].icon || NAV[k].v;
   if (s.groups) {
-    const g = groupOfView(tab);
-    const top = `<div class="subtabs" role="tablist" aria-label="${s.t} stages">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.views[0], x.t, x === g, x.views.map(v => TABS[v]).join(' · '), 'g', GROUP_ICON[x.k])).join('')}</div>`;
-    return top + (g && g.views.length > 1 ? `<div class="subtabs subtabs-2" role="tablist" aria-label="${g.t} pages">${g.views.map(v => btn(v, TABS[v], v === tab, TAB_Q[v], 'v')).join('')}</div>` : '');
+    const g = groupOfPage(pg);
+    const top = `<div class="subtabs" role="tablist" aria-label="${s.t}: its models and results">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.pages[0], x.t, x === g, x.pages.map(navTitle).join(' · '), 'g', GROUP_ICON[x.k])).join('')}</div>`;
+    return top + (g && g.pages.length > 1 ? `<div class="subtabs subtabs-2" role="tablist" aria-label="${g.t} pages">${g.pages.map(k => btn(k, navTitle(k), k === pg, navQ(k), 'v', ico(k))).join('')}</div>` : '');
   }
-  if (s.views.length < 2) return '';
-  return `<div class="subtabs" role="tablist" aria-label="${s.t} pages">${s.views.map(v => btn(v, TABS[v], v === tab, TAB_Q[v], 'v')).join('')}</div>`;
+  if (s.pages.length < 2) return '';
+  return `<div class="subtabs" role="tablist" aria-label="${s.t} pages">${s.pages.map(k => btn(k, navTitle(k), k === pg, navQ(k), 'v', ico(k))).join('')}</div>`;
 }
 document.addEventListener('click', e => {
-  const b = e.target.closest && e.target.closest('.subtabs [data-view]');
-  if (b) { tab = +b.dataset.view; render(); }
+  const b = e.target.closest && e.target.closest('.subtabs [data-nav]');
+  if (b) navGo(b.dataset.nav);
 });
 // (arrow keys move along the row the focus is in, and open that page)
 document.addEventListener('keydown', e => {
-  const b = e.target.closest && e.target.closest('.subtabs [data-view]');
+  const b = e.target.closest && e.target.closest('.subtabs [data-nav]');
   if (!b || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
   e.preventDefault();
-  const bs = [...b.parentElement.querySelectorAll('[data-view]')], i = bs.indexOf(b), n = bs.length, row = b.dataset.row;
+  const bs = [...b.parentElement.querySelectorAll('[data-nav]')], i = bs.indexOf(b), n = bs.length, row = b.dataset.row;
   const k = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + n) % n;
-  tab = +bs[k].dataset.view;
-  render();
+  navGo(bs[k].dataset.nav);
   const f = document.querySelectorAll(`.subtabs [data-row="${row}"]`)[k]; if (f) f.focus();
 });
 const view = document.getElementById('view');
@@ -743,7 +822,7 @@ const work = document.getElementById('work');
 /** The module's verdict pills sit in its toolbar, which may cut them short: their full text on hover. */
 function titleStatus() { const st = document.getElementById('st'); if (st) st.title = [...st.children].map(p => p.textContent).join(' · '); }
 
-let renderLastTab = null;
+let renderLastPage = null;   // (WF-2: the page, not the view: the stages' pages share the Process view)
 /** Where a page is scrolled to: the element with an id at or just above its top, and how far it is from the top. */
 function renderAnchor(vp) {
   const top = vp.getBoundingClientRect().top;
@@ -757,16 +836,18 @@ function renderAnchor(vp) {
 function render() {
   // (a redraw keeps the keyboard focus on a sub tab or 1D location button: arrow keys go on working)
   const af = document.activeElement, keepF = af && af.closest && (af.closest('.subtabs [data-view]') || af.closest('[data-l1d]'))
-    ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.view ?? af.dataset.l1d);
+    ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.nav ?? af.dataset.view ?? af.dataset.l1d);
   // (a redraw of the same page -- a result arriving, a value changed -- keeps what was at the top of the page there,
   //  though what is above it may have grown or shrunk: the element with an id nearest the top, and how far above it)
-  const vpOld = document.querySelector('.mod-vp'), keepS = vpOld && renderLastTab === tab && vpOld.scrollTop > 0 ? renderAnchor(vpOld) : null;
-  renderLastTab = tab;
+  //  (another page opens at its top)
+  const pg = navNow();
+  const vpOld = document.querySelector('.mod-vp'), keepS = vpOld && renderLastPage === pg && vpOld.scrollTop > 0 ? renderAnchor(vpOld) : null;
+  renderLastPage = pg;
   undoBeforeRender();
   const acrF = acrFocusSave();   // (the blade across the web's panels are drawn anew: the focus goes back to the same control)
-  const sec = secOf(tab), grp = groupOfView(tab);
-  SEC_LAST[sec.k] = tab;
-  if (grp) GROUP_LAST[grp.k] = tab;
+  const sec = secOfPage(pg), grp = groupOfPage(pg);
+  SEC_LAST[sec.k] = pg;
+  if (grp) GROUP_LAST[grp.k] = pg;
   tabButtons().forEach(b => { const on = b.dataset.sec === sec.k; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
   // (a narrow window scrolls the tab bar: the section shown kept in view)
   if (tabsEl.scrollWidth > tabsEl.clientWidth) {
@@ -775,15 +856,16 @@ function render() {
   }
   document.body.dataset.tab = tab;
   document.body.dataset.sec = sec.k;
+  document.body.dataset.page = pg;
   applyPanels();
-  document.getElementById('treeNote').textContent = TREE_NOTE[tab] || '';
+  document.getElementById('treeNote').textContent = NAV[pg].note || TREE_NOTE[tab] || '';
   ANIM.stop();
   // module-specific setup (CFD) lives in the model tree; a module that fills the work area sets .fill itself
   if (tab !== 0 && tab !== 4) document.getElementById('setupExtra').innerHTML = '';
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials, viewLine][tab]();
   if (keepS) {
     const vp = document.querySelector('.mod-vp'), el = keepS.id && document.getElementById(keepS.id);
     if (vp) vp.scrollTop = el && vp.contains(el) ? vp.scrollTop + el.getBoundingClientRect().top - vp.getBoundingClientRect().top - keepS.dy : keepS.top;
@@ -798,7 +880,8 @@ function render() {
   undoAfterRender();
   applyKeyLabels();
   decorateTree();
-  if (keepF) { const bs = [...document.querySelectorAll(keepF)], f = bs.find(x => (x.dataset.view ?? x.dataset.l1d) === keepV) || bs.find(x => x.getAttribute('aria-selected') === 'true'); if (f) f.focus(); }
+  clearTimeout(navDots.t); navDots.t = setTimeout(navDots, 250);   // (the stages' dots once the page settles: not on every frame of a drag)
+  if (keepF) { const bs = [...document.querySelectorAll(keepF)], f = bs.find(x => (x.dataset.nav ?? x.dataset.view ?? x.dataset.l1d) === keepV) || bs.find(x => x.getAttribute('aria-selected') === 'true'); if (f) f.focus(); }
   acrFocusRestore(acrF);
 }
 

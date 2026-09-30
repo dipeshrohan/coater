@@ -144,21 +144,23 @@ function filmStage() {
 }
 
 // ---- the Process tab's section ----
-/** The film stage's Results, one at a time: the film peeled off, a piece cut from it in 3D, the pieces in the pressed stack. */
-const FILM_VIEWS = { film: 'The film, peeled off', piece: 'A piece in 3D', stack: 'In the pressed stack' };
+/** The film stage's parts, one at a time -- the film peeled off, a piece cut from it in 3D, the pieces in the pressed stack;
+ *  WF-2: each part is a tab of its own (4 Peel and wind, 5 Cutting, 6 Pre heat treatment): its title, and the rows of After the
+ *  oven it sets (the stretch to the peel and the winder's core; the pieces' size; the pre heat treatment). */
+const FILM_PART = { film: [4, 'The film, peeled off', ['len', 'core']], piece: [5, 'A piece cut from the roll', ['pieceL', 'pieceW']], stack: [6, 'The pieces in the pressed stack', ['dryT', 'tOven', 'tRest']] };
+const filmPartOf = k => Object.keys(FILM_PART).find(v => FILM_PART[v][2].includes(k)) || 'film';
 function filmSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
   const pane = (id, icon, title, aria) => `<figure class="pane dry-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
   return `<section class="dry-sec film-sec" id="filmSec" aria-labelledby="filmH" data-fview="${FILM.view || 'film'}">
-    <header class="dry-head"><h3 id="filmH">${uiBadge('film')}5 · The film, peeled off</h3>
+    <header class="dry-head"><h3 id="filmH">${uiBadge('film')}${FILM_PART[FILM.view || 'film'][0]} · ${FILM_PART[FILM.view || 'film'][1]}</h3>
       <div class="seg" role="tablist" aria-label="Which film" id="filmSel">${seg.map(([k, t]) => `<button type="button" role="tab" data-film="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
-      <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="filmPeelBtn" data-chain="peel" title="After the oven: the stretch to the peel and the winder's core, in the inputs bar">${uiIco('oven')}After the oven</button><button type="button" class="btn btn-secondary btn-sm" id="filmCsv">Export CSV</button></header>
+      <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="filmPeelBtn" data-chain="peel" title="${{ film: 'After the oven: the stretch to the peel and the winder\'s core', piece: 'The pieces\' size', stack: 'The pre heat treatment: its temperature and times' }[FILM.view || 'film']}, in the inputs bar">${uiIco('oven')}${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[FILM.view || 'film']}</button><button type="button" class="btn btn-secondary btn-sm" id="filmCsv">Export CSV</button></header>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>After the oven</h4></div>
-      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td><td class="fv-why">${OVEN.peel[flag] ? 'from you' : 'assumed'}</td></tr>`).join('')}</tbody></table>
+      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr data-fview="${filmPartOf(k)}"><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td><td class="fv-why">${OVEN.peel[flag] ? 'from you' : 'assumed'}</td></tr>`).join('')}</tbody></table>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="peel">${uiIco('oven')}Change them (inputs bar)</button></div></div>
-    <div class="dry-ways" data-pstep="setup">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
+    <div class="dry-ways" data-pstep="setup" data-fview="film">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">As the drying: where the water leaves decides when each layer of the film sets and how wet it is, so both are followed to the peel.</p></div>
-    <div class="seg film-views" role="tablist" aria-label="Which of the film" id="filmView" data-pstep="results">${Object.entries(FILM_VIEWS).map(([k, t]) => `<button type="button" role="tab" data-filmview="${k}" aria-selected="${k === (FILM.view || 'film')}">${t}</button>`).join('')}</div>
     <div id="filmState" data-pstep="solve results" data-fview="film"></div>
     <div class="film-checks" id="filmChecks" data-pstep="results" data-fview="film"></div>
     <div class="stats" id="filmStats" data-pstep="results" data-fview="film"></div>
@@ -217,8 +219,6 @@ function filmClear() {
 function filmWire(sec) {
   sec.dataset.wired = '1';
   sec.addEventListener('click', e => {
-    const v = e.target.closest && e.target.closest('[data-filmview]');
-    if (v) { FILM.view = v.dataset.filmview; render(); return; }
     const b = e.target.closest && e.target.closest('[data-film]');
     if (b) { DRY.sel = b.dataset.film; if (typeof dryRender === 'function') dryRender(); filmRender(); return; }
     const del = e.target.closest && e.target.closest('[data-filmdel]');
@@ -509,21 +509,24 @@ function filmExportCSV() {
 }
 
 // ---- the inputs bar: after the oven (the stretch to the peel, the winder's core) ----
-function filmPeelTreeHTML(prop) {
-  const pl = OVEN.peel;
-  return `<div class="ovz ovz-peel" id="ovzPeel"><div class="ovz-h"><span>After the oven <small>to the peel and the winder</small></span></div>
-    <div class="ovz-pic">${filmPicPlace()}</div>
-    ${prop(`${OVEN_PEEL_FIELDS[0][1]}${pl.lenSet ? '' : ' <small>assumed</small>'}`, 'ovzPeelLen', `min="${OVEN_PEEL_FIELDS[0][3]}" max="${OVEN_PEEL_FIELDS[0][4]}" step="${OVEN_PEEL_FIELDS[0][5]}" value="${pl.len}" data-ovpeel="len"`, OVEN_PEEL_FIELDS[0][2])}
+/** After the oven in the inputs bar: all of it, or (part: 'film', 'piece' or 'stack', WF-2) one stage's rows -- 4 Peel and
+ *  wind (the stretch to the peel, the winder's core), 5 Cutting (the pieces' size), 6 Pre heat treatment (its oven, times). */
+function filmPeelTreeHTML(prop, part = null) {
+  const pl = OVEN.peel, has = v => !part || part === v;
+  const row = (i, id) => { const f = OVEN_PEEL_FIELDS[i]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); };
+  return `<div class="ovz ovz-peel" id="ovzPeel"><div class="ovz-h"><span>${!part ? 'After the oven <small>to the peel and the winder</small>' : part === 'film' ? 'After the oven <small>to the peel and the winder</small>' : part === 'piece' ? 'Cut from the roll <small>the pieces</small>' : 'The pre heat treatment <small>the pieces pressed in a stack</small>'}</span></div>
+    ${has('film') ? `<div class="ovz-pic">${filmPicPlace()}</div>
+    ${row(0, 'ovzPeelLen')}
     <div class="ovz-pic ovz-roll">${filmPicRoll()}</div>
-    ${prop(`${OVEN_PEEL_FIELDS[1][1]}${pl.coreSet ? '' : ' <small>assumed</small>'}`, 'ovzPeelCore', `min="${OVEN_PEEL_FIELDS[1][3]}" max="${OVEN_PEEL_FIELDS[1][4]}" step="${OVEN_PEEL_FIELDS[1][5]}" value="${pl.core}" data-ovpeel="core"`, OVEN_PEEL_FIELDS[1][2])}
-    <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>
-    <div class="ovz-pic">${filmPicCut()}</div>
-    ${[2, 3].map(i => { const f = OVEN_PEEL_FIELDS[i]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, i === 2 ? 'ovzPieceL' : 'ovzPieceW', `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); }).join('')}
-    <div class="ovz-pic">${filmPicDryStack()}</div>
-    ${[[4, 'ovzDryT'], [5, 'ovzTOven']].map(([i, id]) => { const f = OVEN_PEEL_FIELDS[i]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); }).join('')}
+    ${row(1, 'ovzPeelCore')}
+    <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>` : ''}
+    ${has('piece') ? `<div class="ovz-pic">${filmPicCut()}</div>
+    ${row(2, 'ovzPieceL')}${row(3, 'ovzPieceW')}` : ''}
+    ${has('stack') ? `<div class="ovz-pic">${filmPicDryStack()}</div>
+    ${row(4, 'ovzDryT')}${row(5, 'ovzTOven')}
     ${typeof filmPicStackRest === 'function' ? `<div class="ovz-pic">${filmPicStackRest()}</div>` : ''}
-    ${(() => { const f = OVEN_PEEL_FIELDS[6]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, 'ovzTRest', `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); })()}
-    <p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film's section).</p></div>`;
+    ${row(6, 'ovzTRest')}` : ''}
+    ${has('piece') || has('stack') ? '<p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film\'s section).</p>' : ''}</div>`;
 }
 function wireFilmPeel(changed) {
   document.querySelectorAll('#setupExtra input[data-ovpeel]').forEach(el => {
@@ -539,7 +542,7 @@ function wireFilmPeel(changed) {
 // ---- Materials: the Film card ----
 function filmCardHTML() {
   return `<section class="mat-card" aria-labelledby="matFilmH">
-    <header><h3 id="matFilmH">${uiBadge('film')}The dry film on the fibre web</h3><button type="button" class="linkish" id="matFilmSee">See it on Process</button></header>
+    <header><h3 id="matFilmH">${uiBadge('film')}The dry film on the fibre web</h3><button type="button" class="linkish" id="matFilmSee">See it on Peel and wind</button></header>
     <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
     ${matEditRows(MAT_FILM, MAT.film, 'mfl', 'matf')}
     <div id="matFilmDerived"></div>
@@ -561,7 +564,7 @@ function filmWireCard() {
   }));
   view.querySelectorAll('input.mat-src[data-mfl]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfl; MAT.film[k] = { ...MAT.film[k], src: el.value.trim() }; }));
   document.getElementById('matFilmReset').onclick = () => { undoHint('Film values back to their defaults'); MAT = { ...MAT, film: matDefaults().film }; render(); };
-  document.getElementById('matFilmSee').onclick = () => processGo('film', 'results');
+  document.getElementById('matFilmSee').onclick = () => navGo('peel', 'results');
   filmDerived();
 }
 /** What follows from the Film card: in place. */

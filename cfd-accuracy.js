@@ -1,5 +1,5 @@
 /*
- * cfd-accuracy.js — Flow › 2D, the Mesh step's "Mesh to an accuracy": a location solved, its mesh refined and
+ * cfd-accuracy.js — Coating › 2D, the Mesh step's "Mesh to an accuracy": a location solved, its mesh refined and
  * solved again, until the chosen outputs (the wet film, the contact line) change less than a target from one
  * mesh to the next. Two ways to refine:
  *  - adaptive: each element's error estimated from its velocity gradients against smoothed (recovered) ones
@@ -321,7 +321,7 @@ function accRichardson(f1, f2, f3, rC, rF) {
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { accIndicator, accRefine, accRichardson, accShape, accNodes, accIndicator3, accRefine3, accShape3, accNodes3, accSplit, accMark };
 
-// ---- the page (Flow › 2D, Mesh step: the "Mesh to an accuracy" tab) ----
+// ---- the page (Coating › 2D, Mesh step: the "Mesh to an accuracy" tab) ----
 /** The panel's settings and the runs (each chosen location's meshes). */
 const ACC = { loc: 0, method: 'adaptive', target: 0.5, film: true, cl: true, max: 5, runs: {} };
 const ACC_METHODS = { adaptive: 'Adaptive: refine where the error is', everywhere: 'Refine everywhere ×1.25' };
@@ -489,7 +489,7 @@ function accWire(host) {
   host.querySelectorAll('[data-acc-use]').forEach(b => { b.onclick = () => accUse(+b.dataset.accUse); });
 }
 
-// ---- Flow › 3D, Mesh step: the same for the 3D, driving the page's own 3D solve a mesh at a time ----
+// ---- Coating › 3D, Mesh step: the same for the 3D, driving the page's own 3D solve a mesh at a time ----
 /**
  * The trial meshes are set on the page without undo steps (the page solves them as it would); at the end the
  * page gets back the mesh and the result it had, and "Use this mesh" takes the last one (one undo step).
@@ -630,7 +630,7 @@ function wireAcc3(host) {
   if (g('acc3Counts')) g('acc3Counts').onclick = acc3Counts;
 }
 
-// ---- Flow › 3D, Mesh step: the mesh-independence study -- the strip solved on Coarse, Medium and Fine ----
+// ---- Coating › 3D, Mesh step: the mesh-independence study -- the strip solved on Coarse, Medium and Fine ----
 /**
  * The strip solved on each preset in turn (C3D_MESH_PRESETS), nothing but the mesh changed: before each solve the physics
  * -- everything the solve is sent but its mesh (c3dPhysicsKey) -- is checked the same as the first's, or the study stops.

@@ -1,5 +1,5 @@
 /*
- * cfd-3d-geom.js — the geometry of Flow › 3D: the blade as triangles (made from the 2D setup, or read
+ * cfd-3d-geom.js — the geometry of Coating › 3D: the blade as triangles (made from the 2D setup, or read
  * from an STL or STEP file), placed over the web, the height of its underside over the web found by
  * casting vertical rays, and a structured hexahedral mesh of the slurry region (the gap under the
  * blade and the film beyond the metering edge) over a strip of the web or its full width.

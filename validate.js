@@ -68,7 +68,7 @@ function checkGeometry(geo, i) {
   if (prof && prof.err) err('blade', `The blade shape is not possible: ${prof.err}.`, 'cfdShape');
   // (the blade across the web may end inside the web: past its end no blade meters the film)
   const sp = acrossSpanNow();
-  if (i != null && geo.z != null && (geo.z < sp[0] || geo.z > sp[1])) err('bladeEnd', `L${i + 1} at z ${geo.z} mm is past the blade's ${geo.z < sp[0] ? 'left' : 'right'} end (${geo.z < sp[0] ? sp[0] : sp[1]} mm): no blade meters the film there. Move the location, or the blade's end (Flow › 1D › Across the web).`, `locz_${i}`);
+  if (i != null && geo.z != null && (geo.z < sp[0] || geo.z > sp[1])) err('bladeEnd', `L${i + 1} at z ${geo.z} mm is past the blade's ${geo.z < sp[0] ? 'left' : 'right'} end (${geo.z < sp[0] ? sp[0] : sp[1]} mm): no blade meters the film there. Move the location, or the blade's end (Coating › 1D › Across the web).`, `locz_${i}`);
   if (ACR.bow.on && ACR.bow.mode === 'computed' && acrossBowComputed().error) err('bow', `The bow could not be computed: ${acrossBowComputed().error}.`, null);
   const fs = fibreStructure();
   if (!(fs.eps > 0 && fs.eps < 1)) err('fibre', `The fibre data give a porosity of ${(fs.eps * 100).toFixed(0)} %: the basis weight, fibre density and thickness do not fit together.`, 'cfdGsm');
@@ -146,6 +146,10 @@ function jumpToField(id) {
   const m = /^l[is]_(\d+)_/.exec(id);
   if (!el && m && typeof renderLocCards === 'function' && document.getElementById('cfdLocs')) { cfdEditLoc = +m[1]; renderLocCards(); el = document.getElementById(id); }
   if (!el && /^(cfd|n_|li_|ls_)/.test(id) && tab !== 4) { tab = 4; render(); el = document.getElementById(id); }
+  // (WF-2: the inputs bar shows the page's inputs only: an input this page does not use is opened on a page that does)
+  const k = /^n_(\w+)$/.exec(id), row0 = el && el.closest('.prop');
+  if (k && row0 && row0.hidden && typeof pageUsing === 'function') { const pg = pageUsing(k[1]); if (pg) { navGo(pg); el = document.getElementById(id); } }
+  if (el && el.closest('#treeScroll') && panelHidden('model')) { setPanelHidden('model', false); el = document.getElementById(id); }   // (the inputs bar hidden: shown)
   if (!el) return;
   for (let d = el.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });

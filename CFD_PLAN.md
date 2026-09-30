@@ -12,6 +12,55 @@ drift out of sync with what's actually built.
 ## 10 live residual plot (done), 11 input validation (done), 12 input tooltips (done), 13 project file (done),
 ## 14 session memory (done), 15 undo/redo (done), 16 run report (done), 17 import measured data (done), 18 shortcuts/help (done). All 18 done.
 
+### Workflow, phase WF-2: the tabs in the process's order (ui.js NAV/SECTIONS, line-ui.js)
+
+User (30 Sep): "Keep Mixing instead of slurry"; layout A (a map of the line first, then a tab per stage with its own
+inputs on the left); the process confirmed as 1 Mixing, 2 Coating, 3 Drying, 4 Peel and wind, 5 Cutting, 6 Pre heat
+treatment, 7 Furnace, 8 Graphene film -- "show that, not your imagination": the map from the app's own results.
+Built:
+- The tab bar: Line | Materials | 1 Mixing … 8 Graphene film | Results | Studies. A tab opens a page: a view (its number
+  kept: project files, undo, help) and, on the Process view (12), its stage and part (NAV: film -> Peel and wind / Cutting
+  / Pre heat treatment by FILM.view; furnace -> Furnace / Graphene film by FURN.part). navNow() says which page is shown;
+  navGo(k, step) opens one. Each stage tab carries its number and a dot for where it stands (the Line's lineStages()
+  states). Coating's sub tabs: 1D (its four pages), 2D, 3D and Results (Contact line, Web edge, Film surface, Wet and dry
+  film = the Process's coating, Flakes = its alignment); a group reopens on its page last shown. Studies: DOE, Measured
+  data. Below 1700 px the bar tightens, below 1500 px the long stages show short names (Peel, Pre heat, Graphene).
+- The Line (view 14, where the app opens): the eight stages as cards, each with its state, the app's own drawing and its
+  answers for the inputs as they are (the same the stages' tabs show); the unsolved stages are asked for as it opens.
+- The Process view's own stage row is gone (the tabs are it). Each page's steps by its own key (procStepKey): Drying,
+  Peel and wind, Furnace: Setup, Solve, Results; Cutting and Pre heat treatment: Setup, Results (they solve after the
+  film); Graphene film: its results; Mixing, Wet and dry film, Flakes: one page. Cutting's and Pre heat treatment's Setup
+  show their own rows of After the oven; Graphene film shows the furnace's product (tiles, the film across the piece,
+  the piece, the pieces followed, the measured graphene film), Furnace its runs (checks, pieces, charts).
+- The inputs bar: only the page's inputs (unused shared inputs and groups hidden, no longer dimmed); the stages' own:
+  Mixing the slurry's flow and the card's values; Drying the web speed, the room before the oven and the zones; Peel and
+  wind the web speed, the stretch to the peel and the core; Cutting the pieces' size; Pre heat treatment its oven and
+  times; Furnace and Graphene film the furnace. The thin-film check shows on the coating's pages only.
+- Project files keep the page (view.page); a project from before opens the Process view on its stage as it is. The
+  menus (Physics › The line, Process stage; Window › the tabs; Results pages), help (the guides in the tab bar's order,
+  a Line guide), the welcome and every "Flow ›" / "Process ›" in the texts follow the new names.
+- Mixing is not modelled yet (the user: its heat and flow, flake size, viscosity -- a later phase).
+
+User (30 Sep): "As a rule you are not allowed to build pages with just text and garbage layouts, it has to be like a
+professional software and easy for user to understand. Random boxes and elements are garbage." The first Line (a card
+per stage of phrases and drawings) and Mixing (the coating's headline, a paragraph, a table) were rebuilt before merging:
+- The Line: a process flow diagram (the eight units as equipment in one style -- vessel, blade coater, tunnel oven, peel
+  and winder, cutter, pressed stack in its oven, furnace, product -- each with its state's badge; the streams S1-S7), a
+  streams table (thickness, water as % of the GO's mass, solids per area, size, corners up on a table, density; each a
+  named computed field) and a checks table (each stage's checks: result, limit, % of its limit with a bar, status). Each
+  check judged by its own page's rule, none invented: the coating's by the Results pages' verdicts (the notch corner; an
+  even contact line, 0.5 mm; the edge, 0.2 mm; the ripple, 5 µm with a risk from 1), the drying's as dryWarnings (wet at
+  the exit a risk, boiling a defect), the peel's as filmChecks (wet at the peel, cracks, tears, the roll, blisters:
+  defects), the stack's pull against the film's strength a risk (its page), the furnace's lights (furnLevel). The cut
+  piece's and the stack's flatness have no limit: shown, not judged. The film and where the water leaves are the stage
+  pages' own switches (DRY.sel, SHEET.way). Found doing it: film.js peels only the set layers -- the film wet inside at the
+  peel (top only), 359 of its 718 µm peel and the pieces, stack and furnace after it are that skin's; the table says so.
+- Mixing: the slurry's figures (solids, water, density, viscosity in the gap at U/H, yield stress, flakes), how it flows
+  (the solvers' own law, muLaw with cfdRheoX, log-log, marked at 2.7 1/s and in the gap), what it is made of (by volume
+  and by mass, a table). The coating's headline is not shown there (nor on Flakes).
+- Flakes (Coating › Results) before any 2D run: an empty state with its one action (Run the 2D); after, a table with bars.
+- Help's "Show" and Problems' "Go to" open a page that uses an input the page shown hides; another page opens at its top.
+
 ### Workflow, phase WF-1: one answer per quantity (answers.js)
 
 User report (a photo of the Materials page): pages built without being connected. Audited at the defaults on main:

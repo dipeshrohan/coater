@@ -1,5 +1,5 @@
 /*
- * cfd-3d-stream.js — streamlines through a solved 3D flow (Flow › 3D).
+ * cfd-3d-stream.js — streamlines through a solved 3D flow (Coating › 3D).
  *
  * The solve's mesh (cfd-fem3d.js): 27-node hexahedra on spines, nodes (c, l, k) — c along the flow, l across the web,
  * k up the spine from the web — numbered (c * NL + l) * NR + k, every element 3 nodes a side. A line is traced in the

@@ -124,7 +124,7 @@ const PANELS_STORE = 'bladeCoatDefectLab.panels.v1';
 // the inputs bar has its own state on the Summary page, which opens without it)
 const PANELS = (() => { const d = { model: false, dock: false, modDock: true, modelHome: true }; try { return { ...d, ...JSON.parse(localStorage.getItem(PANELS_STORE) || '{}') }; } catch (e) { return d; } })();
 const panelKey = k => { const t = typeof tab === 'number' ? tab : 0;   // (tab: ui.js, loaded after)
-  return k === 'dock' && (t <= 3 || t >= 8) ? 'modDock' : k === 'model' && t === 7 ? 'modelHome' : k; };   // (views 0-3, 8-11: the history-only panel)
+  return k === 'dock' && (t <= 3 || t >= 8) ? 'modDock' : k === 'model' && (t === 7 || t === 14) ? 'modelHome' : k; };   // (views 0-3, 8-11: the history-only panel)
 const panelHidden = k => !!PANELS[panelKey(k)];
 function setPanelHidden(k, hide) {
   PANELS[panelKey(k)] = !!hide;

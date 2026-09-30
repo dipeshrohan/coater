@@ -279,7 +279,7 @@ async function repMaterials() {
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
 }
-/** Flow › 3D: its setup, then the page (the 3D view drawn once three.js is in). */
+/** Coating › 3D: its setup, then the page (the 3D view drawn once three.js is in). */
 async function rep3D() {
   try { await load3DLibs(); } catch (e) { /* (the report goes without the 3D view) */ }
   const eg = C3D.region === 'edge' ? c3dEdgeGeom() : null;

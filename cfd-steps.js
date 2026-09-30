@@ -1,5 +1,5 @@
 /*
- * cfd-steps.js — Flow › 2D and Flow › 3D as steps: Geometry › Mesh › Solve › Results (the step bar
+ * cfd-steps.js — Coating › 2D and Coating › 3D as steps: Geometry › Mesh › Solve › Results (the step bar
  * beside 1D | 2D | 3D). Geometry: the blade drawn to scale with its dimensions (drag a handle or click
  * a value to change it). Mesh: the mesh the solve starts on, laid out by the solver's own mesher in a
  * worker before anything is solved, or the solved one, with its quality. Solve: the boundary conditions
@@ -1134,7 +1134,7 @@ function wireC3dZones(host) {
     z.bands.push({ z0: +(a + 0.4 * w).toFixed(2), z1: +(a + 0.6 * w).toFixed(2), size: +Math.max(0.1, c3dEvenSize() / 2).toFixed(2) });
     set(z, `Add 3D band ${z.bands.length}`);
   };
-  // (the 2D's zones, grouped by the region they refine: the same controls, and the same zones, as Flow › 2D's Mesh step)
+  // (the 2D's zones, grouped by the region they refine: the same controls, and the same zones, as Coating › 2D's Mesh step)
   if (host.querySelector('#m3Zones2D')) {
     wireZonesPanel(host.querySelector('#m3Zones2D'), c3dZoneLoc());
     const add = host.querySelector('#zoneAddBand');
@@ -1146,15 +1146,15 @@ function wireC3dZones(host) {
 }
 /**
  * The 2D's refinement zones as the 3D takes them at every station, grouped by what they refine (the active metering edge,
- * the meniscus, the upstream bead, the walls' boundary layers); the ids those of Flow › 2D's zones panel (wireZonesPanel),
- * the zones the same ones. A location with its own zones (kept from meshing to an accuracy) shows them, to change on Flow › 2D.
+ * the meniscus, the upstream bead, the walls' boundary layers); the ids those of Coating › 2D's zones panel (wireZonesPanel),
+ * the zones the same ones. A location with its own zones (kept from meshing to an accuracy) shows them, to change on Coating › 2D.
  */
 function c3dZones2DHTML() {
   const i = c3dZoneLoc(), own = CFD_LOCS[i].solver.zones !== undefined, z = zonesOf(solverOf(i).zones);
   const scaled = C3D.zoneScale !== 1 ? ` The 3D divides their sizes by ${(+C3D.zoneScale).toFixed(2)} (meshing to an accuracy, refine everywhere).` : '';
-  const porous = `<p class="m3-sub">Porous interface</p><p class="side-note">Not meshed in 3D: the web's fibre enters the 3D as slip on the web (Beavers–Joseph, from the fibre's permeability), a condition on its surface; the flow in the fibre is solved in 2D only (Flow › 2D).</p>`;
+  const porous = `<p class="m3-sub">Porous interface</p><p class="side-note">Not meshed in 3D: the web's fibre enters the 3D as slip on the web (Beavers–Joseph, from the fibre's permeability), a condition on its surface; the flow in the fibre is solved in 2D only (Coating › 2D).</p>`;
   const amr = `<p class="m3-sub">Adaptive refinement</p><p class="side-note">Not while solving (the mesh is fixed during a solve). Mesh to an accuracy (below) solves, refines where the error estimate is largest, and solves again.</p>`;
-  if (own || C3D.frac3) return `<p class="side-note" style="margin-top:0">${C3D.frac3 ? 'The adapted mesh from meshing to an accuracy sets the element ends along the flow and up the gap; the zones are not used.' : `L${i + 1} has its own zones (kept from meshing to an accuracy): ${zonesText(solverOf(i).zones)}.`} <button type="button" class="linkish" id="c3dZ2d">Flow › 2D, Mesh</button></p>${porous}${amr}`;
+  if (own || C3D.frac3) return `<p class="side-note" style="margin-top:0">${C3D.frac3 ? 'The adapted mesh from meshing to an accuracy sets the element ends along the flow and up the gap; the zones are not used.' : `L${i + 1} has its own zones (kept from meshing to an accuracy): ${zonesText(solverOf(i).zones)}.`} <button type="button" class="linkish" id="c3dZ2d">Coating › 2D, Mesh</button></p>${porous}${amr}`;
   const feat = k => { const [, l, where] = ZONE_FEATURES.find(q => q[0] === k); return `<tr${z[k].on ? ' class="on"' : ''}><td><label class="zone-chk"><input type="checkbox" data-zone-on="${k}"${z[k].on ? ' checked' : ''}><span title="Elements of about this size ${where}">${l}</span></label></td>
     <td>${zoneNum('zn_' + k, z[k].size, ZONE_LIM.size, 0.01, `${l}: element size, mm`)}<span class="u">mm</span></td></tr>`; };
   const layer = k => { const [, l, where] = ZONE_LAYERS.find(q => q[0] === k); return `<tr${z[k].on ? ' class="on"' : ''}><td colspan="2"><label class="zone-chk"><input type="checkbox" data-zone-on="${k}"${z[k].on ? ' checked' : ''}><span title="Thin rows along ${where}">${l}</span></label>
@@ -1163,7 +1163,7 @@ function c3dZones2DHTML() {
     <span>elements ${zoneNum(`zb_${n}_size`, b.size, ZONE_LIM.size, 0.01, `Band ${n + 1}: element size, mm`)} mm</span>
     <button type="button" class="icon-btn band-del" data-band-del="${n}" title="Remove band ${n + 1}" aria-label="Remove band ${n + 1}">${uiIco('trash')}</button></div>`).join('');
   const G = c3dBuild(), xe = G && G.xe ? +(G.xe * 1000).toFixed(2) : null;
-  return `<div id="m3Zones2D"><p class="side-note" style="margin-top:0">At every station; the same zones as Flow › 2D (${i === 0 && C3D.region !== 'strip' ? 'the shared ones' : `L${i + 1}'s`}): a change here changes them there.${scaled} <button type="button" class="linkish" id="c3dZ2d">Flow › 2D, Mesh</button></p>
+  return `<div id="m3Zones2D"><p class="side-note" style="margin-top:0">At every station; the same zones as Coating › 2D (${i === 0 && C3D.region !== 'strip' ? 'the shared ones' : `L${i + 1}'s`}): a change here changes them there.${scaled} <button type="button" class="linkish" id="c3dZ2d">Coating › 2D, Mesh</button></p>
     <p class="m3-sub">Active metering edge</p><table class="kv zone-table">${feat('edge')}</table>
     <p class="m3-sub">Meniscus</p><table class="kv zone-table">${feat('cl')}${feat('face')}${feat('film')}</table>
     <p class="m3-sub">Upstream bead</p><div class="band-list">${bands}<button type="button" class="btn btn-secondary btn-sm" id="zoneAddBand">${uiIco('plus')}Band along the flow</button><span class="side-note-i">x along the flow from the inlet, mm${xe != null ? ` (the metering edge at ${xe})` : ''}; a band covers the gap's full height.</span></div>
@@ -1200,7 +1200,7 @@ function c3dMeshSideHTML() {
     <tr><td>H<sub>eff</sub> / N</td><td>${H != null ? c3dLen(H / N) : '—'}</td></tr>
     <tr><td>Velocity nodes across</td><td>${2 * N + 1}${H != null ? `, every ${c3dLen(H / (2 * N))} if even` : ''}</td></tr>
     ${St && Number.isFinite(St.gap.hMin) ? `<tr><td>Element heights there</td><td>${c3dLen(St.gap.hMin)} to ${c3dLen(St.gap.hMax)}</td></tr>` : ''}</table>
-    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Flow › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.${nyKey === 'edgeNy' ? ` With the web's edges open the gap has its own count (the edge strips are the largest solves: at 5 across about 2.5 GB each): ${C3D.edgeNy} here, the preset's ${C3D.ny} elsewhere.` : ''}</p>
+    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Coating › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.${nyKey === 'edgeNy' ? ` With the web's edges open the gap has its own count (the edge strips are the largest solves: at 5 across about 2.5 GB each): ${C3D.edgeNy} here, the preset's ${C3D.ny} elsewhere.` : ''}</p>
     ${ms && ms.layers && (ms.layers.web || ms.layers.top) ? `<p class="side-note">Wall layers: ${[ms.layers.web ? `${ms.layers.n.web} at the web, ${c3dLen(ms.layers.thick.web)} thick` : '', ms.layers.top ? `${ms.layers.n.top} at the blade and surface, ${c3dLen(ms.layers.thick.top)} thick` : ''].filter(Boolean).join('; ')}: laid out by their sizes, ${St ? `${St.layerRows.web + St.layerRows.top} rows lie within them` : 'the rows within them counted once laid out'}.</p>` : ''}`;
   // across the web: the elements, the stations, their spacing
   const zE = c3dZEnds(), dz = zE.slice(1).map((v, k) => v - zE[k]), rg = c3dRegion();

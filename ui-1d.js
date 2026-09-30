@@ -1,6 +1,6 @@
 /*
- * ui-1d.js — Flow › 1D (Gap flow, To the oven, Across the web; Start-up is the animation, ui.js's
- * viewA), its solves in cfd-1d-worker.js, the 1D / 2D / 3D comparison, and Flow › 3D (not built yet).
+ * ui-1d.js — Coating › 1D (Gap flow, To the oven, Across the web; Start-up is the animation, ui.js's
+ * viewA), its solves in cfd-1d-worker.js, the 1D / 2D / 3D comparison, and Coating › 3D (not built yet).
  *
  * The 1D uses the 2D's inputs (cfd-ui.js's cfdGeometry: the blade shape, exit face, rheology model,
  * fibre slip and each location's own values), so the two stages compare like for like. It solves in
@@ -192,13 +192,13 @@ function oneDCompareTable() {
     if (k === 0) return cell(v1, null, d);
     if (k === 1) return two ? cell(f2(two), null, d).replace('</td>', `${two.stale ? ' <small class="warn-text">out of date</small>' : ` <small>1D ${v1 >= f2(two) ? '+' : ''}${f2(two) ? ((v1 / f2(two) - 1) * 100).toFixed(1) : '—'} %</small>`}</td>`) : cell(null);
     const th = three(i);
-    if (!th) return '<td class="na" title="not solved in 3D (Flow › 3D, a strip at this location)">—</td>';
+    if (!th) return '<td class="na" title="not solved in 3D (Coating › 3D, a strip at this location)">—</td>';
     const v3 = f3(th.R, th.m), v2 = two && !two.stale ? f2(two) : null;
     return cell(v3, null, d).replace('</td>', `${th.stale ? ' <small class="warn-text">out of date</small>' : v2 ? ` <small>vs 2D ${v3 >= v2 ? '+' : ''}${((v3 / v2 - 1) * 100).toFixed(1)} %</small>` : ''}</td>`);
   }).join('')}</tr>`).join('')).join('');
   const cols = `<colgroup><col class="c-q"><col class="c-s">${CFD_LOCS.map(() => '<col>').join('')}</colgroup>`;
   return `<h3 class="oned-h">1D, 2D and 3D compared</h3><div class="oned-scroll"><table class="cfd-table oned-cmp">${cols}${head}${body}</table></div>
-    <p class="fv-note">— : not solved yet (2D: Flow › 2D, Run; 3D: Flow › 3D, Solve 3D on a strip at that location or the full width). The 2D values are from the last solve at each location, the 3D from the middle of the last strip solved or the full width's station nearest the location; the % is how far the 1D (in the 2D row) and the 3D are from the 2D. Contact line: 1D, the static meniscus on the exit face; 2D and 3D, solved with the flow.</p>`;
+    <p class="fv-note">— : not solved yet (2D: Coating › 2D, Run; 3D: Coating › 3D, Solve 3D on a strip at that location or the full width). The 2D values are from the last solve at each location, the 3D from the middle of the last strip solved or the full width's station nearest the location; the % is how far the 1D (in the 2D row) and the 3D are from the 2D. Contact line: 1D, the static meniscus on the exit face; 2D and 3D, solved with the flow.</p>`;
 }
 
 // ---------------------------------------------------------------------

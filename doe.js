@@ -160,7 +160,7 @@ function doeFurnOutputs(res, P) {
 }
 function doeStartFurn(run) {
   const o = doeFurnOpts(DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] }))), q = furnInputs();
-  if (!o || !q) { Object.assign(run, { status: 'error', error: 'the furnace needs the film\'s piece solved (Process › Film)', ms: 0 }); return; }
+  if (!o || !q) { Object.assign(run, { status: 'error', error: 'the furnace needs the film\'s piece solved (Cutting)', ms: 0 }); return; }
   const w = makeWorker('cfd-furnace-worker.js'), t0 = performance.now();
   const used = new Set([...DOE.active].map(r => r.slot));
   Object.assign(run, { status: 'running', worker: w, progress: null, slot: [0, 1, 2, 3, 4, 5, 6, 7].find(k => !used.has(k)) ?? 0, live: null });
@@ -225,7 +225,7 @@ function doeGeometry(i, set, across = false) {
       else if (f.kind === 'acr') doeSetAcross(f, v);
       else loc.solver[f.k] = v;
     }
-    // (across: also the 1D's inputs at every position across the web, as Flow › 1D › Across the web solves them)
+    // (across: also the 1D's inputs at every position across the web, as Coating › 1D › Across the web solves them)
     return across ? { geo: cfdGeometry(i), across: acrossPositions().map(oneDGeoAt), ripple: oneDRipple() } : cfdGeometry(i);
   } finally { loc.over = keep.over; loc.solver = keep.solver; Object.assign(CFDG, keep.cfdg); P.L = keep.L; Object.assign(P, keep.p); applyAcross(JSON.parse(keep.acr)); }
 }
@@ -371,19 +371,19 @@ function viewDOE() {
     const q = typeof furnInputs === 'function' ? furnInputs() : null, fu = OVEN.furn;
     document.getElementById('setupExtra').innerHTML = `<div class="tree-sep">DOE base case</div>
       <details class="grp cfd-grp" open><summary>From the furnace</summary>
-        ${row('The piece', q ? `${dryFilmName(q.key).replace(/^the /, '')}, ${(q.P.h * 1e6).toFixed(0)} µm` : 'not solved yet (Process › Film)')}
+        ${row('The piece', q ? `${dryFilmName(q.key).replace(/^the /, '')}, ${(q.P.h * 1e6).toFixed(0)} µm` : 'not solved yet (Cutting)')}
         ${[0, 1].map(r => row(FURN_RUNS[r], fu.runs[r].file ? `your file ${dryEsc(fu.runs[r].file.name)}` : fu.runs[r].steps.map(st => `${st.rate} °C/min to ${st.to} °C`).join(', '))).join('')}
         ${row('The stack', `${fu.N} pieces, ${fu.plateW} kg on it, ${fu.room === 'gap' ? `${fu.gap} mm gap` : 'the plate above on it'}, ${fu.ends === 'papers' ? 'its ends on papers' : `its ends on the plates (${fu.plateT} mm)`}`)}
-        <p class="prop-note">Every run is the furnace for the film's piece as it is (the flow is not solved again), its factors set; everything else as on Process › Furnace and the Furnace card.</p>
+        <p class="prop-note">Every run is the furnace for the film's piece as it is (the flow is not solved again), its factors set; everything else as on the Furnace tab and the Furnace card.</p>
         <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToFurn">${uiIco(12)}Open the furnace</button></div>
       </details>`;
-    document.getElementById('doeToFurn').onclick = () => processGo('furn', 'setup');
-    const tn = document.getElementById('treeNote'); if (tn) tn.textContent = 'The furnace\'s DOE starts from the furnace as set on Process › Furnace (its base case) and varies the factors of its Design tab, for the film\'s piece as it is.';
+    document.getElementById('doeToFurn').onclick = () => navGo('furn', 'setup');
+    const tn = document.getElementById('treeNote'); if (tn) tn.textContent = 'The furnace\'s DOE starts from the furnace as set on the Furnace tab (its base case) and varies the factors of its Design tab, for the film\'s piece as it is.';
   }
   const dockTab = (k, t) => `<button type="button" role="tab" data-dock="${k}" aria-selected="${DOE.dock === k}" aria-controls="doe-${k}">${uiIco(DOCK_ICON[k])}${t}${['problems', 'history', 'msgs'].includes(k) ? `<span class="tab-n" data-n="${k}"></span>` : ''}</button>`;
   view.innerHTML = `
     <div class="cfd-wb doe-wb" id="doeWb" style="--dock-h: ${dockHCss(DOE.dockH)}">
-      <div class="vp-bar" role="toolbar" aria-label="DOE">
+      <div class="vp-bar" role="toolbar" aria-label="DOE">${subTabs()}
         <button id="doeRun" class="btn btn-primary btn-sm tool-run" type="button" title="Solve every combination of the factor levels"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run DOE</button>
         <button id="doeStop" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
         <span class="vp-sep" aria-hidden="true"></span>

@@ -1,5 +1,5 @@
 /*
- * cfd-custom.js — the custom blade profile's editor (Flow › 2D › Geometry, blade Custom): its points in a
+ * cfd-custom.js — the custom blade profile's editor (Coating › 2D › Geometry, blade Custom): its points in a
  * table (x, y, corner, M, C), placed by clicking on the drawing (joined by a spline), or read from CSV / text
  * points, a DXF drawing (lines, arcs, polylines, splines) or a side section of the 3D page's STL / STEP blade;
  * flipped left-right or up-down. The points are CFDG.custom (mm, cfd-ui.js); cfd-blade.js's customProfile makes

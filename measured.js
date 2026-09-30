@@ -651,7 +651,7 @@ function viewMeasured() {
     </details>`;
   view.innerHTML = `
     <div class="cfd-wb meas-wb" id="measWb" style="--dock-h: ${dockHCss(MEAS.dockH)}">
-      <div class="vp-bar" role="toolbar" aria-label="Measured data">
+      <div class="vp-bar" role="toolbar" aria-label="Measured data">${subTabs()}
         <button id="measImport" class="btn btn-primary btn-sm tool-run" type="button" title="Import measured data from a CSV file">${uiIco('upload')}Import CSV…</button>
         <span class="vp-sep" aria-hidden="true"></span>
         <label class="vp-ctl">Dataset <select id="measSel"${MEAS.sets.length ? '' : ' disabled'}>${MEAS.sets.map(d => `<option value="${d.id}"${d.id === MEAS.sel ? ' selected' : ''}>${mEsc(d.name)}</option>`).join('')}</select></label>
