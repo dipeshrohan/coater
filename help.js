@@ -314,6 +314,10 @@ const HELP = {
   'tb.export': { t: 'Export CSV', d: 'Save the field, boundaries, metrics, probes or cut lines of the locations shown as CSV.' },
   'tb.image': { t: 'Save as image', d: 'Save a plot, a chart, a module\'s plots or the whole window as PNG or SVG.' },
   'tb.theme': { t: 'Light / dark', d: 'Switch between the light and dark theme (remembered in this browser).' },
+  'tb.menubar': { t: 'Menu bar', d: 'File, Edit, View, Geometry, Physics, Mesh, Simulation, Results, Tools, Window, Help: every command of the app where it belongs in the work (the geometry, the physics, the mesh, the solve, the results), each doing what the page\'s own button, control or key does. A command that cannot run now is greyed, with why on it and in the status bar; a check mark shows what is on or chosen. F10 puts the bar to the keyboard: arrows move, Enter runs, Esc closes.' },
+  'tb.palette': { t: 'Command palette', d: 'Ctrl+Shift+P, or Tools › Command palette: type part of a command (run 3d, streamlines, export …), then Enter. The commands used last come first.' },
+  'tb.context': { t: 'Right-click menus', d: 'On the 2D flow plots, the 2D Geometry, Mesh and Solve drawings and the 3D view: the commands for what is there (zoom, field, display, probes, cut lines, shape, mesh, run, camera, export). Shift + right-click: the browser\'s own menu.' },
+  'tb.prefs': { t: 'Preferences', d: 'Edit › Preferences: the theme, the welcome screen, the panels, the keys. Kept in this browser, not in the project.' },
   // display pop-over
   'dp.scale': { t: 'Vertical scale', d: 'Exaggerated: the gap is stretched to fill the plot (the scale is given). True: 1:1, the gap looks as thin as it is.' },
   'dp.contourField': { t: 'Contour field', d: 'The field whose contour lines are drawn: the colour field or another one.' },

@@ -172,7 +172,8 @@ function renderHelpDlg() {
     body.innerHTML = `<h3 class="help-h">Methods and limits</h3><p class="fv-note">What each result rests on, and where it stops being reliable.</p>`
       + METHODS.map(m => `<section class="help-m"><h4>${m.t}</h4><p>${m.d}</p>${m.lim ? `<p class="help-lim"><b>Limits.</b> ${m.lim}</p>` : ''}</section>`).join('');
   } else if (HELPDLG.sec === 'keys') {
-    body.innerHTML = '<h3 class="help-h">Keyboard shortcuts</h3><div id="helpKeys"></div>';
+    body.innerHTML = `<h3 class="help-h">Keyboard shortcuts</h3><p class="fv-note">The menu bar: F10, then the arrows, Enter, Esc. Every command by name: ${keyLabel('tools.palette') || 'Tools › Command palette'}.
+      Right-click the 2D flow plots, the 2D steps' drawings or the 3D view for the commands there.</p><div id="helpKeys"></div>`;
     renderKeyEditor(body.querySelector('#helpKeys'));
   }
 }

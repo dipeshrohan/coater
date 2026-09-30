@@ -4,8 +4,10 @@
  *
  * Run (Ctrl+Enter) and Stop (Esc) act on the tab shown: 2D CFD, DOE, Measured data. The
  * view keys (Alt + a letter or digit) drive the CFD flow plot; Ctrl+B and Ctrl+J hide and show
- * the inputs bar and the bottom panel. Keys without Ctrl or Alt are not taken while typing in a box,
- * and Ctrl+Z / Ctrl+Y in a text box stay the browser's own text undo.
+ * the inputs bar and the bottom panel. F fits the 2D flow plots or the 3D view; F1 opens the help, F10 puts
+ * the menu bar (menus.js) to the keyboard, Ctrl+Shift+P opens the command palette. Keys without Ctrl or Alt
+ * are not taken while typing in a box (F1 … F12 are), and Ctrl+Z / Ctrl+Y in a text box stay the browser's
+ * own text undo. A key given to two actions runs only the first (keyClashes; the key list shows it).
  */
 
 const KEYS_STORE = 'bladeCoatDefectLab.keys.v1';
@@ -20,12 +22,16 @@ const zoomClick = z => { const bs = document.querySelectorAll(`#cfdPlots .zoom-c
 // (Geometry, Mesh and Solve: a location key picks their location; Compare and Difference are Results' views)
 const setFvView = v => { if (!onCfd()) return false; if (step2D() !== 'results' && typeof v === 'number') FV.stepLoc = v; else FV.view = v; viewCFD(); return true; };
 /** The bottom panel's tabs of the view shown, and the selected one. */
+const dockTabs = () => [...document.querySelectorAll('#view .dock-tabs button[role="tab"]')].filter(x => x.offsetParent !== null);
 function dockCycle(step) {
-  const bs = [...document.querySelectorAll('#view .dock-tabs button[role="tab"]')].filter(x => x.offsetParent !== null);
+  const bs = dockTabs();
   if (bs.length < 2) return false;
   const k = bs.findIndex(b => b.getAttribute('aria-selected') === 'true');
-  const b = bs[(k + step + bs.length) % bs.length];
-  setPanelHidden('dock', false);
+  const key = bs[(k + step + bs.length) % bs.length].dataset.dock;
+  // (showing a hidden panel draws the page again: the tab is found again after it, not clicked where it was)
+  if (panelHidden('dock')) setPanelHidden('dock', false);
+  const b = dockTabs().find(x => x.dataset.dock === key);
+  if (!b) return false;
   b.click(); b.focus();
   return true;
 }
@@ -54,18 +60,26 @@ const KEY_ACTIONS = [
   ...[0, 1, 2, 3].map(i => ({ id: `view.l${i + 1}`, g: 'View (CFD flow plot)', l: `Location ${i + 1}`, def: `Alt+${i + 1}`, when: onCfd, run: () => setFvView(i) })),
   { id: 'view.compare', g: 'View (CFD flow plot)', l: 'Compare the four locations', def: 'Alt+C', when: onCfd, run: () => setFvView('compare') },
   { id: 'view.diff', g: 'View (CFD flow plot)', l: 'Difference plot', def: 'Alt+D', when: onCfd, run: () => setFvView('diff') },
+  // (F: the 2D flow plots' whole domain, or the 3D view's camera again -- menus.js's Fit)
+  { id: 'view.fitAll', g: 'View', l: 'Fit the view: the whole domain (2D flow plots) or the 3D view\'s camera', def: 'F',
+    when: () => !!document.querySelector('#cfdPlots .zoom-ctl [data-z="fit"]') || (tab === 9 && !!document.getElementById('v3dHost')), run: () => mbFit() },
   { id: 'panel.model', g: 'Panels', l: 'Hide / show the inputs', def: 'Ctrl+B', run: () => setPanelHidden('model', !panelHidden('model')) },
   { id: 'panel.dock', g: 'Panels', l: 'Hide / show the bottom panel', def: 'Ctrl+J', when: () => !!document.querySelector('#view .dock'), run: () => setPanelHidden('dock', !panelHidden('dock')) },
   { id: 'panel.next', g: 'Panels', l: 'Next tab of the bottom panel', def: 'Alt+]', when: () => !!document.querySelector('#view .dock-tabs'), run: () => dockCycle(1) },
   { id: 'panel.prev', g: 'Panels', l: 'Previous tab of the bottom panel', def: 'Alt+[', when: () => !!document.querySelector('#view .dock-tabs'), run: () => dockCycle(-1) },
-  { id: 'help.open', g: 'Help', l: 'Help', def: '', run: () => openHelp() },
+  { id: 'help.open', g: 'Help', l: 'Help', def: 'F1', run: () => openHelp() },
   { id: 'help.keys', g: 'Help', l: 'Keyboard shortcuts', def: '', run: () => openHelp('keys') },
+  { id: 'tools.palette', g: 'Menus', l: 'Command palette: find any command by name', def: 'Ctrl+Shift+P', run: () => mbPalette() },
+  { id: 'menu.bar', g: 'Menus', l: 'The menu bar, to the keyboard (arrows move, Enter opens)', def: 'F10', run: () => mbFocusBar() },
 ];
 const KEY_BY_ID = new Map(KEY_ACTIONS.map(a => [a.id, a]));
 const KEY_MAP = (() => { try { const m = JSON.parse(localStorage.getItem(KEYS_STORE) || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } })();
 const saveKeyMap = () => { try { localStorage.setItem(KEYS_STORE, JSON.stringify(KEY_MAP)); } catch (e) { /* not kept */ } };
 /** An action's key now: changed here, else its default ('' = none). */
 const keyOf = id => (id in KEY_MAP ? KEY_MAP[id] : (KEY_BY_ID.get(id) || {}).def) || '';
+/** Keys given to more than one action, as [key, [action, …]] (only the first in the list would run). */
+const keyClashes = () => { const by = new Map(); for (const a of KEY_ACTIONS) { const k = keyOf(a.id); if (k) by.set(k, [...(by.get(k) || []), a]); } return [...by].filter(([, v]) => v.length > 1); };
+keyClashes().forEach(([k, v]) => console.warn(`Key ${k} is given to ${v.map(a => a.l).join(' and ')}: only the first runs (Help › Keyboard shortcuts).`));
 /** A key as shown (Cmd on a Mac). */
 const keyLabel = id => { const k = keyOf(id); return k ? (IS_MAC ? k.replace(/\bCtrl\b/g, '⌘').replace(/\bAlt\b/g, '⌥') : k).replace('Escape', 'Esc') : ''; };
 
@@ -92,7 +106,7 @@ document.addEventListener('keydown', e => {
   if (KEYS_CAPTURE.on || e.repeat && !/^Alt\+(=|-)$/.test(comboOf(e))) return;
   const combo = comboOf(e);
   if (!combo) return;
-  const plain = !/^(Ctrl|Alt)\+/.test(combo);
+  const plain = !/^(Ctrl|Alt)\+/.test(combo) && !/^(Shift\+)?F\d+$/.test(combo);   // (F1 … F12 type nothing: theirs in a box too)
   if (plain && combo !== 'Escape' && typingIn(e.target)) return;
   if (combo === 'Escape' && escTaken()) return;
   if (document.querySelector('dialog[open]') && combo !== 'Escape') return;   // (a dialog has the keys)
