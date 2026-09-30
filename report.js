@@ -120,7 +120,8 @@ async function repModule(m, statsTitle = 'Results') {
   if (m === 11) html += acrossReportHTML();
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
-  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')));   // (not an editor's drawing)
+  // (not an editor's drawing; not the multiphysics steps', drawn only once solved there -- their answers are tables below)
+  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')));
   if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, t.title())).join('');
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   const scope = cleanText(document.getElementById('scope'));

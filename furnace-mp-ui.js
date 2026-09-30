@@ -80,7 +80,7 @@ async function fmpWait(dim = FMS.dim) {
 // ---- the page ----
 function fmpHTML() {
   const pane = (id, icon, title, aria) => `<figure class="pane mp-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
-  return `<section class="mp-sec" id="fmpSec" aria-labelledby="fmpH">
+  return `<section class="mp-sec no-report" id="fmpSec" aria-labelledby="fmpH">
     <header class="mp-bar">
       <h4 id="fmpH">${uiBadge('mesh')}Multiphysics solver <small>heat · chemistry · gas · stress, solved together</small></h4>
       <div class="seg" role="tablist" aria-label="The solver's dimension" id="fmpDim">${Object.entries(MP_DIMS).map(([k, t]) => `<button type="button" role="tab" data-fmdim="${k}" aria-selected="${+k === FMS.dim}">${t}</button>`).join('')}</div>
