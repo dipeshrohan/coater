@@ -55,6 +55,7 @@ const MAT_DRY = [
   ['mul', 'Flakes\' collective diffusion, × the hard-sphere law', '', 0.001, 1e6, 0.1, 3, 1, 'assumed', 'Routh–Russel for hard spheres (Carnahan–Starling) with a thin disc\'s Brownian diffusion; flakes in a gel may move together faster: raise it'],
   ['skinK', 'Water vapour through the skin', '×10⁻¹² kg/(m·s·Pa)', 0.001, 1e6, 0.1, 3, 1, 'assumed', 'GO laminates pass water vapour at about 10⁻⁵ mm·g/(cm²·s·bar) (Nair et al., Science 2012)'],
   ['kS', 'GO\'s heat conductivity through the film', 'W/(m·K)', 0.01, 10, 0.01, 2, 0.2, 'assumed', 'GO paper through its thickness: 0.1–0.3 reported'],
+  ['kIn', 'GO\'s heat conductivity along the film', 'W/(m·K)', 0.01, 100, 0.01, 2, 1, 'assumed', 'GO paper along itself: about 0.5–3 reported, several times through it (its flakes lie flat); the pressed stack\'s heat (MP-1)'],
   ['cS', 'GO\'s specific heat', 'J/(kg·K)', 100, 3000, 10, 0, 850, 'assumed', 'graphite 710; GO with its oxygen groups higher'],
   ['emis', 'Film emissivity', '', 0.01, 1, 0.01, 2, 0.95, 'assumed', 'water and GO: nearly black in the infrared; the oven\'s walls radiate at its air\'s temperature'],
   ['irAbs', 'IR absorbed by the film', 'fraction', 0, 1, 0.01, 2, 0.9, 'assumed', 'of the IR heaters\' power reaching the film'],
@@ -214,11 +215,19 @@ const OVEN_ZONE_DEFAULT = { len: 2, airU: 1, airT: 100, plenum: 100, rh: 20, top
 // the pre heat treatment oven the pieces are stacked in -- Q72: about 100 °C, from you; Q73/Q74: 1–2 h, pressed)
 // (tOven: the pieces' time in the pre heat treatment -- Q73: 1–2 h, 1.5 from you; tRest: under the plate after it, in the room,
 // until they are taken out to be looked at and measured -- Q84/Q85: 1–2 h, 1.5 from you; GO-4f)
-const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true, tOven: 1.5, tRest: 1.5, stackSet: true };
+// (MP-1, the stack's heat: plateT -- the aluminium plate's thickness, Q78's 1 kPa over the pieces as a plate their size
+// (1000 / (2700 × 9.81) m); stackAirU -- the oven's air along the stack, 0: still air (natural convection); epsPl -- the
+// plate's emissivity (bare aluminium 0.04–0.1); shelf -- what the stack stands on in the oven: 'wire' (the air and the walls
+// below it) or 'solid' (a shelf at the oven's temperature); all assumed until you say)
+const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true, tOven: 1.5, tRest: 1.5, stackSet: true,
+  plateT: 37.8, plateSet: false, stackAirU: 0, stackAirSet: false, epsPl: 0.09, epsPlSet: false, shelf: 'wire', shelfSet: false };
+const OVEN_SHELVES = { wire: 'A wire shelf', solid: 'A solid shelf' };
 const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet'],
   ['pieceL', 'Piece\'s length (along the line)', 'mm', 10, 2000, 1, 0, 'pieceSet'], ['pieceW', 'Piece\'s width', 'mm', 10, 2000, 1, 0, 'pieceSet'],
   ['dryT', 'Pre heat treatment oven', '°C', 20, 300, 1, 0, 'drySet'], ['tOven', 'Time in the pre heat treatment', 'h', 0.05, 48, 0.1, 2, 'stackSet'],
-  ['tRest', 'Under the plate after, until taken out', 'h', 0, 72, 0.1, 2, 'stackSet']];
+  ['tRest', 'Under the plate after, until taken out', 'h', 0, 72, 0.1, 2, 'stackSet'],
+  ['plateT', 'Aluminium plate\'s thickness', 'mm', 1, 200, 0.5, 1, 'plateSet'], ['stackAirU', 'Oven\'s air along the stack (0: still)', 'm/s', 0, 20, 0.1, 1, 'stackAirSet'],
+  ['epsPl', 'Plate\'s emissivity', '', 0.02, 1, 0.01, 2, 'epsPlSet']];
 // (furn: the furnace, GO-5 -- Q87: two runs, to about 1000 °C then to 2800 °C, in argon (Q91); each a program of steps
 // (heat at a rate to a temperature, hold) and its cooling, or a cycle from your file (Q97: yours to come; these assumed,
 // 12–48 h a run, Q88); Q89: one piece between two graphite papers, bigger than it (Q104: by how much not known), 0.3–1 mm
@@ -248,4 +257,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
