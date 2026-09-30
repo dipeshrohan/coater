@@ -152,5 +152,23 @@ console.log('\n-- contour lines and mesh quality (display helpers) --');
   check(Math.abs(q1.worst - 1) < 1e-12 && q2.worst < 0.99 && q2.worst > 0, `mesh quality: parallelogram grid ${q1.worst.toFixed(6)}, tapered grid worst ${q2.worst.toFixed(3)}`);
 }
 
+// ---------------------------------------------------------------- NUM-2: the adaptive integrator
+// Solid-body rotation on a uniform grid: the velocity is linear, so the bilinear interpolation is exact and the
+// streamlines are exact circles -- what is left of the drift is the integrator's own.
+{
+  console.log('\n-- adaptive streamline integration (Dormand-Prince 5(4)) on an exact rotation --');
+  const n = 41, dx = 0.025, xc = 0.5, yc = 0.5, N = n * n, u = new Float64Array(N), v = new Float64Array(N);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j * n + i; u[k] = -(j * dx - yc); v[k] = i * dx - xc; }
+  const f = makeFlowField({ nx: n, ny: n, dx, dy: dx, u, v }, {});
+  const run = r0 => { const seed = [xc + r0, yc], drift = ln => Math.max(...ln.points.map(([x, y]) => Math.abs(Math.hypot(x - xc, y - yc) - r0))) / r0;
+    const o = { direction: 'forward', maxCells: 200 }, rk4 = traceStreamline(f, seed, o), a6 = traceStreamline(f, seed, { ...o, integrator: 'rk45', tol: 1e-6 }), a9 = traceStreamline(f, seed, { ...o, integrator: 'rk45', tol: 1e-9 });
+    return { rk4, a6, a9, d4: drift(rk4), d6: drift(a6), d9: drift(a9) }; };
+  const big = run(0.3), tight = run(0.05), seed = [xc + 0.3, yc], rk4 = big.rk4;
+  check([big, tight].every(q => q.rk4.endReason === 'closed' && q.a6.endReason === 'closed' && q.a9.endReason === 'closed'), `the circles close on themselves with either integrator (radius 12 cells: RK4 ${big.rk4.points.length} points, RK45 ${big.a6.points.length})`);
+  check(big.d6 < 1e-6 && big.d9 < 1e-7 && big.a6.points.length < big.rk4.points.length, `RK45 on a gentle curve (12 cells): within its tolerance in longer steps (drift ${big.d6.toExponential(1)}, ${big.a6.points.length} points against RK4's ${big.rk4.points.length}, drift ${big.d4.toExponential(1)})`);
+  check(tight.d9 < 1e-7 && tight.d9 < tight.d6 && tight.d6 < 1e-4, `RK45 on a tight curve (2 cells): the drift falls with the tolerance (1e-6: ${tight.d6.toExponential(2)}, 1e-9: ${tight.d9.toExponential(2)}; RK4 at its fixed step: ${tight.d4.toExponential(2)})`);
+  const def = traceStreamline(f, seed, { direction: 'forward', maxCells: 200, integrator: 'rk4' });
+  check(def.points.length === rk4.points.length && def.points.every((p, k) => p[0] === rk4.points[k][0] && p[1] === rk4.points[k][1]), 'Automatic is the fixed-step RK4, point for point');
+}
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nALL PASS');
 if (fails) process.exit(1);

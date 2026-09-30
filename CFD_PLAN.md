@@ -6,6 +6,77 @@ not end-user content). Amend this file as decisions change — don't let it
 drift out of sync with what's actually built.
 
 ## Status (latest first). Feature list 1-12 complete; 13-15 done; GUI G1-G5 done.
+
+### Numerics, phase NUM: the computation chain audited, its real choices exposed (30 Sep)
+
+User (30 Sep): audit geometry -> mesh -> physics/BC -> equations -> discretization -> solver -> fields -> interpolation ->
+post-processing -> rendering; improve where justified; expose only choices that are real numerical implementations; delete
+nothing. Answers: build 1 Numerics card, 2 Advanced controls, 3 Adaptive streamlines, 4 3D derived fields; "It needs to be
+time marching for 1d, 2d and 3d"; contact angle "Use a literature model"; transient "Yes, plan it".
+
+Done (defaults unchanged, results solved before stay current, projects unchanged in form):
+- NUM-1 numerics-ui.js: the Numerics panel (2D dock tab and 3D Solve step): the chain as the solver runs it, Automatic
+  resolved to its values, the last solve's state, steps, residual against the tolerance and mass balance (2D: coaterGrid's
+  massError, already there; 3D: new, cfd-fem3d.js massBalance: inlet, outlet, sides). Advanced: the yield-stress floor
+  gdMin (Automatic 1e-3 U/H), the 3D's own Newton tolerance and iteration limit; each sent only when set.
+- NUM-2 cfd-ode.js: Dormand-Prince 5(4) streamlines (2D cfd-flowviz.js, 3D cfd-3d-stream.js), Integration: Automatic
+  (the fixed-step RK4, point for point as before) | Adaptive RK45. Finding: on the app's 2D the psi drift along the lines
+  is set by the field's bilinear interpolation (1.09 % RK4, 1.01 % RK45 at half the points), not by the integrator.
+- NUM-3 cfd-3d-derive.js: vorticity, pressure gradient, wall shear stress on the web, from the solved nodal fields (each
+  element's gradient at its nodes, averaged; as the solver's shear rate), worked out when shown, never saved. Fields:
+  |omega|, omega_z, |grad p|, dp/dx; panes: the web's wall shear stress (map; along the flow at the middle and sides).
+
+NUM-4, the dynamic contact angle: NOT built -- a finding put to the owner. The steady solvers' only contact line is on the
+blade's exit face, which does not move; in a steady solution it is at rest, so Cox-Voinov (theta_d^3 = theta_s^3 +
+9 Ca_cl ln(L/lambda), Ca_cl = mu v_cl / gamma) gives theta_d = theta_s there: an option with no effect. The app's warning
+"the static contact-line model omits important dynamic wetting" is physics.js modelScope()'s rule of thumb on the web's
+Ca = mu U / gamma > 0.1, from the 1D model. Where a contact line does move relative to its solid: (a) on the exit face in
+time (start-up, a step in pressure or speed): the time-marching solver below; (b) the 3D open edge's contact line on the
+moving web, which spreads outward as the web carries it (normal speed U sin alpha relative to the web) even when steady;
+(c) the upstream wetting line where the slurry first meets the web (air entrainment): not in the model (the inlet is the
+bead pressure).
+
+Owner (30 Sep), with screenshots of the contact line on the exit face, the Numerics panel and the Start-up animation:
+the dynamic angle goes "In time marching. Since you might forget, in time marching the blade is fixed too. It's the fluid
+that moves ahead because of the movement of the fiber." So: the blade stays fixed in the lab frame in time as in the steady
+solve; the fibre (the web) moves and carries the slurry; a contact line's speed in the law is its speed relative to the solid
+it lies on (on the fixed exit face: ds/dt; a contact line on the web, e.g. the slurry's front during start-up: relative to
+the moving web). Order approved: "2D first, then 1D, 3D". Main's empty Start-up pictures in the report: "Not now".
+
+NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D first.
+- What: the coating flow as it changes -- start-up from a filled gap at rest; a step or ramp in the bead pressure, the web
+  speed or the gap -- to the steady state the steady solvers give, on the same meshes and elements. Steady stays the
+  default; nothing existing changes.
+- Equations: the same Navier-Stokes with rho du/dt, on a mesh that moves with the free surface along its spines (ALE: the
+  time derivative at a moving node carries -(x_mesh_dot . grad) u); the kinematic condition in time along each free spine,
+  dh/dt from (u - x_mesh_dot) . n = 0; the contact line s(t) moving on the exit face; Gibbs pinning at corners as now.
+- Contact line in time: static (as now) or Cox-Voinov with the line's own speed relative to its solid (advancing /
+  receding; on the fixed face ds/dt, driven by the slurry the fibre carries), L/lambda assumed (ln ~ 10), flagged -- here
+  the line moves, so the law acts. The blade is fixed in time too; only the web moves.
+- Time: BDF2 with a variable step (the first step backward Euler); each step one Newton solve of the same coupled system
+  plus the mass terms (Jacobian + 3/(2 dt) M; the same banded LU). Step control: the local error from BDF2 against a
+  linear-extrapolation predictor, dt_new = dt * clamp(0.9 (tol/err)^(1/3), 0.2, 2): Automatic (error tolerance) or a fixed
+  dt (Advanced). CFL: the scheme is implicit, so CFL is not a stability limit; it is reported (U dt / dx at the web, and dt
+  against the capillary time mu dx / gamma) as information.
+- Output: snapshots (film, contact line, fields) every so many steps; Results gets a time bar (slider, play), the film and
+  contact line against time, pathlines and streaklines (particles through the stored snapshots, RK45 in time, interpolated
+  between them); streamlines at the shown time.
+- 1D: under the blade the gap is full (lubrication: the flow follows the pressure at once); the film on the web in time by
+  the thin-film equation h_t + (U h - h^3/(3 mu) p_x)_x = 0, p = -gamma h_xx (+ gravity), from the gap's outflow; implicit,
+  the same BDF2 and step control. (The Start-up animation's thin-film engine stays as it is.)
+- 3D: the 2D's scheme on the 27-node hexahedra of a strip; each step a 3D Newton solve. Cost, estimated from today's
+  coarse strip (30 s for its solve with 3 Newton steps, so at most ~10 s a Newton step): a 200-step start-up at 2 Newton
+  steps a step is of the order of an hour. The full width in time (strips swept every step) is not planned: its cost multiplies.
+- Checks (independent solutions): Stokes' first problem in a channel (series), dt^2 convergence; an oscillating pressure
+  gradient (Womersley, amplitude and phase); a manufactured time-dependent solution on a moving curved mesh (second order in
+  time, the space order kept; a uniform flow stays uniform on a moving mesh); a capillary wave on a film levelling (the thin-
+  film decay rate gamma h^3 k^4 / (3 mu)) in 1D, 2D, 3D; the film's volume in time = in - out; marching from rest reaches
+  the steady solver's film, contact line and pressure; Cox-Voinov: a meniscus between plates relaxing, against the ODE of
+  the same contact law.
+- Steps: T-1 2D engine (ALE, BDF2, step control; checks) -> T-2 2D UI (Solve: Time Steady | Transient, scenario, end time,
+  dt; Results: time bar, charts, pathlines; project, undo, help, report) -> T-3 1D -> T-4 3D engine on a strip -> T-5 3D
+  UI -> T-6 pathlines and streaklines -> T-7 Cox-Voinov in time -> T-8 census, regression, PR.
+
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
 ## 6 difference plots (done), 7 image export (done), 8 solver/mesh settings (done), 9 parametric sweep/DOE (done),

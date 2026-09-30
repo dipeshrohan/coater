@@ -26,6 +26,9 @@
  * located by inverting that map in the cell that contains it.
  */
 
+// (the adaptive integrator, NUM-2: cfd-ode.js -- loaded before this file in the page, required in Node)
+const FV_ODE = typeof odeDP45 === 'function' ? { odeDP45, odeNextH, ODE_ADAPT } : require('./cfd-ode.js');
+
 /**
  * Wrap a solver result with the derived fields post-processing needs.
  * opts.rho (density) and opts.ty (yield stress, Pa): where the stress
@@ -318,6 +321,11 @@ function sampleField(f, arr, x, y) {
  * Stops at: the domain boundary (clipped exactly onto it), speed below
  * minSpeedFrac * vmax (stagnation, direction undefined), a closed loop back
  * to the seed, or maxCells of travelled length.
+ *
+ * opts.integrator 'rk45' (NUM-2): Dormand-Prince 5(4) instead, each step's
+ * length set so its error estimate stays within opts.tol cells (default
+ * 1e-6), at most opts.stepMax cells (0.5); the same stops. The default
+ * ('rk4') is the fixed-step RK4 above, unchanged.
  */
 function traceOneWay(f, x0, y0, sgn, opts) {
   const h = opts.stepCells ?? 0.2;
@@ -342,6 +350,35 @@ function traceOneWay(f, x0, y0, sgn, opts) {
   };
 
   let travelled = 0, maxAway = 0;
+  if (opts.integrator === 'rk45') {
+    // (adaptive: Dormand-Prince 5(4) on the same direction field, the step sized by its error; stops as below)
+    const O = FV_ODE, tol = opts.tol ?? O.ODE_ADAPT.tol, hMax = opts.stepMax ?? O.ODE_ADAPT.hMax;
+    const fn = (y, o) => { const d = dir(y[0], y[1]); if (!d) return false; o[0] = d[0]; o[1] = d[1]; return true; };
+    let hh = Math.min(h, hMax), tries = 0;
+    while (travelled < maxCells && tries++ < 1e6) {
+      const st = O.odeDP45(fn, [xi, eta], hh, 2);
+      if (!st) return { points: pts, reason: 'stagnation' };
+      if (st.err > tol && hh > O.ODE_ADAPT.hMin) { hh = Math.max(O.ODE_ADAPT.hMin, O.odeNextH(hh, st.err, tol)); continue; }
+      const [nxi, neta] = st.y;
+      if (nxi < 0 || nxi > Xi || neta < 0 || neta > Eta) {
+        let t = 1;
+        const ddx = nxi - xi, ddy = neta - eta;
+        if (nxi < 0) t = Math.min(t, -xi / ddx);
+        if (nxi > Xi) t = Math.min(t, (Xi - xi) / ddx);
+        if (neta < 0) t = Math.min(t, -eta / ddy);
+        if (neta > Eta) t = Math.min(t, (Eta - eta) / ddy);
+        pts.push(fromIndex(f, xi + t * ddx, eta + t * ddy));
+        return { points: pts, reason: 'boundary' };
+      }
+      xi = nxi; eta = neta; travelled += hh;
+      pts.push(fromIndex(f, xi, eta));
+      const away = Math.hypot(xi - xi0, eta - eta0);
+      maxAway = Math.max(maxAway, away);
+      if (maxAway > 2 && travelled > 8 && away < 0.6) { pts.push([x0, y0]); return { points: pts, reason: 'closed' }; }
+      hh = Math.min(hMax, O.odeNextH(hh, st.err, tol));
+    }
+    return { points: pts, reason: 'maxLength' };
+  }
   const steps = Math.ceil(maxCells / h);
   for (let s = 0; s < steps; s++) {
     const k1 = dir(xi, eta); if (!k1) return { points: pts, reason: 'stagnation' };

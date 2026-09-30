@@ -13,8 +13,8 @@
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40, fileFace: 'file',
   nxGap: 26, nxFace: 4, nxFilm: 16, ny: 5, nzStrip: 4, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true, section: '3d',
   stream: false, streamDensity: 'medium', streamMode: 'volume', streamSeeds: 'inlet', streamPlane: 'yz', streamX: null, streamY: null, streamZ: null, streamN: 9,
-  streamPts: '', streamColor: 'field', streamLen: 0, uzView: 'yz', uzX: null, step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1,
-  edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, edgeNy: 4, webEdges: 'sym' };
+  streamPts: '', streamColor: 'field', streamLen: 0, streamInt: 'auto', uzView: 'yz', uzX: null, step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1,
+  edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, edgeNy: 4, webEdges: 'sym', tol3: null, iter3: null };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -35,16 +35,17 @@ const C3D_UNDO = {
   streamMode: ['3D streamlines', v => (C3D_STREAM_MODES[v] || { l: v }).l], streamSeeds: ['3D streamline seeds', v => (C3D_SEEDS[v] || { l: v }).l], streamPlane: ['3D seed plane', v => v.toUpperCase()],
   streamX: ['3D seeds at x', v => v == null ? 'auto' : v + ' mm'], streamY: ['3D seeds at y', v => v == null ? 'auto' : v + ' mm'], streamZ: ['3D seeds at z', v => v == null ? 'auto' : v + ' mm'],
   streamN: ['3D seeds, how many across', v => v], streamPts: ['3D seed points', v => v ? v.split('\n').filter(Boolean).length + ' points' : 'none'], streamColor: ['3D streamline colour', v => v === 'field' ? 'as the field' : (C3D_FIELDS[v] || { l: v }).l],
-  streamLen: ['3D streamline length', v => v ? v + ' mm' : 'to the outlet'], uzView: ['3D cross-web velocity view', v => v === 'yz' ? 'Y–Z' : 'X–Z'], uzX: ['3D cross-web velocity at x', v => v == null ? 'the metering edge' : v + ' mm'],
+  streamLen: ['3D streamline length', v => v ? v + ' mm' : 'to the outlet'], streamInt: ['3D streamline integration', v => v === 'rk45' ? 'adaptive RK45' : 'Automatic (RK4)'], uzView: ['3D cross-web velocity view', v => v === 'yz' ? 'Y–Z' : 'X–Z'], uzX: ['3D cross-web velocity at x', v => v == null ? 'the metering edge' : v + ' mm'],
   zZones: ['3D zones across the web', v => c3dZonesText(v)],
   frac3: ['3D mesh from meshing to an accuracy', v => v ? `adapted, ${v.b.length - 1 + v.s.length - 1} along × ${v.y.length - 1} up` : 'the counts'],
   zFrac: ['3D mesh across, from meshing to an accuracy', v => v ? `${v.length - 1} elements` : 'the counts'],
   zFracFor: ['3D mesh across: the region it was adapted for', v => v || 'none'],
   zoneScale: ['3D: the 2D zones\' sizes', v => v === 1 ? 'as set' : `÷${(+v).toFixed(2)}`],
+  tol3: ['3D Newton tolerance', v => (v > 0 ? fmtTol(v) : 'Automatic')], iter3: ['3D Newton iterations, at most', v => (v > 0 ? String(v) : 'Automatic')]
 };
 /** The view settings (not part of "unsaved changes"). */
 const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh', 'stream', 'streamDensity', 'step', 'section', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ',
-  'streamN', 'streamPts', 'streamColor', 'streamLen', 'uzView', 'uzX'];
+  'streamN', 'streamPts', 'streamColor', 'streamLen', 'streamInt', 'uzView', 'uzX'];
 /** Streamline densities: lines [across, up the gap] on a strip and on the full width (the full width is wide and thin). */
 const C3D_STREAM = { low: { l: 'Low', strip: [5, 6], full: [10, 3] }, medium: { l: 'Medium', strip: [6, 10], full: [15, 4] }, high: { l: 'High', strip: [10, 12], full: [24, 5] } };
 const c3dSetupKey = () => JSON.stringify([Object.keys(C3D_DEFAULTS).filter(k => !C3D_DISPLAY.includes(k)).map(k => C3D[k]), C3D_FILE && C3D_FILE.id]);
@@ -98,7 +99,17 @@ const C3D_FIELDS = {
   uy: { l: 'u_y, up', u: 'mm/s', f: (R, n) => R.v[n] * 1000, div: true },
   // (across the web in the machine frame: a skewed blade's solve is in the blade's frame, w along the blade)
   w: { l: 'Cross-web speed', u: 'mm/s', f: (R, n) => (R.skew ? R.w[n] * Math.cos(R.skew * Math.PI / 180) - R.u[n] * Math.sin(R.skew * Math.PI / 180) : R.w[n]) * 1000, div: true },
+  // (NUM-3: derived from the solved fields, cfd-3d-derive.js; in the machine frame like u_x and u_z)
+  om: { l: 'Vorticity |ω|', u: '1/s', f: (R, n) => { const o = c3dDer(R).om; return Math.hypot(o[0][n], o[1][n], o[2][n]); } },
+  omz: { l: 'Vorticity ω_z, across the web', u: '1/s', f: (R, n) => { const o = c3dDer(R).om, [c, s] = c3dSkewCS(R); return o[2][n] * c - o[0][n] * s; }, div: true },
+  gp: { l: 'Pressure gradient |∇p|', u: 'Pa/mm', f: (R, n) => { const g = c3dDer(R).gp; return Math.hypot(g[0][n], g[1][n], g[2][n]) / 1000; } },
+  dpdx: { l: 'Pressure gradient ∂p/∂x', u: 'Pa/mm', f: (R, n) => { const g = c3dDer(R).gp, [c, s] = c3dSkewCS(R); return (g[0][n] * c + g[2][n] * s) / 1000; }, div: true },
 };
+/** A result's derived fields (vorticity, pressure gradient, wall shear stress on the web): worked out once from its solved fields when first shown, kept with it, never saved. */
+const C3D_DER = new WeakMap();
+function c3dDer(R) { let d = C3D_DER.get(R); if (!d) { d = derive3D(R); C3D_DER.set(R, d); } return d; }
+/** cos and sin of a result's skew (its solve in the blade's frame; the machine frame turned by it). */
+const c3dSkewCS = R => { const t = (R.skew || 0) * Math.PI / 180; return [Math.cos(t), Math.sin(t)]; };
 
 // ---- the files: every file imported this session, by id (undo brings one back); the project keeps the one in use ----
 const C3D_FILES = new Map();
@@ -497,7 +508,7 @@ function c3dSolveMessage(withFile = true) {
   delete msg.struct;   // (the 3D takes the steady flow curve: the structure is the 2D's)
   // (the 3D's own element counts, with the 2D's refinement zones at every station; a location's adapted 2D mesh is its 2D's only)
   const { frac, ...sv } = msg.solver;
-  msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: c3dNy() };
+  msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: c3dNy(), ...(C3D.tol3 > 0 ? { tol3: C3D.tol3 } : {}), ...(C3D.iter3 > 0 ? { maxIter3: C3D.iter3 } : {}) };
   // (meshing to an accuracy: the 2D zones' sizes divided (refined everywhere), or the stations' own adapted element ends)
   if (msg.solver.zones && C3D.zoneScale !== 1) msg.solver.zones = scaleZones(msg.solver.zones, C3D.zoneScale);
   if (C3D.frac3) msg.solver.frac = C3D.frac3;
@@ -795,9 +806,9 @@ async function c3dRunWide(m, key) {
     const filmOf = T => T.y ? T.y[(meta.NC - 1) * meta.NR + meta.NR - 1] : null;
     prog.H = meta.H;
     const history = [], openOut = {};
-    let converged = false, sweeps = 0, unknowns = 0;
+    let converged = false, sweeps = 0, unknowns = 0, mbLast = null;
     for (; sweeps < C3D_WIDE_CFG.maxSweeps && !converged; sweeps++) {
-      let change = 0, doneN = 0;
+      let change = 0, doneN = 0, mbSweep = null;
       for (const colour of [0, 1]) {
         const todo = workers.map(() => []);
         subs.forEach((_, i) => { if (i % 2 === colour) todo[owner(i)].push(i); });
@@ -816,6 +827,7 @@ async function c3dRunWide(m, key) {
             const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: (l0 > 0 || open) && os !== 'lo', sideHi: (l1 < NL - 1 || open) && os !== 'hi',
               ...(os ? { open: { [os]: msg.open[os] }, init: sweeps === 0 && eR.state ? { ...eR.state, zOff: eR.zc - rg.zc } : null } : {}) }, { strip: i });
             unknowns = Math.max(unknowns, r.unknowns);
+            if (r.massBalance) mbSweep = Math.max(mbSweep || 0, Math.abs(r.massBalance.imbalance));
             if (os) {
               openOut[os] = r.open;
               if (r.open.climb || r.open.spill) throw new Error(`the ${os === 'lo' ? 'left' : 'right'} end lets go with the width solved (sweep ${sweeps + 1}): ${r.open.climb ? 'the slurry would climb the blade\'s end face' : 'it would spill over the web\'s edge'}, though on its own it held the bead pressure`);
@@ -828,7 +840,7 @@ async function c3dRunWide(m, key) {
           }
         }));
       }
-      history.push(change);
+      history.push(change); mbLast = mbSweep;
       prog.hist.push(change); prog.sweep++; prog.doneS = 0; prog3DWideShare(prog);
       if (change < C3D_WIDE_CFG.tol) converged = true;
     }
@@ -836,7 +848,7 @@ async function c3dRunWide(m, key) {
     if (!converged) throw new Error(`the strips did not agree after ${sweeps} sweeps (last change ${(history[history.length - 1] * meta.H * 1e6).toFixed(3)} µm)`);
     // the result, as a strip's: node arrays over every station, the stations, the middle's pressure along the top
     const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', skew: msg.skew || 0, mode: meta.mode, k: meta.k ?? null, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H, frac: meta.frac,
-      zOff: rg.zc, size: { unknowns, strips: subs.length, workers: P } };
+      zOff: rg.zc, size: { unknowns, strips: subs.length, workers: P }, ...(mbLast != null ? { massBalance: { worst: mbLast } } : {}) };
     // (the web's edges open: both ends held the bead pressure; the surface round each edge from the width's own end strips)
     if (msg.open) {
       for (const r of Object.values(edgeRes)) delete r.state;
@@ -939,6 +951,8 @@ function view3D() {
       ${pane('c3dCL', 1, `Contact line up the exit face across the ${where}`, `Contact line height up the exit face across the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
       ${pane('c3dPB', 'pressure', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
       ${pane('c3dPX', 'pressure', `Pressure along the blade, ${R.region === 'edge' ? 'the edge strip\'s inner side' : `middle of the ${where}`}`, `Pressure along the blade and exit face at the ${R.region === 'edge' ? 'inner side' : 'middle'} of the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
+      ${pane('c3dTW', 'shear', `Wall shear stress on the web${stale ? ' (out of date)' : ''}`, `Wall shear stress on the web, along the flow and across the ${where}`, '')}
+      ${pane('c3dTX', 'shear', `Wall shear stress on the web along the flow${stale ? ' (out of date)' : ''}`, `Wall shear stress on the web along the flow, at the middle and the sides of the ${where}`, oneDLegend([[`middle of the ${where}`, acc], ['its two sides', mut, 'dash']]))}
       ${c3dCrossFlowPane(R, stale, where)}
       ${c3dUzPane(R, stale)}
     </div>` : '';
@@ -1114,7 +1128,7 @@ const C3D_SEEDS = {
   edge: { l: 'Preset: active edge', uses: ['n'] },
   film: { l: 'Preset: downstream wet film', uses: ['n'] },
 };
-const c3dStreamKey = () => JSON.stringify(['streamDensity', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ', 'streamN', 'streamPts', 'streamLen'].map(k => C3D[k]));
+const c3dStreamKey = () => JSON.stringify(['streamDensity', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ', 'streamN', 'streamPts', 'streamLen', 'streamInt'].map(k => C3D[k]));
 const c3dStreamColorKey = () => C3D.streamColor === 'field' ? C3D.field : C3D.streamColor;
 /** The result's frame (m: x from the inlet, y up, z from the region's middle; a skewed blade's solve in its own frame) to the web's (mm: z across the web), and back. */
 function c3dToMachine(R, x, y, z) {
@@ -1181,6 +1195,7 @@ function c3dStreamPanel(R) {
       ${pos}
       <label>Colour by <select data-c3ds="streamColor">${opt('field', 'As the field shown', C3D.streamColor)}${['speed', 'ux', 'uy', 'w', 'p', 'gd', 'mu'].map(k => opt(k, C3D_FIELDS[k].l, C3D.streamColor)).join('')}</select></label>
       <label>Length <input type="number" class="zone-in" data-c3ds="streamLen" min="0" step="any" value="${C3D.streamLen || ''}" placeholder="to the outlet" aria-label="Largest streamline length, mm"> mm</label>
+      <label>Integration <select data-c3ds="streamInt">${opt('auto', 'Automatic (RK4)', C3D.streamInt)}${opt('rk45', 'Adaptive RK45', C3D.streamInt)}</select></label>
       <button type="button" class="btn btn-secondary btn-sm" id="c3dStreamCsv">${uiIco('download')}Streamlines, CSV</button>
     </div>
     ${uses.includes('pts') ? `<textarea class="c3d-pts" data-c3ds="streamPts" rows="3" placeholder="x, y, z in mm, one point a line (x from the inlet, y up from the web, z across the web)" aria-label="Seed points">${mEsc(C3D.streamPts || '')}</textarea>` : ''}
@@ -1527,6 +1542,7 @@ function c3dCharts(R) {
   if (R.mode === 'climbed') line('c3dCL', R.stations.map(s => s.s * 1000), R.stations.map(s => s.s2 * 1000), R.k != null ? 'contact line along the face (mm)' : 'contact line up the face (mm)', 3);
   else { const cv = document.getElementById('c3dCL'); if (cv) { const { c, w, h } = setupCanvas(cv, 0.3); c.fillStyle = mut; c.font = '13px ' + cssVar('--sans'); c.textAlign = 'center'; c.fillText('Pinned at the metering edge at every station', w / 2, h / 2); } }
   c3dPressureMap(R);
+  c3dWebShear(R);
   // pressure along the blade and face at the middle station: 3D and its station's 2D (up to the contact line)
   const cv = document.getElementById('c3dPX');
   if (cv) {
@@ -1572,6 +1588,54 @@ function c3dPressureMap(R) {
   c.strokeRect(bx, m.t, bw, ph);
   c.fillStyle = ink; c.textAlign = 'left';
   c.fillText(c3dFmt(rng.max), bx + bw + 4, m.t + 9); c.fillText(c3dFmt(rng.min), bx + bw + 4, m.t + ph); c.fillText('Pa', bx + bw + 4, m.t + ph / 2 + 4);
+}
+
+/**
+ * The wall shear stress on the web (NUM-3: the slurry's tangential traction on it, cfd-3d-derive.js): its size over the
+ * web under the region (along the flow, across), and its component along the web's travel at the middle and the sides.
+ */
+function c3dWebShear(R) {
+  const T = c3dDer(R).web, NL = R.NL, NR = R.NR, NC = R.NC, node = (c, l) => (c * NL + l) * NR, zo = R.region === 'full' || R.region === 'edge' ? R.zOff : 0;
+  const ink = cssVar('--muted'), acc = cssVar('--accent');
+  const cv = document.getElementById('c3dTW');
+  if (cv) {
+    const { c, w, h } = setupCanvas(cv, fitAspect(cv, 0.5));
+    let hi = 0; for (const v of T.t) if (Number.isFinite(v)) hi = Math.max(hi, v);
+    const lut = c3dLut({ div: false }), rng = { min: 0, max: hi || 1 };
+    const m = { l: 52, r: 78, t: 24, b: 36 }, pw = w - m.l - m.r, ph = h - m.t - m.b;
+    const xMax = R.x[node(NC - 1, 0)] * 1000, zAll = Array.from({ length: NL }, (_, l) => (R.z[node(0, l)] + zo) * 1000), z0 = Math.min(...zAll), z1 = Math.max(...zAll);
+    const X = x => m.l + x / xMax * pw, Y = z => m.t + ph - (z - z0) / (z1 - z0 || 1) * ph;
+    // cells between neighbouring web nodes, each filled by the mean of its four corners (none where a corner has no value: an open side's contact line)
+    for (let cc = 0; cc < NC - 1; cc++) for (let l = 0; l < NL - 1; l++) {
+      const q = [T.t[cc * NL + l], T.t[(cc + 1) * NL + l], T.t[cc * NL + l + 1], T.t[(cc + 1) * NL + l + 1]];
+      if (!q.every(Number.isFinite)) continue;
+      const xa = X(R.x[node(cc, l)] * 1000), xb = X(R.x[node(cc + 1, l)] * 1000), ya = Y((R.z[node(cc, l)] + zo) * 1000), yb = Y((R.z[node(cc, l + 1)] + zo) * 1000);
+      c.fillStyle = lutColor(lut, (q[0] + q[1] + q[2] + q[3]) / 4 / rng.max);
+      c.fillRect(Math.min(xa, xb), Math.min(ya, yb), Math.abs(xb - xa) + 0.6, Math.abs(yb - ya) + 0.6);
+    }
+    c.strokeStyle = cssVar('--line'); c.strokeRect(m.l, m.t, pw, ph);
+    // the metering edge
+    const xe = X(R.xe * 1000); c.save(); c.setLineDash([4, 3]); c.strokeStyle = cssVar('--ink'); c.beginPath(); c.moveTo(xe, m.t); c.lineTo(xe, m.t + ph); c.stroke(); c.restore();
+    c.fillStyle = ink; c.font = '12px ' + cssVar('--mono');
+    c.textAlign = 'center'; c.fillText('metering edge', xe, m.t - 6);
+    for (let k = 0; k <= 4; k++) { const x = xMax * k / 4; c.fillText(x.toFixed(0), X(x), h - m.b + 16); }
+    for (let k = 0; k <= 2; k++) { const z = z0 + (z1 - z0) * k / 2; c.textAlign = 'right'; c.fillText(z.toFixed(zo ? 0 : 1), m.l - 6, Y(z) + 4); }
+    c.textAlign = 'left'; c.fillText('z (mm)', 4, 12);
+    c.textAlign = 'right'; c.fillText('x along the web (mm): under the blade, then under the film', w - m.r, h - 4);
+    const bx = w - m.r + 18, bw = 12;
+    for (let k = 0; k < ph; k++) { c.fillStyle = lutColor(lut, 1 - k / ph); c.fillRect(bx, m.t + k, bw, 1.2); }
+    c.strokeRect(bx, m.t, bw, ph);
+    c.fillStyle = ink; c.textAlign = 'left';
+    c.fillText(c3dFmt(rng.max), bx + bw + 4, m.t + 9); c.fillText('0', bx + bw + 4, m.t + ph); c.fillText('Pa', bx + bw + 4, m.t + ph / 2 + 4);
+  }
+  const cx = document.getElementById('c3dTX');
+  if (cx) {
+    const [cs, sn] = c3dSkewCS(R), along = l => { const p = []; for (let cc = 0; cc < NC; cc++) { const j = cc * NL + l, v = T.tx[j] * cs + T.tz[j] * sn; if (Number.isFinite(v)) p.push([R.x[node(cc, l)] * 1000, v]); } return p; };
+    const mid = along((NL - 1) >> 1), sides = [along(0), along(NL - 1)], ys = [mid, ...sides].flat().map(q => q[1]);
+    const lo = Math.min(0, ...ys), hi = Math.max(0, ...ys), pad = 0.06 * (hi - lo || 1);
+    plotChart(cx, fitAspect(cx, 0.5), { x0: 0, x1: R.x[node(NC - 1, 0)] * 1000, y0: lo - pad, y1: hi + pad, yl: 'τ along the web (Pa)', xl: 'x along the web (mm)', yd: 0, xd: 0,
+      vl: [{ x: R.xe * 1000, c: ink, t: 'metering edge' }], s: [...sides.map(p => ({ p, c: ink, w: 1.6, dash: [5, 4] })), { p: mid, c: acc, w: 2.2 }] });
+  }
 }
 
 // ---- the 3D view (three.js) ----
@@ -1718,7 +1782,8 @@ function v3Streamlines(R) {
   if (V3.sl && V3.sl.key === key) return V3.sl.lines;
   const [across, up] = (C3D_STREAM[C3D.streamDensity] || C3D_STREAM.medium)[R.region === 'full' ? 'full' : 'strip'];
   const sp = c3dSeedSpec(R), mode = C3D_STREAM_MODES[C3D.streamMode] || C3D_STREAM_MODES.volume;
-  const res = streamlines3D(R, { across, up, seeds: sp.spec, hold: mode.hold, maxLength: C3D.streamLen > 0 ? C3D.streamLen / 1000 : Infinity });
+  const res = streamlines3D(R, { across, up, seeds: sp.spec, hold: mode.hold, maxLength: C3D.streamLen > 0 ? C3D.streamLen / 1000 : Infinity,
+    ...(C3D.streamInt === 'rk45' ? { integrator: 'rk45' } : {}) });
   const lines = res.lines.filter(l => l.pos.length >= 6);
   // (the seeds where they are, in the web's frame, mm; and those asked for outside the flow)
   const w = sl3Work(), seedsMm = res.seeds.map(q => { sl3Eval(R, q[0], q[1], q[2], w); return c3dToMachine(R, w.x, w.y, w.z); });

@@ -44,8 +44,8 @@ const step2D = () => FV.step || (cfdRuns.some(r => r.field) ? 'results' : 'geome
 const STEP_DOCK_2D = {
   geometry: ['dims', 'problems', 'msgs', 'history'],
   mesh: ['meshlocs', 'mesh', 'accuracy', 'problems', 'msgs', 'history'],
-  solve: ['conv', 'problems', 'msgs', 'history'],
-  results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'flakes', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method'],
+  solve: ['conv', 'numerics', 'problems', 'msgs', 'history'],
+  results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'flakes', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method', 'numerics'],
 };
 /** The location a step other than Results shows (its own choice, independent of the Results' view). */
 const stepLoc2D = () => Math.max(0, Math.min(CFD_LOCS.length - 1, FV.stepLoc | 0));
@@ -144,7 +144,8 @@ function stepToolsHTML2D(k) {
   if (k === 'solve') return `<button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)">${uiIco('play')}Run<span class="hide-mid"> all 4</span></button>
       <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden>${uiIco('stop')}Stop</button>${sep}${locSegHTML(i)}${sep}
       <label class="vp-ctl">Tolerance <select id="stepTol" aria-label="Newton tolerance">${SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join('')}</select></label>
-      <label class="vp-ctl">Iterations <input type="number" id="stepIter" min="10" max="300" step="1" value="${CFDS.maxIter}" aria-label="Newton iterations, at most"></label>`;
+      <label class="vp-ctl">Iterations <input type="number" id="stepIter" min="10" max="300" step="1" value="${CFDS.maxIter}" aria-label="Newton iterations, at most"></label>${sep}
+      <button class="tool-btn" type="button" id="stepNumerics" title="The numerical chain: each stage's method and setting, Automatic resolved, the last solve's quality; Advanced settings">${uiIco('tolerance')}Numerics…</button>`;
   return '';
 }
 /** Wire the step toolbar (after viewCFD draws it). */
@@ -159,6 +160,7 @@ function wireStepTools2D() {
   const ms = document.getElementById('stepMeshStudy'); if (ms) ms.onclick = () => { FV.dock = 'mesh'; viewCFD(); };
   const ma = document.getElementById('stepMeshAcc'); if (ma) ma.onclick = () => { FV.dock = 'accuracy'; ACC.loc = stepLoc2D(); viewCFD(); };
   const tol = document.getElementById('stepTol'); if (tol) tol.onchange = () => { CFDS.tol = +tol.value; viewCFD(); };
+  const nm = document.getElementById('stepNumerics'); if (nm) nm.onclick = () => { FV.dock = 'numerics'; viewCFD(); };
   const it = document.getElementById('stepIter'); if (it) it.onchange = () => {
     const q = SOLVER_INPUTS.find(x => x.k === 'maxIter');
     guardNumber(it, { label: q.l, lo: q.lo, hi: q.hi }, v => { CFDS.maxIter = solverValue(q, v); }); it.value = CFDS.maxIter; viewCFD();
@@ -1253,10 +1255,11 @@ function c3dSolveHTML() {
   return `<div class="step-view solve-view"><div class="step-draw" id="bcDraw3">${C3D.source === 'made' ? '' : '<p class="v3d-msg">The blade from the file: see Geometry. Its conditions are listed here.</p>'}</div>
     <aside class="step-side">${bcListHTML(i, sides, C3D.source === 'made' ? null : C3D.fileFace === 'file' ? `(from the file: each station's own section): no slip; the contact line as in 2D (the ${CFDG.clModel === 'simple' ? 'simple' : 'full'} contact-line model) at the contact angle ${cfdGeometry(i).contactDeg.toFixed(1)}°.` : 'straight')}
       ${C3D.region !== 'strip' ? `<p class="side-note">Drawn: the profile at L1; the gap and contact angle vary across the web with the inputs under Variation across the web.</p>` : ''}
-      <h4>${uiBadge('tolerance')}Solve</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Region</td><td>${C3D.region === 'strip' ? `strip ${C3D.stripW} mm at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip ${C3D.edgeW} mm at the ${C3D.edgeEnd} end` : 'full width'}</td></tr></table>
-      <p class="side-note">${c3dEstimateText()}</p></aside></div>`;
+      <h4>${uiBadge('tolerance')}Solve</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(C3D.tol3 > 0 ? C3D.tol3 : CFDS.tol)}</td></tr><tr><td>Region</td><td>${C3D.region === 'strip' ? `strip ${C3D.stripW} mm at L${C3D.loc + 1}` : C3D.region === 'edge' ? `edge strip ${C3D.edgeW} mm at the ${C3D.edgeEnd} end` : 'full width'}</td></tr></table>
+      <p class="side-note">${c3dEstimateText()}</p></aside></div>${typeof numericsHTML === 'function' ? numericsHTML('3d') : ''}`;
 }
 function drawSolve3D() {
+  if (typeof wireNumerics === 'function') wireNumerics('3d');
   const d = document.getElementById('bcDraw3');
   if (!d || C3D.source !== 'made') return;
   const i = C3D.region === 'strip' ? C3D.loc : 0, w = Math.max(760, d.clientWidth), h = Math.max(240, d.clientHeight);

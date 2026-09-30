@@ -73,7 +73,7 @@ const scalarName = v => v === 'none' ? 'none' : (SCALARS[v] || {}).label || v;
 const FV_UNDO = {
   view: ['Location shown', v => v === 'compare' ? 'Compare' : v === 'diff' ? 'Difference' : `L${v + 1}`], profileLoc: ['Profiles of', v => `L${v + 1}`],
   base: ['Field', scalarName], streamlines: ['Streamlines'], density: ['Streamline density'], customN: ['Streamline count'], seedMode: ['Streamline seeding'],
-  direction: ['Streamline direction'], lineColor: ['Streamline colour'], arrows: ['Streamline arrows'], lineWidth: ['Line width'],
+  direction: ['Streamline direction'], streamInt: ['Streamline integration', v => v === 'rk45' ? 'adaptive RK45' : 'Automatic (RK4)'], lineColor: ['Streamline colour'], arrows: ['Streamline arrows'], lineWidth: ['Line width'],
   vectors: ['Vectors'], vectorDensity: ['Vector density'], vectorScale: ['Vector length'], vectorNormalize: ['Vectors all one length'], vectorColor: ['Vectors coloured'],
   yScale: ['Vertical scale'], manualSeeds: ['Streamline seed points', 0], across: ['Across-web quantity', v => (ACROSS[v] || {}).l || v],
   cutFields: ['Fields along the cut lines', 0], cutSel: ['Cut line charted', v => (cfdCuts[v] || {}).name || v + 1], zoom: ['Zoom', 0],
@@ -130,7 +130,8 @@ const UNDO_UNITS = (() => {
   }
   for (const k of Object.keys(SOLVER_DEFAULTS)) {
     const q = SOLVER_INPUTS.find(x => x.k === k);
-    const [l, f] = k === 'mesh' ? ['Mesh', v => (MESH_PRESETS[v] || {}).l || v] : k === 'tol' ? ['Newton tolerance', fmtTol] : k === 'zones' ? ['Refinement zones', v => zonesText(v)] : [q ? q.l : k, v => undoNum(v, q && q.d)];
+    const [l, f] = k === 'mesh' ? ['Mesh', v => (MESH_PRESETS[v] || {}).l || v] : k === 'tol' ? ['Newton tolerance', fmtTol] : k === 'zones' ? ['Refinement zones', v => zonesText(v)]
+      : k === 'gdMin' ? ['Yield-stress floor γ̇min', v => (v > 0 ? `${v} 1/s` : 'Automatic')] : [q ? q.l : k, v => undoNum(v, q && q.d)];
     u.push({ id: 'cfds.' + k, get: () => CFDS[k], set: v => { CFDS[k] = v; }, label: (a, b) => undoChange(l, a, b, f) });
   }
   CFD_LOCS.forEach((loc, i) => {

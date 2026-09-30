@@ -12,7 +12,7 @@
  * Seeds: at the inlet, spaced by equal flow rate up the gap (so lines crowd where the flow is fast, as the 2D's
  * automatic seeds), at evenly spaced stations across the region.
  *
- * streamlines3D(R, { across, up, step, maxSteps, open }) -> { lines: [{ pos: Float64Array (x, y, z per point, m),
+ * streamlines3D(R, { across, up, step, maxSteps, open, integrator, tol }) -> { lines: [{ pos: Float64Array (x, y, z per point, m),
  *   cc: Float64Array (C, L, K per point), end: 'outlet' | 'inlet' | 'side' | 'stalled' | 'steps' }], seeds: [[C, L, K]] }
  * traceLine3D(R, [C, L, K], { step, maxSteps, sign, open }): one line from a point (sign -1: against the flow; open: the
  *   region's sides let the flow through, default for a result with a skewed blade, R.skew)
@@ -20,6 +20,9 @@
  *   the lines then follow the solved flow as closely as its mesh resolves it; maxSteps: 4 times the mesh across)
  * sample3D(R, vals, C, L, K): a node array's value at (C, L, K)
  */
+
+// (the adaptive integrator, NUM-2: cfd-ode.js -- loaded before this file in the page, required in Node)
+const SL3_ODE = typeof odeDP45 === 'function' ? { odeDP45, odeNextH, ODE_ADAPT } : require('./cfd-ode.js');
 
 /** Quadratic Lagrange on the nodes at -1, 0, 1: values and derivatives. */
 function q2w(t, o) { o[0] = 0.5 * t * (t - 1); o[1] = 1 - t * t; o[2] = 0.5 * t * (t + 1); }
@@ -90,7 +93,7 @@ function sl3InletSeeds(R, L, n, c0) {
  * tangent plane): 'L' a station (the plane z = its z exactly), 'K' a surface at a fixed share of the gap, 'C' a spine
  * surface across the web. maxLength (m): the line stops once this long. The velocity is kept at each point (vel: u, v, w).
  */
-function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1, open = !!R.skew, hold = null, maxLength = Infinity } = {}) {
+function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1, open = !!R.skew, hold = null, maxLength = Infinity, integrator = 'rk4', tol = null } = {}) {
   const C1 = R.NC - 1, L1 = R.NL - 1, K1 = R.NR - 1, w = sl3Work();
   maxSteps = maxSteps || Math.ceil(4 * (C1 + L1 + K1) / step);   // (a line four times as long as the mesh is across: a loop)
   const clampL = L => Math.min(L1, Math.max(0, L)), clampK = K => Math.min(K1, Math.max(0, K));
@@ -110,6 +113,31 @@ function traceLine3D(R, [C, L, K], { step = 0.05, maxSteps, sign = 1, open = !!R
   const push = () => { sl3Eval(R, C, L, K, w); if (px) len += Math.hypot(w.x - px[0], w.y - px[1], w.z - px[2]); px = [w.x, w.y, w.z]; pos.push(w.x, w.y, w.z); cc.push(C, L, K); vel.push(w.u, w.v, w.w); };
   push();
   let end = 'steps', vRef = 0;
+  if (integrator === 'rk45') {
+    // (NUM-2, adaptive: Dormand-Prince 5(4) along the flow's direction in mesh coordinates, unit length there, so a step is the
+    // distance moved in elements; its length set by its error (tol, elements); the same stops as the fixed step below)
+    const O = SL3_ODE, tl = tol ?? O.ODE_ADAPT.tol, hMax = Math.min(O.ODE_ADAPT.hMax, 4 * step);
+    const g = (y, o) => { f(y[0], clampL(y[1]), clampK(y[2]), k1); const m = Math.hypot(k1[0], k1[1], k1[2]); vRef = Math.max(vRef, m);
+      if (!(m > 0) || m < 1e-9 * vRef) return false; o[0] = k1[0] / m; o[1] = k1[1] / m; o[2] = k1[2] / m; return true; };
+    let hh = step, s = 0, tries = 0;
+    while (s < maxSteps && tries++ < 20 * maxSteps) {
+      if (!(Number.isFinite(C) && Number.isFinite(L) && Number.isFinite(K))) { end = 'invalid'; break; }
+      const st = O.odeDP45(g, [C, L, K], hh, 3);
+      if (!st) { end = 'stalled'; break; }
+      if (st.err > tl && hh > O.ODE_ADAPT.hMin) { hh = Math.max(O.ODE_ADAPT.hMin, O.odeNextH(hh, st.err, tl)); continue; }
+      const Cn = st.y[0], Lr = st.y[1], Ln = clampL(Lr), Kn = clampK(st.y[2]);
+      if (open && (Lr > L1 || Lr < 0)) {
+        const b = Lr > L1 ? L1 : 0, t = (b - L) / (Lr - L), Ct = C + t * (Cn - C);
+        if (Ct < C1 && Ct > 0) { C = Ct; L = b; K = K + t * (Kn - K); push(); end = 'side'; break; }
+      }
+      if (Cn >= C1 || Cn <= 0) { const b = Cn >= C1 ? C1 : 0, t = (b - C) / (Cn - C); C = b; L = L + t * (Ln - L); K = K + t * (Kn - K); push(); end = b ? 'outlet' : 'inlet'; break; }
+      C = Cn; L = Ln; K = Kn; s++;
+      push();
+      if (len >= maxLength) { end = 'length'; break; }
+      hh = Math.min(hMax, O.odeNextH(hh, st.err, tl));
+    }
+    return { pos: Float64Array.from(pos), cc: Float64Array.from(cc), vel: Float64Array.from(vel), end };
+  }
   for (let s = 0; s < maxSteps; s++) {
     if (!(Number.isFinite(C) && Number.isFinite(L) && Number.isFinite(K))) { end = 'invalid'; break; }
     f(C, L, K, k1);
@@ -238,9 +266,9 @@ function seeds3D(R, spec) {
  * Streamlines from seeds: the inlet's (across, up: traced on with the flow), or any seed specification (seeds3D: traced
  * back and on through each seed). hold: a slice (traceLine3D) or null, the full 3D volume.
  */
-function streamlines3D(R, { across = 6, up = 10, step = 0.05, maxSteps, open, seeds: spec = null, hold = null, maxLength } = {}) {
+function streamlines3D(R, { across = 6, up = 10, step = 0.05, maxSteps, open, seeds: spec = null, hold = null, maxLength, integrator, tol } = {}) {
   const S = seeds3D(R, spec || { kind: 'inlet', across, up }), inlet = !spec || spec.kind === 'inlet';
-  const o = { step, maxSteps, open, hold, maxLength };
+  const o = { step, maxSteps, open, hold, maxLength, integrator, tol };
   return { lines: S.seeds.map(sd => inlet ? traceLine3D(R, sd, o) : traceThrough3D(R, sd, o)), seeds: S.seeds, outside: S.outside };
 }
 
