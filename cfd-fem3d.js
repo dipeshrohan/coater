@@ -988,6 +988,25 @@ function solveFEM3D(o) {
     return q * Ur * Hr * Hr;
   };
   const flow = OPEN.length ? { inlet: faceFlow(0), outlet: faceFlow(NC - 1) } : null;
+  // through a side of the strip (l = 0 or NL - 1), counted along +z (m^3/s): 0 where it is a symmetry plane or an open side's
+  // outer spine lying on the web; a side held at a neighbour's solution, or a skewed blade's, lets flow through
+  const sideFlow = l => {
+    let q = 0;
+    for (let ex = 0; ex < nEx; ex++) for (let ey = 0; ey < nEy; ey++) for (const f of l === 0 ? F3_SIDE_LO : F3_SIDE_HI) {
+      let xs = 0, ys = 0, zs = 0, xt = 0, yt = 0, zt = 0, u = 0, v = 0, w = 0;
+      for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+        const n = nid(2 * ex + a, l, 2 * ey + b), j = b * 3 + a;
+        xs += X[n] * f.Ns[j]; ys += Y[n] * f.Ns[j]; zs += Z[n] * f.Ns[j]; xt += X[n] * f.Nt[j]; yt += Y[n] * f.Nt[j]; zt += Z[n] * f.Nt[j];
+        u += sol[dU[n]] * f.N2[j]; v += sol[dV[n]] * f.N2[j]; w += sol[dW[n]] * f.N2[j];
+      }
+      q += f.w * (u * (ys * zt - zs * yt) + v * (zs * xt - xs * zt) + w * (xs * yt - ys * xt));
+    }
+    return q * Ur * Hr * Hr;
+  };
+  // the mass balance (m^3/s): in through the inlet against out through the outlet and the sides (the web, the blade and the
+  // free surface let none through); Taylor-Hood holds continuity weakly, so the imbalance is the discretization's
+  const massBalance = (() => { const inlet = faceFlow(0), outlet = faceFlow(NC - 1), sides = sideFlow(NL - 1) - sideFlow(0);
+    return { inlet, outlet, sides, imbalance: (inlet - outlet - sides) / (Math.abs(inlet) || 1) }; })();
   // the open sides: the surface round each edge (z, y per column along the block's top row, m), the top contact point, the
   // web's contact line, the pins, the angles at the edges (and where they pass the Gibbs limits: climbing the blade's end, spilling over the web's edge)
   const openOut = OPEN.map(E => {
@@ -1006,7 +1025,7 @@ function solveFEM3D(o) {
   return {
     NC, NR, NL, nEx, nEy, nEz, x: xo, y: yo, z: zo, u: uo, v: vo, w: wo, p: po, gd: gdo, mu: muo, q, converged, iterations: it, factorizations, stages, history, solveId,
     residual: resid, surface: st, scales: { Hr, Ur, muR, Pr, Re, Ca: invCa ? 1 / invCa : Infinity },
-    size: { unknowns: ND, band: kl, bytes: LU.byteLength, msFactor },
+    size: { unknowns: ND, band: kl, bytes: LU.byteLength, msFactor }, massBalance,
     state: { sol: Float64Array.from(sol), h: st.h, s: st.s },
     ...(OPEN.length ? { flow, open: openOut } : {}),
   };
@@ -1178,7 +1197,7 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
     sideData: sideLo || sideHi ? { lo: sideLo ? side(state[l0]) : null, hi: sideHi ? side(state[l1]) : null } : null,
     h0: (c, j) => state[l0 + j].h[c], s0: S.climbed || S.k ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
     contactLine: S.climbed ? { spine: S.cCL, faceFrom: S.cBase ?? S.cCorner, alphaDeg: Array.from({ length: NL }, (_, j) => S.alphaL ? S.alphaL[l0 + j] : S.thl[l0 + j] + opts.faceDeg - 180) } : null,
-    homotopy: true, tol: opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D', blockRef, ...extra,
+    homotopy: true, tol: opts.tol3 ?? opts.tol, maxIter: opts.maxIter3 ?? 60, onIteration: opts.onIteration3, label: '3D', blockRef, ...extra,
   });
 }
 

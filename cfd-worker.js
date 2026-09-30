@@ -85,7 +85,7 @@ onmessage = e => {
     const nEb = sv.nEb ?? Math.max(12, Math.min(40, Math.round(xe / (0.6 * H))));
     const fo = {
       hFn: shape.h, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg,
-      U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H, webSlip: o.webSlip || 0,
+      U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: sv.gdMin > 0 ? sv.gdMin : 1e-3 * o.U / H, webSlip: o.webSlip || 0,
       Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb, nEf: sv.nEf ?? 6, nEs: sv.nEs ?? 24, nEy: sv.nEy ?? 6, fInfGuess: qLub / o.U,
       gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY, tol: sv.tol, maxIter: sv.maxIter,
       meshZones: sv.zones || null, meshFrac: sv.frac || null,     // (refinement zones; an adapted mesh)

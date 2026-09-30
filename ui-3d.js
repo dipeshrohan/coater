@@ -14,7 +14,7 @@ const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, unit
   nxGap: 26, nxFace: 4, nxFilm: 16, ny: 5, nzStrip: 4, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true, section: '3d',
   stream: false, streamDensity: 'medium', streamMode: 'volume', streamSeeds: 'inlet', streamPlane: 'yz', streamX: null, streamY: null, streamZ: null, streamN: 9,
   streamPts: '', streamColor: 'field', streamLen: 0, uzView: 'yz', uzX: null, step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1,
-  edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, edgeNy: 4, webEdges: 'sym' };
+  edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, edgeNy: 4, webEdges: 'sym', tol3: null, iter3: null };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -41,6 +41,7 @@ const C3D_UNDO = {
   zFrac: ['3D mesh across, from meshing to an accuracy', v => v ? `${v.length - 1} elements` : 'the counts'],
   zFracFor: ['3D mesh across: the region it was adapted for', v => v || 'none'],
   zoneScale: ['3D: the 2D zones\' sizes', v => v === 1 ? 'as set' : `÷${(+v).toFixed(2)}`],
+  tol3: ['3D Newton tolerance', v => (v > 0 ? fmtTol(v) : 'Automatic')], iter3: ['3D Newton iterations, at most', v => (v > 0 ? String(v) : 'Automatic')]
 };
 /** The view settings (not part of "unsaved changes"). */
 const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh', 'stream', 'streamDensity', 'step', 'section', 'streamMode', 'streamSeeds', 'streamPlane', 'streamX', 'streamY', 'streamZ',
@@ -497,7 +498,7 @@ function c3dSolveMessage(withFile = true) {
   delete msg.struct;   // (the 3D takes the steady flow curve: the structure is the 2D's)
   // (the 3D's own element counts, with the 2D's refinement zones at every station; a location's adapted 2D mesh is its 2D's only)
   const { frac, ...sv } = msg.solver;
-  msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: c3dNy() };
+  msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: c3dNy(), ...(C3D.tol3 > 0 ? { tol3: C3D.tol3 } : {}), ...(C3D.iter3 > 0 ? { maxIter3: C3D.iter3 } : {}) };
   // (meshing to an accuracy: the 2D zones' sizes divided (refined everywhere), or the stations' own adapted element ends)
   if (msg.solver.zones && C3D.zoneScale !== 1) msg.solver.zones = scaleZones(msg.solver.zones, C3D.zoneScale);
   if (C3D.frac3) msg.solver.frac = C3D.frac3;
@@ -795,9 +796,9 @@ async function c3dRunWide(m, key) {
     const filmOf = T => T.y ? T.y[(meta.NC - 1) * meta.NR + meta.NR - 1] : null;
     prog.H = meta.H;
     const history = [], openOut = {};
-    let converged = false, sweeps = 0, unknowns = 0;
+    let converged = false, sweeps = 0, unknowns = 0, mbLast = null;
     for (; sweeps < C3D_WIDE_CFG.maxSweeps && !converged; sweeps++) {
-      let change = 0, doneN = 0;
+      let change = 0, doneN = 0, mbSweep = null;
       for (const colour of [0, 1]) {
         const todo = workers.map(() => []);
         subs.forEach((_, i) => { if (i % 2 === colour) todo[owner(i)].push(i); });
@@ -816,6 +817,7 @@ async function c3dRunWide(m, key) {
             const r = await call(w, { type: 'wideSolve', l0, l1, states, sideLo: (l0 > 0 || open) && os !== 'lo', sideHi: (l1 < NL - 1 || open) && os !== 'hi',
               ...(os ? { open: { [os]: msg.open[os] }, init: sweeps === 0 && eR.state ? { ...eR.state, zOff: eR.zc - rg.zc } : null } : {}) }, { strip: i });
             unknowns = Math.max(unknowns, r.unknowns);
+            if (r.massBalance) mbSweep = Math.max(mbSweep || 0, Math.abs(r.massBalance.imbalance));
             if (os) {
               openOut[os] = r.open;
               if (r.open.climb || r.open.spill) throw new Error(`the ${os === 'lo' ? 'left' : 'right'} end lets go with the width solved (sweep ${sweeps + 1}): ${r.open.climb ? 'the slurry would climb the blade\'s end face' : 'it would spill over the web\'s edge'}, though on its own it held the bead pressure`);
@@ -828,7 +830,7 @@ async function c3dRunWide(m, key) {
           }
         }));
       }
-      history.push(change);
+      history.push(change); mbLast = mbSweep;
       prog.hist.push(change); prog.sweep++; prog.doneS = 0; prog3DWideShare(prog);
       if (change < C3D_WIDE_CFG.tol) converged = true;
     }
@@ -836,7 +838,7 @@ async function c3dRunWide(m, key) {
     if (!converged) throw new Error(`the strips did not agree after ${sweeps} sweeps (last change ${(history[history.length - 1] * meta.H * 1e6).toFixed(3)} µm)`);
     // the result, as a strip's: node arrays over every station, the stations, the middle's pressure along the top
     const NC = meta.NC, NR = meta.NR, N = NC * NL * NR, R = { region: 'full', skew: msg.skew || 0, mode: meta.mode, k: meta.k ?? null, converged: true, sweeps, history, iterations: sweeps, NC, NR, NL, cCorner: meta.cCorner, cCL: meta.cCL, xe: meta.xe, H: meta.H, frac: meta.frac,
-      zOff: rg.zc, size: { unknowns, strips: subs.length, workers: P } };
+      zOff: rg.zc, size: { unknowns, strips: subs.length, workers: P }, ...(mbLast != null ? { massBalance: { worst: mbLast } } : {}) };
     // (the web's edges open: both ends held the bead pressure; the surface round each edge from the width's own end strips)
     if (msg.open) {
       for (const r of Object.values(edgeRes)) delete r.state;

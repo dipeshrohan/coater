@@ -322,7 +322,7 @@ const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
 // A mesh preset scales the default element counts (along the blade about 0.6 gap per element, 12..40;
 // up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
 // the counts given (along the blade empty = from the blade's length, as Medium).
-const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null };
+const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null, gdMin: null };
 const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' }, adapted: { l: 'Adapted' } };
 /** The presets a shared setting can pick ("Adapted" is a location's own, from meshing to an accuracy). */
 const sharedMeshPresets = () => Object.entries(MESH_PRESETS).filter(([k]) => k !== 'adapted');
@@ -523,7 +523,7 @@ function solverFromSettings(s, H) {
   const adapted = s.mesh === 'adapted' && s.frac;
   const zones = adapted ? null : zonesForSolver(s.zones);   // (refinement zones: only when one is on, so a mesh without them is sent as before)
   return { mesh: s.mesh, ...meshCounts(s, xe, H), gradeB: s.gradeB, gradeS: s.gradeS, gradeY: s.gradeY, tol: s.tol, maxIter: s.maxIter, ldGaps: s.ldGaps,
-    ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}) };
+    ...(zones ? { zones } : {}), ...(adapted ? { frac: s.frac } : {}), ...(s.gdMin > 0 ? { gdMin: s.gdMin } : {}) };
 }
 const cfdInputsKey = geo => JSON.stringify([geo.model, geo.shape, geo.U, geo.H, geo.shape === 'round' ? [geo.R, geo.Xup] : geo.L, geo.exitAngle, geo.contactDeg, geo.webSlip, geo.Pup, geo.muRef, geo.ty, geo.n, geo.gamma, geo.ovenDistance, geo.solver,
   ...(geo.blade ? [geo.blade, geo.clModel] : []), geo.rho, ...(geo.rheoX ? [geo.rheoX] : []), ...(geo.struct ? [geo.struct] : [])]);   // (a shaped blade's profile and contact-line model; the slurry's density, from its solids)
@@ -877,8 +877,8 @@ function viewCFD() {
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('flakes', 'Flakes')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
-          ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'])}
+          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('flakes', 'Flakes')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('numerics', 'Numerics', 'solve')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
+          ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'], ['numerics', 'Numerics'])}
         </div>
         <div class="dock-body">
           ${panel('dims', '<div id="cfdDims"></div>')}
@@ -900,6 +900,7 @@ function viewCFD() {
           ${panel('flakes', '<div id="cfdFlakes"></div>')}
           ${panel('fibre', '<div id="cfdFibre"></div>')}
           ${panel('conv', '<div id="cfdConv"></div>')}
+          ${panel('numerics', '<div id="cfdNumerics"></div>')}
           ${panel('mesh', '<div id="cfdMeshStudy"></div>')}
           ${panel('accuracy', '<div id="cfdAccuracy"></div>')}
           ${panel('problems', '<div class="problems-host"></div>')}
@@ -928,7 +929,7 @@ function viewCFD() {
   document.querySelectorAll('.dock-tabs button[data-dock]').forEach(b => {
     b.onclick = () => {
       // (leaving a panel from the More menu: the row is drawn again without it)
-      const MORE = ['mesh', 'cases', 'history', 'method'], wasMore = MORE.includes(FV.dock);
+      const MORE = ['mesh', 'cases', 'history', 'method', 'numerics'], wasMore = MORE.includes(FV.dock);
       FV.dock = b.dataset.dock;
       if (wasMore && !MORE.includes(FV.dock)) { viewCFD(); return; }
       document.querySelectorAll('.dock-tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
@@ -1115,6 +1116,7 @@ function renderCFD() {
   renderProfiles();
   renderFlakes();
   renderConvergence();
+  if (typeof renderNumerics2D === 'function') renderNumerics2D();
   renderSolverNote();
   if (typeof renderAccuracy === 'function') renderAccuracy();
   renderMeshStudy();

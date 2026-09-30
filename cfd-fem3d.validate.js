@@ -165,6 +165,14 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const hs = w3.history.map(h => h.residual).filter(v => v > 1e-13);
   const rates = []; for (let i = 1; i < hs.length; i++) if (hs[i - 1] < 1e-2) rates.push(Math.log(hs[i]) / Math.log(hs[i - 1]));
   check('  Newton with the free surface and the contact line converges quadratically', rates.length > 0 && Math.min(...rates) > 1.6, `residuals ${w3.history.map(h => h.residual.toExponential(1)).join(' ')}`);
+  // the mass balance (NUM-1): through the inlet = the 2D's across the strip's width; the symmetry sides let nothing through; in = out to
+  // the mesh's accuracy (Taylor-Hood holds continuity weakly), the imbalance falling as the mesh is refined
+  const mb = r3.massBalance, mbw = w3.massBalance, fine = solveCoater3D({ ...base, nEb: 10, nEs: 24, nEy: 6 }).r3.massBalance, r2in = r2.psi[r2.NR - 1];
+  check('mass balance: in through the inlet = the 2D\'s flow times the width; nothing through the symmetry sides; in = out to the mesh\'s accuracy',
+    Math.abs(mb.inlet / (base.width * r2in) - 1) < 1e-9 && Math.abs(mb.sides) < 1e-12 * mb.inlet && Math.abs(mbw.sides) < 1e-12 * mbw.inlet && Math.abs(mb.imbalance) < 5e-4 && Math.abs(mbw.imbalance) < 5e-4,
+    `in ${(mb.inlet * 1e9).toFixed(4)} mm³/s (the 2D's × width: ${(base.width * r2in * 1e9).toFixed(4)}), sides ${mb.sides.toExponential(0)}, imbalance ${mb.imbalance.toExponential(2)} (gap varying: ${mbw.imbalance.toExponential(2)})`);
+  check('  the imbalance falls as the mesh is refined (twice as fine: at least 3 times smaller)', Math.abs(fine.imbalance) < Math.abs(mb.imbalance) / 3,
+    `${mb.imbalance.toExponential(2)} -> ${fine.imbalance.toExponential(2)}`);
 }
 // 5. round entry, gap varying across the web on the blade's scale: against the Reynolds equation over the web's plane
 {
@@ -235,6 +243,10 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const shift = Math.max(...one.stations.map(st => Math.abs(st.film / st.film2 - 1)));
   check('  gap and contact angle varying: strip by strip (its edges open) converges to the whole region at once', one.r3.converged && wide.converged && dF < 1e-9 && dS < 1e-9,
     `${wide.sweeps} sweeps; film within ${(dF * 1e9).toFixed(2)} nm, contact line within ${(dS * 1e9).toFixed(2)} nm (the flow along the blade moves the film up to ${(shift * 100).toFixed(2)} % from the stations' 2D)`);
+  // (NUM-1: the skewed blade's flow along it passes through the strip's held sides -- the mass balance counts it)
+  const mv = one.r3.massBalance;
+  check('  mass balance, sides held (the flow along the blade through them): in = out + through the sides to the mesh\'s accuracy', Math.abs(mv.sides) > 1e-3 * mv.inlet && Math.abs(mv.imbalance) < 5e-3,
+    `in ${(mv.inlet * 1e9).toFixed(3)}, out ${(mv.outlet * 1e9).toFixed(3)}, through the sides ${(mv.sides * 1e9).toFixed(3)} mm³/s; imbalance ${mv.imbalance.toExponential(2)} (without the sides ${((mv.inlet - mv.outlet) / mv.inlet).toExponential(2)})`);
 }
 
 // 8. open sides (a web edge): the slurry's surface round the edge, its contact lines on the web and under the blade

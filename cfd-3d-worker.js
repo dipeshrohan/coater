@@ -96,9 +96,9 @@ function wideOpts(o, strip, file) {
   let I2 = 0, I3 = 0; const M = 4000;
   for (let k = 0; k < M; k++) { const h = hFn((k + 0.5) * xe / M); I2 += xe / M / (h * h); I3 += xe / M / (h * h * h); }
   const qLub = (o.Pup + 6 * o.muRep * o.U * I2) / (12 * o.muRep * I3), sv = o.solver;
-  return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
+  return { hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: sv.gdMin > 0 ? sv.gdMin : 1e-3 * o.U / H,
     webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
-    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0,
+    fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, ...(sv.tol3 > 0 ? { tol3: sv.tol3 } : {}), ...(sv.maxIter3 > 0 ? { maxIter3: sv.maxIter3 } : {}), dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z), webW: o.webW || 0,
     // (an open edge under a blade from a file: its underside across the edge from the file, at x along the flow)
     ...(file ? { dTop: (() => { const f = fileHAt(file); return (z, x) => f(z)(x); })() } : {}),
     meshZones: sv.zones || null, meshFrac: sv.frac || null, ...(profileAt ? { profileAt, profile: p0, clModel: o.clModel || 'full' } : {}) };
@@ -141,7 +141,7 @@ function wide(e) {
       const top = { x: [], y: [], p3: [], p2: [] };
       for (let c = 0; c < NC; c++) { const n = (c * NL + inner) * NR + NR - 1; top.x.push(R.x[n]); top.y.push(R.y[n]); top.p3.push(R.p[n]); top.p2.push(NaN); }
       Object.assign(result, { mode: S.mode, k: S.k ?? null, converged: true, iterations: R.iterations, residual: R.residual, history: R.history.map(h => h.residual), size: R.size,
-        NC, NR, NL, cCorner: S.cCorner, cCL: S.cCL, xe: opts.xe, H: S.H, frac: S.r2[(NL - 1) >> 1].meshDef.frac, top, flow: R.flow,
+        NC, NR, NL, cCorner: S.cCorner, cCL: S.cCL, xe: opts.xe, H: S.H, frac: S.r2[(NL - 1) >> 1].meshDef.frac, top, flow: R.flow, massBalance: R.massBalance || null,
         stations: Array.from({ length: NL }, (_, l) => { const n = ((NC - 1) * NL + l) * NR + NR - 1; return { z: R.z[n], film: R.y[n], q: R.q[(NC - 1) * NL + l], s: S.climbed || S.k ? R.surface.s[l] : 0, film2: NaN, s2: NaN }; }),
         open: { side: E.side, stations: E.stations, z: E.z, y: E.y, top: Array.from(E.top), web: E.web, angleTop: Array.from(E.angleTop), angleWeb: Array.from(E.angleWeb), pinTop: Array.from(E.pinTop), pinWeb: E.pinWeb },
         x: f32(R.x), y: f32(R.y), z: f32(R.z), u: f32(R.u), v: f32(R.v), w: f32(R.w), p: f32(R.p), gd: f32(R.gd), mu: f32(R.mu) });
@@ -174,7 +174,7 @@ function wide(e) {
     openOut = { side: E.side, stations: E.stations.map(j => l0 + j), z: E.z, y: E.y, top: Array.from(E.top), web: E.web, angleTop: Array.from(E.angleTop), angleWeb: Array.from(E.angleWeb),
       pinTop: Array.from(E.pinTop), pinWeb: E.pinWeb, climb: E.climb.length, spill: E.spill.length };
   }
-  postMessage({ id, ok: true, result: { states: out, iterations: r3.iterations, unknowns: r3.size.unknowns, open: openOut, flow: r3.flow || null } });
+  postMessage({ id, ok: true, result: { states: out, iterations: r3.iterations, residual: r3.residual, unknowns: r3.size.unknowns, open: openOut, flow: r3.flow || null, massBalance: r3.massBalance || null } });
 }
 
 onmessage = e => {
@@ -199,9 +199,9 @@ onmessage = e => {
     const pp = progressPoster(id, 150);
     const sv = o.solver;
     const res = solveCoater3D({
-      hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: 1e-3 * o.U / H,
+      hFn, hAt, xe, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: o.U, Pup: o.Pup, rho: o.rho, g: o.g, gamma: o.gamma, mu: law, gdMin: sv.gdMin > 0 ? sv.gdMin : 1e-3 * o.U / H,
       webSlip: o.webSlip || 0, Ld: Math.max(12e-3, (sv.ldGaps ?? 8) * H), nEb: sv.nEb, nEf: sv.nEf, nEs: sv.nEs, nEy: sv.nEy, gradeB: sv.gradeB, gradeS: sv.gradeS, gradeY: sv.gradeY,
-      fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, webW: o.webW || 0, meshZones: sv.zones || null, meshFrac: sv.frac || null,
+      fInfGuess: qLub / o.U, tol: sv.tol, maxIter: sv.maxIter, ...(sv.tol3 > 0 ? { tol3: sv.tol3 } : {}), ...(sv.maxIter3 > 0 ? { maxIter3: sv.maxIter3 } : {}), webW: o.webW || 0, meshZones: sv.zones || null, meshFrac: sv.frac || null,
       width: strip.width, nEz: strip.nEz, zs: strip.zs || null, dH: z => interp(strip.gap, z), contactAt: z => interp(strip.th, z),
       onStage: pp.stage, onIteration: pp.iter2, onSolveStart: pp.solve2, onIteration3: pp.iter3,
       ...(profileAt ? { profileAt, profile: p0, clModel: o.clModel || 'full' } : {}),
@@ -217,7 +217,7 @@ onmessage = e => {
     const f32 = a => Float32Array.from(a);
     const result = {
       mode: res.mode, k: res.k ?? null, converged: r3.converged, iterations: r3.iterations, residual: r3.residual, history: r3.history.map(h => h.residual),
-      ms2: res.ms2, ms3: res.ms3, size: r3.size, NC, NR, NL, cCorner: m.cCorner, cCL: m.cCL, xe, H, frac: m.frac,
+      ms2: res.ms2, ms3: res.ms3, size: r3.size, NC, NR, NL, cCorner: m.cCorner, cCL: m.cCL, xe, H, frac: m.frac, massBalance: r3.massBalance || null,
       stations: res.stations, top,
       x: f32(r3.x), y: f32(r3.y), z: f32(r3.z), u: f32(r3.u), v: f32(r3.v), w: f32(r3.w), p: f32(r3.p), gd: f32(r3.gd), mu: f32(r3.mu),
     };

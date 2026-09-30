@@ -100,6 +100,10 @@ function repMpName(cv) {
   if (!s) return '';
   return s.id === 'mpSec' ? `The stack's multiphysics (MP-1, ${MP_DIMS[MPS.dim]}) · ` : `The furnace's multiphysics (MP-2, ${MP_DIMS[FMS.dim]}, ${FURN_RUNS[FMS.run]}) · `;
 }
+/** The Numerics panel as a table (NUM-1): each stage, its method and its setting, Automatic resolved. */
+function repNumerics(kind, lede) {
+  return `<h3>Numerics</h3><p class="lede">${repEsc(lede)}.</p>` + repRows(numericsReportRows(kind).map(([st, m, set]) => [repEsc(st), repEsc(m), repEsc(set)]), ['Stage', 'Method', 'Setting']);
+}
 /** Rows of name / value (/ more) as a table. */
 const repRows = (rows, head) => `<table>${head ? `<thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead>` : ''}<tbody>${rows.map(r => `<tr>${r.map((c, n) => n ? `<td>${c}</td>` : `<th scope="row">${c}</th>`).join('')}</tr>`).join('')}</tbody></table>`;
 /** The problems (rejected entries, errors, warnings) as a table. */
@@ -366,7 +370,7 @@ async function rep3D() {
       + repRows([['Hexahedra', ...T.P.map((p, j) => M3S.runs[j] ? `${M3S.runs[j].cells.toLocaleString()} (${M3S.runs[j].dims})` : ''), '', ''], ...T.rows.map(r => [repEsc(r.l), ...r.v.map(repEsc), ...r.d.map(d => repEsc(d || ''))])],
         ['Quantity', ...T.P.map(L), ...T.P.slice(1).map((p, j) => `${L(T.P[j])} → ${L(p)}`)]);
   }
-  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + pre + body + (edge ? '<h3>The web\'s edge</h3>' + edge : '') + study;
+  return '<h3>Setup</h3>' + repRows(rows, ['3D setting', 'Value']) + (typeof numericsReportRows === 'function' ? repNumerics('3d', 'The numerical chain as the 3D solver runs it') : '') + pre + body + (edge ? '<h3>The web\'s edge</h3>' + edge : '') + study;
 }
 function repCfdSetup() {
   const g = k => { const [l, f, u] = CFDG_UNDO[k] || [k]; return [repEsc(l), repEsc(repUnit(f ? f(CFDG[k]) : repNum(CFDG[k]), u))]; };
@@ -450,6 +454,7 @@ async function repCfd(keep) {
       FV.orTable = keepTable; FV.view = 'compare';
     }
   }
+  if (typeof numericsReportRows === 'function') { const keep = FV.stepLoc; FV.stepLoc = 0; try { html += repNumerics('2d', 'The numerical chain as the solver runs it (at L1; every location the same but for its own gap and contact angle)'); } finally { FV.stepLoc = keep; } }
   html += '<h3>Checks and messages</h3><h4>Problems</h4>' + repProblems();
   html += `<h4>Solver messages</h4>${cfdLog.length ? `<table class="msgs"><tbody>${cfdLog.slice(-200).map(m => `<tr><td>${repClock(m.t)}</td><td>${m.i != null ? 'L' + (m.i + 1) : ''}</td><td class="${m.kind === 'bad' ? 'bad' : m.kind === 'warn' ? 'warn' : ''}">${repEsc(m.text)}</td></tr>`).join('')}</tbody></table>${cfdLog.length > 200 ? '<p class="lede">The last 200 messages.</p>' : ''}` : '<p>No messages.</p>'}`;
   return html;
