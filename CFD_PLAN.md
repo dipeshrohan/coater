@@ -86,6 +86,14 @@ The solved mesh's quality and the web's wall shear stress (the mesh study's two 
   5 across: 46.70 Pa at 2 mm (-0.04 %), peak 48.7 Pa, the 3D 101 s and 0.65 GB against 92 s and 0.44 GB (Node,
   one thread), film unchanged (0.002 %). Flow › 2D's default has 6 across (at these along counts -0.8 %). The film moves 0.3 % over the
   whole sweep; the contact line is the least converged quantity (1.04 / 0.81 / 0.75 mm, as D1 found in 2D).
+- User: Medium (the default) to 5 across the gap. Coarse keeps 3, Fine 5 (6 would be 1.9 GB, the page's 2 GB its
+  limit), so the mesh study refines across the gap from Coarse to Medium only; from Medium to Fine along the flow and
+  across the web. Projects saved with the old Medium keep their 4 (shown as Custom).
+- An edge strip (8 across it) at 5 across the gap would need 2.45 GB and not start (1.66 GB at 4); the full width with
+  open edges solves its edge strips first and its strips must match them. User: "5 normally, 4 at open edges": wherever
+  the web's edges are open the gap has its own count (edgeNy, 4, shown and set on the page as "Across the gap (open
+  edges)", saved, undone; c3dNy() the count the layout, the estimate and the solve take). A project saved before it
+  keeps, at open edges, the ny its edge solves used.
 
 ### Phase 4 (design): the blade across the web (in progress)
 

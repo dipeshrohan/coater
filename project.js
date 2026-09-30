@@ -175,6 +175,8 @@ function applyC3D(c) {
   c = c || {};
   Object.assign(C3D, JSON.parse(JSON.stringify(C3D_DEFAULTS)));
   for (const k of Object.keys(C3D_DEFAULTS)) if (k in c) C3D[k] = c[k];
+  // (saved before the open edges had their own rows across the gap: they took ny, so they keep it)
+  if (!('edgeNy' in c) && Number.isFinite(c.ny)) C3D.edgeNy = c.ny;
   c3dFileIn(c.file);
   C3D_RES = c.result && c.result.result ? c.result : null;
   m3StudyIn(c.study);

@@ -965,7 +965,7 @@ function c3dCounts() {
   if (F) { const a0 = F.b.length - 1 + F.s.length - 1; return { a0, a1: a0 + (F.f.length > 1 ? F.f.length - 1 : C3D.nxFace), ny: F.y.length - 1, nz: c3dNz() }; }
   const pv = C3D_PV.key === c3dPreviewKey() && C3D_PV.stats;
   const a0 = pv ? pv.nB + pv.nS : C3D.nxGap + C3D.nxFilm, face = pv && pv.nF ? pv.nF : C3D.nxFace;
-  return { a0, a1: a0 + face, ny: pv ? pv.nEy : C3D.ny, nz: c3dNz() };
+  return { a0, a1: a0 + face, ny: pv ? pv.nEy : c3dNy(), nz: c3dNz() };
 }
 const c3dHexes = (a, m) => a * m.ny * m.nz, c3dNodes = (a, m) => (2 * a + 1) * (2 * m.ny + 1) * (2 * m.nz + 1);
 /** Shape quality of the solved 3D mesh's 27-node hexahedra: min / max Jacobian over each element's 27 nodes. */
@@ -1193,14 +1193,14 @@ function c3dMeshSideHTML() {
     <tr><td>Memory, time (estimated)</td><td>${L ? `${c3dMem(mem)} (${L.workers} strips at once); time: Solve` : `${c3dMem(mem)}, ${c3dTime(e.secs)}${C3D.region === 'edge' ? ' a step' : ''}`}</td></tr></table>
     <p class="side-note">Size: by the memory the solve takes: ${C3D_SIZE_CLASSES.map(([b, l], k) => `${l} ${k === 0 ? `below ${c3dMem(b)}` : Number.isFinite(b) ? `to ${c3dMem(b)}` : `beyond (more than a browser gives one page${C3D.region === 'full' ? '' : ': not solved'})`}`).join(', ')}.</p>`;
   // the metering gap: the elements across it, the gap, the spacing
-  const Nset = C3D.ny, N = m.ny, H = G && Number.isFinite(G.gMin) ? G.gMin : null;
-  const gap = `<table class="kv"><tr><td>Elements across the gap, set</td><td>${adapted ? `${N} (adapted)` : numIn('ny', 'Elements across the gap')}</td></tr>
+  const nyKey = c3dOpenEdges() ? 'edgeNy' : 'ny', Nset = C3D[nyKey], N = m.ny, H = G && Number.isFinite(G.gMin) ? G.gMin : null;
+  const gap = `<table class="kv"><tr><td>Elements across the gap${nyKey === 'edgeNy' ? ', open edges' : ''}, set</td><td>${adapted ? `${N} (adapted)` : numIn(nyKey, 'Elements across the gap')}</td></tr>
     ${N !== Nset && !adapted ? `<tr><td>Laid out (with the layers)</td><td>${N}</td></tr>` : ''}
     <tr><td>Gap at the edge, H<sub>eff</sub></td><td>${H != null ? c3dLen(H) + (G.gMax - G.gMin > 1e-9 ? ` (to ${c3dLen(G.gMax)})` : '') : '—'}</td></tr>
     <tr><td>H<sub>eff</sub> / N</td><td>${H != null ? c3dLen(H / N) : '—'}</td></tr>
     <tr><td>Velocity nodes across</td><td>${2 * N + 1}${H != null ? `, every ${c3dLen(H / (2 * N))} if even` : ''}</td></tr>
     ${St && Number.isFinite(St.gap.hMin) ? `<tr><td>Element heights there</td><td>${c3dLen(St.gap.hMin)} to ${c3dLen(St.gap.hMax)}</td></tr>` : ''}</table>
-    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Flow › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.</p>
+    <p class="side-note">H<sub>eff</sub>: the smallest gap under the metering edge across the ${where}. The rows get thinner toward the blade and the free surface (Flow › 2D's grading), and the layers, when on, add thin rows at the walls, so they are not all H<sub>eff</sub> / N.${nyKey === 'edgeNy' ? ` With the web's edges open the gap has its own count (the edge strips take most of a page's memory): ${C3D.edgeNy} here, the preset's ${C3D.ny} elsewhere.` : ''}</p>
     ${ms && ms.layers && (ms.layers.web || ms.layers.top) ? `<p class="side-note">Wall layers: ${[ms.layers.web ? `${ms.layers.n.web} at the web, ${c3dLen(ms.layers.thick.web)} thick` : '', ms.layers.top ? `${ms.layers.n.top} at the blade and surface, ${c3dLen(ms.layers.thick.top)} thick` : ''].filter(Boolean).join('; ')}: laid out by their sizes, ${St ? `${St.layerRows.web + St.layerRows.top} rows lie within them` : 'the rows within them counted once laid out'}.</p>` : ''}`;
   // across the web: the elements, the stations, their spacing
   const zE = c3dZEnds(), dz = zE.slice(1).map((v, k) => v - zE[k]), rg = c3dRegion();
@@ -1213,7 +1213,7 @@ function c3dMeshSideHTML() {
     ${c3dZonesHTML()}`;
   // statistics and problems
   const P = c3dMeshProblems(ms), f3 = v => String(+(+v).toPrecision(3)), rec = R && SM.S.mesh;
-  const shown = c3dShown(), srec = shown && shown.mesh, differs = srec && srec.settings && C3D_MESH_KEYS.some(k => JSON.stringify(srec.settings[k] ?? null) !== JSON.stringify(C3D[k] ?? null));
+  const shown = c3dShown(), srec = shown && shown.mesh, differs = srec && srec.settings && C3D_MESH_KEYS.some(k => k in srec.settings && JSON.stringify(srec.settings[k] ?? null) !== JSON.stringify(C3D[k] ?? null));   // (a key a record from before it existed lacks: not a difference)
   const back = differs ? `<p class="side-note">The ${shown.region === 'full' ? 'full width' : shown.region === 'edge' ? 'edge strip' : 'strip'}'s result (${new Date(srec.when).toLocaleString()}) was solved on another mesh (${srec.preset === 'adapted' ? 'adapted' : (C3D_MESH_PRESETS[srec.preset] || { l: 'Custom' }).l}: ${srec.global ? `${srec.global.alongBlade} + ${srec.global.upFace} + ${srec.global.alongFilm} along, ${srec.gap.cellsAcross} across the gap, ${srec.crossWeb.cells} across` : ''}). <button type="button" class="linkish" id="c3mRestore">Back to that mesh</button></p>` : '';
   const statsHead = R ? `As solved${rec && rec.when ? ` (${new Date(rec.when).toLocaleString()}${rec.preset ? `, ${C3D_MESH_PRESETS[rec.preset] ? C3D_MESH_PRESETS[rec.preset].l : 'Custom'}` : ''})` : ''}: exact, from the solved mesh.`
     : St ? 'Before solving, estimated: the middle station\'s layout (as the 2D lays it out with these counts and zones) at every station, its heights scaled to that station\'s gap. Solved, the solved mesh\'s own.'
