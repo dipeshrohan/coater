@@ -56,7 +56,7 @@ function projectData() {
     materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
     locations: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes, cuts: cfdCuts, cases: readCases() || [],
-    view: { module: tab, FV },
+    view: { module: tab, page: navNow(), FV },   // (page, WF-2: the tab's page -- on the Process view, its stage and part)
     doe: {
       loc: DOE.loc, workers: DOE.workers, factors: DOE.factors, plot: DOE.plot, out: DOE.out, x: DOE.x, mx: DOE.mx, my: DOE.my, dock: DOE.dock, dockH: DOE.dockH,
       status: DOE.status === 'running' ? 'stopped' : DOE.status, key: DOE.key, t0: DOE.t0, t1: DOE.t1 || Date.now(),
@@ -222,6 +222,9 @@ function applyProject(p) {
   applyMeasured(p.measured);
   applyC3D(p.c3d);
   tab = Number.isInteger(p.view && p.view.module) && p.view.module < TABS.length ? p.view.module : tab;
+  // (the stage and part it was on; a project from before WF-2 opens the Process view on its stage as it is)
+  const pg = p.view && NAV[p.view.page];
+  if (pg && pg.v === tab) { if (pg.st) PROC.stage = pg.st; if (pg.fv) FILM.view = pg.fv; if (pg.fp) FURN.part = pg.fp; }
   render();
   undoReset();
 }
@@ -394,7 +397,7 @@ function updateProjectTitle() {
 // ---------------------------------------------------------------------
 const SESSION = { suspended: true, lastKey: null, timer: 0 };
 /** What has to change for the session to be written again: inputs, view, results (2D and 3D), DOE, mesh study, project. */
-const sessionKey = () => [projKey(), JSON.stringify([tab, FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}:${r.result && r.result.orient ? r.result.orient.ms : ''}`).join(','),
+const sessionKey = () => [projKey(), JSON.stringify([tab, navNow(), FV, PROJ.name, projDirty()]), cfdRuns.map(r => `${r.status}:${r.key || ''}:${r.elapsedMs || ''}:${r.result && r.result.orient ? r.result.orient.ms : ''}`).join(','),
   DOE.runs.map(r => r.status).join(''), meshStudy ? meshStudy.status : '', C3D_RES ? C3D_RES.when : '', M3S.status, M3S.when || ''].join('|');
 async function sessionSave(force = false) {
   if (SESSION.suspended || !window.indexedDB) return false;

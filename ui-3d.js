@@ -1,5 +1,5 @@
 /*
- * ui-3d.js — Flow › 3D. The blade is made from the 2D setup (its side profile extended across the
+ * ui-3d.js — Coating › 3D. The blade is made from the 2D setup (its side profile extended across the
  * web, the gap varying there as the inputs say), or read from an STL or STEP file of the blade (STEP
  * through occt-import-js, loaded on first use); either is placed over the web with its lowest point at
  * the gap, the height of its underside found by casting rays (cfd-3d-geom.js). Solve runs the 3D flow
@@ -594,7 +594,7 @@ function c3dMeshRecord() {
     adapted: !!C3D.frac3 || c3dZAdapted(), zones: zonesText(solverOf(c3dZoneLoc()).zones), layers: c3dLayers(),
     settings: JSON.parse(JSON.stringify(Object.fromEntries(C3D_MESH_KEYS.map(k => [k, C3D[k] ?? null])))), zones2D: JSON.parse(JSON.stringify(solverOf(c3dZoneLoc()).zones || null)) };
 }
-/** Put back the mesh a result was solved on (its 3D settings; the 2D's zones are Flow › 2D's and stay as they are). One undo step. */
+/** Put back the mesh a result was solved on (its 3D settings; the 2D's zones are Coating › 2D's and stay as they are). One undo step. */
 function c3dMeshRestore(rec) {
   if (!rec || !rec.settings) return;
   undoHint(`3D: the mesh the result was solved on (${rec.preset === 'adapted' ? 'adapted' : (C3D_MESH_PRESETS[rec.preset] || { l: 'Custom' }).l})`);

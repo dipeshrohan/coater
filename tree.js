@@ -117,8 +117,18 @@ function unusedWhy(k) {
 }
 // (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web and the 3D blade the notch face)
 // (the 3D also the contact angle on the web: its open edges)
-// (the Process tab: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
-const inputUsed = k => { const u = tab === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : tab === 4 || tab === 5 || tab === 8 || tab === 12 ? cfdUses() : tab === 10 ? [...cfdUses(), 'lam', 'vib'] : tab === 11 ? [...cfdUses(), 'face'] : tab === 9 ? [...cfdUses(), 'face', 'thw'] : USES[tab]; return !u || u.includes(k); };
+// (WF-2: a stage's tab, its own: Mixing the slurry's flow, Drying the web's speed and the room to the oven, Peel and wind the
+//  web's speed; the later stages none of these (their own inputs are below them); the Line none)
+const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () => ['U', 'oven'], peel: () => ['U'], cut: () => [], stack: () => [], furn: () => [], gfilm: () => [] };
+// (the coating's results on the Process view: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
+/** The shared inputs page pg uses (null: all of them). */
+const usesOf = pg => { const v = NAV[pg].v; return NAV_USES[pg] ? NAV_USES[pg]() : v === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : v === 4 || v === 5 || v === 8 || v === 12 ? cfdUses() : v === 10 ? [...cfdUses(), 'lam', 'vib'] : v === 11 ? [...cfdUses(), 'face'] : v === 9 ? [...cfdUses(), 'face', 'thw'] : USES[v]; };
+const inputUsed = k => { const u = typeof navNow === 'function' ? usesOf(navNow()) : USES[tab]; return !u || u.includes(k); };
+/** The page an input's "Show" or "Go to" opens when the page shown does not use it: the first, in the process's order, that
+ *  does (the slurry's flow on Mixing, the coating's on its 1D, the ripple's on To the oven, the notch face across the web,
+ *  the web's thickness on the 3D, the contact angle at the web's edge on Web edge; Summary shows them all). */
+const JUMP_PAGES = ['mix', 'gap', 'oven1d', 'across', 'cfd3d', 'edge', 'summary'];
+const pageUsing = k => JUMP_PAGES.find(pg => { const u = usesOf(pg); return !u || u.includes(k); }) || null;
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {
@@ -143,12 +153,13 @@ function decorateTree() {
     lab.insertAdjacentHTML('afterbegin', picon(name || (d ? groupOf(d)[1] : 'process')));
     row.classList.add('has-pi');
   });
-  // dimming: the shared inputs the tab shown does not use
+  // (WF-2: the shared inputs the page shown does not use are not shown -- the page's inputs only)
   for (const c of CFG) {
     const num = document.getElementById('n_' + c.k), row = num && num.closest('.prop');
     if (!row) continue;
     const used = inputUsed(c.k);
     row.classList.toggle('unused', !used);
+    row.hidden = !used;
     const why = used ? '' : unusedWhy(c.k);
     if (row.dataset.why !== why) {
       row.dataset.why = why;
@@ -160,6 +171,7 @@ function decorateTree() {
   document.querySelectorAll('#params > details.grp').forEach(d => {
     const rows = [...d.querySelectorAll('.prop')], off = rows.length && rows.every(r => r.classList.contains('unused'));
     d.classList.toggle('grp-unused', off);
+    d.hidden = !!off;
     const sm = d.querySelector(':scope > summary');
     let t = sm.querySelector('.grp-tag');
     if (off && !t) { sm.insertAdjacentHTML('beforeend', '<span class="grp-tag">not used here</span>'); }

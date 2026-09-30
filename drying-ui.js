@@ -484,7 +484,7 @@ function dryExportCSV() {
 // ---- Materials: the drying card ----
 function dryCardHTML() {
   return `<section class="mat-card" aria-labelledby="matDryH">
-    <header><h3 id="matDryH">${uiBadge('oven')}Drying: the film in the oven</h3><button type="button" class="linkish" id="matDrySee">See it on Process</button></header>
+    <header><h3 id="matDryH">${uiBadge('oven')}Drying: the film in the oven</h3><button type="button" class="linkish" id="matDrySee">See it on Drying</button></header>
     <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
     ${matEditRows(MAT_DRY, MAT.dry, 'mdr', 'matd')}
     <div id="matDryDerived"></div>
@@ -506,7 +506,7 @@ function dryWireCard() {
   }));
   view.querySelectorAll('input.mat-src[data-mdr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mdr; MAT.dry[k] = { ...MAT.dry[k], src: el.value.trim() }; }));
   document.getElementById('matDryReset').onclick = () => { undoHint('Drying values back to their defaults'); MAT = { ...MAT, dry: matDefaults().dry }; render(); };
-  document.getElementById('matDrySee').onclick = () => processGo('dry', 'results');
+  document.getElementById('matDrySee').onclick = () => navGo('dry', 'results');
   dryDerived();
 }
 /** What follows from the drying card (the flakes' diffusion, the water the dry GO keeps), its counts and warnings: in place. */

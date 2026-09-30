@@ -1,5 +1,5 @@
 /*
- * cfd-3d-worker.js — runs the 3D solve of Flow › 3D off the main thread: a strip across the web around
+ * cfd-3d-worker.js — runs the 3D solve of Coating › 3D off the main thread: a strip across the web around
  * one location (cfd-fem3d.js's solveCoater3D: each station in 2D at its own gap and contact angle, then
  * the stations coupled in 3D).
  *

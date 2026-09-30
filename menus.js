@@ -45,13 +45,13 @@ mbA('file.imgSave', { l: 'Save as image…', tip: 'Save the plots or views of th
 mbA('imp.profile.csv', { l: 'Blade profile, points (CSV)…', tip: 'A custom blade profile from pasted points (2D Geometry, custom shape).', run: () => { mb2D('geometry'); setBladeShape('custom'); mbClick(() => {}, '#custCSV'); } });
 mbA('imp.profile.dxf', { l: 'Blade profile, DXF…', tip: 'A custom blade profile from a DXF drawing.', run: () => { mb2D('geometry'); setBladeShape('custom'); mbClick(() => {}, '#custDXF'); } });
 mbA('imp.profile.stl', { l: 'Blade profile from STL / STEP…', tip: 'A custom blade profile cut from a 3D file.', run: () => { mb2D('geometry'); setBladeShape('custom'); mbClick(() => {}, '#custSTL'); } });
-mbA('imp.blade3d', { l: 'Blade for the 3D (STL / STEP)…', tip: 'The blade the 3D solves, from a CAD file (Flow › 3D, Geometry).', run: () => { mb3D('geometry'); if (C3D.source !== 'file') c3dSet('source', 'file'); mbClick(() => {}, '#c3dImport'); } });
-mbA('imp.gap', { l: 'Gap across the web, measured…', tip: 'The gap measured across the web, pasted or from a CSV file (Flow › 1D › Across the web).', run: () => { mbTab(11); acrossMeasDialog(); } });
+mbA('imp.blade3d', { l: 'Blade for the 3D (STL / STEP)…', tip: 'The blade the 3D solves, from a CAD file (Coating › 3D, Geometry).', run: () => { mb3D('geometry'); if (C3D.source !== 'file') c3dSet('source', 'file'); mbClick(() => {}, '#c3dImport'); } });
+mbA('imp.gap', { l: 'Gap across the web, measured…', tip: 'The gap measured across the web, pasted or from a CSV file (Coating › 1D › Across the web).', run: () => { mbTab(11); acrossMeasDialog(); } });
 mbA('imp.rheometer', { l: 'Rheometer tests…', tip: 'Flow curves from a rheometer (Materials › how it flows), for the fits.', run: () => { mbMat('matRheoH'); rtImport(); } });
 mbA('imp.flakeTable', { l: 'Flake angle table…', tip: 'Measured flake angles (Materials › flakes).', run: () => { mbMat('matOrH'); orImportTable(); } });
 mbA('imp.sem', { l: 'SEM cross-section image…', tip: 'An SEM image to measure the flakes on (Materials › flakes).', run: () => { mbMat('matOrH'); orImportImage(); } });
-mbA('imp.dryTemps', { l: 'Oven temperatures, measured…', tip: 'Measured film temperatures through the oven (Process › Drying).', run: () => mbClick(() => processGo('dry', 'setup'), '#dryTImport') });
-mbA('imp.furnace', { l: 'Furnace cycle (CSV)…', tip: 'The temperature of the furnace run shown, from a file (Process › Furnace, Setup).', run: () => mbClick(() => processGo('furn', 'setup'), '#furnSetupRuns [data-furnfile]') });
+mbA('imp.dryTemps', { l: 'Oven temperatures, measured…', tip: 'Measured film temperatures through the oven (Drying, Setup).', run: () => mbClick(() => navGo('dry', 'setup'), '#dryTImport') });
+mbA('imp.furnace', { l: 'Furnace cycle (CSV)…', tip: 'The temperature of the furnace run shown, from a file (Furnace, Setup).', run: () => mbClick(() => navGo('furn', 'setup'), '#furnSetupRuns [data-furnfile]') });
 
 const mbExp2D = (l, fn, tip) => ({ l, tip, run: () => { mb2D('results'); fn(); }, on: mbSolved2D, why: () => NEED_2D });
 mbA('exp.field', mbExp2D('2D field, every node (CSV)', () => exportField(), 'Every node of the locations shown: position, velocity, pressure, shear rate, viscosity …'));
@@ -63,9 +63,9 @@ mbA('exp.stl3d', { l: '3D blade (STL)', tip: 'The blade made from the 2D setup, 
 mbA('exp.stream3d', { l: '3D streamlines (CSV)', tip: 'Every 3D streamline\'s points and velocity.', run: () => { mb3D('results'); if (!C3D.stream) c3dSet('stream', true); mbClick(() => {}, '#c3dStreamCsv'); }, on: mbRes3D, why: () => NEED_3D });
 mbA('exp.doe', { l: 'DOE runs (CSV)', tip: 'The runs table: factors, outputs, status, time.', run: () => { mbTab(5); exportDOE(); }, on: () => DOE.runs.length > 0, why: () => 'Run the DOE first.' });
 mbA('exp.meas', { l: 'Measured vs models (CSV)', tip: 'Each measured point with the model (the most detailed one solved) and the CFD.', run: () => { mbTab(6); exportMeasured(); }, on: () => !!measSelected(), why: () => 'Import a measured dataset first.' });
-mbA('exp.dry', { l: 'Drying (CSV)', tip: 'Every film\'s drying along the oven.', run: () => { processGo('dry', 'results'); dryExportCSV(); }, on: () => !!DRY.res, why: () => 'Solve the drying first (Process › Drying).' });
-mbA('exp.film', { l: 'Dry film (CSV)', tip: 'Stress, cracks and peel along the line.', run: () => { processGo('film', 'results'); filmExportCSV(); }, on: () => !!FILM.res, why: () => 'Solve the film first (Process › Film).' });
-mbA('exp.furn', { l: 'Furnace (CSV)', tip: 'The runs through time: temperature, weight, C/O, thickness …', run: () => { processGo('furn', 'results'); furnExportCSV(); }, on: () => !!FURN.res, why: () => 'Solve the furnace first (Process › Furnace).' });
+mbA('exp.dry', { l: 'Drying (CSV)', tip: 'Every film\'s drying along the oven.', run: () => { navGo('dry', 'results'); dryExportCSV(); }, on: () => !!DRY.res, why: () => 'Solve the drying first (the Drying tab).' });
+mbA('exp.film', { l: 'Dry film (CSV)', tip: 'Stress, cracks and peel along the line.', run: () => { navGo('peel', 'results'); filmExportCSV(); }, on: () => !!FILM.res, why: () => 'Solve the film first (the Peel and wind tab).' });
+mbA('exp.furn', { l: 'Furnace (CSV)', tip: 'The runs through time: temperature, weight, C/O, thickness …', run: () => { navGo('furn', 'results'); furnExportCSV(); }, on: () => !!FURN.res, why: () => 'Solve the furnace first (the Furnace tab).' });
 
 // ===================================================================== Edit
 mbA('edit.resetInputs', { l: 'Reset the inputs to their defaults', tip: 'The shared inputs back to their defaults (the CFD setup stays; Undo takes it back).', run: () => mbEl('#reset').click() });
@@ -100,14 +100,14 @@ mbA('view.3d.reset', { l: 'Reset the camera', tip: 'The 3D view back to its came
 [1, 2, 5, 10, 20, 50].forEach(v => mbA('view.3d.h' + v, { l: `Height ×${v}`, tip: 'Heights drawn this many times larger (the gap is thin).', run: () => { mbTab(9); if (C3D.vscale !== v) c3dSet('vscale', v); }, chk: () => C3D.vscale === v }));
 
 // ===================================================================== Geometry
-mbA('geo.2d', { l: 'Blade geometry (2D)…', tip: 'The blade drawn with its dimensions (Flow › 2D, Geometry).', run: () => mb2D('geometry'), chk: () => tab === 4 && step2D() === 'geometry' });
+mbA('geo.2d', { l: 'Blade geometry (2D)…', tip: 'The blade drawn with its dimensions (Coating › 2D, Geometry).', run: () => mb2D('geometry'), chk: () => tab === 4 && step2D() === 'geometry' });
 BLADE_SHAPES.forEach(([k, l]) => mbA('geo.shape.' + k, { l, tip: `The blade's profile: ${l.toLowerCase()}.`, run: () => { mb2D('geometry'); setBladeShape(k); }, chk: () => CFDG.shape === k }));
 [['full', 'Full (any corner or stretch)'], ['simple', 'Simple (wetted up to C)']].forEach(([k, l]) => mbA('geo.cl.' + k, { l, tip: 'How the contact line sits on a shaped exit face.',
   run: () => { mb2D('geometry'); const b = mbEl(`[data-stepcl="${k}"]`) || mbEl(`#cfdClModel [data-cl="${k}"]`); if (b) b.click(); }, chk: () => (CFDG.clModel === 'simple') === (k === 'simple'),
   on: () => typeof bladeShapedFace === 'function' && bladeShapedFace(), why: () => 'Only for a shaped exit face (bevel, radius, wedge, two-step, custom).' }));
-mbA('geo.3d', { l: 'Blade geometry (3D)…', tip: 'The blade the 3D solves: made from the 2D setup, or from a file (Flow › 3D, Geometry).', run: () => mb3D('geometry'), chk: () => tab === 9 && step3D() === 'geometry' });
+mbA('geo.3d', { l: 'Blade geometry (3D)…', tip: 'The blade the 3D solves: made from the 2D setup, or from a file (Coating › 3D, Geometry).', run: () => mb3D('geometry'), chk: () => tab === 9 && step3D() === 'geometry' });
 [['made', 'Made from the 2D setup'], ['file', 'From a file (STL / STEP)']].forEach(([k, l]) => mbA('geo.src.' + k, { l, tip: 'Where the 3D\'s blade comes from.', run: () => { mb3D('geometry'); if (C3D.source !== k) c3dSet('source', k); }, chk: () => C3D.source === k }));
-mbA('geo.across', { l: 'The blade across the web…', tip: 'Bow, tilt, chamfered ends and the crown (Flow › 1D › Across the web).', run: () => mbTab(11), chk: () => tab === 11 });
+mbA('geo.across', { l: 'The blade across the web…', tip: 'Bow, tilt, chamfered ends and the crown (Coating › 1D › Across the web).', run: () => mbTab(11), chk: () => tab === 11 });
 
 // ===================================================================== Physics
 mbA('phys.mat', { l: 'Materials…', tip: 'What the slurry is made of and what it is coated onto: every value with its unit and source.', run: () => mbTab(13), chk: () => tab === 13 });
@@ -115,21 +115,23 @@ mbA('phys.mat', { l: 'Materials…', tip: 'What the slurry is made of and what i
   .forEach(([id, l]) => mbA('phys.card.' + id, { l, tip: `Materials › ${l}.`, run: () => mbMat(id) }));
 Object.entries(RHEO_MODELS).forEach(([k, m]) => mbA('phys.rheo.' + k, { l: m.l, tip: m.law, run: () => mbSelect(() => mbTab(13), '#matModel', k), chk: () => CFDG.model === k }));
 mbA('phys.struct', { l: 'Structure (thixotropy)', tip: 'The slurry\'s structure breaking down in the flow and building up at rest.', run: () => mbCheck(() => mbMat('matRheoH'), '#matStructOn', !MAT.rheo.structOn), chk: () => !!MAT.rheo.structOn });
-mbA('phys.process', { l: 'Process chain…', tip: 'From the wet film to the graphene film: stages, mass balance, the oven.', run: () => mbTab(12), chk: () => tab === 12 });
-Object.entries(STAGE_TAB).forEach(([k, l]) => mbA('phys.stage.' + k, { l, tip: `Process › ${l}.`, run: () => processGo(k), chk: () => tab === 12 && PROC.stage === k }));
+mbA('phys.process', { l: 'The line…', tip: 'The process stage by stage, from the mixer to the graphene film: where each stands and its answers.', run: () => navGo('line'), chk: () => tab === 14 });
+// (the process's stages, each its tab: WF-2)
+const MB_STAGES = SECTIONS.filter(s => s.n);
+MB_STAGES.forEach(s => mbA('phys.stage.' + s.k, { l: `${s.n} ${s.t}`, tip: s.groups ? `${s.t}: ${s.groups.map(g => g.t).join(', ')}.` : navQ(s.pages[0]), run: () => goSection(SECTIONS.indexOf(s)), chk: () => secOf() === s }));
 mbA('phys.inputs', { l: 'Process inputs (web speed, gap, slurry …)', tip: 'The inputs panel: the shared process and slurry inputs.', run: () => { if (panelHidden('model')) setPanelHidden('model', false); }, chk: () => !panelHidden('model') });
 
 // ===================================================================== Mesh
-mbA('mesh.2d', { l: '2D mesh…', tip: 'The 2D mesh of each location, before it is solved: preview, quality, zones (Flow › 2D, Mesh).', run: () => mb2D('mesh'), chk: () => tab === 4 && step2D() === 'mesh' });
+mbA('mesh.2d', { l: '2D mesh…', tip: 'The 2D mesh of each location, before it is solved: preview, quality, zones (Coating › 2D, Mesh).', run: () => mb2D('mesh'), chk: () => tab === 4 && step2D() === 'mesh' });
 ['coarse', 'medium', 'fine'].forEach(k => mbA('mesh.2d.' + k, { l: MESH_PRESETS[k].l, tip: `The 2D mesh preset: ${MESH_PRESETS[k].l.toLowerCase()}.`, run: () => mbSelect(() => mb2D('mesh'), '#cfdMesh', k), chk: () => CFDS.mesh === k }));
 mbA('mesh.2d.custom', { l: 'Custom counts', tip: 'Set the 2D mesh\'s counts yourself (Mesh step).', run: () => mbSelect(() => mb2D('mesh'), '#cfdMesh', 'custom'), chk: () => CFDS.mesh === 'custom' });
 mbA('mesh.2d.study', { l: '2D mesh study…', tip: 'One location on three meshes, to see how much the answer moves.', run: () => mbClick(() => mb2D('mesh'), '#stepMeshStudy') });
 mbA('mesh.2d.acc', { l: '2D mesh to an accuracy…', tip: 'Refine where the answer needs it, until it stops changing.', run: () => mbClick(() => mb2D('mesh'), '#stepMeshAcc') });
-mbA('mesh.3d', { l: '3D mesh…', tip: 'The 3D mesh: presets, the gap, across the web, zones, statistics (Flow › 3D, Mesh).', run: () => mb3D('mesh'), chk: () => tab === 9 && step3D() === 'mesh' });
+mbA('mesh.3d', { l: '3D mesh…', tip: 'The 3D mesh: presets, the gap, across the web, zones, statistics (Coating › 3D, Mesh).', run: () => mb3D('mesh'), chk: () => tab === 9 && step3D() === 'mesh' });
 Object.entries(C3D_MESH_PRESETS).forEach(([k, q]) => mbA('mesh.3d.' + k, { l: q.l, tip: `The 3D mesh preset: ${q.l.toLowerCase()} (${q.nxGap} along the blade, ${q.ny} across the gap, ${q.nzStrip} across a strip).`,
   run: () => { mb3D('mesh'); c3dSetPreset(k); }, chk: () => c3dPresetOf() === k, on: () => !mbBusy3D(), why: () => 'Wait for the 3D solve or study to end.' }));
 mbA('mesh.3d.type', { l: 'Structured hexahedra, 27 nodes (the 3D\'s only element type)', tip: 'Taylor–Hood Q2–Q1 on spines fitted to the blade, web and free surface; no tetrahedra or polyhedra.', run: () => {}, chk: () => true, on: () => false, why: () => 'The 3D solver has this one element type.' });
-mbA('mesh.3d.stats', { l: '3D mesh statistics', tip: 'Quality, sizes, the gap\'s and across-web counts, warnings (Flow › 3D, Mesh).', run: () => { C3D_MOPEN.stats = true; mb3D('mesh'); render(); const g = mbEl('[data-m3grp="stats"]'); if (g) g.scrollIntoView({ block: 'nearest' }); } });
+mbA('mesh.3d.stats', { l: '3D mesh statistics', tip: 'Quality, sizes, the gap\'s and across-web counts, warnings (Coating › 3D, Mesh).', run: () => { C3D_MOPEN.stats = true; mb3D('mesh'); render(); const g = mbEl('[data-m3grp="stats"]'); if (g) g.scrollIntoView({ block: 'nearest' }); } });
 C3D_SECTIONS.forEach(([k, l, tip]) => mbA('mesh.3d.sec.' + k, { l, tip: `Mesh view: ${tip}.`, run: () => { mb3D('mesh'); const b = mbEl(`[data-c3dsec="${k}"]`); if (b) b.click(); else if (k === '3d') { C3D.section = '3d'; render(); } }, chk: () => C3D.section === k }));
 mbA('mesh.3d.study', { l: '3D mesh-independence study…', tip: 'The strip on Coarse, Medium and Fine, nothing else changed, side by side: its section in the 3D Mesh step, then its Run.',
   run: () => { mb3D('mesh'); const el = mbEl('#m3sRun') || mbEl('#m3sStop'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus({ preventScroll: true }); } },
@@ -142,7 +144,7 @@ mbA('mesh.3d.acc', { l: '3D mesh to an accuracy…', tip: 'Its settings (method,
 mbA('mesh.3d.accStop', { l: 'Stop the 3D mesh to an accuracy', tip: 'As its Stop button.', run: () => acc3Stop(), on: () => ACC3.status === 'running', why: () => 'It is not running.' });
 
 // ===================================================================== Simulation
-[[8, '1D'], [4, '2D CFD'], [9, '3D CFD']].forEach(([t, l]) => mbA('sim.dim.' + t, { l, tip: `Flow › ${l}.`, run: () => mbTab(t), chk: () => t === 8 ? [8, 10, 11, 0].includes(tab) : tab === t }));
+[[8, '1D'], [4, '2D CFD'], [9, '3D CFD']].forEach(([t, l]) => mbA('sim.dim.' + t, { l, tip: `Coating › ${l}.`, run: () => mbTab(t), chk: () => t === 8 ? [8, 10, 11, 0].includes(tab) : tab === t }));
 STEPS.forEach(([k, l]) => mbA('sim.2d.' + k, { l: `${l}${k === 'solve' ? ' (boundary conditions, solver settings)' : ''}`, tip: `The 2D's ${l.toLowerCase()} step.`, run: () => mb2D(k), chk: () => tab === 4 && step2D() === k }));
 mbA('sim.2d.runAll', { l: 'Run all four locations', tip: 'Solve the 2D at the four locations.', key: 'run.run', run: () => { mb2D(); runAllLocations(); }, on: () => !cfdRuns.every(r => r.status === 'running'), why: () => 'They are all running.' });
 [0, 1, 2, 3].forEach(i => mbA('sim.2d.run' + i, { l: `Run location ${i + 1}`, tip: `Solve the 2D at location ${i + 1} only.`, run: () => { mb2D(); runLocation(i); }, on: () => cfdRuns[i].status !== 'running', why: () => 'It is running.' }));
@@ -165,7 +167,8 @@ mbA('sim.meas.stop', { l: 'Stop the measured set', tip: 'Stop the measured set\'
 
 // ===================================================================== Results
 [[7, 'Summary'], [1, 'Contact line'], [2, 'Web edge'], [3, 'Film surface']].forEach(([t, l]) => mbA('res.page.' + t, { l, tip: TAB_Q[t], run: () => mbTab(t), chk: () => tab === t }));
-mbA('res.2d', { l: '2D results…', tip: 'The flow under the blade at the four locations (Flow › 2D, Results).', run: () => mb2D('results'), chk: () => mbOn2DResults() });
+['wetdry', 'flakes'].forEach(k => mbA('res.page.' + k, { l: navTitle(k), tip: navQ(k), run: () => navGo(k), chk: () => navNow() === k }));
+mbA('res.2d', { l: '2D results…', tip: 'The flow under the blade at the four locations (Coating › 2D, Results).', run: () => mb2D('results'), chk: () => mbOn2DResults() });
 const MB_FIELDS = [['speed', 'Velocity magnitude |V|'], ['ux', 'u_x (machine direction)'], ['uy', 'u_y (normal to web)'], ['shear', 'Shear rate'], ['mu', 'Apparent viscosity'], ['omega', 'Vorticity'],
   ['strain1', 'Principal strain rate'], ['dissip', 'Viscous dissipation'], ['lam', 'Structure λ (thixotropy)'], ['pressure', 'Pressure'], ['none', 'None (geometry only)']];
 MB_FIELDS.forEach(([k, l]) => mbA('res.2d.f.' + k, { l, tip: `The 2D flow plots coloured by ${l.toLowerCase()}.`, run: () => mbSelect(() => mb2D('results'), '#fvBase', k), chk: () => FV.base === k, on: mbSolved2D, why: () => NEED_2D }));
@@ -174,7 +177,7 @@ mbA('res.2d.cut', { l: 'Draw a cut line', tip: 'Click its start, then its end on
 [['metrics', 'Flow metrics'], ['probes', 'Probes'], ['cuts', 'Cut lines'], ['across', 'Across the web'], ['profiles', 'Profiles'], ['flakes', 'Flakes'], ['fibre', 'Fibre'], ['conv', 'Convergence'], ['cases', 'Saved cases']]
   .forEach(([k, l]) => mbA('res.2d.dock.' + k, { l, tip: `The 2D Results' bottom panel: ${l.toLowerCase()}.`, run: () => { mb2D('results'); FV.dock = k; if (panelHidden('dock')) setPanelHidden('dock', false); else viewCFD(); },
     chk: () => mbOn2DResults() && FV.dock === k && !panelHidden('dock') }));
-mbA('res.3d', { l: '3D results…', tip: 'The flow in 3D and across the web (Flow › 3D, Results).', run: () => mb3D('results'), chk: () => tab === 9 && step3D() === 'results' });
+mbA('res.3d', { l: '3D results…', tip: 'The flow in 3D and across the web (Coating › 3D, Results).', run: () => mb3D('results'), chk: () => tab === 9 && step3D() === 'results' });
 Object.entries(C3D_FIELDS).forEach(([k, f]) => mbA('res.3d.f.' + k, { l: f.l, tip: `The 3D view coloured by ${f.l.toLowerCase()}.`, run: () => { mb3D('results'); if (C3D.field !== k) c3dSet('field', k); }, chk: () => C3D.field === k, on: mbRes3D, why: () => NEED_3D }));
 mbA('res.3d.stream', { l: '3D streamlines', tip: 'Streamlines through the solved 3D velocity (their seeds and mode below the view).', run: () => { mb3D('results'); c3dSet('stream', !C3D.stream); }, chk: () => !!C3D.stream, on: mbRes3D, why: () => NEED_3D });
 [['yz', 'Y–Z section at an x'], ['xz', 'X–Z section, half the gap']].forEach(([v, l]) => mbA('res.3d.uz.' + v, { l, tip: 'The cross-web velocity u_z on a section (3D Results).',
@@ -195,7 +198,7 @@ mbK('panel.dock', 'Bottom panel', 'Show or hide the bottom panel of this page.',
 const MB_TABS = { on: () => dockTabs().length > 1, why: () => document.querySelector('#view .dock') ? 'This page\'s bottom panel has one tab.' : 'This page has no bottom panel.' };
 mbK('panel.next', 'Next bottom-panel tab', 'The bottom panel\'s next tab.', MB_TABS);
 mbK('panel.prev', 'Previous bottom-panel tab', 'The bottom panel\'s previous tab.', MB_TABS);
-SECTIONS.forEach((s, i) => mbA('win.sec.' + s.k, { l: s.t, tip: `The ${s.t} section.`, run: () => goSection(i), chk: () => secOf(tab) === s }));
+SECTIONS.forEach((s, i) => mbA('win.sec.' + s.k, { l: s.n ? `${s.n} ${s.t}` : s.t, tip: s.n ? `Stage ${s.n}: ${s.t}.` : `The ${s.t} tab.`, run: () => goSection(i), chk: () => secOf(tab) === s }));
 mbA('win.secNext', { l: 'Next section', tip: 'The next section of the tab bar.', run: () => goSection((SECTIONS.indexOf(secOf(tab)) + 1) % SECTIONS.length) });
 mbA('win.secPrev', { l: 'Previous section', tip: 'The previous section of the tab bar.', run: () => goSection((SECTIONS.indexOf(secOf(tab)) + SECTIONS.length - 1) % SECTIONS.length) });
 mbA('win.reset', { l: 'Reset the layout', tip: 'The inputs and bottom panels as they first were, the inputs panel at its first width.', run: () => mbResetLayout() });
@@ -216,7 +219,7 @@ const MB_MENUS = {
   geometry: ['geo.2d', { sub: 'Blade shape', items: BLADE_SHAPES.map(q => 'geo.shape.' + q[0]) }, { sub: 'Contact line on the face', items: ['geo.cl.full', 'geo.cl.simple'] },
     { sub: 'Custom profile', items: ['imp.profile.csv', 'imp.profile.dxf', 'imp.profile.stl'] }, '-', 'geo.3d', { sub: 'Blade for the 3D', items: ['geo.src.made', 'geo.src.file'] }, 'imp.blade3d', 'exp.stl3d', '-', 'geo.across', 'imp.gap'],
   physics: ['phys.mat', { sub: 'Materials card', items: ['phys.card.matSlurryH', 'phys.card.matRheoH', 'phys.card.matOrH', 'phys.card.matFibreH', 'phys.card.matDryH', 'phys.card.matFilmH', 'phys.card.matFurnH'] },
-    { sub: 'Rheology model', items: Object.keys(RHEO_MODELS).map(k => 'phys.rheo.' + k) }, 'phys.struct', 'imp.rheometer', '-', 'phys.process', { sub: 'Process stage', items: Object.keys(STAGE_TAB).map(k => 'phys.stage.' + k) }, 'phys.inputs'],
+    { sub: 'Rheology model', items: Object.keys(RHEO_MODELS).map(k => 'phys.rheo.' + k) }, 'phys.struct', 'imp.rheometer', '-', 'phys.process', { sub: 'Process stage', items: MB_STAGES.map(s => 'phys.stage.' + s.k) }, 'phys.inputs'],
   mesh: [{ h: '2D' }, 'mesh.2d', { sub: '2D mesh preset', items: ['mesh.2d.coarse', 'mesh.2d.medium', 'mesh.2d.fine', 'mesh.2d.custom'] }, 'mesh.2d.study', 'mesh.2d.acc',
     { h: '3D' }, 'mesh.3d', { sub: '3D mesh preset', items: Object.keys(C3D_MESH_PRESETS).map(k => 'mesh.3d.' + k) }, { sub: 'Element type', items: ['mesh.3d.type'] }, 'mesh.3d.stats',
     { sub: '3D mesh views', items: C3D_SECTIONS.map(q => 'mesh.3d.sec.' + q[0]) }, 'mesh.3d.study', 'mesh.3d.studyStop', 'mesh.3d.acc', 'mesh.3d.accStop'],
@@ -224,7 +227,7 @@ const MB_MENUS = {
     { sub: '2D CFD', items: [{ h: 'Steps' }, ...STEPS.map(q => 'sim.2d.' + q[0]), { h: 'Run' }, 'sim.2d.runAll', 'sim.2d.run0', 'sim.2d.run1', 'sim.2d.run2', 'sim.2d.run3', 'sim.2d.stop', '-', 'sim.2d.conv'] },
     { sub: '3D CFD', items: [{ h: 'Steps' }, 'sim.3d.geometry', 'sim.3d.mesh', 'sim.3d.solve', 'sim.3d.results', { h: 'Region' }, 'sim.3d.region.strip', 'sim.3d.region.edge', 'sim.3d.region.full', { h: 'Run' }, 'sim.3d.run', 'sim.3d.stop'] },
     { sub: 'Studies', items: ['sim.doe', 'sim.doe.run', 'sim.doe.stop', '-', 'sim.meas.run', 'sim.meas.stop', '-', 'mesh.3d.study'] }],
-  results: [{ sub: 'Results pages', items: ['res.page.7', 'res.page.1', 'res.page.2', 'res.page.3'] }, '-', 'res.2d', { sub: '2D field', items: MB_FIELDS.map(q => 'res.2d.f.' + q[0]) }, 'res.2d.probe', 'res.2d.cut',
+  results: [{ sub: 'Results pages', items: ['res.page.7', 'res.page.1', 'res.page.2', 'res.page.3', 'res.page.wetdry', 'res.page.flakes'] }, '-', 'res.2d', { sub: '2D field', items: MB_FIELDS.map(q => 'res.2d.f.' + q[0]) }, 'res.2d.probe', 'res.2d.cut',
     { sub: '2D locations', items: ['key:view.l1', 'key:view.l2', 'key:view.l3', 'key:view.l4', 'key:view.compare', 'key:view.diff'] },
     { sub: '2D panels', items: ['res.2d.dock.metrics', 'res.2d.dock.probes', 'res.2d.dock.cuts', 'res.2d.dock.across', 'res.2d.dock.profiles', 'res.2d.dock.flakes', 'res.2d.dock.fibre', 'res.2d.dock.conv', 'res.2d.dock.cases'] },
     '-', 'res.3d', { sub: '3D field', items: Object.keys(C3D_FIELDS).map(k => 'res.3d.f.' + k) }, 'res.3d.stream', { sub: 'Cross-web velocity u_z', items: ['res.3d.uz.yz', 'res.3d.uz.xz'] }, 'res.3d.xflow', '-', { sub: '1D', items: ['res.1d.8', 'res.1d.10', 'res.1d.11', 'res.1d.0'] }, 'res.meas'],

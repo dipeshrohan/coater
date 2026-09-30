@@ -182,11 +182,12 @@ function furnSolveRender(r) {
 // ---- Results: the answer, the warnings folded; one chart picked by chips; the piece ----
 const FURN_CHARTS = [['fu4', 'Its thickness'], ['fu5', 'The gas against its hold'], ['fu7', 'Pulled and squeezed'], ['fu2', 'Its weight'], ['fu3', 'C/O'], ['fu6', 'Across the piece'], ['fu1', 'The two runs']];
 function furnChipsHTML() {
-  return `<div class="furn-chips" role="tablist" aria-label="Which chart">${FURN_CHARTS.map(([id, t]) => `<button type="button" role="tab" class="chip" data-furnchart="${id}" aria-selected="${id === (FURN.chart || 'fu4')}">${t}</button>`).join('')}</div>`;
+  return `<div class="furn-chips" role="tablist" aria-label="Which chart" data-fpart="runs">${FURN_CHARTS.map(([id, t]) => `<button type="button" role="tab" class="chip" data-furnchart="${id}" aria-selected="${id === (FURN.chart || 'fu4')}">${t}</button>`).join('')}</div>`;
 }
 function furnShowChart() {
-  const k = FURN.chart || 'fu4';
-  document.querySelectorAll('#furnSec [data-furnchart]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.furnchart === k)));
+  // (the graphene film's tab shows its one chart, the film across the piece; the furnace's, the one its chips pick)
+  const k = !PROC_ALL && FURN.part === 'product' ? 'fu6' : FURN.chart || 'fu4';
+  document.querySelectorAll('#furnSec [data-furnchart]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.furnchart === (FURN.chart || 'fu4'))));
   FURN_CHARTS.forEach(([id]) => { const cv = document.getElementById(id); if (cv) cv.closest('figure').hidden = !PROC_ALL && id !== k; });
 }
 /** The answer in one line (Q117), then the warnings folded behind a button. */

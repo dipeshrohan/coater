@@ -23,6 +23,9 @@
   --blade: #c5cbd4;
   --fibre: #d9d3c2;
   --soft: #eaeef4;
+  --go-film: #7a5230;
+  --heat: #d9480f;
+  --graphite: #3b4048;
   --chrome: #1a2130;
   --chrome-2: #252e40;
   --chrome-line: #2e384b;
@@ -42,7 +45,7 @@
     --bg: #0c1016; --panel: #12171e; --surface: #161b22; --ink: #e7ebf1; --muted: #98a2b1;
     --line: #2a313c; --line-soft: #222831; --accent: #7b98ff; --accent-ink: #0b0d12;
     --ok: #4cc27a; --bad: #ff7b72; --warn: #e3a93a; --slurry: #000;
-    --blade: #4b5361; --fibre: #6a6455; --soft: #1e252f;
+    --blade: #4b5361; --fibre: #6a6455; --soft: #1e252f; --go-film: #b38457; --heat: #ff8a50; --graphite: #8a929e;
     --chrome: #080b10; --chrome-2: #151b24; --chrome-line: #222a36; --chrome-ink: #e7ebf1; --chrome-muted: #8d97a7; --chrome-accent: #7b98ff;
     --viewport: linear-gradient(180deg, #151a21 0%, #10141a 100%);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 16px -6px rgba(0, 0, 0, .5);
@@ -54,7 +57,7 @@
   --bg: #0c1016; --panel: #12171e; --surface: #161b22; --ink: #e7ebf1; --muted: #98a2b1;
   --line: #2a313c; --line-soft: #222831; --accent: #7b98ff; --accent-ink: #0b0d12;
   --ok: #4cc27a; --bad: #ff7b72; --warn: #e3a93a; --slurry: #000;
-  --blade: #4b5361; --fibre: #6a6455; --soft: #1e252f;
+  --blade: #4b5361; --fibre: #6a6455; --soft: #1e252f; --go-film: #b38457; --heat: #ff8a50; --graphite: #8a929e;
   --chrome: #080b10; --chrome-2: #151b24; --chrome-line: #222a36; --chrome-ink: #e7ebf1; --chrome-muted: #8d97a7; --chrome-accent: #7b98ff;
   --viewport: linear-gradient(180deg, #151a21 0%, #10141a 100%);
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 16px -6px rgba(0, 0, 0, .5);
@@ -1600,6 +1603,10 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .ch-st.ch-accent::before { background: var(--accent); }
 .ch-s { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
 .proc-mb td { font-family: var(--mono); }
+.proc-mb { table-layout: fixed; min-width: 620px; }
+.proc-mb .proc-mb-q { width: 28%; }
+.proc-mb td, .proc-mb thead th:not(:first-child) { text-align: right; }
+.proc-mb thead th small { white-space: nowrap; }
 @media (max-width: 1180px) { .chain { grid-template-columns: repeat(3, minmax(0, 1fr)); } .chain li:nth-child(3n + 1)::before { display: none; } }
 @media (max-width: 640px) { .chain { grid-template-columns: minmax(0, 1fr); gap: 8px; } .chain li::before { display: none; } }
 
@@ -1901,6 +1908,13 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 
 /* the film stage's Results, one view at a time (the film peeled off, a piece in 3D, the pressed stack) */
 .film-views { margin: 0 0 10px; }
+/* WF-2: the film's parts are tabs (Peel and wind, Cutting, Pre heat treatment): each its own rows of After the oven in Setup;
+   the furnace's two (Furnace, Graphene film) each their own blocks -- all shown at once in the report (no step set) */
+.proc-stage[data-step="setup"] .film-sec[data-fview="film"] [data-fview]:not([data-fview="film"]),
+.proc-stage[data-step="setup"] .film-sec[data-fview="piece"] [data-fview]:not([data-fview="piece"]),
+.proc-stage[data-step="setup"] .film-sec[data-fview="stack"] [data-fview]:not([data-fview="stack"]),
+.proc-stage[data-step] .furn-sec[data-fpart="runs"] [data-fpart]:not([data-fpart="runs"]),
+.proc-stage[data-step] .furn-sec[data-fpart="product"] [data-fpart]:not([data-fpart="product"]) { display: none !important; }
 .proc-stage[data-step="results"] .film-sec[data-fview="film"] [data-fview]:not([data-fview="film"]),
 .proc-stage[data-step="results"] .film-sec[data-fview="piece"] [data-fview]:not([data-fview="piece"]),
 .proc-stage[data-step="results"] .film-sec[data-fview="stack"] [data-fview]:not([data-fview="stack"]) { display: none !important; }
@@ -2012,3 +2026,153 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
   .mb-sub.open > .mb-subbtn .mb-arrow { transform: rotate(90deg); }
   .mb-pop { position: static; width: auto; max-width: none; min-width: 0; margin: 2px 0 4px 14px; box-shadow: none; border-width: 0 0 0 2px; border-radius: 0; padding: 0 0 0 4px; }
 }
+
+/* ---- The line (view 14): the process stage by stage ---- */
+/* ---- 1 Mixing (process-ui.js): the slurry's figures, how it flows, what it is made of; the coating's headline not here ---- */
+#modWb[data-proc-stage="slurry"] .verdict, #modWb[data-proc-stage="slurry"] .mod-results,
+#modWb[data-proc-stage="align"] .verdict, #modWb[data-proc-stage="align"] .mod-results { display: none; }
+#modWb[data-proc-stage="slurry"] .proc-line { display: none; }
+.mx-page { display: grid; gap: 14px; }
+.mx-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 0; }
+.mx-stats .stat strong { display: block; margin-top: 2px; }
+.mx-stats .stat small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+.mx-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .mx-grid { grid-template-columns: minmax(0, 1fr); } }
+.mx-pane figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.mx-pane figcaption small { font-weight: 400; color: var(--muted); }
+.mx-edit { margin-left: auto; font-size: 12px; }
+.mx-bars { display: grid; gap: 8px; margin: 6px 0 12px; }
+.mx-bar { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 10px; font-size: 12px; }
+.mx-bar-l { color: var(--muted); }
+.mx-bar-t { display: flex; height: 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; }
+.mx-go, .mx-w { display: flex; align-items: center; padding: 0 8px; overflow: hidden; white-space: nowrap; font-size: 11.5px; font-weight: 500; }
+.mx-go { background: var(--go-film); color: #fff; }
+.mx-w { background: color-mix(in srgb, #1c7ed6 18%, var(--surface)); color: var(--ink); }
+.mx-sw { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 2px; vertical-align: -1px; }
+.mx-sw-go { background: var(--go-film); } .mx-sw-w { background: color-mix(in srgb, #1c7ed6 35%, var(--surface)); }
+.mx-comp tbody th { width: auto; }
+.mx-comp td, .mx-comp thead th:not(:first-child) { text-align: right; }
+.mx-total > * { font-weight: 600; border-top: 1px solid var(--line); }
+.mx-foot { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.fl-card { max-width: 760px; }
+.fl-table tbody th { width: auto; white-space: nowrap; }
+.fl-table tbody th small { display: inline; margin-left: 6px; }
+.fl-fill { background: var(--accent) !important; }
+/* ---- the Line (line-ui.js): the flow diagram, the streams, the checks ---- */
+.ln-bar { flex-wrap: wrap; gap: 8px 16px; }
+.ln-ctl { display: inline-flex; align-items: center; gap: 8px; }
+.ln-ctl-l { font-size: 12px; color: var(--muted); }
+.ln-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin: 2px 0 2px; }
+.ln-head h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.015em; color: var(--ink); }
+.ln-counts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.ln-count { display: inline-flex; align-items: center; }
+.ln-count b { margin-right: 4px; color: var(--ink); font-weight: 600; }
+.ln-card { margin-top: 14px; padding: 12px 16px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.ln-card > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+.ln-card h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+.ln-h-note { font-size: 12px; color: var(--muted); }
+.ln-mark { flex: 0 0 auto; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; }
+.ln-mark circle { fill: var(--muted); }
+.ln-mark.ln-ok circle { fill: var(--ok); } .ln-mark.ln-warn circle { fill: var(--warn); } .ln-mark.ln-bad circle { fill: var(--bad); }
+.ln-mark path { fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pfd-wrap { overflow-x: auto; }
+.pfd { display: block; width: 100%; min-width: 900px; height: auto; font-family: var(--sans); }
+.pfd .pfd-eq { fill: var(--soft); stroke: var(--ink); stroke-width: 1.3; }
+.pfd .pfd-in { fill: var(--surface); stroke: var(--ink); stroke-width: 1.1; }
+.pfd .pfd-wall { fill: color-mix(in srgb, var(--ink) 14%, var(--surface)); stroke: var(--ink); stroke-width: 1.3; }
+.pfd .pfd-ln { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.pfd .pfd-ln.pfd-fill { fill: var(--ink); }
+.pfd .pfd-go { fill: var(--go-film); }
+.pfd .pfd-go-ln { fill: none; stroke: var(--go-film); stroke-width: 2.6; stroke-linecap: round; }
+.pfd .pfd-web { stroke: color-mix(in srgb, var(--fibre) 72%, var(--ink)); stroke-width: 3.5; }
+.pfd .pfd-metal { fill: var(--blade); }
+.pfd .pfd-edge { stroke: var(--ink); stroke-width: 1.1; stroke-linejoin: round; }
+.pfd .pfd-div { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.pfd .pfd-heat { fill: none; stroke: var(--heat); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.pfd .pfd-graphite { fill: var(--graphite); }
+.pfd .pfd-sheen { stroke: rgba(255, 255, 255, .35); stroke-width: 1.2; }
+.pfd .pfd-stream line { stroke: var(--muted); stroke-width: 1.5; }
+.pfd .pfd-stream rect { fill: var(--surface); stroke: var(--muted); stroke-width: 1; }
+.pfd .pfd-stream text { font-family: var(--mono); font-size: 10.5px; font-weight: 600; fill: var(--muted); text-anchor: middle; }
+.pfd marker path { fill: var(--muted); }
+.pfd .pfd-unit { cursor: pointer; outline: none; }
+.pfd .pfd-hit { fill: transparent; stroke: transparent; stroke-width: 1.5; }
+.pfd .pfd-unit:hover .pfd-hit { fill: color-mix(in srgb, var(--accent) 5%, transparent); stroke: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pfd .pfd-unit:focus-visible .pfd-hit { stroke: var(--accent); stroke-width: 2; }
+.pfd .pfd-name { font-size: 13px; font-weight: 600; fill: var(--ink); text-anchor: middle; }
+.pfd .pfd-n, .ln-stage .pfd-n { fill: var(--muted); color: var(--muted); font-weight: 500; }
+.pfd .pfd-st { font-size: 12px; fill: var(--muted); text-anchor: middle; }
+.pfd .pfd-ok .pfd-st { fill: var(--ok); } .pfd .pfd-warn .pfd-st { fill: var(--warn); } .pfd .pfd-bad .pfd-st { fill: var(--bad); }
+.pfd .pfd-badge circle { fill: var(--muted); stroke: var(--surface); stroke-width: 2; }
+.pfd .pfd-ok .pfd-badge circle { fill: var(--ok); } .pfd .pfd-warn .pfd-badge circle { fill: var(--warn); } .pfd .pfd-bad .pfd-badge circle { fill: var(--bad); }
+.pfd .pfd-badge path { fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ln-streams tbody th, .ln-checks tbody th { width: auto; }
+.ln-streams thead th { vertical-align: bottom; min-width: 104px; text-align: right; }
+.ln-streams thead th:first-child { text-align: left; min-width: 0; }
+.ln-streams tbody th { white-space: nowrap; }
+.ln-streams td { text-align: right; white-space: nowrap; }
+.ln-sid { display: inline-block; margin-right: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 8px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--muted); }
+.ln-na { color: var(--muted); }
+.ln-checks td, .ln-checks th { vertical-align: middle; }
+.ln-checks td { font-family: var(--sans); font-size: 12.5px; }
+.ln-checks .ln-stage { vertical-align: top; white-space: nowrap; }
+.ln-checks .ln-stage .linkish { font-weight: 600; }
+.ln-checks tbody tr.ln-first > * { border-top: 1px solid var(--line); }
+.ln-util { white-space: nowrap; }
+.ln-track { position: relative; display: inline-block; width: 110px; height: 8px; vertical-align: middle; border-radius: 4px; background: var(--soft); overflow: hidden; }
+.ln-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px; background: var(--muted); }
+.ln-util.ln-ok .ln-fill { background: var(--ok); } .ln-util.ln-warn .ln-fill { background: var(--warn); } .ln-util.ln-bad .ln-fill { background: var(--bad); }
+.ln-lim { position: absolute; top: 0; bottom: 0; left: 66.67%; width: 2px; background: var(--ink); opacity: .5; }
+.ln-pct { display: inline-block; min-width: 48px; margin-left: 8px; text-align: right; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ln-stat { white-space: nowrap; font-weight: 500; color: var(--muted); }
+.ln-stat.ln-ok { color: var(--ok); } .ln-stat.ln-warn { color: var(--warn); } .ln-stat.ln-bad { color: var(--bad); }
+.ln-stat.ln-na { font-weight: 400; }
+
+/* WF-2: the tab bar in the process's order -- the stages numbered, each with a dot for where it stands; thin lines between
+   the map and the materials, the eight stages, and the results and studies */
+.tabbar .modules button .tab-n { display: grid; place-items: center; width: 18px; height: 18px; flex: none; border-radius: 50%; font: 600 11px var(--sans); color: var(--chrome-muted); border: 1px solid var(--chrome-line); }
+.tabbar .modules button[aria-selected=true] .tab-n { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #fff); }
+.tabbar .modules button:has(.tab-n) { gap: 6px; padding: 0 9px; }
+.tabbar .modules button .tab-dot { width: 7px; height: 7px; flex: none; }
+.tab-sep { flex: none; align-self: center; width: 1px; height: 20px; margin: 0 4px; background: var(--chrome-line); }
+.pt-dot.pt-warn { background: var(--warn); opacity: 1; }
+/* the thin-film model's check belongs to the coating's pages, not the map, the materials or the later stages */
+body[data-sec="line"] #scope, body[data-sec="materials"] #scope, body[data-sec="mix"] #scope, body[data-sec="dry"] #scope, body[data-sec="peel"] #scope,
+body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"] #scope, body[data-sec="gfilm"] #scope, body[data-sec="studies"] #scope { display: none; }
+/* (the tab bar on a laptop's width: tighter, the plain tabs without their icons; narrower still, the stages' short names) */
+.tabbar .modules button .tab-s { display: none; }
+@media (max-width: 1700px) {
+  .tabbar .modules button { padding: 0 9px; font-size: 13.5px; }
+  .tabbar .modules button:has(.tab-n) { gap: 5px; padding: 0 7px; }
+  .tabbar .modules button:not(:has(.tab-n)) svg { display: none; }
+  .tab-sep { margin: 0 2px; }
+}
+@media (max-width: 1500px) {
+  .tabbar .modules button:has(.tab-s) .tab-l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tabbar .modules button .tab-s { display: inline; }
+}
+.ln-lim-l { display: none; }
+.ln-streams { min-width: 840px; }
+/* (the Line on a phone: the diagram and the streams scroll sideways in their cards, the page does not; each check a block:
+   the check and its status, its result and limit, its bar) */
+@media (max-width: 700px) {
+  .ln-card { padding: 10px 12px 12px; }
+  .ln-page .sum-body { padding: 12px 12px 28px; }
+  .ln-checks, .ln-checks tbody { display: block; }
+  .ln-checks thead { display: none; }
+  .ln-checks tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "stage stage" "check stat" "res lim" "util util"; column-gap: 12px; padding: 7px 0; border-top: 1px solid var(--line-soft); }
+  .ln-checks tbody tr > * { padding: 1px 0; border: 0 !important; }
+  .ln-checks tbody tr.ln-first { border-top: 1px solid var(--line); }
+  .ln-checks .ln-stage { grid-area: stage; padding: 4px 0 4px; }
+  .ln-checks .ln-c-check { grid-area: check; font-weight: 500; }
+  .ln-checks .ln-c-stat { grid-area: stat; text-align: right; }
+  .ln-checks .ln-c-res { grid-area: res; color: var(--muted); }
+  .ln-checks .ln-c-lim { grid-area: lim; text-align: right; color: var(--muted); }
+  .ln-checks td.ln-c-util.ln-na { display: none; }
+  .ln-checks .ln-nolim { visibility: hidden; }
+  .ln-lim-l { display: inline; }
+  .ln-checks .ln-c-util { grid-area: util; padding-top: 4px; }
+}
+/* (Coating's 1D / 2D / 3D / Results beside the step bar: on a laptop's width the steps' second lines are cut short --
+   their whole text on hover -- so the toolbar stays one row and the plot keeps its height) */
+@media (max-width: 1700px) { #view > .flow-head .step-bar button small, #view .pg-bar .step-bar button small { max-width: 128px; } }

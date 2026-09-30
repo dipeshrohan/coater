@@ -1,5 +1,5 @@
 /*
- * cfd-ui.js — Flow › 2D, the 2D CFD.
+ * cfd-ui.js — Coating › 2D, the 2D CFD.
  *
  * Runs the 2D solve -- the flow under the blade (round entry onto the
  * metering edge, or the flat land), over the blade's exit face and into
@@ -217,16 +217,20 @@ function airProps(Tc) {
 /** An oven zone's input id (zone 1's drying air keeps the ids the single oven setting had). */
 const ovenZoneId = (i, k) => i === 0 && OVEN_ZONE_LEGACY_ID[k] ? OVEN_ZONE_LEGACY_ID[k] : `ovz${i + 1}_${k}`;
 const OVEN_ZONE_LEGACY_ID = { airU: 'cfdAirU', airT: 'cfdAirT', plenum: 'cfdPlenum' };
-/** The oven's zones in the inputs bar (the 2D setup's and the Process tab's): each zone's inputs, Add zone, the note. */
+/** The oven's zones in the inputs bar (the 2D setup's and the stages'): each zone's inputs, Add zone, the note; with
+ *  opts.peel, what follows the oven (true: all of it; 'film', 'piece' or 'stack': one stage's rows, WF-2); opts.zones false:
+ *  without the zones. */
 function ovenZonesTree(opts = {}) {
   const prop = (label, id, attrs, unit) => `<div class="prop"><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><input type="number" id="${id}" ${attrs}><span class="prop-u">${unit}</span></span></div>`;
+  const peel = opts.peel && typeof filmPeelTreeHTML === 'function' ? filmPeelTreeHTML(prop, opts.peel === true ? null : opts.peel) : '';
+  if (opts.zones === false) return peel;
   return `${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
       <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
       ${OVEN_ZONE_FIELDS.map(([k, l, u, lo, hi, step]) => prop(l, ovenZoneId(i, k), `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
       ${ovenTopHTML(z, i, prop)}
     </div>`).join('')}
     <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="ovzAdd"${OVEN.zones.length >= OVEN_MAX_ZONES ? ' disabled' : ''}>${uiIco('plus')}Add zone</button></div>
-    <p class="prop-note" id="ovzNote">${ovenNote()}</p>${opts.peel && typeof filmPeelTreeHTML === 'function' ? filmPeelTreeHTML(prop) : ''}`;
+    <p class="prop-note" id="ovzNote">${ovenNote()}</p>${peel}`;
 }
 /**
  * A zone's top (Q52): what is above the film -- nothing blown, hot air through slot nozzles, IR heaters, or both --

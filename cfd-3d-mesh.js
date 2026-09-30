@@ -1,5 +1,5 @@
 /*
- * cfd-3d-mesh.js — the 3D mesh's numbers (Flow › 3D, Mesh): statistics and shape quality of the 3D solver's mesh, its
+ * cfd-3d-mesh.js — the 3D mesh's numbers (Coating › 3D, Mesh): statistics and shape quality of the 3D solver's mesh, its
  * sections, and after a solve the cross-flow diagnostic and a mesh study's quantities.
  *
  * The mesh (cfd-fem3d.js): structured Taylor–Hood Q2–Q1 hexahedra on spines -- 27 velocity nodes each, logically a box.

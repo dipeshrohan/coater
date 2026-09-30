@@ -1,6 +1,6 @@
 /*
- * cfd-progress.js — how far a running solve has got: an estimate, shown with "≈", for the progress bars on Flow › 2D
- * (one per location), Flow › 3D (the whole solve, and the step being solved) and the status bar.
+ * cfd-progress.js — how far a running solve has got: an estimate, shown with "≈", for the progress bars on Coating › 2D
+ * (one per location), Coating › 3D (the whole solve, and the step being solved) and the status bar.
  *
  * It counts the steps that are known and, within a Newton solve, how far that solve has got:
  *  - a Newton solve: how far along its continuation it is (Newtonian to the chosen rheology, or the homotopy from its

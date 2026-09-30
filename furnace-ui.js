@@ -203,22 +203,23 @@ function furnPicCheck(kind, sc = 1) {
 function furnSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
   const pane = (id, icon, title, aria) => `<figure class="pane dry-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
-  return `<section class="dry-sec furn-sec" id="furnSec" aria-labelledby="furnH">
-    <header class="dry-head"><h3 id="furnH">${uiBadge('oven')}6 · The furnace and the graphene film</h3>
+  // (WF-2: two tabs show it -- 7 Furnace, its runs and checks; 8 Graphene film, the film that comes out: each its own parts)
+  return `<section class="dry-sec furn-sec" id="furnSec" aria-labelledby="furnH" data-fpart="${FURN.part || 'runs'}">
+    <header class="dry-head"><h3 id="furnH">${uiBadge(FURN.part === 'product' ? 'bars' : 'oven')}${FURN.part === 'product' ? '8 · The graphene film' : '7 · The furnace'}</h3>
       <div class="seg" role="tablist" aria-label="Which film" id="furnSel">${seg.map(([k, t]) => `<button type="button" role="tab" data-furn="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="furnProgBtn" data-chain="furnin" title="The furnace's runs and the stack in its holder, in the inputs bar">${uiIco('oven')}The furnace</button><button type="button" class="btn btn-secondary btn-sm" id="furnCsv" title="The two runs and the graphene film as a table">${uiIco('download')}CSV</button></header>
-    <div class="furn-setup" data-pstep="setup">
+    <div class="furn-setup" data-pstep="setup" data-fpart="runs">
       <div class="sheet-head furn-head">${furnPicGas(0.9)}<p class="fv-why">The pieces out of the drying stack go into the furnace one between each two graphite papers and are heated in argon twice: to about 1000 °C, then to 2800 °C. Their water and oxygen leave as gas, through a piece to the papers and along them to their edges. Where the gas cannot get out fast enough it parts the piece's layers: it puffs up, and comes out thicker.</p></div>
       <div class="furn-block"><div class="furn-bh"><h4>The runs</h4><div class="seg seg-sm" role="tablist" aria-label="Which run" id="furnSetupRun">${[0, 1].map(r => `<button type="button" role="tab" data-prun="${r}" aria-selected="${r === (FURN.prun || 0)}">${FURN_RUNS[r]}</button>`).join('')}</div><span class="fv-why" id="furnSetupRunT"></span></div>
         <div class="furn-prog"><div id="furnSetupRuns"></div><figure class="pane dry-pane no-report"><canvas id="furnProgCv" role="img" aria-label="The run's program: temperature against time; drag its corners"></canvas><div class="pane-legend" id="furnProgCvLg"></div></figure></div></div>
       <div class="furn-block"><h4>The stack in its holder</h4><div id="furnSetupHolder"></div></div>
       <div class="furn-block"><h4>The piece going in</h4><div id="furnSetupPiece"></div></div>
     </div>
-    <div id="furnSolve" data-pstep="solve"></div>
+    <div id="furnSolve" data-pstep="solve" data-fpart="runs"></div>
     <div id="furnState" data-pstep="results"></div>
-    <div class="furn-checks" id="furnChecks" data-pstep="results"></div>
+    <div class="furn-checks" id="furnChecks" data-pstep="results" data-fpart="runs"></div>
     <div class="furn-pieces" id="furnPieces" data-pstep="results"></div>
-    <div class="stats" id="furnStats" data-pstep="results"></div>
+    <div class="stats" id="furnStats" data-pstep="results" data-fpart="product"></div>
     <div class="furn-res" data-pstep="results"><div class="furn-chart">${typeof furnChipsHTML === 'function' ? furnChipsHTML() : ''}<div class="dry-grid furn-one">
       ${pane('fu1', 'oven', 'The two runs', 'The furnace temperature against time in each run')}
       ${pane('fu2', 'weight', 'Its weight', 'The piece\'s weight kept against time through the two runs')}
@@ -231,7 +232,7 @@ function furnSectionHTML() {
       <figure class="pane dry-pane furn-piece-fig"><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
     </div>
     <div id="furnMeas" data-pstep="results"></div>
-    <p class="fv-note" id="furnNote" data-pstep="solve"></p>
+    <p class="fv-note" id="furnNote" data-pstep="solve" data-fpart="runs"></p>
   </section>`;
 }
 function furnWire(sec) {
@@ -718,7 +719,7 @@ function wireFurnTree(changed) {
 // ---- Materials: the Furnace card ----
 function furnCardHTML() {
   return `<section class="mat-card" aria-labelledby="matFurnH">
-    <header><h3 id="matFurnH">${uiBadge('oven')}The furnace and the graphene film</h3><button type="button" class="linkish" id="matFurnSee">See it on Process</button></header>
+    <header><h3 id="matFurnH">${uiBadge('oven')}The furnace and the graphene film</h3><button type="button" class="linkish" id="matFurnSee">See it on Furnace</button></header>
     <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
     ${Object.entries(MAT_FURN_GROUPS).map(([g, t]) => `<div class="mat-sub"><b>${t}</b></div>${matEditRows(MAT_FURN.filter(q => q[10] === g), MAT.furn, 'mfu', 'matu')}`).join('')}
     <div id="matFurnDerived"></div>
@@ -740,7 +741,7 @@ function furnWireCard() {
   }));
   view.querySelectorAll('input.mat-src[data-mfu]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfu; MAT.furn[k] = { ...MAT.furn[k], src: el.value.trim() }; }));
   document.getElementById('matFurnReset').onclick = () => { undoHint('Furnace values back to their defaults'); MAT = { ...MAT, furn: matDefaults().furn }; render(); };
-  document.getElementById('matFurnSee').onclick = () => processGo('furn', 'results');
+  document.getElementById('matFurnSee').onclick = () => navGo('furn', 'results');
   furnDerived();
 }
 /** What follows from the Furnace card and the GO's C/O: in place. */

@@ -1,6 +1,6 @@
 /*
  * build-occt.js — writes lib/occt-import-js.wasm.js: the STEP reader's WebAssembly (lib/occt-import-js.wasm) as
- * base64 text in a script. Opened as a file (file://), the browser won't fetch the .wasm, so Flow › 3D's STEP
+ * base64 text in a script. Opened as a file (file://), the browser won't fetch the .wasm, so Coating › 3D's STEP
  * import loads this like its other scripts and hands the binary to the reader. Run it after updating occt-import-js:
  *   node build-occt.js           write lib/occt-import-js.wasm.js
  *   node build-occt.js --check   fail when it is not the current .wasm

@@ -6,7 +6,7 @@
  * from a mass balance on the wet film the flow models give (the dry film, the coat weight, the water the oven must
  * take out, the time in the oven); the oven's zones in the inputs bar.
  * Materials: the cards -- the slurry (GO solids in water, each value with its unit, source and flag: edited here);
- * how it flows (the rheology model, chosen here or in Flow › 2D; the sidebar's viscosity, n, yield stress and surface
+ * how it flows (the rheology model, chosen here or in Coating › 2D; the sidebar's viscosity, n, yield stress and surface
  * tension as they are; the Carreau–Yasuda and Cross laws' extras and the structure (thixotropy) model edited here,
  * GO-1); and, as set elsewhere, the fibre web it is coated onto.
  */
@@ -34,7 +34,7 @@ const lineSpeed = () => P.U / 60;
 const um0 = v => (v * 1e6).toFixed(0), gm2 = v => v.toFixed(0);
 
 // ---- the chain ----
-const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], todo: ['Not solved yet', 'muted'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'] };
+const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], todo: ['Not solved yet', 'muted'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'], none: ['Not modelled yet', 'muted'] };
 // (the drying stage, go 'dry': scrolls to its section under the chain; 'oven' kept for the zones in the inputs bar)
 function processStages() {
   const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length;
@@ -56,52 +56,113 @@ function processStages() {
 const STAGE_ICON = { slurry: 'drop', coat: 8, align: 'fibre', dry: 'oven', film: 'film', furn: 'bars' };
 /** The stages' short names, on their tabs (Q115). */
 const STAGE_TAB = { slurry: 'Slurry', coat: 'Coating', align: 'Flakes', dry: 'Drying', film: 'Film', furn: 'Furnace' };
-/** The Process tab shows one stage at a time (Q115), each in steps Setup › Solve › Results (Q116); remembered while open. */
+/** The Process view shows one stage at a time (Q115; WF-2: each a tab of its own), in steps Setup › Solve › Results (Q116),
+ *  remembered while open. */
 const PROC = { stage: 'coat', step: {} };
 /** The report's Process section: every stage, step, film view and chart drawn open at once (as one long page). */
 let PROC_ALL = false;
-/** The stages that are computed here, with their steps; the others show their one page. */
-const PROC_STEPS = { dry: ['setup', 'solve', 'results'], film: ['setup', 'solve', 'results'], furn: ['setup', 'solve', 'results'] };
+/** A page's key for its steps: the stage, and for the film's and the furnace's stages the part shown (each keeps its own step). */
+const procStepKey = (k = PROC.stage) => k === 'film' ? `film:${FILM.view || 'film'}` : k === 'furn' ? `furn:${FURN.part || 'runs'}` : k;
+/** The pages that are computed here, with their steps (the cut piece and the stack are solved after the film, on their own;
+ *  the graphene film is the furnace's result); the others show their one page. */
+const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results'],
+  'furn:runs': ['setup', 'solve', 'results'], 'furn:product': ['results'] };
 const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results' };
-/** The chain as tabs in one row (Q139): number, name, a dot for where it stands (its word for readers), its line on hover. */
-function processChainHTML() {
-  return `<div class="proc-tabs" role="tablist" aria-label="The process, stage by stage">${processStages().map((g, i) => {
-    const [stT, stC] = STAGE_ST[g.st], on = g.k === PROC.stage;
-    return `<button type="button" role="tab" class="pt" data-stage="${g.k}" aria-selected="${on}" tabindex="${on ? 0 : -1}" title="${g.t}: ${stT}. ${String(g.s).replace(/<[^>]*>/g, '').replace(/"/g, '&quot;')}"><b>${i + 1}</b>${uiBadge(STAGE_ICON[g.k])}<span>${STAGE_TAB[g.k]}</span><i class="pt-dot pt-${stC}" aria-hidden="true"></i><span class="sr-only">${stT}</span></button>`;
-  }).join('')}</div>`;
+/** A solve's state as a stage's: solved, solving, failed or not yet. */
+const procSolveSt = (cur, R) => cur ? 'solved' : R.busy ? 'busy' : R.error ? 'failed' : 'todo';
+/** The Line's rows for a stage, as one line (the cut piece, the stack, the graphene film: the same words as the Line's map). */
+const procLineOf = k => { try { const L = lineStages().find(q => q.k === k); return L && L.rows.length ? L.rows.map(([l, v]) => `${l}: ${v}`).join('; ') : ''; } catch (e) { return ''; } };
+/** The page shown: its name, icon, where it stands and its line. */
+function procPageHead() {
+  const pg = navNow(), g = processStages().find(q => q.k === PROC.stage) || processStages()[1], name = navTitle(pg), icon = NAV[pg].icon || STAGE_ICON[g.k];
+  if (pg === 'mix') return { t: name, icon, st: 'none', s: `the mixer is not modelled yet; the slurry it makes: ${g.s}` };
+  if (pg === 'cut') { const st = procSolveSt(typeof sheetCurrent === 'function' && sheetCurrent(), SHEET); return { t: name, icon, st, s: st === 'solved' ? procLineOf('cut') : st === 'busy' ? 'the piece in 3D, solving…' : 'the piece in 3D: after the film' }; }
+  if (pg === 'stack') { const st = procSolveSt(typeof stackCurrent === 'function' && stackCurrent(), STACK); return { t: name, icon, st, s: st === 'solved' ? procLineOf('stack') : st === 'busy' ? 'the pressed stack, solving…' : 'the pressed stack: after the film and its cut piece' }; }
+  if (pg === 'gfilm') return { t: name, icon, st: g.st, s: g.st === 'solved' ? procLineOf('gfilm') : g.s };
+  return { t: name, icon, st: g.st, s: g.s };
 }
-/** The stage shown: its line (where it stands) under the tabs, and its steps. */
+/** The page shown: its line (where it stands) under the tabs, and its steps (none when it has one). */
 function processStageHead() {
-  const g = processStages().find(q => q.k === PROC.stage), [stT, stC] = STAGE_ST[g.st], steps = PROC_STEPS[g.k];
-  const now = processStep(g.k);
-  const bar = steps ? `<div class="step-bar proc-steps" role="tablist" aria-label="${g.t}: its steps">${steps.map((k, i) => `<button type="button" role="tab" data-pstepgo="${k}" aria-selected="${k === now}"><b>${i + 1}</b><span>${PROC_STEP_T[k]}</span></button>`).join('<span class="step-sep" aria-hidden="true">›</span>')}</div>` : '';
-  return `<div class="proc-head"><h2 class="proc-h">${uiBadge(STAGE_ICON[g.k])}${g.t}</h2><span class="ch-st ch-${stC}">${stT}</span><span class="proc-line">${g.s}</span>${bar}</div>`;
+  const g = procPageHead(), [stT, stC] = STAGE_ST[g.st], key = procStepKey(), steps = PROC_STEPS[key], now = processStep(key);
+  const bar = steps && steps.length > 1 ? `<div class="step-bar proc-steps" role="tablist" aria-label="${g.t}: its steps">${steps.map((k, i) => `<button type="button" role="tab" data-pstepgo="${k}" aria-selected="${k === now}"><b>${i + 1}</b><span>${PROC_STEP_T[k]}</span></button>`).join('<span class="step-sep" aria-hidden="true">›</span>')}</div>` : '';
+  return `<div class="proc-head"><h2 class="proc-h">${uiBadge(g.icon)}${g.t}</h2><span class="ch-st ch-${stC}">${stT}</span><span class="proc-line">${g.s}</span>${bar}</div>`;
 }
-/** A stage's step: as chosen, else Results once it is solved, else Setup. */
-function processStep(k) {
-  if (!PROC_STEPS[k]) return null;
-  if (PROC.step[k]) return PROC.step[k];
-  const g = processStages().find(q => q.k === k);
+/** A page's step (k: its key, procStepKey's; a stage's name: its part shown): as chosen, else Results once it is solved,
+ *  else Setup. */
+function processStep(k = procStepKey()) {
+  if (!PROC_STEPS[k] && (k === 'film' || k === 'furn')) k = procStepKey(k);
+  const steps = PROC_STEPS[k];
+  if (!steps) return null;
+  if (steps.includes(PROC.step[k])) return PROC.step[k];
+  if (steps.length === 1) return steps[0];
+  const g = k === 'film:piece' || k === 'film:stack' ? procPageHead() : processStages().find(q => q.k === k.split(':')[0]);
   return g && g.st === 'solved' ? 'results' : 'setup';
 }
-/** The slurry (stage 1): its card's values the chain uses, and where to change them. */
+/** 1 Mixing: the slurry the mixer makes -- its figures, its composition, how it flows (the law the solvers use, marked at
+ *  the shear rates of the process); the mixer itself is not modelled yet (the user, 30 Sep: its heat and flow, and the
+ *  flake size and viscosity they give -- a later phase). */
+/** The slurry's shear rate in the gap: the web's speed over the gap at the metering edge, mid-web (1/s), and its viscosity there. */
+function procSlurryGap() {
+  const uses = RHEO_MODELS[CFDG.model].uses, ty = uses.includes('ty') ? P.ty : 0, n = uses.includes('n') ? P.n : 1, x = cfdRheoX();
+  const gd = P.U / 60 * Math.cos(skewRad()) / (localGap(ACROSS_W / 2) / 1000);
+  return { gd, mu: muLaw(gd, P.mu, ty, n, x), ty, n, x };
+}
 function procSlurryHTML() {
-  const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length;
-  const row = (l, v, f) => `<tr><th>${l}</th><td>${v}</td><td class="fv-why">${f || ''}</td></tr>`;
-  const fl = k => c[k] ? { given: 'From you', assumed: 'Assumed', measured: 'Measured' }[c[k].flag] || '' : '';
-  return `<div class="proc-card"><table class="proc-kv"><tbody>
-    ${row('Solids (GO)', `${c.phi.v} vol%`, fl('phi'))}${row('GO density', `${c.rhoS.v} g/cm³`, fl('rhoS'))}${row('Liquid (water)', `${c.rhoL.v} kg/m³`, fl('rhoL'))}
-    ${row('Dry film packing', `${c.phiDry.v}`, fl('phiDry'))}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`, 'worked out')}</tbody></table>
-    <p class="fv-why">${nA} of the slurry card's ${keys.length} values are assumed. How it flows (its viscosity, yield stress and structure) is on the same tab.</p>
-    <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="13">${uiIco(13)}Edit in Materials</button></div></div>`;
+  const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length, wt = slurrySolidsMass();
+  const X0 = (1 - c.phi.v / 100) * c.rhoL.v / (c.phi.v / 100 * c.rhoS.v * 1000), g = procSlurryGap(), sig = v => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+  const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
+  const pct = v => (v * 100).toFixed(1);
+  const bar = (label, go, w) => `<div class="mx-bar"><span class="mx-bar-l">${label}</span><span class="mx-bar-t"><span class="mx-go" style="width:${(go * 100).toFixed(2)}%">GO ${pct(go)} %</span><span class="mx-w" style="width:${(w * 100).toFixed(2)}%">water ${pct(w)} %</span></span></div>`;
+  return `<div class="mx-page">
+    <div class="stats mx-stats">${[
+      tile('Solids', `${c.phi.v} vol%`, `${pct(wt)} % by mass`, 'weight'),
+      tile('Water', `${(X0 * 100).toFixed(1)} %`, 'of the GO\'s mass', 'drop'),
+      tile('Slurry density', `${slurryRho().toFixed(0)} kg/m³`, 'from its solids', 'weight'),
+      tile('Viscosity in the gap', `${sig(g.mu)} Pa·s`, `at ${sig(g.gd)} 1/s (U/H)`, 'flow'),
+      tile('Yield stress', g.ty > 0 ? `${g.ty.toFixed(1)} Pa` : 'none', RHEO_MODELS[CFDG.model].l, 'ratio'),
+      tile('Flakes', `${c.dMin.v}–${c.dMax.v} µm`, `mean ${c.dMean.v} µm`, 'fibre'),
+    ].join('')}</div>
+    <div class="mx-grid">
+      <figure class="pane mx-pane"><figcaption>${uiBadge('flow')}How it flows <small>${RHEO_MODELS[CFDG.model].l}: the law the solvers use</small></figcaption>
+        <canvas id="mxFlow" role="img" aria-label="The slurry's viscosity against its shear rate, the law the solvers use, marked where you set it and in the gap"></canvas>
+        <div class="pane-legend" id="mxFlowLg"></div></figure>
+      <figure class="pane mx-pane"><figcaption>${uiBadge('bars')}What it is made of <button type="button" class="linkish mx-edit" data-chain="13">Edit in Materials</button></figcaption>
+        <div class="mx-bars">${bar('By volume', c.phi.v / 100, 1 - c.phi.v / 100)}${bar('By mass', wt, 1 - wt)}</div>
+        <table class="cfd-table mx-comp"><thead><tr><th scope="col">Component</th><th scope="col">Volume <small>%</small></th><th scope="col">Mass <small>%</small></th><th scope="col">Density <small>kg/m³</small></th></tr></thead>
+          <tbody><tr><th scope="row"><i class="mx-sw mx-sw-go"></i>Graphene oxide</th><td>${c.phi.v.toFixed(1)}</td><td>${pct(wt)}</td><td>${(c.rhoS.v * 1000).toFixed(0)}</td></tr>
+            <tr><th scope="row"><i class="mx-sw mx-sw-w"></i>Water</th><td>${(100 - c.phi.v).toFixed(1)}</td><td>${pct(1 - wt)}</td><td>${c.rhoL.v.toFixed(0)}</td></tr>
+            <tr class="mx-total"><th scope="row">Slurry</th><td>100.0</td><td>100.0</td><td>${slurryRho().toFixed(0)}</td></tr></tbody></table>
+        <p class="mx-foot">${nA ? `${nA} of the slurry card's ${keys.length} values assumed` : 'Every value on the slurry card from you'} · dry film packing ${c.phiDry.v}</p></figure>
+    </div></div>`;
+}
+/** Mixing's flow curve: the viscosity over five decades of shear rate, log–log, marked at 2.7 1/s (where you set it) and in the gap. */
+function procSlurryDraw() {
+  const cv = document.getElementById('mxFlow');
+  if (!cv || (!PROC_ALL && cv.offsetParent === null)) return;
+  const g = procSlurryGap(), L10 = Math.log10, x0 = -2, x1 = 4, p = [];
+  for (let i = 0; i <= 180; i++) { const lg = x0 + (x1 - x0) * i / 180, mu = muLaw(Math.pow(10, lg), P.mu, g.ty, g.n, g.x); if (mu > 0 && Number.isFinite(mu)) p.push([lg, L10(mu)]); }
+  const ys = p.map(q => q[1]); let y0 = Math.floor(Math.min(...ys)), y1 = Math.ceil(Math.max(...ys)); if (y1 <= y0) y1 = y0 + 1;
+  const dec = v => { const k = Math.round(v); return k >= 4 || k <= -3 ? `1e${k}` : String(+Math.pow(10, k).toPrecision(1)); };
+  const acc = cssVar('--accent'), mut = cssVar('--muted'), go = cssVar('--go-film'), tk = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+  // (the gap's shear rate within a tenth of a decade of 2.7 1/s -- as at the defaults: one mark for both)
+  const one = Math.abs(L10(g.gd) - L10(2.7)) < 0.1, f = v => v.toFixed(v >= 10 ? 1 : 2);
+  plotChart(cv, 0.5, { x0, x1, y0, y1, xticks: tk(x0, x1), yticks: tk(y0, y1), xf: dec, yf: dec, xl: 'shear rate (1/s)', yl: 'viscosity (Pa·s)',
+    vl: one ? [{ x: L10(g.gd), c: acc, t: '' }] : [{ x: L10(2.7), c: mut, t: '' }, { x: L10(g.gd), c: acc, t: '' }], s: [{ p, c: go, w: 2.4 }] });
+  const lg = document.getElementById('mxFlowLg');
+  if (lg) lg.innerHTML = oneDLegend([[`viscosity, ${RHEO_MODELS[CFDG.model].l}`, go], ...(one ? [[`the gap, ${f(g.gd)} 1/s (U/H), and 2.7 1/s where you set it: ${f(g.mu)} Pa·s`, acc, 'dash']]
+    : [[`2.7 1/s, where you set it: ${P.mu} Pa·s`, mut, 'dash'], [`the gap, ${f(g.gd)} 1/s (U/H): ${f(g.mu)} Pa·s`, acc, 'dash']])]);
 }
 /** The flakes' alignment (stage 3): where it stands at each location, and where it is computed. */
 function procAlignHTML() {
+  const btn = (go, ico, t, primary) => `<button type="button" class="btn ${primary ? 'btn-primary' : 'btn-secondary'} btn-sm" data-chain="${go}">${uiIco(ico)}${t}</button>`;
+  if (!MAT.orient.on) return emptyHint('The flakes\' alignment is off', 'It is switched on and set on the alignment card, on Materials.', btn(13, 13, 'The alignment card', true));
   const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null);
-  const rows = o.map((q, i) => `<tr><th>L${i + 1}</th><td>${q ? q.film.oven.Sy.toFixed(2) : '—'}</td><td>${q && q.film.dried ? q.film.dried.Sy.toFixed(2) : '—'}</td></tr>`).join('');
-  return `<div class="proc-card">${MAT.orient.on ? `<table class="proc-kv"><thead><tr><th></th><th>Flatness at the oven</th><th>Dried</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="fv-why">The flakes' flatness (1: all flat) is computed with each 2D run, along its streamlines to the film. Run the 2D at a location to fill its row.</p>` : '<p class="fv-why">The flakes\' alignment is off (Materials).</p>'}
-    <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Flow › 2D</button><button type="button" class="btn btn-secondary btn-sm" data-chain="13">${uiIco(13)}The alignment card</button></div></div>`;
+  if (!o.some(Boolean)) return emptyHint('Not computed yet', 'The flakes\' alignment is computed along the flow with each 2D run, at each location.', btn(4, 4, 'Run the 2D', true) + btn(13, 13, 'The alignment card'));
+  // (flatness S: 1 all flat, 0 at random -- a bar each, at the oven and dried)
+  const bar = v => v == null ? '<td class="ln-na">—</td>' : `<td class="ln-util"><span class="ln-track"><span class="ln-fill fl-fill" style="width:${(Math.max(0, Math.min(1, v)) * 100).toFixed(1)}%"></span></span><span class="ln-pct">${v.toFixed(2)}</span></td>`;
+  const rows = o.map((q, i) => `<tr><th scope="row"><i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1} <small>z ${CFD_LOCS[i].z} mm</small></th>${q ? bar(q.film.oven.Sy) + bar(q.film.dried ? q.film.dried.Sy : null) : '<td colspan="2" class="ln-na">Not run: the 2D at this location</td>'}</tr>`).join('');
+  return `<div class="proc-card fl-card"><div class="table-wrap"><table class="cfd-table fl-table"><thead><tr><th scope="col">Location</th><th scope="col">Flatness at the oven <small>S, 1: all flat</small></th><th scope="col">Flatness, dried <small>S</small></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="prop-actions">${btn(4, 4, 'Coating › 2D')}${btn(13, 13, 'The alignment card')}</div></div>`;
 }
 /** A stage's answer in one line (Q117: its line in the chain), then its warnings folded behind a button. */
 function procAnswerHTML(line, warnHTML) {
@@ -136,36 +197,44 @@ function processShowStage() {
   if (wb) wb.dataset.procStage = k;
   document.querySelectorAll('.proc-stage').forEach(el => { el.hidden = el.dataset.stageOf !== k; });
   document.querySelectorAll('#modWb .mod-vp > figure.pane, #modWb .mod-extra').forEach(el => { el.hidden = k !== 'coat'; });
-  const step = processStep(k);
+  const step = processStep(procStepKey(k));
   document.querySelectorAll('.proc-stage[data-stage-of="' + k + '"]').forEach(el => { if (step) el.dataset.step = step; else delete el.dataset.step; });
 }
 
 // ---- the page ----
-/** The inputs bar on the Process tab: the oven's zones, and the slurry card's values the mass balance uses. */
+/**
+ * The inputs bar on a stage's tab (WF-2: only that stage's inputs): Mixing and the coating's results, the slurry card's
+ * values (from Materials); Drying, the oven's zones; Peel and wind, Cutting and Pre heat treatment, their rows of what
+ * follows the oven; Furnace and Graphene film, the furnace.
+ */
+const PROC_BAR = { mix: [], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'] };
 function processSidebar() {
-  const open = k => FV.tree[k] !== false ? ' open' : '';
+  const open = k => FV.tree[k] !== false ? ' open' : '', pg = navNow(), part = NAV[pg].fv;
   const c = MAT.slurry, row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
-  document.getElementById('setupExtra').innerHTML = `
-    <div class="tree-sep">Process setup</div>
-    <details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>Drying air (oven)</summary>${ovenZonesTree({ peel: true })}</details>
-    <details class="grp cfd-grp" data-tree="furn"${FV.tree.furn ? ' open' : ''}><summary>The furnace</summary>${furnTreeHTML()}</details>
-    <details class="grp cfd-grp" data-tree="matro"${open('matro')}><summary>From the materials</summary>
+  const G = {
+    oven: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>Drying air (oven)</summary>${ovenZonesTree()}</details>`,
+    peel: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[part]}</summary>${ovenZonesTree({ zones: false, peel: part })}</details>`,
+    furn: () => `<details class="grp cfd-grp" data-tree="furn"${FV.tree.furn !== false ? ' open' : ''}><summary>The furnace</summary>${furnTreeHTML()}</details>`,
+    matro: () => `<details class="grp cfd-grp" data-tree="matro"${open('matro')}><summary>From the materials</summary>
       ${row('Solids (GO)', `${c.phi.v} vol%`)}${row('GO density', `${c.rhoS.v} g/cm³`)}${row('Liquid (water)', `${c.rhoL.v} kg/m³`)}${row('Dry film packing', `${c.phiDry.v}`)}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`)}
       <p class="prop-note">The slurry's card, on Materials. Its density follows from the solids, and the flow models use it.</p>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="procToMat">${uiIco(13)}Edit in Materials</button></div>
-    </details>`;
+    </details>`,
+  };
+  // (Mixing: none -- its page shows the slurry card's values, its inputs are the slurry's flow above)
+  const groups = PROC_BAR[pg] || ['oven', 'furn', 'matro'];
+  document.getElementById('setupExtra').innerHTML = groups.length ? `<div class="tree-sep">${navTitle(pg)}: its setup</div>${groups.map(k => G[k]()).join('')}` : '';
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
-  document.getElementById('procToMat').onclick = () => { tab = 13; render(); };
+  const toMat = document.getElementById('procToMat'); if (toMat) toMat.onclick = () => { tab = 13; render(); };
   wireOvenZones(() => processPage(true), render);
-  wireFurnTree(() => processPage(true));
+  if (document.querySelector('#setupExtra [data-tree="furn"]')) wireFurnTree(() => processPage(true));
 }
-/** Open a stage (from its tab, a link or another tab's "See it on Process"), at the page's top. */
+/** Open a stage (from a link or another tab's "See it"), at the page's top: the film's and the furnace's on the part shown last. */
 function processGo(k, step) {
   if (!STAGE_TAB[k]) return;
-  PROC.stage = k; if (step) PROC.step[k] = step;
+  PROC.stage = k; if (step) PROC.step[procStepKey(k)] = step;
   tab = 12; render();
   const vp = document.querySelector('.mod-vp'); if (vp) vp.scrollTop = 0;
-  const b = document.querySelector(`.proc-tabs [data-stage="${k}"]`); if (b && document.activeElement && document.activeElement.closest && document.activeElement.closest('.proc-tabs')) b.focus();
 }
 function viewProcess() {
   processSidebar();
@@ -180,7 +249,7 @@ function processPageBody() {
   oneDRequest(true);
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   view.innerHTML = moduleFrame({
-    top: processChainHTML() + processStageHead()
+    top: processStageHead()
       + `<div class="proc-stage" data-stage-of="slurry">${procSlurryHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="align">${procAlignHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="dry">${drySectionHTML()}</div>`
@@ -188,36 +257,26 @@ function processPageBody() {
       + `<div class="proc-stage" data-stage-of="furn">${furnSectionHTML()}</div>`,
     panes: [{ id: 'pr1', icon: 'film', title: 'Wet and dry film across the web', aria: 'Wet film and dry film against position across the web',
       legend: oneDLegend([['wet film', mut, 'dash'], ['dry film (mass balance)', acc]]),
-      note: 'The wet film is the 1D gap flow at every position across the web (Flow › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
-    extra: `<div class="proc-table" id="procTable"></div><div class="prop-actions proc-go"><button type="button" class="btn btn-secondary btn-sm" data-chain="8">${uiIco(8)}Flow › 1D: the gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-chain="11">${uiIco(11)}Across the web</button><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Flow › 2D</button></div>`,
+      note: 'The wet film is the 1D gap flow at every position across the web (Coating › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
+    extra: `<div class="proc-table" id="procTable"></div><div class="prop-actions proc-go"><button type="button" class="btn btn-secondary btn-sm" data-chain="8">${uiIco(8)}Coating › 1D: the gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-chain="11">${uiIco(11)}Across the web</button><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Coating › 2D</button></div>`,
   });
   processShowStage();
+  procSlurryDraw();
   if (!view.dataset.wired) {
     view.dataset.wired = '1';
-    // (the stages' tabs by the keyboard: arrows, Home and End move to a stage and open it)
-    view.addEventListener('keydown', e => {
-      const b = e.target.closest && e.target.closest('.proc-tabs [data-stage]');
-      if (!b || tab !== 12 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-      const ks = Object.keys(STAGE_TAB), i = ks.indexOf(b.dataset.stage);
-      const j = e.key === 'Home' ? 0 : e.key === 'End' ? ks.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + ks.length) % ks.length;
-      e.preventDefault(); processGo(ks[j]);
-      const nb = document.querySelector(`.proc-tabs [data-stage="${ks[j]}"]`); if (nb) nb.focus();
-    });
     view.addEventListener('click', e => {
       if (tab !== 12) return;
-      // (a stage's tab; a step of the stage shown)
-      const st = e.target.closest && e.target.closest('[data-stage]');
-      if (st && st.closest('.proc-tabs')) { processGo(st.dataset.stage); return; }
+      // (a step of the page shown)
       const pc = e.target.closest && e.target.closest('[data-pchart]');
       if (pc) { const [k, id] = pc.dataset.pchart.split('|'); PROC_CHART[k] = id; procShowChart(k); if (k === 'dry') dryRender(); else filmRender(); return; }
       const sp = e.target.closest && e.target.closest('[data-pstepgo]');
-      if (sp) { PROC.step[PROC.stage] = sp.dataset.pstepgo; render(); return; }
+      if (sp) { PROC.step[procStepKey()] = sp.dataset.pstepgo; render(); return; }
       const b = e.target.closest && e.target.closest('[data-chain]');
       if (!b) return;
       const go = b.dataset.chain;
       if (go === 'dry' || go === 'film' || go === 'furn') processGo(go);
       else if (go === 'furnin') { FV.tree.furn = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="furn"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
-      else if (go === 'peel') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; const b = document.getElementById('ovzPeel'); if (b) b.scrollIntoView({ block: 'nearest' }); const f = document.getElementById('ovzPeelLen'); if (f) f.focus(); } }
+      else if (go === 'peel') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; const b = document.getElementById('ovzPeel'); if (b) b.scrollIntoView({ block: 'nearest' }); const f = document.getElementById('ovzPeelLen') || (b && b.querySelector('input')); if (f) f.focus(); } }
       else if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else { tab = +go; render(); }
     });
@@ -263,7 +322,8 @@ function drawProcessTable(locs, web) {
   const host = document.getElementById('procTable');
   if (!host) return;
   const U = lineSpeed(), W = ACROSS_W / 1000;
-  const cols = [...locs.map((q, i) => ({ h: q && q.h, head: `L${i + 1}<small>z ${CFD_LOCS[i].z} mm${q ? ` · ${q.src}` : ''}</small>` })), { h: web && web.mean, head: `The web<small>mean${web ? ` · ${web.tag}` : ''}</small>` }];
+  // (the columns alike: a location's z and the model its film is from; the web's mean, its source on hover)
+  const cols = [...locs.map((q, i) => ({ h: q && q.h, head: `L${i + 1}<small>z ${CFD_LOCS[i].z} mm${q ? ` · ${q.src}` : ''}</small>` })), { h: web && web.mean, head: `The web<small>its mean</small>`, tip: web ? web.tag : '' }];
   const rows = [
     ['Wet film', 'mm', h => (h * 1000).toFixed(3)],
     ['Dry film', 'µm', h => um0(massBalance(h, U, W).dry)],
@@ -271,11 +331,11 @@ function drawProcessTable(locs, web) {
     ['Coat weight, wet', 'g/m²', h => gm2(massBalance(h, U, W).coatWet)],
     ['Water to take out', 'g/m²', h => (massBalance(h, U, W).water * 1000).toFixed(0)],
   ];
-  host.innerHTML = `<h3 class="oned-h">The mass balance at each location</h3><div class="oned-scroll"><table class="cfd-table proc-mb">
-    <tr><th>Quantity</th>${cols.map(c => `<th>${c.head}</th>`).join('')}</tr>
+  host.innerHTML = `<h3 class="oned-h">The mass balance at each location</h3><div class="oned-scroll"><table class="cfd-table proc-mb"><colgroup><col class="proc-mb-q">${cols.map(() => '<col>').join('')}</colgroup>
+    <thead><tr><th scope="col">Quantity</th>${cols.map(c => `<th scope="col"${c.tip ? ` title="${c.tip}"` : ''}>${c.head}</th>`).join('')}</tr></thead>
     ${rows.map(([t, u, f]) => `<tr><th scope="row">${t} <small>${u}</small></th>${cols.map(c => c.h != null ? `<td>${f(c.h)}</td>` : '<td class="na" title="solving">—</td>').join('')}</tr>`).join('')}
   </table></div>
-  <p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is above (4 · Drying in the oven); the film's stresses and peel, and its properties come in the next phases.</p>`;
+  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
 }
 
 // ---- Materials ----
@@ -285,7 +345,7 @@ const matFlagChip = f => f === 'calc' ? '<span class="mat-flag f-calc">Worked ou
 function matRheoBase() {
   const flag = c => /assumed/.test(c.h || '') ? 'assumed' : 'given', cf = k => CFG.find(c => c.k === k);
   return [
-    ['Rheology model', RHEO_MODELS[CFDG.model].l, '', 'given', 'chosen here or in Flow › 2D (the CFD setup)'],
+    ['Rheology model', RHEO_MODELS[CFDG.model].l, '', 'given', 'chosen here or in Coating › 2D (the CFD setup)'],
     ...['mu', 'n', 'ty', 'g'].map(k => { const c = cf(k), fit = (MAT.rheo.side || {})[k];
       return fit && fit.v === P[k] ? [c.l, P[k].toFixed(c.d), c.u, 'measured', fit.src] : [c.l, P[k].toFixed(c.d), c.u, flag(c), c.h || 'you (measured)']; }),
   ];
@@ -362,7 +422,7 @@ function viewMaterials() {
       ${furnCardHTML()}
       ${rtCardHTML()}
       <section class="mat-card" aria-labelledby="matFibreH">
-        <header><h3 id="matFibreH">${uiBadge('fibre')}Fibre web: what it is coated onto</h3><button type="button" class="linkish" id="matFibreEdit">Edit in Flow › 2D</button></header>
+        <header><h3 id="matFibreH">${uiBadge('fibre')}Fibre web: what it is coated onto</h3><button type="button" class="linkish" id="matFibreEdit">Edit in Coating › 2D</button></header>
         ${ro(matFibreRows())}
       </section>
     </div>`,
@@ -383,7 +443,7 @@ function viewMaterials() {
   }));
   view.querySelectorAll('input.mat-src[data-mk]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mk; MAT.slurry[k] = { ...MAT.slurry[k], src: el.value.trim() }; }));
   document.getElementById('matReset').onclick = () => { undoHint('Slurry card back to its defaults'); MAT = { ...MAT, slurry: matDefaults().slurry }; render(); };
-  // the rheology card: the model (as Flow › 2D's), the laws' extras and the structure
+  // the rheology card: the model (as Coating › 2D's), the laws' extras and the structure
   document.getElementById('matModel').addEventListener('change', e => { CFDG.model = e.target.value; render(); });
   const rKey = k => MAT_RHEO.find(q => q[0] === k);
   view.querySelectorAll('input[type=number][data-mr]').forEach(el => el.addEventListener('change', () => {

@@ -3,7 +3,7 @@
  * orient-ui.js — the flakes' alignment in the app (GO-2).
  *  - Materials: the alignment card: on or off; the model (the liquid crystal, Doi–Hess, the default; or the
  *    suspension, Folgar–Tucker) and its values, each with where it is from; the flakes' shape from the slurry card.
- *  - Flow › 2D › Flakes (a results panel): the alignment the 2D computed along its flow to the film and on the web to
+ *  - Coating › 2D › Flakes (a results panel): the alignment the 2D computed along its flow to the film and on the web to
  *    the oven (cfd-orient.js, in the 2D's worker): the flatness through the film leaving the blade and at the oven,
  *    the two SEM cuts (their flakes' angles, their order through the film), a cross-section drawn from the flakes, a
  *    table by streamline; redone alone (the flow as solved) after its values change.
@@ -36,7 +36,7 @@ const orRowOff = q => !MAT.orient.on ? 'the alignment is off' : q[10] !== 'num' 
 function orCardHTML() {
   const o = MAT.orient;
   return `<section class="mat-card" aria-labelledby="matOrH">
-    <header><h3 id="matOrH">${uiBadge('fibre')}Flakes: how they line up</h3><button type="button" class="linkish" id="matOrSee">See them in Flow › 2D</button></header>
+    <header><h3 id="matOrH">${uiBadge('fibre')}Flakes: how they line up</h3><button type="button" class="linkish" id="matOrSee">See them in Coating › 2D</button></header>
     <div class="mat-sub"><label class="mat-switch"><input type="checkbox" id="matOrOn"${o.on ? ' checked' : ''}><b>Alignment</b></label><span>${o.on ? 'on: computed with each 2D run, along its flow to the film and on the web to the oven' : 'off: the 2D computes no alignment'}</span></div>
     <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
     <div class="mat-row${o.on ? '' : ' mat-off'}"><label class="mat-l" for="matOrModel">Model</label><span class="mat-v"><select id="matOrModel" class="mat-msel"${o.on ? '' : ' disabled'}>${Object.entries(OR_MODELS).map(([k, l]) => `<option value="${k}"${k === o.model ? ' selected' : ''} title="${l}">${l.replace(/ \(.*/, '')}</option>`).join('')}</select></span>${matFlagChip('given')}<span class="mat-src-t" title="${OR_MODELS[o.model]}">${OR_MODELS[o.model]}: the default (you), for your ${MAT.slurry.phi.v} vol% of flakes about ${Math.round(1 / matFlakeRatio())} × wider than thick</span></div>
