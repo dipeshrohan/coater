@@ -243,5 +243,130 @@ const fmt = x => x.toExponential(2);
   check('transversely isotropic stiffness: film.js\'s constants, and E_p, E_t, ν_pt back from it', e < 1e-12, fmt(e));
 }
 
+// 18. stored water (a nonlinear isotherm): sealed, none is lost; open at a face, what it holds falls by what flows out
+{
+  const Xm = 0.07, Cg = 8, Kg = 0.8, ps = 1e5, rho = 1400, Kp = 3e-9;
+  const gab = a => { const u = Kg * Math.min(Math.max(a, 0), 0.999); return Xm * Cg * u / ((1 - u) * (1 - u + Cg * u)); };
+  const dgab = a => (gab(a + 1e-7) - gab(a - 1e-7)) / 2e-7;
+  const S = (m, p) => rho * gab(p / ps), Cs = (m, p) => rho * dgab(p / ps) / ps;
+  const M = C.mpMesh({ dim: 2, p: 1, axes: [{ L: 0.05, n: 12, grade: 4 }, { L: 0.05, n: 12, grade: 4 }] });
+  for (const lump of [false, true]) {
+    const u0 = x => ps * (0.2 + 0.6 * x[0] / 0.05);
+    const T1 = C.mpTransport(M, { K: Kp, C: Cs, S, lump, u0, picard: 30, tol: 1e-12 });
+    const m0 = T1.stored(); for (let k = 1; k <= 20; k++) T1.step(k * 600, 600);
+    const drift = Math.abs(T1.stored() - m0) / m0;
+    // (one face held: a node on two held faces would count in both)
+    const T3 = C.mpTransport(M, { K: Kp, C: Cs, S, lump, u0: ps * 0.8, picard: 30, tol: 1e-12, bc: [{ face: 'x1', type: 'value', u: ps * 0.1 }] });
+    let out3 = 0; const s3 = T3.stored(); for (let k = 1; k <= 20; k++) { T3.step(k * 600, 600); out3 -= T3.fluxIn('x1') * 600; }
+    const bal = Math.abs((s3 - T3.stored()) - out3) / (s3 - T3.stored());
+    check(`stored water through a nonlinear isotherm${lump ? ' (lumped)' : ''}: sealed none lost; open, the loss is the outflow`, drift < 1e-10 && bal < 1e-8,
+      `sealed ${fmt(drift)}; balance ${fmt(bal)} of ${((s3 - T3.stored()) / s3 * 100).toFixed(1)} % lost`);
+  }
+  // a linear store (S = C u) is the capacity form exactly
+  const a = C.mpScalar(M, { K: Kp, C: 5, u0: 1, times: [3000], dt: 300, dtMax: 300, bc: [{ face: 'x1', type: 'value', u: 0 }] });
+  const b = C.mpScalar(M, { K: Kp, C: 5, S: (m, uu) => 5 * uu, u0: 1, times: [3000], dt: 300, dtMax: 300, bc: [{ face: 'x1', type: 'value', u: 0 }] });
+  const e = Math.max(...a.u.map((v, k) => Math.abs(v - b.u[k])));
+  check('a linear store is the capacity form exactly', e < 1e-12, fmt(e));
+}
+
+// 19. lumped capacity: the transient slab converges to the series as the consistent one does
+{
+  const L = 1e-3, D = 1e-7, tau = L * L / D, M = C.mpMesh({ dim: 1, p: 1, axes: [[{ L, n: 80 }]] });
+  const r = C.mpScalar(M, { K: D, C: 1, lump: true, u0: 0, bc: [{ face: 'x0', type: 'value', u: 1 }, { face: 'x1', type: 'value', u: 1 }], times: [0.05 * tau], dt: 1e-5 * tau, dtMax: 1e-4 * tau, grow: 1.1 });
+  const exact = x => { let s = 1; for (let n = 0; n < 200; n++) { const m = 2 * n + 1; s -= 4 / (m * Math.PI) * Math.sin(m * Math.PI * x / L) * Math.exp(-m * m * Math.PI * Math.PI * 0.05); } return s; };
+  let mn = Infinity; for (const v of r.u) mn = Math.min(mn, v);
+  const e = maxErr(M, r.u, x => exact(x[0]));
+  check('lumped capacity: the slab against its series, never below its start', e < 2e-3 && mn >= -1e-12, `${fmt(e)}; lowest ${fmt(mn)}`);
+}
+
+// 20. the flow through faces with air and radiation: a steady slab's heat in at one face = out at the other
+{
+  const M = C.mpMesh({ dim: 2, p: 2, axes: [{ L: 0.01, n: 4 }, { L: 0.02, n: 3 }] });
+  const T = C.mpTransport(M, { K: 3, picard: 60, tol: 1e-13, u0: 100, bc: [{ face: 'x0', type: 'robin', h: 200, uInf: 300 }, { face: 'x1', type: 'rad', eps: 0.9, uInf: 20 }] });
+  T.steady();
+  const qi = T.faceIn('x0'), qo = -T.faceIn('x1');
+  check('heat in through air at one face = out by radiation at the other (steady)', rel(qi, qo) < 1e-9, `${qi.toFixed(4)} W/m in, ${qo.toFixed(4)} out`);
+}
+
+// 21. heat and moisture together (mpHeatMoisture)
+{
+  const DR = require('./drying.js');
+  const M = C.mpMesh({ dim: 2, p: 1, axes: [{ L: 0.02, n: 10, grade: 3 }, { L: 0.004, n: 4 }] });
+  const k = 0.5, CT = 2e6, Kv = 2e-10, Sl = p => 0.02 * p;   // a linear store (kg/m³ per Pa)
+  // (a) no latent heat and a store that does not feel the temperature: the heat and the water as two separate solves
+  const hm = C.mpHeatMoisture(M, { kT: k, CT: () => CT, Kv, S: (m, p) => Sl(p), dS: () => [0.02, 0], L: 0, T0: 20, p0: 2000,
+    bcT: [{ face: 'x0', type: 'robin', h: 30, uInf: 90 }], bcV: [{ face: 'x1', type: 'value', u: 500 }] });
+  const ht = C.mpTransport(M, { K: k, C: CT, lump: true, u0: 20, bc: [{ face: 'x0', type: 'robin', h: 30, uInf: 90 }] });
+  const wt = C.mpTransport(M, { K: Kv, C: 0.02, lump: true, u0: 2000, bc: [{ face: 'x1', type: 'value', u: 500 }] });
+  let t = 0; for (let i = 1; i <= 12; i++) { const dt = 30 * i; t += dt; hm.step(t, dt); ht.step(t, dt); wt.step(t, dt); }
+  const eT = Math.max(...hm.T.map((v, n) => Math.abs(v - ht.u[n]))), eP = Math.max(...hm.p.map((v, n) => Math.abs(v - wt.u[n])));
+  check('heat and moisture uncoupled = the two separate solves', eT < 1e-9 && eP < 1e-6, `T ${fmt(eT)} K, p ${fmt(eP)} Pa`);
+  // (b) coupled (a GAB-like store at the local temperature, the latent heat): sealed, the water stays and the enthalpy
+  // rises by the heat in; open, the water lost flows out and the heat in = the rise of C_T T + L × the water lost
+  const gab = { Xm: 0.07, C: 8, K: 0.8 }, rho = 1400, Lc = 2.3e6;
+  const So = (m, p, T) => rho * DR.drGAB(Math.min(p / DR.drPsat(T), 0.99), gab);
+  const mk = open => C.mpHeatMoisture(M, { kT: [2, 0.3], CT: () => CT, Kv: [3e-8, 1e-11], S: So, L: Lc, T0: 20, p0: 0.7 * DR.drPsat(20),
+    bcT: [{ face: 'y1', type: 'robin', h: 12, uInf: 100 }, { face: 'y1', type: 'rad', eps: 0.9, uInf: 100 }, { face: 'x1', type: 'robin', h: 8, uInf: 100 }],
+    bcV: open ? [{ face: 'x1', type: 'value', u: 1200 }] : [], tol: 1e-13, iters: 200 });
+  for (const open of [false, true]) {
+    const R = mk(open), W0 = R.water(), H0 = R.enthalpy();
+    let Qin = 0, Vin = 0; t = 0;
+    for (let i = 1; i <= 6; i++) { const dt = 20 * i; t += dt; R.step(t, dt); Qin += (R.heatIn('y1') + R.heatIn('x1')) * dt; Vin += open ? R.vapourIn('x1') * dt : 0; }
+    const dW = R.water() - W0, dH = R.enthalpy() - H0;
+    const eW = Math.abs(dW - Vin) / W0, eH = Math.abs(dH - Qin) / Math.abs(Qin);
+    check(`heat and moisture coupled, ${open ? 'open at an edge: the water lost flowed out; the enthalpy rose by the heat in' : 'sealed: the water stays; the enthalpy rose by the heat in'}`,
+      eW < 1e-9 && eH < 1e-8, `water ${fmt(eW)}${open ? ` (${(-dW / W0 * 100).toFixed(1)} % lost)` : ''}, energy ${fmt(eH)}; T ${Math.min(...R.T).toFixed(1)}–${Math.max(...R.T).toFixed(1)} °C`);
+  }
+  // (c) the wet-bulb: a thin wet slab (its store near full) in hot air, water leaving from its face: its temperature
+  // settles where the heat in = L × the vapour out, h (T∞ − T) = L β (a p_sat(T) − p∞)
+  const h = 25, beta = 2e-7, Tinf = 80, pinf = 2000, a0 = 0.95, Sbig = 5e5;
+  const Mw = C.mpMesh({ dim: 1, p: 1, axes: [[{ L: 1e-3, n: 4 }]] });
+  const R = C.mpHeatMoisture(Mw, { kT: 50, CT: () => 1e6, Kv: 1e-6, S: (m, p, T) => Sbig * p / DR.drPsat(T), L: Lc, T0: 20, p0: a0 * DR.drPsat(20),
+    bcT: [{ face: 'x1', type: 'robin', h, uInf: Tinf }], bcV: [{ face: 'x1', type: 'robin', h: beta, uInf: pinf }] });
+  t = 0; for (let i = 0; i < 400; i++) { t += 5; R.step(t, 5); }
+  const a = R.p[0] / DR.drPsat(R.T[0]);
+  let lo = 0, hi = Tinf; for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (h * (Tinf - m) - Lc * beta * (a * DR.drPsat(m) - pinf) > 0) lo = m; else hi = m; }
+  check('a wet surface in hot air settles at its wet-bulb temperature', Math.abs(R.T[0] - lo) < 0.02, `${R.T[0].toFixed(3)} °C (the balance ${lo.toFixed(3)} °C at a = ${a.toFixed(4)}; the air ${Tinf} °C)`);
+  // (d) 2D varying along x only = 1D (coupled)
+  const M1 = C.mpMesh({ dim: 1, p: 1, axes: [[{ L: 0.02, n: 10, grade: 3 }]] }), M2 = C.mpMesh({ dim: 2, p: 1, axes: [[{ L: 0.02, n: 10, grade: 3 }], { L: 0.003, n: 2 }] });
+  const oo = { kT: 2, CT: () => CT, Kv: 3e-8, S: So, L: Lc, T0: 20, p0: 0.7 * DR.drPsat(20), bcT: [{ face: 'x0', type: 'robin', h: 20, uInf: 100 }], bcV: [{ face: 'x1', type: 'value', u: 1200 }] };
+  const r1 = C.mpHeatMoisture(M1, oo), r2 = C.mpHeatMoisture(M2, oo);
+  t = 0; for (let i = 1; i <= 15; i++) { const dt = 20 * i; t += dt; r1.step(t, dt); r2.step(t, dt); }
+  let e1 = 0, e2 = 0; for (let n = 0; n < M2.N; n++) { const x = [M2.X[n * 2]]; e1 = Math.max(e1, Math.abs(r2.T[n] - C.mpAt(M1, r1.T, x))); e2 = Math.max(e2, Math.abs(r2.p[n] - C.mpAt(M1, r1.p, x))); }
+  check('heat and moisture: a 2D varying along x only = the 1D', e1 < 1e-8 && e2 < 1e-6, `T ${fmt(e1)} K, p ${fmt(e2)} Pa`);
+}
+
+// 22. heat and moisture in time: BDF2 is second order (the water of a strip through a nonlinear isotherm, against an
+//     independent explicit reference); its discrete balance holds step by step
+{
+  const DR = require('./drying.js'), P = require('./press.js');
+  const gab = { Xm: 0.07, C: 8, K: 0.8 }, ps = DR.drPsat(100), aE = 0.5 * DR.drPsat(22) / ps, K = 3e-7, rho = 1500, G = K * ps / rho, L = 0.15, tEnd = 120;
+  // the reference: explicit finite volumes on X, 100 cells, the stable step
+  const n = 100, dx = L / n, X = new Float64Array(n).fill(0.15);
+  let dadX = 0; for (let a = 0.001; a < 0.99; a += 0.001) dadX = Math.max(dadX, 1 / P.prGABslope(a, gab));
+  const ns = Math.ceil(tEnd / (0.4 * dx * dx / (G * dadX))), h = tEnd / ns, a = new Float64Array(n), F = new Float64Array(n + 1);
+  for (let s = 0; s < ns; s++) {
+    for (let i = 0; i < n; i++) a[i] = P.prActivity(X[i], gab);
+    for (let i = 1; i < n; i++) F[i] = -G * (a[i] - a[i - 1]) / dx;
+    F[n] = -G * (aE - a[n - 1]) / (dx / 2);
+    for (let i = 0; i < n; i++) X[i] -= h * (F[i + 1] - F[i]) / dx;
+  }
+  const ref = X[0];
+  const M = C.mpMesh({ dim: 1, p: 1, axes: [[{ L, n: 100 }]] });
+  const run = (bdf2, steps) => {
+    const R = C.mpHeatMoisture(M, { kT: 1e3, CT: () => 1e6, Kv: K, L: 0, bdf2, tol: 1e-12, iters: 100, T0: 100, p0: P.prActivity(0.15, gab) * ps,
+      S: (m, p) => rho * P.prGAB(p / ps, gab), dS: (m, p) => [rho * P.prGABslope(p / ps, gab) / ps, 0],
+      bcT: [{ face: 'x0', type: 'value', u: 100 }], bcV: [{ face: 'x1', type: 'value', u: aE * ps }] });
+    const W0 = R.water(); let t = 0, held = 0, inflow = 0;
+    for (let k = 0; k < steps; k++) { const dt = tEnd / steps; t += dt; R.step(t, dt); held += R.stepHeld.W; inflow += R.vapourIn('x1') * dt; }
+    return { X: P.prGAB(R.p[0] / ps, gab), bal: Math.abs(held - inflow) / W0 };
+  };
+  const ie = [run(false, 20), run(false, 40)], bd = [run(true, 20), run(true, 40)];
+  const eI = ie.map(r => Math.abs(r.X - ref)), eB = bd.map(r => Math.abs(r.X - ref));
+  check('BDF2 in time: its error falls about 4× per halving and is far below implicit Euler\'s', eB[0] / eB[1] > 3 && eB[1] < 0.2 * eI[1],
+    `reference ${ref.toFixed(6)}; implicit Euler ${eI.map(fmt).join(' → ')}; BDF2 ${eB.map(fmt).join(' → ')}`);
+  check('BDF2: the water that flowed out is the change of what is held, step by step', bd.every(r => r.bal < 1e-10), bd.map(r => fmt(r.bal)).join(', '));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;
