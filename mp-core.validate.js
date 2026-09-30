@@ -368,5 +368,47 @@ const fmt = x => x.toExponential(2);
   check('BDF2: the water that flowed out is the change of what is held, step by step', bd.every(r => r.bal < 1e-10), bd.map(r => fmt(r.bal)).join(', '));
 }
 
+// 23. a source at the nodes with its slope (Qn, Newton; MP-2's reaction heat): a fin (−k u'' + b u = 0, the exact cosh,
+//     second order in the mesh); Bratu's problem (−u'' = λ eᵘ: exact, Newton's few iterations); an insulated body heated
+//     by an Arrhenius source: what it holds rises by what the source gives, step by step
+{
+  const L = 1, k = 1, b = 25, m = Math.sqrt(b / k), ex = x => Math.cosh(m * (L - x[0])) / Math.cosh(m * L);
+  const fin = n => { const M = C.mpMesh({ dim: 1, p: 1, axes: [[{ L, n }]] });
+    const T = C.mpTransport(M, { K: k, Qn: (mm, nd, u) => [-b * u, -b], bc: [{ face: 'x0', type: 'value', u: 1 }], u0: 0, picard: 3, tol: 1e-13 });
+    T.steady(); return maxErr(M, T.u, ex); };
+  const e1 = fin(20), e2 = fin(40);
+  check('a nodal source: the fin against its exact cosh, second order', e2 < 2e-3 && e1 / e2 > 3.6 && e1 / e2 < 4.4, `${fmt(e1)} → ${fmt(e2)} (ratio ${(e1 / e2).toFixed(2)})`);
+  // Bratu, λ = 1: u = −2 ln(cosh((x − ½) θ/2) / cosh(θ/4)), θ = √(2λ) cosh(θ/4)
+  let th = 1; for (let i = 0; i < 200; i++) th = Math.sqrt(2) * Math.cosh(th / 4);
+  const bex = x => -2 * Math.log(Math.cosh((x[0] - 0.5) * th / 2) / Math.cosh(th / 4));
+  const bratu = n => { const M = C.mpMesh({ dim: 1, p: 1, axes: [[{ L: 1, n }]] });
+    const T = C.mpTransport(M, { K: 1, Qn: (mm, nd, u) => [Math.exp(u), Math.exp(u)], bc: [{ face: 'x0', type: 'value', u: 0 }, { face: 'x1', type: 'value', u: 0 }], u0: 0, picard: 30, tol: 1e-13 });
+    T.steady(); return [maxErr(M, T.u, bex), T.iters]; };
+  const [b1, it1] = bratu(40), [b2] = bratu(80);
+  check('Bratu\'s problem by Newton: its exact solution (second order), in a few iterations', b2 < 1e-4 && b1 / b2 > 3.6 && it1 <= 6, `${fmt(b1)} → ${fmt(b2)}, ${it1} iterations`);
+  // an insulated 2D block, an Arrhenius heat at its nodes (state: what has reacted, kept at each node), enthalpy S(T)
+  const M = C.mpMesh({ dim: 2, p: 1, axes: [[{ L: 0.01, n: 4 }], [{ L: 0.01, n: 4 }]] }), rho = 2e6, H = 4e8, A = 1e5, E = 5e4, R = 8.314;
+  const left = new Float64Array(M.N).fill(1), T0 = new Float64Array(M.N);
+  let dtNow = 1;
+  // (over a step at the node's new T: first order, exact in time at a fixed T: dα = left (1 − e^(−k dt)))
+  const rate = T => A * Math.exp(-E / (R * (T + 273.15)));
+  const react = (n, T) => { const kk = rate(T), f = -Math.expm1(-kk * dtNow); return [left[n] * f, left[n] * Math.exp(-kk * dtNow) * dtNow * kk * E / (R * (T + 273.15) ** 2)]; };
+  const Tr = C.mpTransport(M, { K: 1, C: (mm, u) => rho * (1 + 1e-3 * u), S: (mm, u) => rho * (u + 5e-4 * u * u), lump: true,
+    Qn: (mm, n, u) => { const [da, dd] = react(n, u); return [H * da / dtNow, H * dd / dtNow]; }, u0: 100, picard: 40, tol: 1e-13 });
+  let worst = 0, t = 0;
+  for (let s = 0; s < 40; s++) {
+    dtNow = 2; const before = Tr.stored(); T0.set(Tr.u);
+    Tr.step(t += dtNow, dtNow);
+    const q = Tr.nodalIn() * dtNow, after = Tr.stored();
+    worst = Math.max(worst, Math.abs(after - before - q) / Math.max(1, Math.abs(q)));
+    for (let n = 0; n < M.N; n++) left[n] -= react(n, Tr.u[n])[0];
+  }
+  const Tend = Tr.u[0];
+  // (the adiabatic rise: all of it reacted gives H / rho on the enthalpy; S(T) = rho (T + 5e-4 T²))
+  const held = rho * (Tend + 5e-4 * Tend * Tend) - rho * (100 + 5e-4 * 1e4), gone = H * (1 - left[0]);
+  check('an Arrhenius heat at the nodes: what the body holds rises by what the source gives, step by step; even', worst < 1e-9 && rel(held, gone) < 1e-9 && Math.max(...Tr.u) - Math.min(...Tr.u) < 1e-9,
+    `balance ${fmt(worst)}; ${(100 * (1 - left[0])).toFixed(1)} % reacted, ${Tend.toFixed(2)} °C`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

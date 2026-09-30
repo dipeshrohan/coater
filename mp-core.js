@@ -355,10 +355,12 @@ const mpVal = (f, ...args) => (typeof f === 'function' ? f(...args) : f);
  *        { face, type: 'robin', h (x, t, u), uInf (x, t) } | { face, type: 'rad', eps (x, t), uInf, abs (added to u
  *        for kelvin; default 273.15) }],
  *   u0 (number, array, or (x) → u), theta (1: implicit Euler, the default; 0.5 Crank–Nicolson; S needs 1),
+ *   Qn (m, n, u_n, t) → [q, dq/du]: a source per volume at node n (each node its share of the element, as lumped),
+ *   with its slope, taken implicitly and by Newton (a reaction's heat whose state is kept at the nodes),
  *   picard (iterations when anything depends on u; default 1: linear), tol (relative; default 1e-8) }.
  * mpTransport returns { u (the field now), t, step(t, dt, fields) (to time t over dt; fields: the new time's),
  * steady(t), fluxIn(face) (the flow into the body through a face held at a value), faceIn(face) (through a face with
- * a transfer coefficient or radiation, at u now), iters }.
+ * a transfer coefficient or radiation, at u now), setFields(f), nodalIn() (∫ Qn at u now), stored(), iters }.
  */
 function mpTransport(M, o) {
   const dim = M.dim, npe = M.npe, N = M.N, nq = M.p + 1, rule = mpRule(M.p, dim, nq), nr = rule.length;
@@ -371,13 +373,24 @@ function mpTransport(M, o) {
   let fields = o.fields || {}, names = Object.keys(fields);
   const fAt = (e, Nv) => { const f = {}; for (const k of names) { let s = 0; for (let a = 0; a < npe; a++) s += Nv[a] * fields[k][M.conn[e * npe + a]]; f[k] = s; } return f; };
   const fNode = n => { const f = {}; for (const k of names) f[k] = fields[k][n]; return f; };
-  const xNode = n => Array.from(M.X.subarray(n * dim, n * dim + dim));
+  // (the mesh does not move: the nodes' coordinates, each element's Jacobians at its points and the faces' points are
+  //  worked out once and kept -- a Newton iteration then assembles without them)
+  const XN = new Array(N), xNode = n => XN[n] || (XN[n] = Array.from(M.X.subarray(n * dim, n * dim + dim)));
+  const JC = M.E * nr * npe * dim < 2e7 ? new Array(M.E * nr) : null;
+  const jac = (e, q, qi) => {
+    if (!JC) return mpJac(M, e, q, dNdx);
+    let c = JC[e * nr + qi];
+    if (!c) { const r = mpJac(M, e, q, dNdx); c = JC[e * nr + qi] = { det: r.det, x: r.x, d: Float64Array.from(dNdx) }; }
+    else dNdx.set(c.d);
+    return c;
+  };
+  const facePts = (bc, e) => { const c = bc.pts || (bc.pts = new Map()); let v = c.get(e); if (!v) { v = mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq); c.set(e, v); } return v; };
   const Kof = (m, uq, x, f) => { const k = mpVal(o.K, m, uq, x, f); return Array.isArray(k) ? k : [k, k, k]; };
   const Cof = (m, uq, x, f) => (o.C === undefined ? 1 : mpVal(o.C, m, uq, x, f));
-  const store = !!o.S, lump = !!o.lump;
-  // the elements' geometric shares at their nodes (lumping): Σ_q N_a w det J
+  const store = !!o.S, lump = !!o.lump, nodal = typeof o.Qn === 'function';
+  // the elements' geometric shares at their nodes (lumping, a source at the nodes): Σ_q N_a w det J
   let share = null;
-  if (lump) {
+  if (lump || nodal) {
     share = new Float64Array(M.E * npe);
     for (let e = 0; e < M.E; e++) for (const q of rule) { const { det } = mpJac(M, e, q, dNdx); for (let a = 0; a < npe; a++) share[e * npe + a] += q.N[a] * q.w * det; }
   }
@@ -402,7 +415,7 @@ function mpTransport(M, o) {
       const m = M.mat[e], base = e * npe;
       ke.fill(0); fe.fill(0);
       rule.forEach((q, qi) => {
-        const { det, x } = mpJac(M, e, q, dNdx), W = q.w * det, f = fAt(e, q.N);
+        const { det, x } = jac(e, q, qi), W = q.w * det, f = fAt(e, q.N);
         let uq = 0; for (let a = 0; a < npe; a++) uq += q.N[a] * uk[M.conn[base + a]];
         const k = Kof(m, uq, x, f), C = Cof(m, uq, x, f), Qv = o.Q ? mpVal(o.Q, m, uq, x, t, f) : 0;
         const v = o.vel ? o.vel(m, x) : null, Cf = v ? (o.capFlow ? o.capFlow(m) : C) : 0;
@@ -447,6 +460,13 @@ function mpTransport(M, o) {
         if (store) fe[a] += ma * (C * uk[n] - (o.S(m, uk[n], xa, fa) - Sold[e * npe + a]));
         else fe[a] += C * ma * uOld[n];
       }
+      // a source at the nodes, per volume, with its slope (Newton: q(u) ≈ q(u_k) + q'(u_k)(u − u_k)), each node its
+      // share of the element (MP-2: a reaction's heat, its state kept at the nodes)
+      if (nodal) for (let a = 0; a < npe; a++) {
+        const n = M.conn[base + a], [qv, dq] = o.Qn(m, n, uk[n], t), sh = share[e * npe + a];
+        fe[a] += sh * (qv - (dq || 0) * uk[n]);
+        ke[a * npe + a] -= sh * (dq || 0);
+      }
       for (let a = 0; a < npe; a++) {
         const i = M.conn[base + a]; R[i] += fe[a];
         for (let b = 0; b < npe; b++) mpAdd(B, i, M.conn[base + b], ke[a * npe + b]);
@@ -457,7 +477,7 @@ function mpTransport(M, o) {
       if (bc.type === 'value') continue;
       for (const e of bc.fe.elems) {
         const base = e * npe;
-        for (const fp of mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq)) {
+        for (const fp of facePts(bc, e)) {
           let uq = 0; for (let a = 0; a < npe; a++) uq += fp.N[a] * uk[M.conn[base + a]];
           const [h, g] = faceHG(bc, fp, t, uq);   // the face adds h u to the operator and g to the right side
           for (let a = 0; a < npe; a++) {
@@ -505,6 +525,15 @@ function mpTransport(M, o) {
     T.u.set(solve(Float64Array.from(T.u), t, dt)); T.t = t;
     return T.u;
   };
+  /** Replace the fields without stepping (a stored amount then kept at the step's start with them: step(t, dt) after). */
+  T.setFields = f => { fields = f; names = Object.keys(fields); };
+  /** The nodal source's total now (∫ q, each node its share): at the last step's u and time. */
+  T.nodalIn = () => {
+    if (!nodal) return 0;
+    let s = 0;
+    for (let e = 0; e < M.E; e++) for (let a = 0; a < npe; a++) { const n = M.conn[e * npe + a]; s += share[e * npe + a] * o.Qn(M.mat[e], n, T.u[n], T.t)[0]; }
+    return s;
+  };
   T.steady = (t = 0, newFields) => {
     if (newFields) { fields = newFields; names = Object.keys(fields); }
     T.u.set(solve(Float64Array.from(T.u), t, null)); T.t = t;
@@ -526,7 +555,7 @@ function mpTransport(M, o) {
     let s = 0;
     for (const bc of bcs) {
       if (bc.face !== face || bc.type === 'value') continue;
-      for (const e of bc.fe.elems) for (const fp of mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq)) {
+      for (const e of bc.fe.elems) for (const fp of facePts(bc, e)) {
         let uq = 0; for (let a = 0; a < npe; a++) uq += fp.N[a] * T.u[M.conn[e * npe + a]];
         const [h, g] = faceHG(bc, fp, T.t, uq); s += (g - h * uq) * fp.w;
       }
