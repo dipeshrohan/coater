@@ -511,7 +511,7 @@ const HELP_BY_SELECTOR = [
   ['[data-prun]', 'furn.prun'], ['input[data-pstepin]', 'furn.step'], ['input[data-pcool]', 'furn.cool'], ['[data-paddstep]', 'furn.add'], ['[data-pdelstep]', 'furn.delstep'],
   ['#furnSRoom [data-furnroom]', 'furn.room'], ['#furnEnds [data-furnends]', 'furn.ends'], ['#furnSEnds [data-furnends]', 'furn.ends'], ['[data-furnpiece]', 'furn.piece'],
   ['[data-c3dpreset]', 'm3.preset'], ['#c3m_ny', 'm3.ny'], ['#c3m_edgeNy', 'm3.ny'], ['#c3m_nzStrip', 'm3.nz'], ['#c3m_nzFull', 'm3.nz'], ['#c3m_edgeNz', 'm3.nz'], ['[data-c3dsec]', 'm3.section'],
-  ['.m3-probs', 'm3.problems'], ['[data-c3ds="streamMode"]', 'sl.mode'], ['[data-c3ds="streamSeeds"]', 'sl.seeds'], ['[data-c3ds="streamColor"]', 'sl.color'], ['[data-c3ds="streamLen"]', 'sl.len'], ['[data-c3ds="streamInt"]', 'dp.int'], ['[data-c3d="field"]', 'm3.field'], ['#c3dTW', 'm3.tw'], ['#c3dTX', 'm3.tw'],
+  ['.m3-probs', 'm3.problems'], ['[data-c3ds="streamMode"]', 'sl.mode'], ['[data-c3ds="streamSeeds"]', 'sl.seeds'], ['[data-c3ds="streamColor"]', 'sl.color'], ['[data-c3ds="streamLen"]', 'sl.len'], ['[data-c3ds="streamInt"]', 'dp.int'], ['[data-c3d="field"]:not([disabled])', 'm3.field'], ['#c3dTW', 'm3.tw'], ['#c3dTX', 'm3.tw'],
   ['#c3dStreamCsv', 'sl.csv'], ['[data-c3duz]', 'sl.uz'], ['[data-c3ds="uzX"]', 'sl.uz'], ['#m3sRun', 'm3.study'], ['#m3sStop', 'm3.study'], ['.m3-xflow table', 'm3.xflow'],
   ['#ovzShelf [data-ovshelf]', 'oven.shelf'], ['#mpDim [data-mpdim]', 'mp.dim'], ['#mpField [data-mpfield]', 'mp.field'], ['#mpSnap [data-mpsnap]', 'mp.snap'],
   ['[data-numadv]', 'num.adv'], ['.dock-tabs [data-dock="numerics"]', 'num.panel'], ['[data-dock-more="numerics"]', 'num.panel'],
