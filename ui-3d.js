@@ -11,10 +11,10 @@
  * Loaded before undo.js (its settings are undo steps) and project.js (they and the result are saved in the project).
  */
 const C3D_DEFAULTS = { source: 'made', region: 'strip', loc: 0, stripW: 20, units: 'mm', machine: '+x', up: '+z', inlet: 40, fileFace: 'file',
-  nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 4, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true, section: '3d',
+  nxGap: 26, nxFace: 4, nxFilm: 16, ny: 5, nzStrip: 4, nzFull: 30, vscale: 5, view: 'iso', field: 'speed', blade: true, slurry: true, web: true, mesh: true, section: '3d',
   stream: false, streamDensity: 'medium', streamMode: 'volume', streamSeeds: 'inlet', streamPlane: 'yz', streamX: null, streamY: null, streamZ: null, streamN: 9,
   streamPts: '', streamColor: 'field', streamLen: 0, uzView: 'yz', uzX: null, step: null, zZones: null, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1,
-  edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, webEdges: 'sym' };
+  edgeEnd: 'left', edgeW: 15, edgeNz: 8, edgeM: 3, edgeSize: 1, edgeNy: 4, webEdges: 'sym' };
 const C3D = JSON.parse(JSON.stringify(C3D_DEFAULTS));
 /** An imported blade: { name, kind: 'stl' | 'step', tris: Float32Array (the file's units; STEP: mm), id }. */
 let C3D_FILE = null;
@@ -25,7 +25,7 @@ let C3D_OCCT = null;  // the STEP reader (occt-import-js), started on first use
 const C3D_UNDO = {
   source: ['3D geometry', v => v === 'made' ? 'made from the 2D setup' : 'from a file'], region: ['3D region', v => v === 'strip' ? 'strip at a location' : v === 'edge' ? 'strip at a web edge' : 'full web width'],
   edgeEnd: ['3D edge strip at', v => v === 'left' ? 'the left end' : 'the right end'], edgeW: ['3D edge strip width', v => v + ' mm'], edgeNz: ['3D mesh across the edge strip', v => v],
-  edgeM: ['3D mesh round the edge', v => v + ' elements'], edgeSize: ['3D mesh round the edge, element size', v => v + ' mm'], webEdges: ['3D full width: the web\'s edges', v => v === 'open' ? 'open (edge bead)' : 'symmetry planes'],
+  edgeM: ['3D mesh round the edge', v => v + ' elements'], edgeSize: ['3D mesh round the edge, element size', v => v + ' mm'], edgeNy: ['3D mesh across the gap, the web\'s edges open', v => v], webEdges: ['3D full width: the web\'s edges', v => v === 'open' ? 'open (edge bead)' : 'symmetry planes'],
   loc: ['3D strip location', v => `L${v + 1}`], stripW: ['3D strip width', v => v + ' mm'], units: ['File units', v => v], machine: ['File machine direction', v => v], up: ['File up axis', v => v],
   inlet: ['Inlet upstream of the edge', v => v + ' mm'], fileFace: ['Exit face of the file blade', v => v === 'file' ? 'from the file' : 'straight at the 2D\'s angle'], nxGap: ['3D mesh along the blade', v => v], nxFace: ['3D mesh up the exit face', v => v], nxFilm: ['3D mesh along the free surface', v => v],
   ny: ['3D mesh across the gap', v => v], nzStrip: ['3D mesh across the strip', v => v], nzFull: ['3D mesh across the web', v => v], vscale: ['3D vertical scale', v => '×' + v],
@@ -49,18 +49,22 @@ const C3D_DISPLAY = ['view', 'vscale', 'field', 'blade', 'slurry', 'web', 'mesh'
 const C3D_STREAM = { low: { l: 'Low', strip: [5, 6], full: [10, 3] }, medium: { l: 'Medium', strip: [6, 10], full: [15, 4] }, high: { l: 'High', strip: [10, 12], full: [24, 5] } };
 const c3dSetupKey = () => JSON.stringify([Object.keys(C3D_DEFAULTS).filter(k => !C3D_DISPLAY.includes(k)).map(k => C3D[k]), C3D_FILE && C3D_FILE.id]);
 const C3D_MESH_LIMITS = { nxGap: [6, 80], nxFace: [1, 12], nxFilm: [6, 60], ny: [2, 10], nzStrip: [1, 8], nzFull: [6, 150], stripW: [2, 300], inlet: [1, 500],
-  edgeW: [3, 150], edgeNz: [3, 24], edgeM: [2, 6], edgeSize: [0.2, 10] };
+  edgeW: [3, 150], edgeNz: [3, 24], edgeM: [2, 6], edgeSize: [0.2, 10], edgeNy: [2, 10] };
 /**
  * The 3D mesh's presets: the element counts each sets, stored here and nowhere else (the Mesh step's Coarse / Medium /
  * Fine; any other counts are Custom, shown as such). Chosen from the solve's cost as c3dEstimate gives it for a 20 mm
- * strip at the app's defaults: Coarse about 110 MB and 20 s, Medium (the defaults) about 470 MB and 75 s, Fine about
+ * strip at the app's defaults: Coarse about 110 MB and 20 s, Medium (the defaults) about 690 MB and 2 min, Fine about
  * 1.4 GB and 4.5 min -- Fine near the 2 GB a browser gives one page (C3D_MAX_BYTES). Every preset has at least 3
- * elements across the strip (7 stations) and across the gap (7 velocity nodes). An edge strip's counts across (edgeNz,
- * edgeM, edgeSize) are its own, not a preset's: its open side already takes most of what a page can hold.
+ * elements across the strip (7 stations) and across the gap (7 velocity nodes). Medium has 5 across the gap: 4 read the
+ * web's wall shear stress about 5 % low at the defaults (the rows thinner toward the blade), 5 within about 1 % (measured,
+ * the strip's solve 92 s to 101 s; CFD_PLAN.md) -- the same as Fine, which cannot take 6 within a page. An edge strip's counts across (edgeNz,
+ * edgeM, edgeSize) are its own, not a preset's: its open side already takes most of what a page can hold. So are its rows
+ * across the gap wherever the web's edges are open (edgeNy, 4: at 5 an edge strip of 8 across needs 2.45 GB; the full
+ * width's strips then take the same, its edge strips being its end strips).
  */
 const C3D_MESH_PRESETS = {
   coarse: { l: 'Coarse', nxGap: 16, nxFace: 3, nxFilm: 10, ny: 3, nzStrip: 3, nzFull: 20 },
-  medium: { l: 'Medium', nxGap: 26, nxFace: 4, nxFilm: 16, ny: 4, nzStrip: 4, nzFull: 30 },
+  medium: { l: 'Medium', nxGap: 26, nxFace: 4, nxFilm: 16, ny: 5, nzStrip: 4, nzFull: 30 },
   fine: { l: 'Fine', nxGap: 34, nxFace: 5, nxFilm: 22, ny: 5, nzStrip: 5, nzFull: 40 },
 };
 const C3D_PRESET_KEYS = ['nxGap', 'nxFace', 'nxFilm', 'ny', 'nzStrip', 'nzFull'];
@@ -132,6 +136,8 @@ function c3dEdgeRange(end = C3D.edgeEnd) {
 }
 /** Whether the solve has an open web edge: the edge strip, or the full width with its edges open. */
 const c3dOpenEdges = () => C3D.region === 'edge' || (C3D.region === 'full' && C3D.webEdges === 'open');
+/** The rows across the gap the layout and the solve take: where the web's edges are open their own (edgeNy), else the preset's (ny). */
+const c3dNy = () => c3dOpenEdges() ? C3D.edgeNy : C3D.ny;
 /** The elements round the edge as used (m, their size in mm): at most one fewer than across, no larger than an even element. */
 function c3dEdgeElems() {
   const n = C3D.edgeNz, m = Math.min(C3D.edgeM, n - 1), even = C3D.edgeW / n;
@@ -244,7 +250,7 @@ function c3dFilm(d) {
 /** Build (or reuse) the 3D geometry: the blade's triangles, its underside over the gap, the mesh, and the checks. */
 function c3dBuild() {
   const rg = c3dRegion(), g = cfdGeometry(C3D.region === 'strip' ? C3D.loc : 0), H = c3dGapAt(rg.zc);
-  const key = JSON.stringify([C3D.source, C3D.region, C3D.loc, C3D.stripW, C3D.units, C3D.machine, C3D.up, C3D.inlet, C3D.nxGap, C3D.nxFilm, C3D.ny, rg, H, C3D.zZones, C3D.frac3, C3D.zFrac,
+  const key = JSON.stringify([C3D.source, C3D.region, C3D.loc, C3D.stripW, C3D.units, C3D.machine, C3D.up, C3D.inlet, C3D.nxGap, C3D.nxFilm, c3dNy(), rg, H, C3D.zZones, C3D.frac3, C3D.zFrac,
     g.shape, g.R, g.Xup, g.L, g.exitAngle, P.face, P.dH, P.lw, P.tilt, P.dt, C3D_FILE && C3D_FILE.id, ONE_D.key, g.blade || null, C3D.fileFace]);
   if (C3D_GEO && C3D_GEO.key === key) return C3D_GEO;
   const out = { key, H, rg };
@@ -278,7 +284,7 @@ function c3dBuild() {
     const Ld = Math.max(12e-3, 8 * H);
     const xsFilm = C3D.frac3 ? C3D.frac3.s.map(f => xe + f * Ld) : gradedStations(xe, xe + Ld, C3D.nxFilm, 1);
     const film = (x, z) => c3dFilm(x - xe) * (C3D.region === 'full' ? c3dGapAt(z) / H : 1);
-    const mesh = mesh3D({ xsGap, xsFilm, zs, under, film, ny: C3D.frac3 ? C3D.frac3.y.length - 1 : C3D.ny });
+    const mesh = mesh3D({ xsGap, xsFilm, zs, under, film, ny: C3D.frac3 ? C3D.frac3.y.length - 1 : c3dNy() });
     let top = 0; for (const v of f.low) if (Number.isFinite(v)) top = Math.max(top, v);
     Object.assign(out, { tris, xe, Ld, f, mesh, open, multi, rays: f.low.length, gMin, gMax, box: trisBox(tris), cutY: Math.max(3 * H, 1.2 * top) });
   } catch (e) { out.error = e.message; }
@@ -319,7 +325,7 @@ function c3dSetupTree() {
     </details>
     <details class="grp cfd-grp" data-c3dgrp="mesh"${C3D_OPEN.mesh ? ' open' : ''}><summary>3D mesh</summary>
       ${c3dPresetSeg()}
-      ${num('Along the blade', 'nxGap', 'elements')}${num('Up the exit face', 'nxFace', 'elements')}${num('Along the free surface', 'nxFilm', 'elements')}${num('Across the gap', 'ny', 'elements')}
+      ${num('Along the blade', 'nxGap', 'elements')}${num('Up the exit face', 'nxFace', 'elements')}${num('Along the free surface', 'nxFilm', 'elements')}${c3dOpenEdges() ? num('Across the gap (open edges)', 'edgeNy', 'elements') : num('Across the gap', 'ny', 'elements')}
       ${C3D.region === 'strip' ? num('Across the strip', 'nzStrip', 'elements') : C3D.region === 'edge' ? num('Across the strip', 'edgeNz', 'elements') : num('Across the web', 'nzFull', 'elements')}
       ${C3D.region === 'edge' || (C3D.region === 'full' && C3D.webEdges === 'open') ? num('Round the edge', 'edgeM', 'elements') + num('Their size across', 'edgeSize', 'mm', 0.1) : ''}
       <p class="prop-note">Hexahedral, 27 nodes each: each station across the strip is laid out as the 2D lays out its mesh (graded toward the metering edge and the contact line; the free film as long as the 2D's), and the stations joined. ${c3dEstimateText()}</p>
@@ -481,7 +487,7 @@ function c3dSolveMessage(withFile = true) {
   delete msg.struct;   // (the 3D takes the steady flow curve: the structure is the 2D's)
   // (the 3D's own element counts, with the 2D's refinement zones at every station; a location's adapted 2D mesh is its 2D's only)
   const { frac, ...sv } = msg.solver;
-  msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: C3D.ny };
+  msg.solver = { ...sv, nEb: C3D.nxGap, nEf: C3D.nxFace, nEs: C3D.nxFilm, nEy: c3dNy() };
   // (meshing to an accuracy: the 2D zones' sizes divided (refined everywhere), or the stations' own adapted element ends)
   if (msg.solver.zones && C3D.zoneScale !== 1) msg.solver.zones = scaleZones(msg.solver.zones, C3D.zoneScale);
   if (C3D.frac3) msg.solver.frac = C3D.frac3;
@@ -561,7 +567,7 @@ function c3dShown() {
   return C3D_RES;
 }
 /** The 3D mesh's own settings (C3D's keys): what "Back to the mesh it was solved on" puts back. */
-const C3D_MESH_KEYS = [...C3D_PRESET_KEYS, 'edgeNz', 'edgeM', 'edgeSize', 'zZones', 'frac3', 'zFrac', 'zFracFor', 'zoneScale'];
+const C3D_MESH_KEYS = [...C3D_PRESET_KEYS, 'edgeNz', 'edgeM', 'edgeSize', 'edgeNy', 'zZones', 'frac3', 'zFrac', 'zFracFor', 'zoneScale'];
 /**
  * The mesh a solve starts on, kept with its result (and so in the project), as a mesh configuration: its type, preset,
  * the global counts along the flow, the gap, the active edge, the meniscus, the upstream bead, across the web, the
@@ -571,7 +577,7 @@ const C3D_MESH_KEYS = [...C3D_PRESET_KEYS, 'edgeNz', 'edgeM', 'edgeSize', 'zZone
 function c3dMeshRecord() {
   const z = zonesOf(solverOf(c3dZoneLoc()).zones), f = k => ({ on: z[k].on, size: z[k].size }), L = k => ({ on: z[k].on, n: z[k].n, first: z[k].first, growth: z[k].growth });
   return { meshType: 'structured hexahedra, 27 nodes (Taylor–Hood Q2–Q1), boundary-fitted on spines', preset: C3D.frac3 ? 'adapted' : c3dPresetOf(),
-    global: { alongBlade: C3D.nxGap, upFace: C3D.nxFace, alongFilm: C3D.nxFilm, growth: z.growth }, gap: { cellsAcross: C3D.ny },
+    global: { alongBlade: C3D.nxGap, upFace: C3D.nxFace, alongFilm: C3D.nxFilm, growth: z.growth }, gap: { cellsAcross: c3dNy() },
     activeEdge: f('edge'), meniscus: { contactLine: f('cl'), exitFace: f('face'), film: f('film') }, upstreamBead: { bands: z.bands },
     crossWeb: { region: C3D.region, cells: c3dNz(), set: c3dRegion().nz, zones: c3dZonesText(C3D.zZones) }, boundaryLayers: { web: L('web'), bladeAndSurface: L('top') },
     quality: { thresholds: { ...M3_WARN }, zoneReach: M3_ZONE_REACH },
