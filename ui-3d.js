@@ -99,7 +99,17 @@ const C3D_FIELDS = {
   uy: { l: 'u_y, up', u: 'mm/s', f: (R, n) => R.v[n] * 1000, div: true },
   // (across the web in the machine frame: a skewed blade's solve is in the blade's frame, w along the blade)
   w: { l: 'Cross-web speed', u: 'mm/s', f: (R, n) => (R.skew ? R.w[n] * Math.cos(R.skew * Math.PI / 180) - R.u[n] * Math.sin(R.skew * Math.PI / 180) : R.w[n]) * 1000, div: true },
+  // (NUM-3: derived from the solved fields, cfd-3d-derive.js; in the machine frame like u_x and u_z)
+  om: { l: 'Vorticity |ω|', u: '1/s', f: (R, n) => { const o = c3dDer(R).om; return Math.hypot(o[0][n], o[1][n], o[2][n]); } },
+  omz: { l: 'Vorticity ω_z, across the web', u: '1/s', f: (R, n) => { const o = c3dDer(R).om, [c, s] = c3dSkewCS(R); return o[2][n] * c - o[0][n] * s; }, div: true },
+  gp: { l: 'Pressure gradient |∇p|', u: 'Pa/mm', f: (R, n) => { const g = c3dDer(R).gp; return Math.hypot(g[0][n], g[1][n], g[2][n]) / 1000; } },
+  dpdx: { l: 'Pressure gradient ∂p/∂x', u: 'Pa/mm', f: (R, n) => { const g = c3dDer(R).gp, [c, s] = c3dSkewCS(R); return (g[0][n] * c + g[2][n] * s) / 1000; }, div: true },
 };
+/** A result's derived fields (vorticity, pressure gradient, wall shear stress on the web): worked out once from its solved fields when first shown, kept with it, never saved. */
+const C3D_DER = new WeakMap();
+function c3dDer(R) { let d = C3D_DER.get(R); if (!d) { d = derive3D(R); C3D_DER.set(R, d); } return d; }
+/** cos and sin of a result's skew (its solve in the blade's frame; the machine frame turned by it). */
+const c3dSkewCS = R => { const t = (R.skew || 0) * Math.PI / 180; return [Math.cos(t), Math.sin(t)]; };
 
 // ---- the files: every file imported this session, by id (undo brings one back); the project keeps the one in use ----
 const C3D_FILES = new Map();
@@ -941,6 +951,8 @@ function view3D() {
       ${pane('c3dCL', 1, `Contact line up the exit face across the ${where}`, `Contact line height up the exit face across the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
       ${pane('c3dPB', 'pressure', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
       ${pane('c3dPX', 'pressure', `Pressure along the blade, ${R.region === 'edge' ? 'the edge strip\'s inner side' : `middle of the ${where}`}`, `Pressure along the blade and exit face at the ${R.region === 'edge' ? 'inner side' : 'middle'} of the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
+      ${pane('c3dTW', 'shear', `Wall shear stress on the web${stale ? ' (out of date)' : ''}`, `Wall shear stress on the web, along the flow and across the ${where}`, '')}
+      ${pane('c3dTX', 'shear', `Wall shear stress on the web along the flow${stale ? ' (out of date)' : ''}`, `Wall shear stress on the web along the flow, at the middle and the sides of the ${where}`, oneDLegend([[`middle of the ${where}`, acc], ['its two sides', mut, 'dash']]))}
       ${c3dCrossFlowPane(R, stale, where)}
       ${c3dUzPane(R, stale)}
     </div>` : '';
@@ -1530,6 +1542,7 @@ function c3dCharts(R) {
   if (R.mode === 'climbed') line('c3dCL', R.stations.map(s => s.s * 1000), R.stations.map(s => s.s2 * 1000), R.k != null ? 'contact line along the face (mm)' : 'contact line up the face (mm)', 3);
   else { const cv = document.getElementById('c3dCL'); if (cv) { const { c, w, h } = setupCanvas(cv, 0.3); c.fillStyle = mut; c.font = '13px ' + cssVar('--sans'); c.textAlign = 'center'; c.fillText('Pinned at the metering edge at every station', w / 2, h / 2); } }
   c3dPressureMap(R);
+  c3dWebShear(R);
   // pressure along the blade and face at the middle station: 3D and its station's 2D (up to the contact line)
   const cv = document.getElementById('c3dPX');
   if (cv) {
@@ -1575,6 +1588,54 @@ function c3dPressureMap(R) {
   c.strokeRect(bx, m.t, bw, ph);
   c.fillStyle = ink; c.textAlign = 'left';
   c.fillText(c3dFmt(rng.max), bx + bw + 4, m.t + 9); c.fillText(c3dFmt(rng.min), bx + bw + 4, m.t + ph); c.fillText('Pa', bx + bw + 4, m.t + ph / 2 + 4);
+}
+
+/**
+ * The wall shear stress on the web (NUM-3: the slurry's tangential traction on it, cfd-3d-derive.js): its size over the
+ * web under the region (along the flow, across), and its component along the web's travel at the middle and the sides.
+ */
+function c3dWebShear(R) {
+  const T = c3dDer(R).web, NL = R.NL, NR = R.NR, NC = R.NC, node = (c, l) => (c * NL + l) * NR, zo = R.region === 'full' || R.region === 'edge' ? R.zOff : 0;
+  const ink = cssVar('--muted'), acc = cssVar('--accent');
+  const cv = document.getElementById('c3dTW');
+  if (cv) {
+    const { c, w, h } = setupCanvas(cv, fitAspect(cv, 0.5));
+    let hi = 0; for (const v of T.t) if (Number.isFinite(v)) hi = Math.max(hi, v);
+    const lut = c3dLut({ div: false }), rng = { min: 0, max: hi || 1 };
+    const m = { l: 52, r: 78, t: 24, b: 36 }, pw = w - m.l - m.r, ph = h - m.t - m.b;
+    const xMax = R.x[node(NC - 1, 0)] * 1000, zAll = Array.from({ length: NL }, (_, l) => (R.z[node(0, l)] + zo) * 1000), z0 = Math.min(...zAll), z1 = Math.max(...zAll);
+    const X = x => m.l + x / xMax * pw, Y = z => m.t + ph - (z - z0) / (z1 - z0 || 1) * ph;
+    // cells between neighbouring web nodes, each filled by the mean of its four corners (none where a corner has no value: an open side's contact line)
+    for (let cc = 0; cc < NC - 1; cc++) for (let l = 0; l < NL - 1; l++) {
+      const q = [T.t[cc * NL + l], T.t[(cc + 1) * NL + l], T.t[cc * NL + l + 1], T.t[(cc + 1) * NL + l + 1]];
+      if (!q.every(Number.isFinite)) continue;
+      const xa = X(R.x[node(cc, l)] * 1000), xb = X(R.x[node(cc + 1, l)] * 1000), ya = Y((R.z[node(cc, l)] + zo) * 1000), yb = Y((R.z[node(cc, l + 1)] + zo) * 1000);
+      c.fillStyle = lutColor(lut, (q[0] + q[1] + q[2] + q[3]) / 4 / rng.max);
+      c.fillRect(Math.min(xa, xb), Math.min(ya, yb), Math.abs(xb - xa) + 0.6, Math.abs(yb - ya) + 0.6);
+    }
+    c.strokeStyle = cssVar('--line'); c.strokeRect(m.l, m.t, pw, ph);
+    // the metering edge
+    const xe = X(R.xe * 1000); c.save(); c.setLineDash([4, 3]); c.strokeStyle = cssVar('--ink'); c.beginPath(); c.moveTo(xe, m.t); c.lineTo(xe, m.t + ph); c.stroke(); c.restore();
+    c.fillStyle = ink; c.font = '12px ' + cssVar('--mono');
+    c.textAlign = 'center'; c.fillText('metering edge', xe, m.t - 6);
+    for (let k = 0; k <= 4; k++) { const x = xMax * k / 4; c.fillText(x.toFixed(0), X(x), h - m.b + 16); }
+    for (let k = 0; k <= 2; k++) { const z = z0 + (z1 - z0) * k / 2; c.textAlign = 'right'; c.fillText(z.toFixed(zo ? 0 : 1), m.l - 6, Y(z) + 4); }
+    c.textAlign = 'left'; c.fillText('z (mm)', 4, 12);
+    c.textAlign = 'right'; c.fillText('x along the web (mm): under the blade, then under the film', w - m.r, h - 4);
+    const bx = w - m.r + 18, bw = 12;
+    for (let k = 0; k < ph; k++) { c.fillStyle = lutColor(lut, 1 - k / ph); c.fillRect(bx, m.t + k, bw, 1.2); }
+    c.strokeRect(bx, m.t, bw, ph);
+    c.fillStyle = ink; c.textAlign = 'left';
+    c.fillText(c3dFmt(rng.max), bx + bw + 4, m.t + 9); c.fillText('0', bx + bw + 4, m.t + ph); c.fillText('Pa', bx + bw + 4, m.t + ph / 2 + 4);
+  }
+  const cx = document.getElementById('c3dTX');
+  if (cx) {
+    const [cs, sn] = c3dSkewCS(R), along = l => { const p = []; for (let cc = 0; cc < NC; cc++) { const j = cc * NL + l, v = T.tx[j] * cs + T.tz[j] * sn; if (Number.isFinite(v)) p.push([R.x[node(cc, l)] * 1000, v]); } return p; };
+    const mid = along((NL - 1) >> 1), sides = [along(0), along(NL - 1)], ys = [mid, ...sides].flat().map(q => q[1]);
+    const lo = Math.min(0, ...ys), hi = Math.max(0, ...ys), pad = 0.06 * (hi - lo || 1);
+    plotChart(cx, fitAspect(cx, 0.5), { x0: 0, x1: R.x[node(NC - 1, 0)] * 1000, y0: lo - pad, y1: hi + pad, yl: 'τ along the web (Pa)', xl: 'x along the web (mm)', yd: 0, xd: 0,
+      vl: [{ x: R.xe * 1000, c: ink, t: 'metering edge' }], s: [...sides.map(p => ({ p, c: ink, w: 1.6, dash: [5, 4] })), { p: mid, c: acc, w: 2.2 }] });
+  }
 }
 
 // ---- the 3D view (three.js) ----

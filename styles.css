@@ -1286,6 +1286,7 @@ body:has(#pgScope) #scope { display: none; }
 .v3d-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 1023px) { .v3d-charts { grid-template-columns: minmax(0, 1fr); } }
 .pg-tools select[data-c3d] { width: auto; max-width: 11em; }
+.pg-tools select[data-c3d="field"] { max-width: 17.5em; }   /* (NUM-3: the derived fields' names) */
 .c3d-busy { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* an open edge (the Edge region; the full width with its edges open): its answer, its views and steps, the two ends side by side */
 .edge-answer { padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 6px; font-size: 13.5px; line-height: 1.5; }
