@@ -80,7 +80,7 @@ function mpStackHTML() {
     <div class="mp-prog" id="mpProg" hidden><span class="mp-prog-bar"><i id="mpProgFill"></i></span><span id="mpProgT"></span></div>
     <div class="mp-model" id="mpModel"></div>
     <div class="stats mp-stats" id="mpStats"></div>
-    <div class="dry-grid mp-grid">
+    <div class="dry-grid mp-grid mp-grid2">
       ${pane('mp1', 'temp', 'Temperatures', 'The temperatures of the plate and the followed pieces against time, with the oven\'s air')}
       ${pane('mp2', 'drop', 'Water in the pieces', 'The mean water of the followed pieces against time, with the Results step\'s middle piece')}
     </div>
@@ -251,9 +251,10 @@ function mpStackField() {
     return { X, Z };
   };
   const axes = (X0, X1, Z0, Z1, xl, zl, xt, zt) => {
+    const tk = v => (Math.abs(v) >= 10 ? String(Math.round(v)) : String(+v.toFixed(1)));
     c.strokeStyle = line; c.strokeRect(m.l, m.t, pw, ph); c.fillStyle = ink;
-    c.textAlign = 'center'; for (const v of xt) c.fillText(fmtNum(v), m.l + (v - X0) / (X1 - X0) * pw, h - m.b + 16);
-    c.textAlign = 'right'; for (const v of zt) c.fillText(fmtNum(v), m.l - 6, m.t + ph - (v - Z0) / (Z1 - Z0) * ph + 4);
+    c.textAlign = 'center'; for (const v of xt) c.fillText(tk(v), m.l + (v - X0) / (X1 - X0) * pw, h - m.b + 16);
+    c.textAlign = 'right'; for (const v of zt) c.fillText(tk(v), m.l - 6, m.t + ph - (v - Z0) / (Z1 - Z0) * ph + 4);
     c.textAlign = 'right'; c.fillText(xl, w - m.r, h - 4); c.textAlign = 'left'; c.fillText(zl, 4, m.t + 2);
   };
   const xs = r.mesh.x.map(v => v * 1000), zs = r.mesh.z.map(v => v * 1000), Hs = r.mesh.Hs * 1000, H = r.mesh.H * 1000;

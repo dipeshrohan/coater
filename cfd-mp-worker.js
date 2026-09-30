@@ -1,11 +1,12 @@
 /*
  * cfd-mp-worker.js — the multiphysics solvers (MP) off the main thread. MP-1: the pressed stack in the pre heat treatment
- * (stack-mp.js on mp-core.js), in 1D, 2D or 3D: its heat, its water and each followed piece's stress, together.
+ * (stack-mp.js on mp-core.js), in 1D, 2D or 3D: its heat, its water and each followed piece's stress, together. MP-2:
+ * the furnace's stack (furnace-mp.js): its heat with its chemistry's, its gas and each followed piece's stress.
  *
- * Message in:  { id, kind: 'stack', o } (smpStack's inputs, plain data)
+ * Message in:  { id, kind: 'stack' | 'furnace', o } (smpStack's or fmpStack's inputs, plain data)
  * Message out: { id, progress: { k, n } } while it works, then { id, ok: true, res, ms } or { id, ok: false, error }.
  */
-importScripts('mp-core.js', 'drying.js', 'press.js', 'stack-mp.js');
+importScripts('mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js');
 
 /** A run, compact: the series (minutes), the sections and the pieces' fields at the snapshots, the answers, the balances. */
 function mpStackCompact(r) {
@@ -21,13 +22,29 @@ function mpStackCompact(r) {
   };
 }
 
+/** The furnace's run, compact: the series (hours), the sections and the followed pieces' maps at the snapshots, the answers, the balances. */
+function mpFurnCompact(r) {
+  const p = (x, n) => (Number.isFinite(x) ? +(+x).toPrecision(n) : null), row = a => Array.from(a, v => p(v, 5));
+  const pc = v => ({ mid: p(v.mid, 5), edge: p(v.edge, 5), aM: p(v.aM, 4), aE: p(v.aE, 4), oM: p(v.oM, 4), oE: p(v.oE, 4), under: p(v.under, 4), middle: p(v.middle, 4), hold: p(v.hold, 4), pull: p(v.pull, 4) });
+  return {
+    dim: r.dim, follow: r.follow, summary: r.summary, energy: r.energy, substeps: r.substeps, ms: r.ms,
+    mesh: { nodes: r.mesh.nodes, elems: r.mesh.elems, goNodes: r.mesh.goNodes, stressNodes: r.mesh.stressNodes, H: r.mesh.H, Hs: r.mesh.Hs, plT: r.mesh.plT, zPiece: r.mesh.zPiece,
+      x: row(r.mesh.coord[0]), z: r.dim > 1 ? row(r.mesh.coord[r.dim - 1]) : null, gx: row(r.mesh.gasCoord[0]), gy: r.mesh.gasCoord[1] ? row(r.mesh.gasCoord[1]) : null,
+      sx: r.mesh.stressCoord ? row(r.mesh.stressCoord[0]) : null, sy: r.mesh.stressCoord && r.mesh.stressCoord[1] ? row(r.mesh.stressCoord[1]) : null },
+    series: r.series.map(q => ({ t: p(q.t / 3600, 7), run: q.run, Tprog: p(q.Tprog, 5), lo: p(q.lo, 5), hi: p(q.hi, 5), aRef: p(q.aRef, 4), oRef: p(q.oRef, 4), pieces: Object.fromEntries(Object.entries(q.pieces).map(([k, v]) => [k, pc(v)])) })),
+    snaps: r.snaps.map(s => ({ t: p(s.t / 3600, 7), run: s.run, Tprog: p(s.Tprog, 5), mark: s.mark || null, secT: s.secT.map(row), secA: s.secA.map(row), secO: s.secO.map(row),
+      pieces: Object.fromEntries(Object.entries(s.pieces).map(([k, v]) => [k, { gas: row(v.gas), hold: p(v.hold, 5), s1: v.s1 ? Array.from(v.s1, x => p(x / 1e6, 4)) : null, strip: v.strip ? v.strip.map(([x, sg]) => [p(x, 5), p(sg / 1e6, 4)]) : null }])) })),
+  };
+}
+
 onmessage = e => {
   const { id, kind, o } = e.data, t0 = Date.now();
   try {
-    if (kind !== 'stack') throw new Error(`no such multiphysics run: ${kind}`);
+    if (kind !== 'stack' && kind !== 'furnace') throw new Error(`no such multiphysics run: ${kind}`);
     let last = 0;
-    const r = smpStack({ ...o, onProgress: q => { const now = Date.now(); if (now - last > 150 || q.k === q.n) { last = now; postMessage({ id, progress: q }); } } });
-    postMessage({ id, ok: true, res: mpStackCompact(r), ms: Date.now() - t0 });
+    const onProgress = q => { const now = Date.now(); if (now - last > 150 || q.k === q.n) { last = now; postMessage({ id, progress: q }); } };
+    const res = kind === 'stack' ? mpStackCompact(smpStack({ ...o, onProgress })) : mpFurnCompact(fmpStack({ ...o, onProgress }));
+    postMessage({ id, ok: true, res, ms: Date.now() - t0 });
   } catch (err) {
     postMessage({ id, ok: false, error: err.message });
   }

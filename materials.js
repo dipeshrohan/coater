@@ -139,8 +139,17 @@ const MAT_FURN = [
   ['muPl', 'Friction on the plate', '', 0, 2, 0.01, 2, 0.15, 'assumed', 'graphite on graphite about 0.1–0.2, as on the paper', 'plate'],
   ['TstPl', 'It sticks to the plate from', '°C', 500, 3300, 10, 0, 2200, 'assumed', 'not known: as to the paper; where pressed at least the paper\'s pressure', 'plate'],
   ['tauPl', 'Its bond to the plate, stuck', 'MPa', 0.001, 100, 0.01, 3, 1, 'assumed', 'not known: as to the paper', 'plate'],
+  // (the stack's heat, MP-2: the multiphysics solver takes each piece's temperature from the holder's heat-up, not the
+  //  program's)
+  ['Hr', 'GO\'s heat as its labile oxygen leaves', 'kJ/g', 0, 8, 0.05, 2, 1.6, 'assumed', 'DSC of GO: one exotherm from about 150 °C, 1.6 kJ/g (Qiu et al., Carbon 2014; reported 1–8, 1.4–1.7 the likeliest); your DSC gives it', 'heat'],
+  ['kPin', 'Graphite paper\'s heat conduction along it', 'W/(m·K)', 1, 2000, 1, 0, 150, 'assumed', 'flexible graphite paper 140–500 along itself (the denser, the more); your paper\'s datasheet gives it', 'heat'],
+  ['kPthr', '… through it', 'W/(m·K)', 0.1, 50, 0.1, 1, 5, 'assumed', 'flexible graphite paper 3–7 through its thickness', 'heat'],
+  ['Rc', 'A piece\'s face on its paper: contact resistance', '×10⁻⁴ m²·K/W', 0, 100, 0.1, 1, 1, 'assumed', 'graphite lightly pressed on graphite 10⁻⁴–10⁻³: not known', 'heat'],
+  ['kPl', 'The holder\'s plates: heat conduction', 'W/(m·K)', 1, 500, 1, 0, 100, 'assumed', 'isostatic graphite 80–130 at the room, less as it heats; the plates\' datasheet gives it', 'heat'],
+  ['rhoPl', '… their density', 'g/cm³', 1, 2.3, 0.01, 2, 1.8, 'assumed', 'isostatic graphite 1.75–1.9', 'heat'],
+  ['epsF', 'The holder\'s faces to the hot zone: emissivity', '', 0.05, 1, 0.01, 2, 0.8, 'assumed', 'graphite 0.7–0.9; the hot zone at the program\'s temperature', 'heat'],
 ];
-const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' };
+const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;

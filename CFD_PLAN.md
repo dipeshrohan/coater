@@ -47,7 +47,7 @@ materials and their coupling, and a stage's 1D, 2D and 3D are the same physics i
   2D and 3D against the 1D where they must agree), each page with a solver card (1D | 2D | 3D; the physics solved and
   how they couple; fields on a section and in 3D; the checks):
   - MP-1 Pre heat treatment (built, below): the stack in the oven -- its heat-up, its water, its stress, together.
-  - MP-2 Furnace: the holder and the stack under the program -- heat (radiation in the furnace, conduction through the
+  - MP-2 Furnace (built, below): the holder and the stack under the program -- heat (radiation in the furnace, conduction through the
     graphite: the pieces' lag and gradient against the program), the gas (1D across, 2D along the paper = furnace.js,
     3D the piece between its papers), the stress (the pull along the piece, 3D).
   - MP-3 Cutting and MP-4 Peel and wind: the laminate (1D), the section (2D, film.js's FEM), the piece and the film on
@@ -89,6 +89,40 @@ and the questions go to the user. The fitted in-plane permeability (3 × 10⁻�
 100 °C) is about 1500 times still air's own (2 × 10⁻¹⁰): water that leaves that fast along a pressed stack is not
 diffusing through its gaps; either the pieces are not tight (air between them), or near 100 °C the water leaves as a
 flow of vapour -- a question for the user too.
+
+### MP-2: the furnace's stack in 1D, 2D and 3D (furnace-mp.js, furnace-mp-ui.js, cfd-mp-worker.js)
+
+Built on MP-0's core with three additions to it: a source at the nodes with its slope (Qn: a reaction's heat whose state is
+kept at the nodes, Newton), the conduction built once a step (Kstep: only the capacity, the source and the faces follow
+the iterate), and the lumped terms summed per node and material (a 3D solve 2× faster).
+- Heat: the holder -- the pieces and their papers as layers combined (along in parallel, through in series with a contact
+  resistance at each face; checked against every layer resolved: 0.04 K against a 78 K lag), the isostatic plates -- stored
+  as enthalpy with graphite's heat capacity against temperature (Butland and Maddison 1973). The faces see the hot zone at
+  the program's temperature (radiation) and the argon (natural convection: Churchill–Chu, the horizontal plates' laws, argon's
+  properties). Between the runs the stack cools to the room (taken out), its chemistry kept.
+- Chemistry at every node at its own temperature: furnace.js's stages (41 energies a stage), exact over each step's straight
+  change of temperature. The labile oxygen's heat (GO's DSC: 1.6 kJ/g, Qiu et al., Carbon 2014; reported 1–8, 1.4–1.7 the
+  likeliest) and the water's latent heat go back into the heat equation by Newton; a runaway is followed by splitting the
+  step where Newton's matrix stops being definite or a node jumps more than 100 K (200 K in 3D).
+- Gas: each piece's gas along its paper (Darcy, furnace.js's conductance) at every level and point, the paper lifting past
+  the load (the obstacle problem, as a stiff leak: exact against the analytic solution to 10⁻⁴ of the load); across the piece
+  furnace.js's G R T h / (8 D). Stress: each followed piece's pull where it converts unevenly, free in its plane.
+- The page: Furnace › Multiphysics (the fourth step), 1D and 2D solving by themselves, 3D on Solve (about two minutes: the
+  runaway's short steps). New inputs on the Furnace card (assumed until you say): the GO's heat, the paper's conduction along
+  and through, the contact, the plates' conduction and density, the holder's emissivity.
+- Checks: furnace-mp.validate.js (13) and mp-core.validate.js (36). The app's 2D mesh against one twice as fine each way
+  (the app's inputs): the lag the same (170/398 against 168/398 K), the runaway's peak and the spread within 5 % (498
+  against 472 K; 667 against 641 K), the labile oxygen's temperature and the gas within 7–10 % -- inside what the inputs
+  (the GO's heat alone ±50 %) leave open.
+
+Found (the physics not aligned before): furnace.js takes every piece at the program's temperature. Heated by radiation from
+the hot zone, a holder of 200 pieces lags the program by 100–400 K (the most in run 2 at 10 °C/min), and the GO's own heat
+as its labile oxygen leaves runs away inside the stack (the Frank-Kamenetskii number far past critical: the stack is too big
+for the heat to get out as fast as it is made): with the app's pieces (0.36 mm, 42 % of the stack) about 480 K above the
+program at 240 °C, 620 K across the stack at once; the gas in a piece's middle then passes its layers' hold by orders of
+magnitude -- it would puff in run 1. You see puffing only in run 2 (Q101), so what is assumed here is not all so: the GO's
+heat (your DSC), the pieces' thickness in the stack, the heating (a fan? where is the thermocouple, at the heaters or in the
+load?), the stack's size. Questions to the user.
 
 ### Workflow, phase WF-2: the tabs in the process's order (ui.js NAV/SECTIONS, line-ui.js)
 

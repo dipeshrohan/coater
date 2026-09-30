@@ -88,6 +88,18 @@ function repFigure(target, caption, flag = '') {
   const cap = caption || [shot.title, shot.subtitle].filter(Boolean).join(' · ');
   return `<figure><img src="${cv.toDataURL('image/png')}" alt="${repEsc(cap)}" style="max-width:${Math.round(W)}px"><figcaption>${repEsc(cap)}${flag ? ' ' + flag : ''}</figcaption></figure>`;
 }
+/** A multiphysics step's chart (MP-1, MP-2): solved for the inputs as they are, in the dimension shown; any other chart: true. */
+function repMpSolved(cv) {
+  const s = cv.closest('#mpSec, #fmpSec');
+  if (!s) return true;
+  return s.id === 'mpSec' ? typeof mpCurrent === 'function' && !!mpCurrent(MPS.dim) : typeof fmpCurrent === 'function' && !!fmpCurrent(FMS.dim);
+}
+/** Which multiphysics a chart is (its captions are the page's: "Temperatures" in both), before its caption; '' for any other. */
+function repMpName(cv) {
+  const s = cv && cv.closest('#mpSec, #fmpSec');
+  if (!s) return '';
+  return s.id === 'mpSec' ? `The stack's multiphysics (MP-1, ${MP_DIMS[MPS.dim]}) · ` : `The furnace's multiphysics (MP-2, ${MP_DIMS[FMS.dim]}, ${FURN_RUNS[FMS.run]}) · `;
+}
 /** Rows of name / value (/ more) as a table. */
 const repRows = (rows, head) => `<table>${head ? `<thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead>` : ''}<tbody>${rows.map(r => `<tr>${r.map((c, n) => n ? `<td>${c}</td>` : `<th scope="row">${c}</th>`).join('')}</tr>`).join('')}</tbody></table>`;
 /** The problems (rejected entries, errors, warnings) as a table. */
@@ -120,8 +132,9 @@ async function repModule(m, statsTitle = 'Results') {
   if (m === 11) html += acrossReportHTML();
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
-  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')));   // (not an editor's drawing)
-  if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, t.title())).join('');
+  // (not an editor's drawing; a multiphysics step's charts only once it is solved for the inputs as they are, never empty)
+  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')) && t.canvases().every(repMpSolved));
+  if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, repMpName(t.canvases()[0]) + t.title())).join('');
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   const scope = cleanText(document.getElementById('scope'));
   html += `<h3>Checks</h3>${pills.length ? `<ul class="checks">${pills.join('')}</ul>` : ''}${scope ? `<p class="scope">${repEsc(scope)}</p>` : ''}`;
@@ -247,6 +260,22 @@ async function repProcessAll() {
       + (uRows.length ? '<h4>Measured graphene film</h4>' + repRows(uRows, ['Measured', '']) : '') + (uImp.length ? `<ul class="checks">${uImp.join('')}</ul>` : '')
       + '<h4>The furnace as set</h4>' + repRows([...runRows, ...stackRows], ['', 'Value', '', 'From'])
       + (uNote && cleanText(uNote) ? `<p class="lede">${repEsc(cleanText(uNote))}</p>` : '');
+  }
+  // the furnace's multiphysics (MP-2): each dimension solved for the inputs as they are, its answers side by side
+  if (typeof fmpCurrent === 'function') {
+    const dims = [1, 2, 3].filter(d => fmpCurrent(d));
+    if (dims.length) {
+      const S = d => FMS.res[d].summary, K = v => `${v.toFixed(v < 10 ? 1 : 0)} K`, gas = d => fmpGasByRun(FMS.res[d]);
+      const rows = [['Behind the program, heating (run 1 · run 2)', d => S(d).runs.map(q => K(q.lag)).join(' · ')],
+        ['Its own heat above the program, run 1', d => (S(d).runs[0].over >= 1 ? `${K(S(d).runs[0].over)} at ${S(d).runs[0].overAt.T.toFixed(0)} °C` : 'none')],
+        ['Across the stack at once', d => K(Math.max(...S(d).runs.map(q => q.spread)))],
+        ['Labile oxygen half gone (the middle piece)', d => (S(d).labileMid ? `${S(d).labileMid.T.toFixed(0)} °C (the program ${S(d).labileMid.Tprog.toFixed(0)} °C)` : '—')],
+        ['Gas against the layers\' hold (run 1 · run 2)', d => gas(d).map(g => `${g.ratio.toFixed(g.ratio >= 10 ? 0 : 2)}×`).join(' · ')],
+        ['Pull, converting unevenly', d => `${S(d).pull.toFixed(1)} MPa`], ['Solved in', d => `${(FMS.res[d].ms / 1000).toFixed(1)} s`]];
+      const ref = S(dims[0]).labileRef;
+      furn += `<h4>The furnace's multiphysics (MP-2)</h4><p class="lede">${repEsc(`Heat, chemistry, gas and stress solved together: the holder heated by the hot zone at the program's temperature and the argon, the GO's own heat as its labile oxygen leaves (${MAT.furn.Hr.v} kJ/g). At the program's own temperature the labile oxygen is half gone at ${ref ? ref.Tprog.toFixed(0) + ' °C' : '—'}.`)}</p>`
+        + repRows(rows.map(([l, f]) => [repEsc(l), ...dims.map(d => repEsc(f(d)))]), ['', ...dims.map(d => MP_DIMS[d])]);
+    }
   }
   return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
     + drying

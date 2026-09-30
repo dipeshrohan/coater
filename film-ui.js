@@ -191,7 +191,8 @@ function filmRender() {
   if (!sec) return;
   if (!sec.dataset.wired) filmWire(sec);
   if (typeof sheetRender === 'function') sheetRender();   // (the piece in 3D, GO-4d: after the film, the film shown)
-  if (typeof mpStackRender === 'function' && FILM.view === 'stack') mpStackRender();   // (the stack's multiphysics, MP-1)
+  // (the stack's multiphysics, MP-1; for the report, every view open, drawn too once solved -- then it asks nothing of its solver)
+  if (typeof mpStackRender === 'function' && (FILM.view === 'stack' || (PROC_ALL && mpCurrent(MPS.dim)))) mpStackRender();
   sec.querySelectorAll('[data-film]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.film === DRY.sel)));
   const st = document.getElementById('filmState');
   if (!dryFilms().length) { st.innerHTML = `<p class="dry-msg">${pill('Waiting for the 1D: the film starts from the wet film', '')}</p>`; filmClear(); return; }
