@@ -68,7 +68,7 @@ async function mpStackWait(dim = MPS.dim) {
 // ---- the page ----
 function mpStackHTML() {
   const pane = (id, icon, title, aria, extra = '') => `<figure class="pane mp-pane"><figcaption>${uiBadge(icon)}${title}${extra}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
-  return `<section class="mp-sec no-report" id="mpSec" aria-labelledby="mpH">
+  return `<section class="mp-sec" id="mpSec" aria-labelledby="mpH">
     <header class="mp-bar">
       <h4 id="mpH">${uiBadge('mesh')}Multiphysics solver <small>heat · water · stress, solved together</small></h4>
       <div class="seg" role="tablist" aria-label="The solver's dimension" id="mpDim">${Object.entries(MP_DIMS).map(([k, t]) => `<button type="button" role="tab" data-mpdim="${k}" aria-selected="${+k === MPS.dim}">${t}</button>`).join('')}</div>

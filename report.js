@@ -88,6 +88,18 @@ function repFigure(target, caption, flag = '') {
   const cap = caption || [shot.title, shot.subtitle].filter(Boolean).join(' · ');
   return `<figure><img src="${cv.toDataURL('image/png')}" alt="${repEsc(cap)}" style="max-width:${Math.round(W)}px"><figcaption>${repEsc(cap)}${flag ? ' ' + flag : ''}</figcaption></figure>`;
 }
+/** A multiphysics step's chart (MP-1, MP-2): solved for the inputs as they are, in the dimension shown; any other chart: true. */
+function repMpSolved(cv) {
+  const s = cv.closest('#mpSec, #fmpSec');
+  if (!s) return true;
+  return s.id === 'mpSec' ? typeof mpCurrent === 'function' && !!mpCurrent(MPS.dim) : typeof fmpCurrent === 'function' && !!fmpCurrent(FMS.dim);
+}
+/** Which multiphysics a chart is (its captions are the page's: "Temperatures" in both), before its caption; '' for any other. */
+function repMpName(cv) {
+  const s = cv && cv.closest('#mpSec, #fmpSec');
+  if (!s) return '';
+  return s.id === 'mpSec' ? `The stack's multiphysics (MP-1, ${MP_DIMS[MPS.dim]}) · ` : `The furnace's multiphysics (MP-2, ${MP_DIMS[FMS.dim]}, ${FURN_RUNS[FMS.run]}) · `;
+}
 /** Rows of name / value (/ more) as a table. */
 const repRows = (rows, head) => `<table>${head ? `<thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead>` : ''}<tbody>${rows.map(r => `<tr>${r.map((c, n) => n ? `<td>${c}</td>` : `<th scope="row">${c}</th>`).join('')}</tr>`).join('')}</tbody></table>`;
 /** The problems (rejected entries, errors, warnings) as a table. */
@@ -120,9 +132,9 @@ async function repModule(m, statsTitle = 'Results') {
   if (m === 11) html += acrossReportHTML();
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
-  // (not an editor's drawing; not the multiphysics steps', drawn only once solved there -- their answers are tables below)
-  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')));
-  if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, t.title())).join('');
+  // (not an editor's drawing; a multiphysics step's charts only once it is solved for the inputs as they are, never empty)
+  const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')) && t.canvases().every(repMpSolved));
+  if (figs.length) html += '<h3>Plots</h3>' + figs.map(t => repFigure(t, repMpName(t.canvases()[0]) + t.title())).join('');
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   const scope = cleanText(document.getElementById('scope'));
   html += `<h3>Checks</h3>${pills.length ? `<ul class="checks">${pills.join('')}</ul>` : ''}${scope ? `<p class="scope">${repEsc(scope)}</p>` : ''}`;

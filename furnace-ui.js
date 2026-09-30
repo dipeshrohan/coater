@@ -277,8 +277,8 @@ function furnRender() {
   if (!sec.dataset.wired) furnWire(sec);
   sec.querySelectorAll('[data-furn]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.furn === DRY.sel)));
   const st = document.getElementById('furnState');
-  // (the multiphysics, MP-2: solved only when its step is shown)
-  if (typeof fmpRender === 'function' && (FURN.part || 'runs') === 'runs' && typeof processStep === 'function' && processStep('furn') === 'multi') fmpRender();
+  // (the multiphysics, MP-2: solved only when its step is shown; for the report, every step open, drawn too once solved)
+  if (typeof fmpRender === 'function' && (((FURN.part || 'runs') === 'runs' && typeof processStep === 'function' && processStep('furn') === 'multi') || (PROC_ALL && fmpCurrent(FMS.dim)))) fmpRender();
   if (typeof furnSetupRender === 'function') { furnSetupRender(); furnShowChart(); }
   if (!furnInputs()) { st.innerHTML = '<p class="fv-why">After the film and its cut piece are solved (the Film stage).</p>'; furnClear(); furnMeasured(null); if (typeof furnSolveRender === 'function') furnSolveRender(null); return; }
   furnRequest();
