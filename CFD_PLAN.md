@@ -110,7 +110,10 @@ the iterate), and the lumped terms summed per node and material (a 3D solve 2× 
 - The page: Furnace › Multiphysics (the fourth step), 1D and 2D solving by themselves, 3D on Solve (about two minutes: the
   runaway's short steps). New inputs on the Furnace card (assumed until you say): the GO's heat, the paper's conduction along
   and through, the contact, the plates' conduction and density, the holder's emissivity.
-- Checks: furnace-mp.validate.js (13) and mp-core.validate.js (36).
+- Checks: furnace-mp.validate.js (13) and mp-core.validate.js (36). The app's 2D mesh against one twice as fine each way
+  (the app's inputs): the lag the same (170/398 against 168/398 K), the runaway's peak and the spread within 5 % (498
+  against 472 K; 667 against 641 K), the labile oxygen's temperature and the gas within 7–10 % -- inside what the inputs
+  (the GO's heat alone ±50 %) leave open.
 
 Found (the physics not aligned before): furnace.js takes every piece at the program's temperature. Heated by radiation from
 the hot zone, a holder of 200 pieces lags the program by 100–400 K (the most in run 2 at 10 °C/min), and the GO's own heat
