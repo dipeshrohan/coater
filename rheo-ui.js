@@ -126,14 +126,19 @@ function rtUseFlow(t, law) {
   const f = rtFit(t).flow[law], a = f.app, src = `fit to ${t.name}`, notes = [];
   undoHint(`Use the ${RHEO_MODELS[law].l} fit of ${t.name}`);
   CFDG.model = law;
-  const n1 = rtSetSide('mu', a.muRef, src); if (n1) notes.push(n1);
-  if (RHEO_MODELS[law].uses.includes('n')) { const n2 = rtSetSide('n', a.n, src); if (n2) notes.push(n2); }
-  if (law === 'hb') { const n3 = rtSetSide('ty', a.ty, src); if (n3) notes.push(n3); }
+  // (MH-3: the fit's law set whole -- its extras, its viscosity at 2.7 1/s, n, the yield stress -- then its own parameter, K or
+  //  η0, from them: the law fitted, exactly)
   if (law === 'carreau' || law === 'cross') {
     rtSetCard('etaInf', a.etaInf, src, f.loose.includes('etaInf'));
     rtSetCard('lamT', a.L, src, f.loose.includes('L'));
     if (law === 'carreau') rtSetCard('aCY', a.a, src, f.loose.includes('a'));
   }
+  rheoHold(() => {
+    const n1 = rtSetSide('mu', a.muRef, src); if (n1) notes.push(n1);
+    if (RHEO_MODELS[law].uses.includes('n')) { const n2 = rtSetSide('n', a.n, src); if (n2) notes.push(n2); }
+    if (law === 'hb') { const n3 = rtSetSide('ty', a.ty, src); if (n3) notes.push(n3); }
+  });
+  rheoSync('mu');
   imgToast(`${RHEO_MODELS[law].l} from ${t.name}${notes.length ? `; as the inputs take them: ${notes.join(', ')}` : ''}.${f.loose.length ? ` Not pinned down by this curve: ${f.loose.map(k => RT_VALS[k][0]).join(', ')}.` : ''}`);
   render();
 }

@@ -6,8 +6,7 @@
  * Laws, anchored as the app's others are, so the viscosity at 2.7 1/s is the sidebar's measured value muRef:
  *   Carreau–Yasuda  eta = eta_inf + (eta0 - eta_inf) [1 + (L gd)^a]^((n - 1)/a)
  *   Cross           eta = eta_inf + (eta0 - eta_inf) / (1 + (L gd)^(1 - n))
- * with eta0 from the anchor; x = { model, etaInf (Pa s), L (s), a } carries the extras (eta_inf at most half
- * of muRef). The stress tau = eta gd rises with gd for n > 0, so its inverse is one-valued: Newton on ln gd.
+ * with eta0 from the anchor; x = { model, etaInf (Pa s), L (s), a } carries the extras (eta_inf below muRef). The stress tau = eta gd rises with gd for n > 0, so its inverse is one-valued: Newton on ln gd.
  *
  * Structure lambda (0 broken, 1 built), S = { tb (s), gdc (1/s), cy, ce }:
  *   d lambda / dt = (1 - lambda) / tb - lambda gd / (gdc tb)      (rebuilds at rest over tb, broken by shear)
@@ -33,13 +32,16 @@ function rheoShape(model, L, a, n, gd) {
  */
 function rheoCompile(muRef, ty, n, x) {
   if (!x || !RHEO_EXTRA.has(x.model)) {
-    const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
+    const base = muRef - ty / 2.7;
+    if (!(base > 0)) throw new Error(`the yield stress (${ty} Pa) and the viscosity at 2.7 1/s (${muRef} Pa·s) contradict each other: no Herschel–Bulkley law gives both (K would be ≤ 0)`);
     const mu = gd => { gd = Math.max(gd, 1e-9); return ty / gd + base * Math.pow(gd / 2.7, n - 1); };
     const gdOf = t => t <= ty ? 0 : Math.pow((t - ty) / base, 1 / n) * Math.pow(2.7, (n - 1) / n);
     return { model: x && x.model || 'hb', mu, tau: gd => mu(gd) * gd, gdOf, ty, n, muRef };
   }
   const model = x.model, L = x.L, a = model === 'cross' ? 1 : x.a;
-  const ei = Math.min(Math.max(x.etaInf || 0, 0), 0.5 * muRef);
+  // (MH-3: η∞ is the law's own, not capped -- the old cap at half of μref quietly changed it; it must lie below μref)
+  const ei = Math.max(x.etaInf || 0, 0);
+  if (!(ei < muRef)) throw new Error(`η∞ (${ei} Pa·s) must lie below the viscosity at 2.7 1/s (${muRef} Pa·s): the law would not thin`);
   const e0 = ei + (muRef - ei) / rheoShape(model, L, a, n, 2.7)[0];
   const mu = gd => { gd = Math.max(gd, 1e-9); return ei + (e0 - ei) * rheoShape(model, L, a, n, gd)[0]; };
   // (ln tau against ln gd: slope 1 + (e0 - ei) F dlnF / eta, between n and 1)

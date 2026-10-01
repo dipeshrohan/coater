@@ -62,6 +62,8 @@ function checkGeometry(geo, i) {
   if (!(geo.muRef > 0)) err('visc', 'The viscosity must be above 0.', field('mu', 'n_mu'));
   if (RHEO_MODELS[geo.model].uses.includes('n') && !(geo.n > 0.05 && geo.n <= 2)) err('nrange', `Shear-thinning index ${geo.n}: the solver needs 0.05 to 2.`, field('n', 'n_n'));
   if (geo.ty < 0) err('yneg', 'The yield stress cannot be negative.', field('ty', 'n_ty'));
+  // (MH-3: the flow law in its own parameters, never quietly changed: K ≤ 0, n ≤ 0, η0 ≤ η∞, a yield stress the viscosity at 2.7 1/s cannot carry)
+  if (typeof rheoError === 'function') { const re = rheoError(i ?? null), pk = RHEO_PRIMARY[CFDG.model]; if (re) err('law', re, field(pk, 'n_' + pk)); }
   if (!(geo.gamma > 0)) err('gamma', 'The surface tension must be above 0.', field('g', 'n_g'));
   if (bladeUsesL(geo.shape) && !(geo.L > 0)) err('land', 'The land length must be above 0.', 'n_L');
   const prof = shapedB ? bladeProfileCached(geo.blade) : null;

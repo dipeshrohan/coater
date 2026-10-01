@@ -57,13 +57,18 @@ function syncSliderFill(input) {
     const slider = row.querySelector('input[type=range]'), num = row.querySelector('input[type=number]');
     const showValue = () => { if (document.activeElement !== num) num.value = (+slider.value).toFixed(c.d); syncSliderFill(slider); };
     showValue();
-    slider.addEventListener('input', () => { P[c.k] = +slider.value; if (inputProblems.has(num.id)) clearRejected(num.id); showValue(); queueRender(); });
-    // (a typed value outside the slider's range is rejected: see validate.js)
+    // (MH-3: the slurry's law kept in step -- its viscosity at 2.7 1/s and its own parameter: rheo-params.js)
+    const rheoIn = ['mu', 'K', 'eta0', 'n', 'ty'].includes(c.k);
+    slider.addEventListener('input', () => { P[c.k] = +slider.value; if (inputProblems.has(num.id)) clearRejected(num.id); showValue(); if (rheoIn) rheoSync(c.k); queueRender(); });
+    // (a typed value outside the slider's range is rejected: see validate.js; the law's own values as typed, not to the slider's step)
     num.addEventListener('change', () => {
-      guardNumber(num, { label: c.l, lo: c.min, hi: c.max, unit: c.u }, v => { slider.value = v; slider.dispatchEvent(new Event('input')); });
-      num.value = (+slider.value).toFixed(c.d);
+      guardNumber(num, { label: c.l, lo: c.min, hi: c.max, unit: c.u }, v => { if (RHEO_EXACT.has(c.k)) setInput(c.k, v); else { slider.value = v; slider.dispatchEvent(new Event('input')); } });
+      num.value = (RHEO_EXACT.has(c.k) ? +P[c.k] : +slider.value).toFixed(c.d);
     });
   });
+  // the slurry's law under its inputs: its viscosity at 2.7 1/s against the measurement, and why it cannot hold if it cannot
+  const tyRow = document.getElementById('n_ty') && document.getElementById('n_ty').closest('.prop');
+  if (tyRow) { const out = document.createElement('div'); out.id = 'rheoOut'; out.setAttribute('aria-live', 'polite'); tyRow.insertAdjacentElement('afterend', out); }
 })();
 
 /** Write the model-validity message (from physics.js's modelScope()) into the persistent banner at the top of the main panel. `extra` appends a one-off note (used by the animation tab to flag a supply-limited pool). */
@@ -834,6 +839,7 @@ function renderAnchor(vp) {
   return { top: vp.scrollTop, id: best ? best.id : null, dy: bestY };
 }
 function render() {
+  rheoReadout();   // (the inputs bar's line under the slurry's law: its viscosity at 2.7 1/s against the measurement)
   // (a redraw keeps the keyboard focus on a sub tab or 1D location button: arrow keys go on working)
   const af = document.activeElement, keepF = af && af.closest && (af.closest('.subtabs [data-view]') || af.closest('[data-l1d]'))
     ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.nav ?? af.dataset.view ?? af.dataset.l1d);
@@ -917,12 +923,15 @@ new MutationObserver(render).observe(document.documentElement, { attributes: tru
 
 document.getElementById('reset').onclick = () => {
   undoHint('Reset inputs to defaults');
-  CFG.forEach(c => {
+  // (the defaults are one consistent law: set as they are, the slurry's law not re-derived on the way)
+  rheoHold(() => CFG.forEach(c => {
     P[c.k] = c.v;
+    if (RHEO_EXACT.has(c.k)) { setInput(c.k, c.v); return; }
     const s = document.getElementById('s_' + c.k);
     s.value = c.v;
     s.dispatchEvent(new Event('input'));
-  });
+  }));
+  rheoSync('model');
   imgToast(`The shared inputs are back to their defaults (the CFD setup and the blade across the web stay).${keyLabel('edit.undo') ? ` Undo: ${keyLabel('edit.undo')}.` : ''}`);
 };
 

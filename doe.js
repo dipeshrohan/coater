@@ -14,6 +14,9 @@ const DOE_FACTORS = [
   { k: 'gap', l: 'Gap at the edge', u: 'mm', kind: 'loc', g: 'Process and slurry', d: 3, lo: 0.05, hi: 10 },
   { k: 'Pup', l: 'Bead pressure', u: 'kPa', kind: 'loc', g: 'Process and slurry', d: 2, lo: 0, hi: 20 },
   { k: 'mu', l: 'Viscosity at 2.7 1/s', u: 'Pa·s', kind: 'loc', g: 'Process and slurry', d: 2, lo: 0.05, hi: 500 },
+  // (MH-3: the laws' own parameters: K kept while τy or n vary, η0 for Carreau–Yasuda and Cross)
+  { k: 'K', l: 'Consistency K', u: 'Pa·sⁿ', kind: 'loc', g: 'Process and slurry', d: 3, lo: 0.001, hi: 1000, uses: 'K' },
+  { k: 'eta0', l: 'Zero-shear viscosity η0', u: 'Pa·s', kind: 'loc', g: 'Process and slurry', d: 2, lo: 0.001, hi: 1e5, uses: 'eta0' },
   { k: 'n', l: 'Shear-thinning n', u: '', kind: 'loc', g: 'Process and slurry', d: 2, lo: 0.1, hi: 1.5, uses: 'n' },
   { k: 'ty', l: 'Yield stress', u: 'Pa', kind: 'loc', g: 'Process and slurry', d: 1, lo: 0, hi: 500, uses: 'ty' },
   { k: 'g', l: 'Surface tension', u: 'N/m', kind: 'loc', g: 'Process and slurry', d: 3, lo: 0.01, hi: 0.1 },

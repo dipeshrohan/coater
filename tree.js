@@ -109,7 +109,7 @@ function unusedWhy(k) {
   if (tab === 12) return 'not used by the process chain (it starts from the wet film)';
   if (tab === 13) return 'not on a material card';
   if (tab === 4 || tab === 5 || tab >= 8) {
-    if (k === 'n' || k === 'ty') return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
+    if (RHEO_INS.includes(k)) return `not used by the ${RHEO_MODELS[CFDG.model].l} model chosen in the CFD setup`;
     if (k === 'L') return CFDG.shape === 'custom' ? 'not used with a custom blade profile (its points set the land)' : 'not used with a round blade entry (by the flat land and the shaped blades)';
     return tab === 9 ? 'not used by the 3D geometry' : tab >= 8 ? 'not used by this 1D page' : 'not used by the CFD';
   }
@@ -123,12 +123,16 @@ const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () =>
 // (the coating's results on the Process view: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
 /** The shared inputs page pg uses (null: all of them). */
 const usesOf = pg => { const v = NAV[pg].v; return NAV_USES[pg] ? NAV_USES[pg]() : v === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : v === 4 || v === 5 || v === 8 || v === 12 ? cfdUses() : v === 10 ? [...cfdUses(), 'lam', 'vib'] : v === 11 ? [...cfdUses(), 'face'] : v === 9 ? [...cfdUses(), 'face', 'thw'] : USES[v]; };
-const inputUsed = k => { const u = typeof navNow === 'function' ? usesOf(navNow()) : USES[tab]; return !u || u.includes(k); };
+// (MH-3: a page that uses the slurry's flow shows the chosen law's own inputs -- Newtonian μ; power law K, n; Herschel–Bulkley
+//  K, n, τy; Carreau–Yasuda and Cross η0, n -- in place of the viscosity at 2.7 1/s every list names)
+const RHEO_INS = ['mu', 'K', 'eta0', 'n', 'ty'];
+const rheoUsesOf = u => (u && u.some(k => RHEO_INS.includes(k)) ? [...u.filter(k => !RHEO_INS.includes(k)), ...RHEO_MODELS[CFDG.model].uses] : u);
+const inputUsed = k => { const u = rheoUsesOf(typeof navNow === 'function' ? usesOf(navNow()) : USES[tab]); return !u || u.includes(k); };
 /** The page an input's "Show" or "Go to" opens when the page shown does not use it: the first, in the process's order, that
  *  does (the slurry's flow on Mixing, the coating's on its 1D, the ripple's on To the oven, the notch face across the web,
  *  the web's thickness on the 3D, the contact angle at the web's edge on Web edge; Summary shows them all). */
 const JUMP_PAGES = ['mix', 'gap', 'oven1d', 'across', 'cfd3d', 'edge', 'summary'];
-const pageUsing = k => JUMP_PAGES.find(pg => { const u = usesOf(pg); return !u || u.includes(k); }) || null;
+const pageUsing = k => JUMP_PAGES.find(pg => { const u = rheoUsesOf(usesOf(pg)); return !u || u.includes(k); }) || null;
 
 // ---- decorating the tree: icons, group colours, dimming ----
 function decorateTree() {

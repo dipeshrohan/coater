@@ -78,6 +78,8 @@ function projectData() {
 /** Set a sidebar input as its slider does (everything listening updates). */
 function setInput(k, v) {
   const sl = document.getElementById('s_' + k);
+  // (MH-3: the slurry law's own values and its viscosity at 2.7 1/s exactly as given -- a slider's step would round them)
+  if (sl && typeof RHEO_EXACT !== 'undefined' && RHEO_EXACT.has(k)) { P[k] = v; rheoShow(k); rheoSync(k); queueRender(); return; }
   if (sl) { sl.value = v; sl.dispatchEvent(new Event('input')); } else P[k] = v;
 }
 /** Stop whatever is solving: every solve and fit, on every page (New, Open: their answers belong to the project being left). */
@@ -217,12 +219,15 @@ function applyProject(p) {
   if (!p || p.app !== PROJ_APP) throw new Error('this is not a Blade Coat Defect Lab project');
   if (p.format > PROJ_FORMAT) throw new Error('the project was saved by a newer version of the app');
   projStopAll();
-  for (const c of CFG) setInput(c.k, p.inputs && c.k in p.inputs ? p.inputs[c.k] : c.v);   // (an input the project predates: its default)
+  // (the inputs as saved, consistent as they are: the slurry's law not re-derived while they come in)
+  rheoHold(() => { for (const c of CFG) setInput(c.k, p.inputs && c.k in p.inputs ? p.inputs[c.k] : c.v); });   // (an input the project predates: its default)
   Object.assign(CFDG, CFDG_DEFAULTS); for (const k of Object.keys(CFDG)) if (p.cfdSetup && k in p.cfdSetup) CFDG[k] = p.cfdSetup[k];
   Object.assign(CFDS, SOLVER_DEFAULTS, p.solver || {});
   applyMaterials(p.materials); applyOven(p.oven, p.cfdSetup);
   applyAcross(p.across);   // (a project from before: the blade across the web as it was, no new part)
   CFD_LOCS.forEach((l, i) => { const s = (p.locations || [])[i] || {}; l.z = s.z ?? LOC_Z_DEFAULTS[i]; l.over = { ...(s.over || {}) }; l.solver = { ...(s.solver || {}) }; });
+  // (a project from before MH-3: the law's own parameters from its viscosity at 2.7 1/s -- every solver gets the law it was solved with)
+  rheoMigrate(p.inputs);
   cfdProbes = Array.isArray(p.probes) ? p.probes.map(q => ({ ...q })) : []; saveProbes();
   cfdCuts = Array.isArray(p.cuts) ? p.cuts.map(q => ({ ...q })) : []; saveCuts();
   if (Array.isArray(p.cases) && p.cases.length) {
@@ -265,7 +270,7 @@ function applyProject(p) {
 async function newProject() {
   if (!(await confirmStopRunning('new')) || !(await confirmDiscard())) return;
   projStopAll();
-  for (const c of CFG) setInput(c.k, c.v);
+  rheoHold(() => { for (const c of CFG) setInput(c.k, c.v); }); RHEO_NOTE = '';   // (the defaults are one consistent law)
   Object.assign(CFDG, JSON.parse(JSON.stringify(CFDG_DEFAULTS)));
   Object.assign(CFDS, SOLVER_DEFAULTS);
   applyMaterials(null); applyOven(null);

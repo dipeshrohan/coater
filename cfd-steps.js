@@ -886,7 +886,7 @@ function renderSolveStep2D(host) {
   host.innerHTML = `<div class="step-view solve-view"><div class="step-draw" id="bcDraw"></div>
     <aside class="step-side">${bcListHTML(i)}
       <h4>${uiBadge('drop')}Slurry</h4><table class="kv">
-      <tr><td>Rheology</td><td>${m.l}</td></tr><tr><td>Viscosity at 2.7 1/s</td><td>${locInput(i, 'mu').toFixed(1)} Pa·s</td></tr>
+      <tr><td>Rheology</td><td>${m.l}</td></tr><tr><td>Viscosity at 2.7 1/s</td><td>${(+locMuRef(i)).toPrecision(4)} Pa·s</td></tr>
       ${law.includes('n') ? `<tr><td>Shear-thinning n</td><td>${locInput(i, 'n').toFixed(2)}</td></tr>` : ''}${law.includes('ty') ? `<tr><td>Yield stress</td><td>${locInput(i, 'ty').toFixed(1)} Pa</td></tr>` : ''}
       <tr><td>Density</td><td>${geo.rho.toFixed(0)} kg/m³</td></tr></table>
       <h4>${uiBadge('tolerance')}Solver</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Iterations, at most</td><td>${CFDS.maxIter}</td></tr><tr><td>Mesh</td><td>${MESH_PRESETS[CFDS.mesh].l}${zonesActive(zonesOf()) ? ' + zones' : ''}</td></tr></table>

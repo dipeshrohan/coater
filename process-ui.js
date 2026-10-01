@@ -149,8 +149,8 @@ function procSlurryDraw() {
   plotChart(cv, 0.5, { x0, x1, y0, y1, xticks: tk(x0, x1), yticks: tk(y0, y1), xf: dec, yf: dec, xl: 'shear rate (1/s)', yl: 'viscosity (Pa·s)',
     vl: one ? [{ x: L10(g.gd), c: acc, t: '' }] : [{ x: L10(2.7), c: mut, t: '' }, { x: L10(g.gd), c: acc, t: '' }], s: [{ p, c: go, w: 2.4 }] });
   const lg = document.getElementById('mxFlowLg');
-  if (lg) lg.innerHTML = oneDLegend([[`viscosity, ${RHEO_MODELS[CFDG.model].l}`, go], ...(one ? [[`the gap, ${f(g.gd)} 1/s (U/H), and 2.7 1/s where you set it: ${f(g.mu)} Pa·s`, acc, 'dash']]
-    : [[`2.7 1/s, where you set it: ${P.mu} Pa·s`, mut, 'dash'], [`the gap, ${f(g.gd)} 1/s (U/H): ${f(g.mu)} Pa·s`, acc, 'dash']])]);
+  if (lg) lg.innerHTML = oneDLegend([[`viscosity, ${RHEO_MODELS[CFDG.model].l}`, go], ...(one ? [[`the gap, ${f(g.gd)} 1/s (U/H), and 2.7 1/s: ${f(g.mu)} Pa·s (measured ${RHEO_MEASURED.mu})`, acc, 'dash']]
+    : [[`2.7 1/s: the law ${f(P.mu)} Pa·s, measured ${RHEO_MEASURED.mu}`, mut, 'dash'], [`the gap, ${f(g.gd)} 1/s (U/H): ${f(g.mu)} Pa·s`, acc, 'dash']])]);
 }
 /** The flakes' alignment (stage 3): where it stands at each location, and where it is computed. */
 function procAlignHTML() {
@@ -346,8 +346,10 @@ function matRheoBase() {
   const flag = c => /assumed/.test(c.h || '') ? 'assumed' : 'given', cf = k => CFG.find(c => c.k === k);
   return [
     ['Rheology model', RHEO_MODELS[CFDG.model].l, '', 'given', 'chosen here or in Coating › 2D (the CFD setup)'],
-    ...['mu', 'n', 'ty', 'g'].map(k => { const c = cf(k), fit = (MAT.rheo.side || {})[k];
-      return fit && fit.v === P[k] ? [c.l, P[k].toFixed(c.d), c.u, 'measured', fit.src] : [c.l, P[k].toFixed(c.d), c.u, flag(c), c.h || 'you (measured)']; }),
+    // (MH-3: the law's own parameters, then the viscosity it gives at 2.7 1/s -- worked out, against your measurement)
+    ...[...RHEO_MODELS[CFDG.model].uses, 'g'].map(k => { const c = cf(k), fit = (MAT.rheo.side || {})[k];
+      return fit && fit.v === P[k] ? [c.l, (+P[k]).toFixed(c.d), c.u, 'measured', fit.src] : [c.l, (+P[k]).toFixed(c.d), c.u, flag(c), c.h || 'you (measured)']; }),
+    ...(CFDG.model === 'newtonian' ? [] : [['Viscosity at 2.7 1/s, the law', Number.isFinite(P.mu) ? (+P.mu.toPrecision(4)).toString() : '—', 'Pa·s', 'calc', `from its parameters; measured ${RHEO_MEASURED.mu} Pa·s (${RHEO_MEASURED.src})`]]),
   ];
 }
 /** Whether a rheology card row (MAT_RHEO) is used as things are: the law's extras by their laws, the structure's when it is on. */
@@ -444,12 +446,13 @@ function viewMaterials() {
   view.querySelectorAll('input.mat-src[data-mk]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mk; MAT.slurry[k] = { ...MAT.slurry[k], src: el.value.trim() }; }));
   document.getElementById('matReset').onclick = () => { undoHint('Slurry card back to its defaults'); MAT = { ...MAT, slurry: matDefaults().slurry }; render(); };
   // the rheology card: the model (as Coating › 2D's), the laws' extras and the structure
-  document.getElementById('matModel').addEventListener('change', e => { CFDG.model = e.target.value; render(); });
+  document.getElementById('matModel').addEventListener('change', e => { CFDG.model = e.target.value; rheoSync('model'); render(); });
   const rKey = k => MAT_RHEO.find(q => q[0] === k);
   view.querySelectorAll('input[type=number][data-mr]').forEach(el => el.addEventListener('change', () => {
     const k = el.dataset.mr, [, l, u, lo, hi] = rKey(k);
     guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.rheo[k] = { ...MAT.rheo[k], v }; });
     el.value = MAT.rheo[k].v;
+    rheoSync('extras');   // (MH-3: η0 kept, the law's viscosity at 2.7 1/s follows its new shape)
     matRheoDerived(); matDerived();
   }));
   view.querySelectorAll('select[data-mr]').forEach(el => el.addEventListener('change', () => {
@@ -459,7 +462,7 @@ function viewMaterials() {
   }));
   view.querySelectorAll('input.mat-src[data-mr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mr; MAT.rheo[k] = { ...MAT.rheo[k], src: el.value.trim() }; }));
   document.getElementById('matStructOn').addEventListener('change', e => { MAT.rheo.structOn = e.target.checked; render(); });
-  document.getElementById('matRheoReset').onclick = () => { undoHint('Rheology values back to their defaults'); MAT = { ...MAT, rheo: matDefaults().rheo }; render(); };
+  document.getElementById('matRheoReset').onclick = () => { undoHint('Rheology values back to their defaults'); MAT = { ...MAT, rheo: matDefaults().rheo }; rheoSync('extras'); render(); };
   document.getElementById('matRheoEdit').onclick = () => { setPanelHidden('model', false); const d = [...document.querySelectorAll('#params > details.grp')].find(x => /Slurry/.test((x.querySelector('summary') || {}).textContent || '')); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); } };
   document.getElementById('matFibreEdit').onclick = () => { FV.tree.fibre = true; tab = 4; render(); };
   matDerived();
@@ -474,7 +477,7 @@ function viewMaterials() {
 function matRheoDerived() {
   const r = MAT.rheo, used = MAT_RHEO.filter(matRheoUsed), n = f => used.filter(q => r[q[0]].flag === f).length;
   const probs = [];
-  if ((CFDG.model === 'carreau' || CFDG.model === 'cross') && r.etaInf.v > 0.5 * P.mu) probs.push(`The viscosity at high shear (${r.etaInf.v} Pa·s) is above half the viscosity at 2.7 1/s (${P.mu} Pa·s): the law uses half, ${(0.5 * P.mu).toFixed(3)} Pa·s.`);
+  { const re = rheoError(); if (re) probs.push(re); }   // (MH-3: a law that cannot hold, never quietly changed)
   const der = document.getElementById('matRheoDerived');
   if (der) der.innerHTML = probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
   const cnt = document.getElementById('matRheoCount');

@@ -15,7 +15,9 @@ const HELP = {
   'in.tf': { d: 'Thickness of the fibre (web) under the blade. It takes up part of the scraper height, and sets the fibre\'s porosity with its basis weight.', e: 'Thicker: a narrower gap and a thinner film; a more open fibre if the basis weight stays the same.', u: 'all modules, CFD fibre results, the DOE' },
   'in.oven': { d: 'Distance from the blade to the drying oven: the time the wet film has to level before it is fixed.', e: 'Longer: more time for surface tension to level ripples (unless the yield stress stops it), and the edge disturbances grow further.', u: 'Web edge, Film surface, CFD (film up to the oven)' },
   // slurry
-  'in.mu': { d: 'Apparent viscosity measured at a shear rate of 2.7 1/s: the reference point of the rheology law.', e: 'Higher: less pressure-driven flow (a thinner film when the bead pressure matters), slower levelling, a higher capillary number.', u: ALL_MODULES },
+  'in.mu': { d: 'The Newtonian law\'s viscosity μ (τ = μ γ̇). For the other laws, the viscosity their parameters give at 2.7 1/s -- worked out, shown against your measurement there (10.5 Pa·s); the solvers take every law in this exact form.', e: 'Higher: less pressure-driven flow (a thinner film when the bead pressure matters), slower levelling, a higher capillary number.', u: ALL_MODULES },
+  'in.K': { t: 'Consistency K', d: 'Herschel–Bulkley τ = τy + K γ̇ⁿ and the power law τ = K γ̇ⁿ: the stress at 1 1/s above the yield stress. Its unit, Pa·sⁿ, follows n. The law\'s viscosity at 2.7 1/s follows from K, n and τy; K stays as set when τy or n change. A project from before had the viscosity at 2.7 1/s as its input: K is worked out from it, exactly.', e: 'Higher: a thicker slurry at every shear rate; less pressure-driven flow under the blade.', u: 'Coating 1D, 2D, 3D; Mixing; the DOE' },
+  'in.eta0': { t: 'Zero-shear viscosity η0', d: 'Carreau–Yasuda and Cross: the plateau the viscosity reaches at low shear (η∞ at high shear, λ and a on Materials). The law\'s viscosity at 2.7 1/s follows from them.', e: 'Higher: a thicker slurry, most where the shear is low.', u: 'Coating 1D, 2D, 3D; Mixing; the DOE' },
   'in.n': { d: 'Shear-thinning index of the power law part: 1 = Newtonian, below 1 the viscosity falls as the shear rate rises.', e: 'Lower: the slurry thins more in the high-shear gap, so the gap flow sees a lower viscosity than at 2.7 1/s.', u: 'Contact line, Film surface, CFD (Power law, Herschel–Bulkley), the DOE' },
   'in.ty': { d: 'Stress below which the slurry does not flow (Herschel–Bulkley yield stress). Assumed, not measured.', e: 'Higher: larger unyielded (plug) regions, levelling stops at a residual ripple; very high values slow or stop the CFD solver.', u: 'Contact line, Film surface, CFD (Herschel–Bulkley), the DOE' },
   'in.g': { d: 'Surface tension of the slurry against air. Assumed, water-like.', e: 'Higher: faster levelling, a stronger pull of the meniscus, a lower capillary number.', u: 'Contact line, Web edge, Film surface, CFD, the DOE' },
@@ -541,7 +543,7 @@ function applyHelp() {
     const row = num.closest('.prop');
     set(num, 'in.' + c.k); set(row && row.querySelector('.prop-l'), 'in.' + c.k); addInfo(row, 'in.' + c.k);
   }
-  const LOC_KEY = { gap: 'in.Hm', th: 'in.th', U: 'in.U', Pup: 'in.Pup', mu: 'in.mu', n: 'in.n', ty: 'in.ty', g: 'in.g' };
+  const LOC_KEY = { gap: 'in.Hm', th: 'in.th', U: 'in.U', Pup: 'in.Pup', mu: 'in.mu', K: 'in.K', eta0: 'in.eta0', n: 'in.n', ty: 'in.ty', g: 'in.g' };
   document.querySelectorAll('input[data-li]').forEach(el => set(el, LOC_KEY[el.dataset.k]));
   document.querySelectorAll('input[data-ls], select[data-ls]').forEach(el => set(el, 'sol.' + el.dataset.k));
   for (const [id, key] of Object.entries(HELP_BY_ID)) {
