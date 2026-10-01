@@ -26,33 +26,42 @@ const DR_CL = 4180;   // liquid water's specific heat (J/(kg K); 4178–4216 fro
 // IAPWS-IF97, region 4: the saturation line's coefficients n1..n10
 const DR_IF97 = [0.11670521452767e4, -0.72421316703206e6, -0.17073846940092e2, 0.12020824702470e5, -0.32325550322333e7,
   0.14915108613530e2, -0.48232657361591e4, 0.40511340542057e6, -0.23855557567849, 0.65017534844798e3];
+// The built-in material laws' parameters (MC-1b), as the material hub edits them: water's viscosity (Vogel), its saturation
+// pressure (IAPWS-IF97's coefficients), its latent heat (linear in T, y0 at T0), its specific heat; dry air's viscosity and
+// conductivity (Sutherland), its molar mass, the vapour's diffusivity in it (power law in T), its specific heat. These
+// are the laws' own values; a solve takes its options' (o.props) through drUse.
+const DR_PROPS = Object.freeze({ waterMu: { A: 2.414e-5, B: 247.8, C: 140 }, psat: DR_IF97, waterL: { y0: 2.501e6, T0: 273.15, b: -2361 }, waterCp: DR_CL,
+  airMu: { y0: 1.716e-5, T0: 273.15, S: 110.4 }, airK: { y0: 0.0241, T0: 273.15, S: 194 }, airM: DR_MA, airDv: { y0: 2.26e-5, T0: 273.15, b: 1.81 }, airCp: 1007 });
+let DR_P = DR_PROPS;
+/** The laws the next solve takes: props (the hub's, where they differ from these), else the built-in ones. */
+function drUse(props) { DR_P = props ? { ...DR_PROPS, ...props } : DR_PROPS; }
 /** Water's saturation pressure (Pa) at Tc (°C): IAPWS-IF97 eq. 30 (0 to 373.946 °C). */
 function drPsat(Tc) {
-  const n = DR_IF97, T = Math.min(Math.max(Tc + 273.15, 273.15), 647.096);
+  const n = DR_P.psat, T = Math.min(Math.max(Tc + 273.15, 273.15), 647.096);
   const th = T + n[8] / (T - n[9]), A = th * th + n[0] * th + n[1], B = n[2] * th * th + n[3] * th + n[4], C = n[5] * th * th + n[6] * th + n[7];
   return 1e6 * Math.pow(2 * C / (-B + Math.sqrt(B * B - 4 * A * C)), 4);
 }
 /** Water's boiling point (°C) at pressure P (Pa): IAPWS-IF97 eq. 31. */
 function drTsat(P) {
-  const n = DR_IF97, b = Math.pow(P / 1e6, 0.25);
+  const n = DR_P.psat, b = Math.pow(P / 1e6, 0.25);
   const E = b * b + n[2] * b + n[5], F = n[0] * b * b + n[3] * b + n[6], G = n[1] * b * b + n[4] * b + n[7];
   const D = 2 * G / (-F - Math.sqrt(F * F - 4 * E * G));
   return (n[9] + D - Math.sqrt((n[9] + D) * (n[9] + D) - 4 * (n[8] + n[9] * D))) / 2 - 273.15;
 }
 /** Water's heat of evaporation (J/kg) at Tc (°C): within 0.4 % of the steam tables from 0 to 100 °C. */
-const drLatent = Tc => 2.501e6 - 2361 * Tc;
+const drLatent = Tc => DR_P.waterL.y0 + DR_P.waterL.b * (Tc - (DR_P.waterL.T0 - 273.15));
 /** Liquid water's viscosity (Pa s) at Tc (°C) (Vogel; within 2 % from 0 to 100 °C). */
-const drMuWater = Tc => 2.414e-5 * Math.pow(10, 247.8 / (Tc + 273.15 - 140));
+const drMuWater = Tc => DR_P.waterMu.A * Math.pow(10, DR_P.waterMu.B / (Tc + 273.15 - DR_P.waterMu.C));
 /** Dry air at Tc (°C) and P (Pa): density, viscosity (Sutherland), conductivity (Sutherland form), c_p, and water vapour's diffusivity in it. */
 function drAir(Tc, P) {
-  const T = Tc + 273.15, rho = P * DR_MA / (DR_R * T);
-  const mu = 1.716e-5 * Math.pow(T / 273.15, 1.5) * (273.15 + 110.4) / (T + 110.4);
-  const k = 0.0241 * Math.pow(T / 273.15, 1.5) * (273.15 + 194) / (T + 194), cp = 1007;
-  const nu = mu / rho, alpha = k / (rho * cp), Dv = 2.26e-5 * Math.pow(T / 273.15, 1.81) * (101325 / P);
+  const q = DR_P, m = q.airMu, kk = q.airK, dv = q.airDv, T = Tc + 273.15, rho = P * q.airM / (DR_R * T);
+  const mu = m.y0 * Math.pow(T / m.T0, 1.5) * (m.T0 + m.S) / (T + m.S);
+  const k = kk.y0 * Math.pow(T / kk.T0, 1.5) * (kk.T0 + kk.S) / (T + kk.S), cp = q.airCp;
+  const nu = mu / rho, alpha = k / (rho * cp), Dv = dv.y0 * Math.pow(T / dv.T0, dv.b) * (101325 / P);
   return { rho, mu, k, cp, nu, alpha, Pr: nu / alpha, Dv, Sc: nu / Dv };
 }
 /** Moist air's density (kg/m³) at Tc (°C) with vapour pressure pv (Pa), total P. */
-const drMoistRho = (Tc, pv, P) => ((P - pv) * DR_MA + pv * DR_MW) / (DR_R * (Tc + 273.15));
+const drMoistRho = (Tc, pv, P) => ((P - pv) * DR_P.airM + pv * DR_MW) / (DR_R * (Tc + 273.15));
 /**
  * Natural convection on a horizontal surface (length scale L = area / perimeter) facing 'up' or 'down', driven by the
  * density difference of the air at the surface (Ts, its vapour pressure pvs) and away from it (Ta, pva): heat and the
@@ -168,6 +177,7 @@ function drEvap(pf, delta, K, gas, P) {
  * pressure), Tw (walls), top: {kind 'nat' | 'jet', jet}, ir (W/m² absorbed), bottom: {kind 'air' | 'nat', ua}, name}].
  */
 function drStretches(o) {
+  drUse(o.props);
   const out = [], P = o.P;
   if (o.room.len > 0) out.push({ name: 'room', x0: -o.room.len, x1: 0, Ta: o.room.T, pa: o.room.rh * drPsat(o.room.T), Tw: o.room.T, top: { kind: 'nat' }, ir: 0, bottom: { kind: 'nat', ua: 0 } });
   let x = 0;
@@ -263,6 +273,7 @@ function drConstantRate(Z, Rf, where, o) {
  * Returns the series along the line, events, the state at the exit, profiles.
  */
 function drStrip(o) {
+  drUse(o.props);
   const N = 2 * Math.ceil((o.N || 80) / 2), M = 2 * Math.ceil((o.M || 40) / 2), P = o.P, T = o.test || {};
   const phiM = o.phiM, em = (1 - phiM) / phiM, e0 = (1 - o.phi0) / o.phi0, Phi = o.phi0 * o.h0;
   const rhoL = o.rhoL, rhoS = o.rhoS, Tboil = drTsat(P);
@@ -443,8 +454,8 @@ function drStrip(o) {
     const dz = new Float64Array(M), C = new Float64Array(M), R = new Float64Array(M), L = ztv - zbv;
     const add = (c, dzeta, eloc, skin) => {
       if (dzeta <= 0) return;
-      if (skin) { const d = dzeta / phiM; dz[c] += d; C[c] += dzeta * (rhoS * o.cS + es * rhoL * DR_CL); R[c] += d / kSkin(); }
-      else { const d = dzeta * (1 + eloc); dz[c] += d; C[c] += dzeta * (rhoS * o.cS + eloc * rhoL * DR_CL); R[c] += d / kWet(1 / (1 + eloc)); }
+      if (skin) { const d = dzeta / phiM; dz[c] += d; C[c] += dzeta * (rhoS * o.cS + es * rhoL * DR_P.waterCp); R[c] += d / kSkin(); }
+      else { const d = dzeta * (1 + eloc); dz[c] += d; C[c] += dzeta * (rhoS * o.cS + eloc * rhoL * DR_P.waterCp); R[c] += d / kWet(1 / (1 + eloc)); }
     };
     for (let c = 0; c < M; c++) {
       const a = sT[c], b = sT[c + 1];
@@ -618,7 +629,7 @@ function drStrip(o) {
     Tc = TT; Ts = TsV; Tb = TbV;
     if (T.T == null) {
       const Tft = modeT === 'skin' && zt < Phi ? Tat(zt, Tc, Ts, Tb) : Ts, Tfb = modeB === 'skin' && zb > 0 ? Tat(zb, Tc, Ts, Tb) : Tb;
-      Qin += heatIn(Z, Ts, Tb, Tc) * dtv; Qlat += (drLatent(Tft) * Et + drLatent(Tfb) * Eb) * dtv; Qsens += DR_CL * (Tft * Et + Tfb * Eb) * dtv;
+      Qin += heatIn(Z, Ts, Tb, Tc) * dtv; Qlat += (drLatent(Tft) * Et + drLatent(Tfb) * Eb) * dtv; Qsens += DR_P.waterCp * (Tft * Et + Tfb * Eb) * dtv;
     }
     x += dtv * o.U; t += dtv; nSteps++;
     if (!dry && events.boil == null) {
@@ -662,6 +673,6 @@ function drSample(series, key, xs) {
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
   drSample,
-  drPsat, drTsat, drLatent, drMuWater, drAir, drMoistRho, drNat, drJets, drGAB, drDphiZ, drD0, drDcoll, drFaces, drB, drSG, drTri,
+  drPsat, drTsat, drLatent, drMuWater, drAir, drUse, DR_PROPS, drMoistRho, drNat, drJets, drGAB, drDphiZ, drD0, drDcoll, drFaces, drB, drSG, drTri,
   drEvap, drStretches, drTopSide, drBottomSide, drSideState, drConstantRate, drStrip,
 };

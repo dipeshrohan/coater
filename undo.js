@@ -182,6 +182,14 @@ const UNDO_UNITS = (() => {
   for (const [k] of MAT_DRY) u.push({ id: 'matd.' + k, get: () => MAT.dry[k], set: v => { MAT.dry[k] = v ? { ...v } : matDefaults().dry[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_DRY) });
   for (const [k] of MAT_LIB) u.push({ id: 'matl.' + k, get: () => MAT.lib[k], set: v => { MAT.lib[k] = v ? { ...v } : matDefaults().lib[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_LIB) });
   // (the material's identity; the inputs bar's material values' data sources, the material hub's: MH-5)
+  // (copies of a material and their domains, MC-2)
+  u.push({ id: 'mat.inst', get: () => MAT.inst || {}, set: v => { MAT.inst = v ? JSON.parse(JSON.stringify(v)) : {}; },
+    label: (a, b) => { const ka = Object.keys(a || {}), kb = Object.keys(b || {}); if (kb.length > ka.length) return `Duplicate: ${b[kb.find(k => !ka.includes(k))].name}`; if (kb.length < ka.length) return `Delete ${a[ka.find(k => !kb.includes(k))].name}`;
+      const id = kb.find(k => JSON.stringify(a[k]) !== JSON.stringify(b[k])); return id ? `${b[id].name}: its values` : 'A copy of a material'; } });
+  u.push({ id: 'mat.assign', get: () => MAT.assign || {}, set: v => { MAT.assign = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: () => 'A domain\'s material' });
+  // (the built-in laws' parameters as edited, MC-1b)
+  u.push({ id: 'mat.law', get: () => MAT.law || {}, set: v => { MAT.law = v ? JSON.parse(JSON.stringify(v)) : {}; },
+    label: (a, b) => { const id = Object.keys({ ...(a || {}), ...(b || {}) }).find(x => JSON.stringify((a || {})[x]) !== JSON.stringify((b || {})[x])); return id && typeof hubLawName === 'function' ? `${hubLawName(id)}: its parameters` : 'A law\'s parameters'; } });
   u.push({ id: 'mat.meta', get: () => MAT.meta || {}, set: v => { MAT.meta = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: () => 'A material\'s identity and notes' });
   u.push({ id: 'mat.prov', get: () => MAT.prov || {}, set: v => { MAT.prov = v ? JSON.parse(JSON.stringify(v)) : {}; },
     label: (a, b) => { const k = Object.keys({ ...(a || {}), ...(b || {}) }).find(x => JSON.stringify((a || {})[x]) !== JSON.stringify((b || {})[x])); const c = k && CFG.find(q => 'in.' + q.k === k);

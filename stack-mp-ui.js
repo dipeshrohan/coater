@@ -28,6 +28,7 @@ function mpStackInputs(dim) {
     XdryTo: P.Xdry + 0.1 * (P.Xcut - P.Xdry), stages, air: { fan: pl.stackAirU }, shelf: pl.shelf, epsPlate: pl.epsPl, epsGO: d.emis.v, al: { k: MAT.lib.alK.v, rho: MAT.lib.alRho.v, c: MAT.lib.alC.v, ...hubDefsOf({ kT: MAT.lib.alK, cT: MAT.lib.alC }) },
     go: { kIn: d.kIn.v, kThr: d.kS.v, c: d.cS.v, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS, cT: d.cS }), rhoS: P.rhoG, gab: P.gab, Xcap: P.Xcap, K: S.K, Kthr: d.skinK.v * 1e-12, alpha: MAT.film.alphaF.v * 1e-6, nu: P.nu, tab: P.tab, tau: S.tau },
     mesh: dim === 3 ? { nx: 8, ny: 8, grade: 12 } : { nx: 16, grade: 16 }, steps: dim === 3 ? 30 : 60, follow: MP_FOLLOW,
+    ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}),
     snapTimes: [...snapMin.map(m => m * 60), tOven, ...(tRest > 0 ? [tOven + tRest] : [])] };
 }
 const mpKeyNow = dim => { const o = mpStackInputs(dim); return o ? JSON.stringify({ o, way: SHEET.way, film: DRY.sel }) : null; };

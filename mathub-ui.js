@@ -71,7 +71,9 @@ function hubPaint() {
   if (HUB.view === 'compare') { root.innerHTML = hubCompareHTML(); hubWireCompare(); return; }
   if (!hubRec(HUB.sel)) HUB.sel = 'slurry';
   const r = hubRec(HUB.sel);
-  root.innerHTML = `<div class="hub-grid"><nav class="hub-lib" id="hubLib" aria-label="The project's materials">${hubLibHTML()}</nav><section class="hub-main" id="hubMain" aria-labelledby="hubName">${hubEditorHTML(r)}</section></div>`;
+  // (a copy, MC-2: its editor drawn with its own values in place)
+  const ed = r.inst ? hubInInst(r.inst, () => hubEditorHTML(r)) : hubEditorHTML(r);
+  root.innerHTML = `<div class="hub-grid"><nav class="hub-lib" id="hubLib" aria-label="The project's materials">${hubLibHTML()}</nav><section class="hub-main" id="hubMain" aria-labelledby="hubName">${ed}</section></div>`;
   hubWireLib(); hubWireEditor(r);
 }
 /** The page's status line: the materials, required values missing, what blocks a solver. */
@@ -80,7 +82,8 @@ function hubStatus() {
   if (ss) ss.innerHTML = '';
   if (!st) return;
   const R = hubReadiness(), miss = R.reduce((a, q) => a + q.n.missing, 0), bad = R.filter(q => q.st === 'bad');
-  st.innerHTML = pill(`${HUB_RECORDS.length} materials · ${HUB_IFACES.length} interfaces`, '')
+  const nc = hubInsts().length;
+  st.innerHTML = pill(`${HUB_RECORDS.length} materials · ${HUB_IFACES.length} interfaces${nc ? ` · ${nc} cop${nc === 1 ? 'y' : 'ies'}` : ''}`, '')
     + (miss ? pill(`${miss} required values missing`, 'warn') : '')
     + (bad.length ? pill(`${bad.map(q => q.ph.l).join(', ')}: a material cannot hold as set`, 'bad') : '');
 }
@@ -94,10 +97,12 @@ function hubMatches(r) {
 function hubLibHTML() {
   const item = r => {
     const ch = hubChecks(r), lv = ch.some(c => c.level === 'error') ? 'bad' : ch.length ? 'warn' : '';
-    return `<button type="button" class="hub-item${r.id === HUB.sel ? ' on' : ''}" data-hubsel="${r.id}" aria-current="${r.id === HUB.sel}">
+    return `<button type="button" class="hub-item${r.id === HUB.sel ? ' on' : ''}${r.inst ? ' hub-item-copy' : ''}" data-hubsel="${r.id}" aria-current="${r.id === HUB.sel}">
       ${uiBadge(r.icon)}<span class="hub-item-t"><b>${hubEsc(hubName(r))}</b><small>${hubEsc(r.sub)}</small></span>${lv ? `<i class="hub-dot hub-${lv}" title="${lv === 'bad' ? 'cannot hold as set' : 'a warning'}"></i>` : ''}</button>`;
   };
-  const mats = HUB_RECORDS.filter(hubMatches), ifs = HUB_IFACES.filter(hubMatches);
+  // (each record followed by its copies, MC-2)
+  const withCopies = rs => rs.flatMap(r => [r, ...hubInsts(r.id).map(hubInstRec)]).filter(hubMatches);
+  const mats = withCopies(HUB_RECORDS), ifs = withCopies(HUB_IFACES);
   const groups = HUB_CLS_ORDER.map(c => [c, mats.filter(r => r.cls === c)]).filter(g => g[1].length);
   return `<label class="hub-search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><input type="search" id="hubQ" placeholder="Search materials, properties" value="${hubEsc(HUB.q)}" aria-label="Search the materials and their properties"></label>
     ${groups.map(([c, rs]) => `<div class="hub-lib-h">${c === 'Particles' ? 'Particles' : c + (rs.length > 1 && !/s$/.test(c) ? 's' : '')}</div>${rs.map(item).join('')}`).join('')}
@@ -123,8 +128,8 @@ function hubEditorHTML(r) {
   if (!tabs.some(t => t[0] === HUB.tab)) HUB.tab = 'props';
   const parts = iface ? [r.a, r.bb].map(id => (id ? `<button type="button" class="hub-link" data-hubsel="${id}">${hubEsc(hubRec(id).name)}</button>` : '<span>the blade (rigid wall)</span>')).join(' <span class="hub-sep">|</span> ') : '';
   return `<header class="hub-head">
-      <div class="hub-title">${uiBadge(r.icon)}<div><h2 id="hubName">${hubEsc(hubName(r))}</h2><p class="hub-cls"><span class="hub-tag">${iface ? 'Interface' : r.cls}</span>${hubEsc(r.sub)}${r.desc ? ` · ${hubEsc(r.desc)}` : ''}</p></div>
-        <span class="hub-head-act"><button type="button" class="btn btn-secondary btn-sm" id="hubRecReset" title="This material's values back to their first values">${uiIco('restart')}Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="hubRecExport">${uiIco('download')}Export</button></span></div>
+      <div class="hub-title">${uiBadge(r.icon)}<div><h2 id="hubName">${hubEsc(hubName(r))}</h2><p class="hub-cls"><span class="hub-tag">${iface ? 'Interface' : r.cls}</span>${r.inst ? `Copy of <button type="button" class="hub-link" data-hubsel="${r.base}">${hubEsc(hubName(hubBaseRec(r.base)))}</button> · ` : ''}${hubEsc(r.sub)}${r.desc && !r.inst ? ` · ${hubEsc(r.desc)}` : ''}</p></div>
+        <span class="hub-head-act"><button type="button" class="btn btn-secondary btn-sm" id="hubRecDup" title="A copy of this material, edited apart from it and assigned to the domains you choose">${uiIco('plus')}Duplicate</button>${r.inst ? `<button type="button" class="btn btn-secondary btn-sm" id="hubRecDel" title="Remove this copy: its domains take ${hubEsc(hubName(hubBaseRec(r.base)))} again">${uiIco('trash')}Delete</button>` : ''}<button type="button" class="btn btn-secondary btn-sm" id="hubRecReset" title="This material's values back to their first values">${uiIco('restart')}Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="hubRecExport">${uiIco('download')}Export</button></span></div>
       ${iface ? `<dl class="hub-facts"><div><dt>Between</dt><dd>${parts}</dd></div></dl>` : ''}
       ${r.note ? `<p class="hub-note">${hubEsc(r.note)}</p>` : ''}
       ${ch.length ? `<ul class="hub-checks">${ch.map(c => `<li class="hub-${c.level === 'error' ? 'bad' : 'warn'}"><i class="hub-dot hub-${c.level === 'error' ? 'bad' : 'warn'}"></i>${hubEsc(c.msg)}</li>`).join('')}</ul>` : ''}
@@ -141,8 +146,13 @@ function hubPropsHTML(r) {
 /** A property's value cell: its input (an editable value), select or switch, else the value. */
 function hubValCell(p, v) {
   const b = p.b;
+  // (a copy: its own card values and laws; the inputs bar's, the fibre's report, the switches are the project's, shown)
+  if (b.inst && !['card', 'law', 'calc', 'tensor', 'stiff', 'stiffWeb'].includes(b.t)) {
+    const txt = b.t === 'model' ? RHEO_MODELS[CFDG.model].l : b.t === 'orModel' ? OR_MODELS[MAT.orient.model] : b.t === 'switch' ? (b.get() ? 'On' : 'Off') : b.t === 'fibreSel' ? FIBRES[CFDG.fibre].l : typeof v.v === 'number' ? hubFmt(v.v, v.d) : String(v.v ?? '');
+    return `<span class="hub-num hub-shared" title="The project's: set on ${hubEsc(hubName(hubBaseRec(hubRec(b.inst).base)))}">${hubEsc(txt)}</span>`;
+  }
   if (b.t === 'card' && v.def) { const [attr, pre] = HUB_ATTR[b.card]; return `<span class="hub-num">${hubFmt(v.v, -4)}</span><small class="hub-at">at 20 °C</small><span class="hub-tdef" title="Defined in temperature: open the row">${v.def.kind === 'table' ? `table, ${v.def.x.length} points` : 'f(T)'}</span><input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" value="${v.v}" hidden disabled>`; }
-  if (b.t === 'card') { const [attr, pre] = HUB_ATTR[b.card]; return `<input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v}" aria-label="${hubEsc(p.l)}">`; }
+  if (b.t === 'card') { const [attr, pre] = HUB_ATTR[b.card]; return `<input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v ?? ''}"${v.v == null ? ' placeholder="—"' : ''} aria-label="${hubEsc(p.l)}">`; }
   if (b.t === 'inp') return `<input type="number" id="hubin_${b.k}" data-hubp="${p.id}" data-help="in.${b.k}" min="${v.lo}" max="${v.hi}" step="${v.exact ? 'any' : v.step}" value="${v.exact ? +(+v.v).toPrecision(6) : (+v.v).toFixed(v.d)}" aria-label="${hubEsc(p.l)}">`;
   if (b.t === 'cfdg') return `<input type="number" id="hubg_${b.k}" data-hubp="${p.id}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v}" aria-label="${hubEsc(p.l)}">`;
   if (b.t === 'peel') return `<input type="number" id="hubpl_${b.k}" data-hubp="${p.id}" data-help="oven.${b.k}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v}" aria-label="${hubEsc(p.l)}">`;
@@ -197,8 +207,8 @@ function hubDetailHTML(r, p, v) {
   if (b.t === 'calc') return `<div class="hub-d">${kv([['Method', 'Calculated'], ['How', hubEsc(v.src)], si ? ['In SI', si] : null])}${usedHTML}</div>`;
   if (b.t === 'const') { const c = HUB_CONST[b.id]; return `<div class="hub-d">${kv([['Method', 'Constant'], ['Value', `${hubFmt(c.v, -6)} ${hubEsc(c.u)}`], ['Data source', hubEsc(c.src)], ['In the code', `<code>${hubEsc(c.solver)}</code>`]])}${usedHTML}</div>`; }
   if (b.t === 'law') {
-    const L = HUB_LAW[b.id], law = ML_LAWS[L.q.law], prm = Object.entries(L.q.params).filter(([k]) => k !== 'n' && k !== 'c').map(([k, x]) => `${k} = ${hubFmt(x, -6)}${law.params[k] ? ' ' + law.params[k] : ''}`).join(' · ');
-    return `<div class="hub-d hub-d-plot"><div>${kv([['Method', `Equation in T: ${hubEsc(law.formula)}`], prm ? ['Parameters', hubEsc(prm)] : ['Coefficients', hubEsc((L.q.params.c || L.q.params.n || []).map(x => hubFmt(x, -6)).join(', '))],
+    const L = HUB_LAW[b.id], law = ML_LAWS[L.q.law];
+    return `<div class="hub-d hub-d-plot"><div>${kv([['Method', `Equation in T: ${hubEsc(law.formula)}`], [hubLawIsList(b.id) ? 'Coefficients' : 'Parameters', hubLawParamsHTML(b.id, 'd')],
       ['Valid range', `${L.T[0]} to ${L.T[1]} °C${L.p ? ', at 1 atm' : ''}`], ['Data source', hubEsc(L.src)], ['In the code', `<code>${hubEsc(L.solver)}</code>, checked against it`]])}${usedHTML}</div>
       <figure class="hub-fig"><canvas id="hubDetCv" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure></div>`;
   }
@@ -213,6 +223,16 @@ function hubDetailHTML(r, p, v) {
  * cubic between its points; outside them held at its ends, carried on, or refused), or an expression in T (kelvin) --
  * edited here, checked (matlib's checks; positive over its range), plotted; the solvers that evaluate it named.
  */
+/** A built-in law whose parameters are a list of coefficients (IAPWS-IF97's n₁…n₁₀, Butland and Maddison's a…f). */
+const hubLawIsList = id => Object.values(HUB_LAW[id].q.params).some(Array.isArray);
+/** A built-in law's parameters, each an input (MC-1b): taken when the law still holds over its range, else said why. */
+function hubLawParamsHTML(id, at) {
+  const L = HUB_LAW[id], law = ML_LAWS[L.q.law], cur = hubLawParams(id), edited = !!(MAT.law || {})[id];
+  const box = (k, i, x, lab, unit) => `<label class="hub-lp"><span>${lab}${unit ? ` <small>${hubEsc(unit)}</small>` : ''}</span><input type="number" step="any" id="hublp_${at}_${id}_${k}${i ?? ''}" data-hublawp="${id}|${k}|${i ?? ''}" value="${+x}" aria-label="${hubEsc(hubLawName(id))}: ${lab.replace(/<[^>]+>/g, '')}"></label>`;
+  const names = { n: i => `n<sub>${i + 1}</sub>`, c: i => 'abcdef'[i] };
+  const boxes = Object.entries(cur).map(([k, x]) => (Array.isArray(x) ? x.map((q, i) => box(k, i, q, (names[k] || (j => `${k}${j + 1}`))(i), '')).join('') : box(k, null, x, hubEsc(k), law.params[k] || ''))).join('');
+  return `<div class="hub-lps">${boxes}</div><p class="hub-err" id="hubLawErr_${at}_${id}" hidden></p>${edited ? `<button type="button" class="linkish hub-lp-reset" data-hublawreset="${id}">Back to the law's own values</button>` : ''}`;
+}
 function hubDefHTML(p, v) {
   const q = v.def, kind = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr', [solv, range] = hubTdep(p), names = solv.map(k => hubPhys(k).l).join(' and ');
   const seg = `<span class="seg" role="tablist" aria-label="${hubEsc(p.l)}: its definition">${[['const', 'Constant'], ['table', 'Table in T'], ['expr', 'Equation in T']].map(([k, t]) => `<button type="button" role="tab" id="hubdk_${p.id}_${k}" data-hubdefkind="${p.id}|${k}" aria-selected="${k === kind}">${t}</button>`).join('')}</span>`;
@@ -414,7 +434,8 @@ function hubOverviewHTML(r) {
     <section class="hub-ov-at"><h3>In the process</h3><dl class="hub-kv">
       <div><dt>Category</dt><dd>${iface ? 'Interface' : hubEsc(r.cls)}${r.sub ? ` · ${hubEsc(r.sub)}` : ''}</dd></div>
       <div><dt>Where it is</dt><dd>${r.domains.map(hubEsc).join('<br>')}</dd></div>
-      <div><dt>Solved by</dt><dd class="hub-chips">${HUB_PHYS.filter(q => used.has(q.k)).map(q => `<button type="button" class="chip hub-ph" data-hubgo="${q.k}">${q.l}</button>`).join('')}</dd></div>
+      <div><dt>Solved by</dt><dd class="hub-chips">${HUB_PHYS.some(q => used.has(q.k)) ? HUB_PHYS.filter(q => used.has(q.k)).map(q => `<button type="button" class="chip hub-ph" data-hubgo="${q.k}">${q.l}</button>`).join('') : '<span class="hub-muted">No solver reads it at present</span>'}</dd></div>
+      ${r.inst ? `<div><dt>Copy of</dt><dd><button type="button" class="hub-link" data-hubsel="${r.base}">${hubEsc(hubName(hubBaseRec(r.base)))}</button></dd></div>` : ''}
       <div><dt>Properties</dt><dd>${hubProps(r).length} in ${r.groups.length} groups</dd></div></dl></section></div>`;
 }
 // ---- Property Functions: each property's equation or table in temperature, plotted ----
@@ -422,9 +443,9 @@ function hubFuncsHTML(r) {
   return `<div class="hub-funcs">${hubFuncProps(r).map(p => {
     const v = hubVal(p);
     if (p.b.t === 'law') {
-      const L = HUB_LAW[p.b.id], law = ML_LAWS[L.q.law], prm = Object.entries(L.q.params).filter(([k]) => k !== 'n' && k !== 'c').map(([k, x]) => `${k} = ${hubFmt(x, -6)}${law.params[k] ? ' ' + law.params[k] : ''}`).join(' · ');
+      const L = HUB_LAW[p.b.id], law = ML_LAWS[L.q.law];
       return `<section class="hub-fn"><header><h3>${hubEsc(hubPropName(r, p))} <span class="hub-sym">${hubSym(p.sym)}</span></h3><span class="hub-meth">Equation in T</span></header>
-        <div class="hub-d-plot"><dl class="hub-kv"><div><dt>Equation</dt><dd><code>${hubEsc(law.formula)}</code></dd></div><div><dt>${prm ? 'Parameters' : 'Coefficients'}</dt><dd>${hubEsc(prm || (L.q.params.c || L.q.params.n || []).map(x => hubFmt(x, -6)).join(', '))}</dd></div>
+        <div class="hub-d-plot"><dl class="hub-kv"><div><dt>Equation</dt><dd><code>${hubEsc(law.formula)}</code></dd></div><div><dt>${hubLawIsList(p.b.id) ? 'Coefficients' : 'Parameters'}</dt><dd>${hubLawParamsHTML(p.b.id, 'f')}</dd></div>
           <div><dt>Variable</dt><dd>T (temperature)</dd></div><div><dt>Valid range</dt><dd>${hubEsc(hubValid(p, v))}</dd></div><div><dt>Data source</dt><dd>${hubEsc(L.src)}</dd></div></dl>
           <figure class="hub-fig"><canvas data-hublawplot="${p.b.id}" data-p="${p.id}" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure></div></section>`;
     }
@@ -445,8 +466,18 @@ function hubValidHTML(r) {
 }
 // ---- Domain Assignments: where the material is, and what each solver reads from it there ----
 function hubDomainsHTML(r) {
-  return `<div class="hub-dom"><div class="table-wrap"><table class="cfd-table hub-domt"><thead><tr><th scope="col">Domain</th><th scope="col">Material assigned</th></tr></thead><tbody>
-    ${r.domains.map(d => `<tr><td>${hubEsc(d)}</td><td>${hubEsc(hubName(r))}</td></tr>`).join('')}</tbody></table></div>
+  // (each domain of the material's record: its solvers and the material they take there -- the record's own or one of
+  //  its copies, chosen where a solver there takes an assigned material, MC-2)
+  const B = r.inst ? hubBaseRec(r.base) : r, opts = [B, ...hubInsts(B.id).map(hubInstRec)], asg = (MAT.assign || {})[B.id] || {};
+  const rows = B.domains.map((d, i) => {
+    const all = (HUB_DOMAIN_PHYS[B.id] || [])[i] || [], sw = hubDomainSwaps(B.id, i), keep = all.filter(ph => !HUB_SWAP[ph]), cur = asg[i] && MAT.inst[asg[i]] ? asg[i] : B.id;
+    const sel = sw.length && opts.length > 1 ? `<select class="hub-sel" id="hubas_${B.id}_${i}" data-hubassign="${B.id}|${i}" aria-label="${hubEsc(d)}: the material assigned">${opts.map(o => `<option value="${o.id}"${o.id === cur ? ' selected' : ''}>${hubEsc(hubName(o))}</option>`).join('')}</select>`
+      : `<span>${hubEsc(hubName(cur === B.id ? B : hubRec(cur)))}</span>`;
+    return `<tr${cur === r.id ? ' class="hub-dom-on"' : ''}><th scope="row">${hubEsc(d)}</th><td class="hub-chips">${all.map(ph => `<span class="chip hub-ph">${hubPhys(ph).l}</span>`).join('')}</td>
+      <td>${sel}${sw.length && keep.length ? `<small class="hub-dom-keep">${keep.map(ph => hubPhys(ph).l).join(', ')}: ${hubEsc(hubName(B))}</small>` : ''}</td></tr>`;
+  }).join('');
+  return `<div class="hub-dom"><div class="table-wrap"><table class="cfd-table hub-domt"><thead><tr><th scope="col">Domain</th><th scope="col">Solvers</th><th scope="col">Material assigned</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${opts.length > 1 ? '' : '<p class="hub-muted hub-small">Duplicate the material to assign a copy of it to a domain.</p>'}
     ${hubUsedHTML(r)}</div>`;
 }
 
@@ -473,6 +504,18 @@ function hubWireEditor(r) {
     hubSoon();
   }));
   view.querySelectorAll('input[data-hubsrc]').forEach(el => el.addEventListener('change', () => { hubSet(prop(el.dataset.hubsrc), null, { src: el.value.trim() }); hubSoon(); }));
+  // (a built-in law's parameters, MC-1b: each checked -- the law finite and positive over its range -- before it is taken)
+  view.querySelectorAll('input[data-hublawp]').forEach(el => el.addEventListener('change', () => {
+    const [id, k, i] = el.dataset.hublawp.split('|'), err = document.getElementById(el.id.replace(/^hublp_(\w+?)_.*$/, (m, at) => `hubLawErr_${at}_${id}`));
+    try {
+      if (el.value.trim() === '' || !Number.isFinite(+el.value)) throw new Error('a number is needed');
+      const lawNow = () => JSON.stringify((r.inst ? (MAT.inst[r.inst].law || {}) : (MAT.law || {}))[id] || null), before = lawNow();
+      hubSetLawParam(id, k, i === '' ? null : +i, +el.value, r.inst || null);
+      if (lawNow() !== before) undoHint(`${hubLawName(id)}: ${k}${i === '' ? '' : ` ${+i + 1}`}`);
+      hubSoon();
+    } catch (e) { el.classList.add('invalid'); if (err) { err.textContent = `Not taken: ${e.message}`; err.hidden = false; } }
+  }));
+  view.querySelectorAll('[data-hublawreset]').forEach(b => { b.onclick = () => { const id = b.dataset.hublawreset; undoHint(`${hubLawName(id)}: the law's own values`); const go = () => { MAT.law = { ...(MAT.law || {}) }; delete MAT.law[id]; }; if (r.inst) hubInInst(r.inst, go, true); else go(); render(); }; });
   const on = (id, f) => { const el = document.getElementById(id); if (el) el.addEventListener('change', f); };
   on('matModel', e => { CFDG.model = e.target.value; rheoSync('model'); render(); });
   on('matOrModel', e => { MAT.orient.model = e.target.value; render(); });
@@ -480,7 +523,13 @@ function hubWireEditor(r) {
   on('matOrOn', e => { MAT.orient.on = e.target.checked; render(); });
   on('hubFibre', e => { undoHint(`Fibre web: ${FIBRES[e.target.value].l}`); selectFibre(e.target.value); render(); });
   const rr = document.getElementById('hubRecReset');
-  if (rr) rr.onclick = () => {
+  // (a copy: its own values back to its record's first values; the project's untouched, MC-2)
+  if (rr && r.inst) rr.onclick = () => {
+    undoHint(`${hubName(r)}: back to its first values`);
+    hubInInst(r.inst, () => { const D = matDefaults(); for (const p of hubProps(hubBaseRec(r.base))) { const b = p.b; if (b.t === 'card') MAT[b.card] = { ...MAT[b.card], [b.k]: { ...D[b.card][b.k] } }; if (b.t === 'law' && MAT.law) { MAT.law = { ...MAT.law }; delete MAT.law[b.id]; } } }, true);
+    render();
+  };
+  else if (rr) rr.onclick = () => {
     undoHint(`${r.name}: back to its first values`);
     const D = matDefaults();
     for (const p of hubProps(r)) {
@@ -490,6 +539,9 @@ function hubWireEditor(r) {
       else if (b.t === 'cfdg') CFDG[b.k] = FIBRES[CFDG.fibre].set[b.k];
       else if (b.t === 'peel') { const q = OVEN_PEEL_FIELDS.find(f => f[0] === b.k); OVEN.peel = { ...OVEN.peel, [b.k]: OVEN_PEEL_DEFAULT[b.k], [q[7]]: OVEN_PEEL_DEFAULT[q[7]] }; }
     }
+    // (and its built-in laws' parameters, MC-1b)
+    const laws = hubProps(r).filter(p => p.b.t === 'law').map(p => p.b.id);
+    if (laws.length && MAT.law) { MAT.law = { ...MAT.law }; for (const id of laws) delete MAT.law[id]; }
     if (r.id === 'slurry') rheoSync('extras');
     render();
   };
@@ -502,7 +554,7 @@ function hubWireEditor(r) {
     undoHint(`${r.name}: ${hubPropName(r, p).toLowerCase()}, ${label}`);
     hubSetDef(p, q); hubSoon();
   };
-  const defOf = id => { const p = prop(id); return { p, q: MAT[p.b.card][p.b.k].def || null, v: MAT[p.b.card][p.b.k].v }; };
+  const defOf = id => { const p = prop(id), v = hubVal(p); return { p, q: v.def || null, v: v.v }; };
   const setMethod = (id, k) => {
     const { p, q, v } = defOf(id), cur = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr';
     if (k === cur) return;
@@ -561,25 +613,37 @@ function hubWireEditor(r) {
     defSet(id, { ...q, [el.dataset.o]: el.value }, el.dataset.o === 'interp' ? 'its interpolation' : 'outside its points');
   }));
   view.querySelectorAll('input[data-hubdexpr]').forEach(el => el.addEventListener('change', () => defSet(el.dataset.hubdexpr, { kind: 'expr', src: el.value.trim() }, 'expression edited')));
+  const du = document.getElementById('hubRecDup');
+  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubDuplicate(r.id); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
+  const dl = document.getElementById('hubRecDel');
+  if (dl) dl.onclick = () => { undoHint(`Delete ${hubName(r)}`); const base = r.base; hubDeleteInst(r.inst); HUB.sel = base; HUB.open = null; render(); };
+  // (Domain Assignments: the material each domain takes, MC-2)
+  view.querySelectorAll('select[data-hubassign]').forEach(el => el.addEventListener('change', () => {
+    const [base, i] = el.dataset.hubassign.split('|'), dom = hubBaseRec(base).domains[+i];
+    undoHint(`${dom.split(':')[0]}: ${el.value === base ? hubName(hubBaseRec(base)) : hubName(hubRec(el.value))}`);
+    hubAssign(base, +i, el.value === base ? null : el.value); render();
+  }));
   const re = document.getElementById('hubRecExport');
   if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubExport([r.id]));
   if (HUB.tab === 'meas' && r.id === 'slurry') rtDraw();
-  if (HUB.tab === 'models') requestAnimationFrame(() => hubDrawModels(r));
-  if (HUB.tab === 'props' && HUB.open) requestAnimationFrame(() => {
+  // (a copy's plots drawn with its own values in place, MC-2)
+  const raf = f => requestAnimationFrame(() => (r.inst ? hubInInst(r.inst, f) : f()));
+  if (HUB.tab === 'models') raf(() => hubDrawModels(r));
+  if (HUB.tab === 'props' && HUB.open) raf(() => {
     const p = prop(HUB.open), cv = document.getElementById('hubDetCv');
     if (p && cv && p.b.t === 'law') { const L = HUB_LAW[p.b.id]; hubLine(cv, hubLawCurve(p.b.id).map(([T, y]) => [T, y / (HUB_LAW_SCALE[p.b.id] || 1)]), { xl: 'temperature (°C)', yl: `${p.sym} (${L.u})`, x0: L.T[0], x1: L.T[1], aspect: 0.55, yf: v => hubFmt(v, -3) }); }
     const dc = p && document.getElementById(`hubDefCv_${p.id}`);
     if (dc) hubDrawDef(dc, p);
   });
   // (Property Functions: every definition's plot, every law's curve)
-  if (HUB.tab === 'funcs') requestAnimationFrame(() => {
+  if (HUB.tab === 'funcs') raf(() => {
     view.querySelectorAll('[data-hubdefplot]').forEach(cv => { const q = prop(cv.dataset.hubdefplot); if (q) hubDrawDef(cv, q); });
     view.querySelectorAll('[data-hublawplot]').forEach(cv => { const id = cv.dataset.hublawplot, L = HUB_LAW[id], q = prop(cv.dataset.p); hubLine(cv, hubLawCurve(id).map(([T, y]) => [T, y / (HUB_LAW_SCALE[id] || 1)]), { xl: 'temperature (°C)', yl: `${q ? q.sym.replace(/_/g, '') : ''} (${L.u})`, x0: L.T[0], x1: L.T[1], aspect: 0.42, yf: v => hubFmt(v, -3) }); });
   });
 }
 /** A definition in temperature against T over the range its solvers check (the table's points marked; 20 °C marked). */
 function hubDrawDef(cv, p) {
-  const e = MAT[p.b.card][p.b.k], q = e.def, [, [t0, t1]] = hubTdep(p), pts = [];
+  const e = hubVal(p), q = e.def, [, [t0, t1]] = hubTdep(p), pts = [];
   // (a constant: its value at every temperature, a flat line over the range its solvers reach)
   if (!q) { hubLine(cv, [[t0, e.v], [t1, e.v]], { xl: 'temperature (°C)', yl: `${p.sym.replace(/_/g, '')} (${hubVal(p).u})`, x0: t0, x1: t1, aspect: 0.42, marks: [{ x: 20, c: cssVar('--muted'), t: '20 °C' }], yf: v => hubFmt(v, -3) }); return; }
   const lo = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.max(t0, q.x[0] - 273.15) : t0, hi = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.min(t1, q.x[q.x.length - 1] - 273.15) : t1;
@@ -681,11 +745,11 @@ function hubImportFile() {
       res = hubImport(data, false, { keepDefs: csv });
     } catch (e) { imgToast(`${f.name}: ${e.message}.`, 'error'); return; }
     res.skipped = [...pre, ...res.skipped];
-    if (!res.changes.length && !(res.metas || []).length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`, res.skipped.length ? 'error' : undefined); return; }
+    if (!res.changes.length && !(res.metas || []).length && !(res.laws || []).length && !(res.copies || []).length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`, res.skipped.length ? 'error' : undefined); return; }
     undoHint(`Import materials from ${f.name}`);
     hubImport(data, true, { keepDefs: csv });
     const nConv = res.changes.filter(c => c.unit).length;
-    imgToast(`${f.name}: ${res.changes.length} values taken${nConv ? ` (${nConv} converted to this app's units)` : ''}${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
+    imgToast(`${f.name}: ${res.changes.length} values taken${(res.laws || []).length ? `, ${res.laws.length} laws' parameters` : ''}${(res.copies || []).length ? `, ${res.copies.length} cop${res.copies.length === 1 ? 'y' : 'ies'} made` : ''}${nConv ? ` (${nConv} converted to this app's units)` : ''}${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
     render();
   };
   inp.click();

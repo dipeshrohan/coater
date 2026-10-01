@@ -41,18 +41,25 @@ const FMP_K0 = 273.15, FMP_G = 9.80665, FMP_CW = 4180, FMP_DG = 0.3354, FMP_DT =
 // graphite's heat capacity, cal/(g K) from T (K), 200–3500 K (Butland and Maddison, J. Nucl. Mater. 49 (1973) 45):
 // a + b T + c/T + d/T² + e/T³ + f/T⁴
 const FMP_CG = [0.54212, -2.42667e-6, -90.2725, -43449.3, 1.59309e7, -1.43688e9];
+// The built-in material laws' parameters (MC-1b), as the material hub edits them: argon's viscosity (power law in T),
+// molar mass, specific heat and Prandtl number; graphite's heat capacity (the coefficients above); water's specific
+// heat. These are the laws' own values; a solve takes its options' (o.props) through fmpUse.
+const FMP_PROPS = Object.freeze({ arMu: { y0: 2.27e-5, T0: 300, b: 0.67 }, arM: 0.039948, arCp: 520.3, arPr: 2 / 3, gCp: FMP_CG, waterCp: FMP_CW });
+let FMP_P = FMP_PROPS;
+/** The laws the next solve takes: props (the hub's, where they differ from these), else the built-in ones. */
+function fmpUse(props) { FMP_P = props ? { ...FMP_PROPS, ...props } : FMP_PROPS; }
 /** Graphite's heat capacity, J/(kg K), at T (°C). */
-function fmpCg(T) { const K = Math.max(200, T + FMP_K0), [a, b, c, d, e, f] = FMP_CG; return 4184 * (a + b * K + c / K + d / (K * K) + e / (K * K * K) + f / (K * K * K * K)); }
+function fmpCg(T) { const K = Math.max(200, T + FMP_K0), [a, b, c, d, e, f] = FMP_P.gCp; return 4184 * (a + b * K + c / K + d / (K * K) + e / (K * K * K) + f / (K * K * K * K)); }
 /** Graphite's enthalpy, J/kg, from 0 °C to T (°C): the integral of fmpCg (exact). */
 function fmpHg(T) {
-  const H = K => { const [a, b, c, d, e, f] = FMP_CG; return 4184 * (a * K + b * K * K / 2 + c * Math.log(K) - d / K - e / (2 * K * K) - f / (3 * K * K * K)); };
+  const H = K => { const [a, b, c, d, e, f] = FMP_P.gCp; return 4184 * (a * K + b * K * K / 2 + c * Math.log(K) - d / K - e / (2 * K * K) - f / (3 * K * K * K)); };
   const K = T + FMP_K0;
   return K >= 200 ? H(K) - H(FMP_K0) : H(200) - H(FMP_K0) + fmpCg(-73.15) * (K - 200);
 }
 /** Argon at 1 atm and T (°C): viscosity (Pa s; 2.27 × 10⁻⁵ at 300 K, ∝ T^0.67), conductivity (μ c_p / Pr), density, Pr = ⅔ (monatomic). */
 function fmpArgon(T, p = 101325) {
-  const K = T + FMP_K0, mu = 2.27e-5 * Math.pow(K / 300, 0.67), cp = 520.3, Pr = 2 / 3;
-  return { mu, k: mu * cp / Pr, rho: p * 0.039948 / (8.314462618 * K), cp, Pr };
+  const q = FMP_P, K = T + FMP_K0, mu = q.arMu.y0 * Math.pow(K / q.arMu.T0, q.arMu.b), cp = q.arCp, Pr = q.arPr;
+  return { mu, k: mu * cp / Pr, rho: p * q.arM / (8.314462618 * K), cp, Pr };
 }
 /**
  * Natural convection in argon on a face at Ts in gas at Tg (°C), W/(m² K): 'side' a vertical face of height L
@@ -96,6 +103,7 @@ function fmpNat(kind, Ts, Tg, L, p) {
  * runs), held (= faces + reaction + between, step by step) }, mesh, ms }.
  */
 function fmpStack(o) {
+  fmpUse(o.props);
   const t0 = Date.now(), dim = o.dim, N = Math.max(1, Math.round(o.N)), h = o.h, tp = o.tp, go = o.go, P = o.paper;
   const hx = o.Lx / 2, hy = o.Ly / 2, mg = o.margin || 0, ms = o.mesh || {}, nx = ms.nx || 8, ny = ms.ny || nx, nm = ms.nm || 2;
   const grade = ms.grade || 4, nPl = ms.nPlate || 3, iso = !!o.isothermal, resolve = !!o.resolve && dim > 1;
@@ -140,7 +148,7 @@ function fmpStack(o) {
     if (m === 4) return vecK(pIn(u), pThr(u));
     return vecK(kAr(u), kGap(u) * 1);
   };
-  const goS = (u, f) => go.rho * (f.kept * rc * fmpHg(u) + f.wleft * go.Xin * FMP_CW * u), goC = (u, f) => go.rho * (f.kept * rc * fmpCg(u) + f.wleft * go.Xin * FMP_CW);
+  const goS = (u, f) => go.rho * (f.kept * rc * fmpHg(u) + f.wleft * go.Xin * FMP_P.waterCp * u), goC = (u, f) => go.rho * (f.kept * rc * fmpCg(u) + f.wleft * go.Xin * FMP_P.waterCp);
   const S = (m, u, x, f) => (m === 0 ? o.plate.rho * fmpHg(u) : m === 1 ? fGO * goS(u, f) + fP * P.rho * fmpHg(u) : m === 2 ? fP * P.rho * fmpHg(u) : m === 3 ? goS(u, f) : m === 4 ? P.rho * fmpHg(u) : 0);
   const C = (m, u, x, f) => (m === 0 ? o.plate.rho * fmpCg(u) : m === 1 ? fGO * goC(u, f) + fP * P.rho * fmpCg(u) : m === 2 ? fP * P.rho * fmpCg(u) : m === 3 ? goC(u, f) : m === 4 ? P.rho * fmpCg(u) : 1e-3);
   const phiOf = m => (m === 1 ? fGO : m === 3 ? 1 : 0);   // (the GO per volume of the material, as a share of a piece's)
@@ -498,4 +506,4 @@ function fmpSummary(series, follow, o, gasPk) {
   return { runs, labileMid: half('aM'), labileEdge: half('aE'), labileRef, gas: follow.map((i, j) => ({ i, ...gasPk[j] })), pull, pullAt, mid };
 }
 
-if (typeof module !== 'undefined') module.exports = { fmpStack, fmpSummary, fmpGasLevel, fmpSlabPeak, fmpCg, fmpHg, fmpArgon, fmpNat };
+if (typeof module !== 'undefined') module.exports = { fmpStack, fmpSummary, fmpGasLevel, fmpSlabPeak, fmpCg, fmpHg, fmpArgon, fmpNat, fmpUse, FMP_PROPS };

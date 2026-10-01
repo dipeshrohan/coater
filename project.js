@@ -173,6 +173,9 @@ function applyMaterials(m) {
   // (the material constants' card, MH-2: a project from before has none -- the solvers' own values, as it was solved)
   const lc = m && m.lib;
   if (lc) for (const k of Object.keys(MAT.lib)) if (lc[k] && Number.isFinite(lc[k].v)) MAT.lib[k] = { ...MAT.lib[k], ...lc[k] };
+  // (the spec's materials no solver reads at present, MC-2: a value as saved, or none)
+  const xr = m && m.xrec;
+  if (xr) for (const k of Object.keys(MAT.xrec)) if (xr[k] && (Number.isFinite(xr[k].v) || xr[k].v === null)) MAT.xrec[k] = { ...MAT.xrec[k], ...xr[k] };
   // (a card value's definition in temperature, MH-4b: kept only on a value a solver takes in temperature, and only when it
   // holds -- matlib's checks, positive over its range; its value then its value at 20 °C. Anything else: the value as saved)
   for (const card of ['slurry', 'rheo', 'orient', 'dry', 'film', 'furn', 'lib']) for (const k of Object.keys(MAT[card] || {})) {
@@ -190,6 +193,38 @@ function applyMaterials(m) {
   const mt = m && m.meta;
   if (mt && typeof mt === 'object') MAT.meta = Object.fromEntries(Object.entries(mt).filter(([id, q]) => typeof id === 'string' && q && typeof q === 'object')
     .map(([id, q]) => [id, Object.fromEntries(Object.entries(q).filter(([k, x]) => ['name', 'desc', 'grade', 'supplier', 'dataSrc', 'version', 'notes'].includes(k) && typeof x === 'string'))]));
+  // (the built-in laws' parameters as edited, MC-1b: each one the law has, finite, a list as long as its own; the law
+  //  still valid over its range -- else that law as built in)
+  const lw = m && m.law;
+  MAT.law = {};
+  if (lw && typeof lw === 'object' && typeof HUB_LAW !== 'undefined') for (const [id, q] of Object.entries(lw)) {
+    const L = HUB_LAW[id];
+    if (!L || !q || typeof q !== 'object') continue;
+    const own = L.q.params, ok = Object.entries(q).every(([k, x]) => k in own && (Array.isArray(own[k]) ? Array.isArray(x) && x.length === own[k].length && x.every(Number.isFinite) : Number.isFinite(x)));
+    if (ok && !hubLawProblem(id, { ...own, ...q })) MAT.law[id] = JSON.parse(JSON.stringify(q));
+  }
+  // (copies of a material and the domains they are assigned to, MC-2: each of a record this app has, its card values as
+  //  saved where they are numbers, its laws where they hold; an assignment to a copy kept, to a domain the record has)
+  const ins = m && m.inst;
+  MAT.inst = {}; MAT.assign = {};
+  if (ins && typeof ins === 'object' && typeof hubBaseRec === 'function') for (const [id, q] of Object.entries(ins)) {
+    const B = q && hubBaseRec(q.base);
+    if (!B || !/^[\w-]+~\d+$/.test(id) || typeof q.name !== 'string') continue;
+    const vals = {}, law = {};
+    for (const p of hubProps(B)) {
+      const b = p.b, e = q.vals && q.vals[p.id];
+      if (b.t === 'card') vals[p.id] = e && (Number.isFinite(e.v) || e.v === null) ? { ...MAT[b.card][b.k], ...e } : { ...MAT[b.card][b.k] };
+      if (b.t === 'law' && q.law && q.law[b.id] && typeof q.law[b.id] === 'object' && !hubLawProblem(b.id, { ...HUB_LAW[b.id].q.params, ...q.law[b.id] })) law[b.id] = JSON.parse(JSON.stringify(q.law[b.id]));
+    }
+    MAT.inst[id] = { base: B.id, name: q.name, vals, law };
+  }
+  const as = m && m.assign;
+  if (as && typeof as === 'object') for (const [base, a] of Object.entries(as)) {
+    const B = typeof hubBaseRec === 'function' && hubBaseRec(base);
+    if (!B || !a || typeof a !== 'object') continue;
+    const keep = Object.fromEntries(Object.entries(a).filter(([i, id]) => +i >= 0 && +i < B.domains.length && MAT.inst[id] && MAT.inst[id].base === base));
+    if (Object.keys(keep).length) MAT.assign[base] = keep;
+  }
   const pv = m && m.prov;
   if (pv && typeof pv === 'object') MAT.prov = Object.fromEntries(Object.entries(pv).filter(([k, q]) => /^in\.[A-Za-z0-9]+$/.test(k) && q && typeof q.kind === 'string' && (typeof HUB_PROV === 'undefined' || HUB_PROV[q.kind])).map(([k, q]) => [k, { kind: q.kind, src: String(q.src ?? '') }]));
 }

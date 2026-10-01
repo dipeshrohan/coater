@@ -212,8 +212,10 @@ function ovenAir(z = OVEN.zones[0]) {
 }
 /** Air viscosity (Sutherland's law) and density (ideal gas at 1 atm) at T degC. */
 function airProps(Tc) {
-  const T = Tc + 273.15;
-  return { mu: 1.716e-5 * Math.pow(T / 273.15, 1.5) * (273.15 + 110.4) / (T + 110.4), rho: 101325 / (287.05 * T) };
+  const T = Tc + 273.15, m = typeof hubLawParams === 'function' ? hubLawParams('airMu') : { y0: 1.716e-5, T0: 273.15, S: 110.4 };
+  // (its viscosity the material hub's law; its density 1 atm / (R_air T), or the hub's molar mass once edited: MC-1b)
+  const M = typeof MAT !== 'undefined' && MAT.law && MAT.law.airRho && MAT.law.airRho.M;
+  return { mu: m.y0 * Math.pow(T / m.T0, 1.5) * (m.T0 + m.S) / (T + m.S), rho: M ? 101325 * M / (8.314462618 * T) : 101325 / (287.05 * T) };
 }
 /** An oven zone's input id (zone 1's drying air keeps the ids the single oven setting had). */
 const ovenZoneId = (i, k) => i === 0 && OVEN_ZONE_LEGACY_ID[k] ? OVEN_ZONE_LEGACY_ID[k] : `ovz${i + 1}_${k}`;

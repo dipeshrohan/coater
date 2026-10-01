@@ -326,9 +326,15 @@ async function repMaterials() {
     + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
     + '<h3>Material constants</h3>' + repRows(ro(libCardRows()), head)
+    // (the spec's materials no solver reads at present; copies of a material and the domains they are assigned to, MC-2)
+    + '<h3>GO paste, carbonized film, blade material</h3>' + repRows(MAT_XREC.map(([k, l, u, , , , d]) => [repEsc(l), MAT.xrec[k].v == null ? '—' : repEsc(repUnit(repNum(MAT.xrec[k].v, d), u)), 'Constant', repEsc(MAT.xrec[k].src || '')]), head)
+    + (hubInsts().length ? '<h3>Copies of materials and their domains</h3>' + repRows(hubInsts().map(id => { const r = hubRec(id), B = hubBaseRec(r.base), a = (MAT.assign || {})[B.id] || {};
+      const doms = B.domains.filter((d, i) => a[i] === id); return [repEsc(hubName(r)), repEsc(hubName(B)), repEsc(doms.length ? doms.join('; ') : 'not assigned'), repEsc(hubProps(B).filter(p => p.b.t === 'card' && JSON.stringify(MAT.inst[id].vals[p.id]) !== JSON.stringify(MAT[p.b.card][p.b.k])).map(p => hubPropName(r, p)).join(', ') || 'none')]; }),
+      ['Copy', 'Of', 'Assigned to', 'Values that differ from it']) : '')
     + (hubDefRows().length ? '<h3>Defined in temperature</h3>' + repRows(hubDefRows().map(([l, h, s]) => [repEsc(l), repEsc(h), repEsc(s)]), ['', 'Definition', 'Taken in temperature by']) : '')
-    + '<h3>Built into the solvers</h3>' + repRows([...Object.entries(HUB_LAW).map(([id, L]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(hubLawAt(id, 20), -4), L.u)) + ' at 20 °C', 'Equation in T', repEsc(`${ML_LAWS[L.q.law].formula}; ${L.src}; ${L.solver}`)]),
-      ...Object.entries(HUB_CONST).map(([id, c]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(c.v, -4), c.u)), 'Constant', repEsc(`${c.src}; ${c.solver}`)])], head)
+    // (the laws in temperature the solvers take, with their parameters as they are now, MC-1b)
+    + '<h3>Laws in temperature</h3>' + repRows(Object.entries(HUB_LAW).map(([id, L]) => { const law = ML_LAWS[L.q.law], prm = Object.entries(hubLawParams(id)).map(([k, x]) => `${k} = ${Array.isArray(x) ? x.map(q => hubFmt(q, -6)).join(', ') : hubFmt(x, -6)}${!Array.isArray(x) && law.params[k] ? ' ' + law.params[k] : ''}`).join('; ');
+      return [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(hubLawAt(id, 20), -4), L.u)) + ' at 20 °C', 'Equation in T', repEsc(`${law.formula}: ${prm}. ${L.src}${(MAT.law || {})[id] ? ' (parameters edited)' : ''}`)]; }), head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
 }
 /** Coating › 3D: its setup, then the page (the 3D view drawn once three.js is in). */

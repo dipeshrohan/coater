@@ -205,5 +205,29 @@ for (const where of ['top', 'both']) {
   check('hot air blown on top dries faster than still air above', w1(jets) < w1(r0), `water at 1 m: ${(w1(jets) * 1e3).toFixed(0)} vs ${(w1(r0) * 1e3).toFixed(0)} g/m²`);
 }
 
+
+// ---- 9. the built-in laws as inputs (MC-1b, the material hub's): none given or the solver's own given -- the same
+//         result to the last bit; each law as given equals matlib's own evaluation of it; the balances hold with them ----
+{
+  const ML = require('./matlib.js'), small = over => base({ N: 40, M: 20, ...over });
+  const r0 = JSON.stringify(D.drStrip(small())), r1 = JSON.stringify(D.drStrip(small({ props: JSON.parse(JSON.stringify(D.DR_PROPS)) })));
+  const ed = { waterCp: 3800, airCp: 1012, airMu: { y0: 1.8e-5, T0: 273.15, S: 120 } }, rx = D.drStrip(small({ props: ed })), r2 = JSON.stringify(D.drStrip(small()));
+  check('laws as inputs: none given, or the solver\'s own given: the same result to the last bit; after a solve with others, its own again', r0 === r1 && r0 === r2 && JSON.stringify(rx) !== r0);
+  const E = rx.energy, eb = Math.abs((E.H - E.H0) - (E.Qin - E.Qlat - E.Qsens)) / E.Qin, wb = Math.abs(rx.evT + rx.evB - rx.lost) / rx.W0;
+  check('  water\'s c_p 3800, air\'s 1012 J/(kg K) and its Sutherland S 120 K given: water conserved within 1e-8, energy within 0.5 %', wb < 1e-8 && eb < 0.005, `water ${wb.toExponential(1)}; energy ${(eb * 100).toFixed(3)} %`);
+  const q = (law, params, T, p = P0) => ML.mlQEval({ kind: 'law', law, params }, { T: T + 273.15, p });
+  const g = { waterMu: { A: 3.0e-5, B: 250, C: 135 }, waterL: { y0: 2.45e6, T0: 273.15, b: -2400 }, airMu: { y0: 1.75e-5, T0: 273.15, S: 115 }, airK: { y0: 0.025, T0: 273.15, S: 200 },
+    airDv: { y0: 2.2e-5, T0: 273.15, b: 1.75 }, airM: 0.029, airCp: 1010, psat: D.DR_PROPS.psat.map((x, i) => (i === 9 ? 650.2 : x)) };
+  D.drUse(g);
+  let e = 0;
+  for (const T of [5, 25, 60, 95]) {
+    const a = D.drAir(T, P0);
+    e = Math.max(e, rel(D.drMuWater(T), q('vogel', g.waterMu, T)), rel(D.drLatent(T), q('linearT', g.waterL, T)), rel(D.drPsat(T), q('iapwsPsat', { n: g.psat }, T)),
+      rel(a.mu, q('sutherland', g.airMu, T)), rel(a.k, q('sutherland', g.airK, T)), rel(a.rho, q('idealGas', { M: g.airM }, T)), rel(a.Dv, q('powerT', g.airDv, T)), rel(a.cp, 1010));
+  }
+  D.drUse();
+  check('  each law given (Vogel, IAPWS-IF97\'s coefficients, linear latent heat, Sutherland μ and k, ideal gas M, D_v ∝ T^b, c_p) = matlib\'s evaluation of it, 5–95 °C', e < 1e-14, `max rel ${e.toExponential(1)}`);
+  check('  and back to its own: drMuWater(20 °C) 1.0016 mPa·s', Math.abs(D.drMuWater(20) - 2.414e-5 * Math.pow(10, 247.8 / (293.15 - 140))) === 0);
+}
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

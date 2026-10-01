@@ -60,6 +60,8 @@ function dryBase() {
     U: lineSpeed(), Lnat: ACROSS_W / 1000 / 2, P: 101325, Tin: v('Troom'), room: { len: P.oven, T: v('Troom'), rh: v('rhRoom') / 100 },
     zones: OVEN.zones.map(z => ({ len: z.len, airU: z.airU, airT: z.airT, rh: z.rh / 100, top: z.top || 'none', jetU: z.jetU, jetT: z.jetT, jetB: z.jetB / 1000, jetH: z.jetH / 1000, jetS: z.jetS / 1000, ir: z.ir * 1000 })),
     N: 80, M: 40,
+    // (the built-in laws and the fluids' constants, the material hub's, where they differ from the solver's own: MC-1b)
+    ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}),
   };
 }
 /** Where the profiles through the film are kept: the room's middle, then every 0.5 m through the oven and its exit. */
