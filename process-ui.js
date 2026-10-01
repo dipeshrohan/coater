@@ -37,12 +37,12 @@ const um0 = v => (v * 1e6).toFixed(0), gm2 = v => v.toFixed(0);
 const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], todo: ['Not solved yet', 'muted'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'], none: ['Not modelled yet', 'muted'] };
 // (the drying stage, go 'dry': scrolls to its section under the chain; 'oven' kept for the zones in the inputs bar)
 function processStages() {
-  const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length;
+  const c = MAT.slurry;
   const two = CFD_LOCS.map((_, i) => twoDAt(i)), n2 = two.filter(t => t && !t.stale).length, s2 = two.filter(t => t && t.stale).length;
   const S3 = typeof C3D_RES !== 'undefined' && C3D_RES ? C3D_RES : null, stale3 = S3 && S3.key !== c3dSolveKey3(S3);
   const one = ONE_D.res && oneDCurrent(), o = ovenTime(lineSpeed());
   return [
-    { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids; ${nA} of ${keys.length} values assumed` },
+    { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids, flakes ${c.dMin.v}–${c.dMax.v} µm` },
     { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : 'busy',
       s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
     (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
@@ -108,7 +108,7 @@ function procSlurryGap() {
   return { gd, mu: muLaw(gd, P.mu, ty, n, x), ty, n, x };
 }
 function procSlurryHTML() {
-  const c = MAT.slurry, keys = Object.keys(c), nA = keys.filter(k => c[k].flag === 'assumed').length, wt = slurrySolidsMass();
+  const c = MAT.slurry, wt = slurrySolidsMass();
   const X0 = (1 - c.phi.v / 100) * c.rhoL.v / (c.phi.v / 100 * c.rhoS.v * 1000), g = procSlurryGap(), sig = v => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
   const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
   const pct = v => (v * 100).toFixed(1);
@@ -132,7 +132,7 @@ function procSlurryHTML() {
           <tbody><tr><th scope="row"><i class="mx-sw mx-sw-go"></i>Graphene oxide</th><td>${c.phi.v.toFixed(1)}</td><td>${pct(wt)}</td><td>${(c.rhoS.v * 1000).toFixed(0)}</td></tr>
             <tr><th scope="row"><i class="mx-sw mx-sw-w"></i>Water</th><td>${(100 - c.phi.v).toFixed(1)}</td><td>${pct(1 - wt)}</td><td>${c.rhoL.v.toFixed(0)}</td></tr>
             <tr class="mx-total"><th scope="row">Slurry</th><td>100.0</td><td>100.0</td><td>${slurryRho().toFixed(0)}</td></tr></tbody></table>
-        <p class="mx-foot">${nA ? `${nA} of the slurry card's ${keys.length} values assumed` : 'Every value on the slurry card from you'} · dry film packing ${c.phiDry.v}</p></figure>
+        <p class="mx-foot">Dry film packing ${c.phiDry.v}</p></figure>
     </div></div>`;
 }
 /** Mixing's flow curve: the viscosity over five decades of shear rate, log–log, marked at 2.7 1/s (where you set it) and in the gap. */
@@ -341,12 +341,12 @@ function drawProcessTable(locs, web) {
 // ---- Materials ----
 /** The rheology card's first rows: the model and the sidebar's slurry inputs, as they are. */
 function matRheoBase() {
-  const flag = c => /assumed/.test(c.h || '') ? 'assumed' : 'given', cf = k => CFG.find(c => c.k === k);
+  const cf = k => CFG.find(c => c.k === k);
   return [
     ['Rheology model', RHEO_MODELS[CFDG.model].l, '', 'given', 'chosen here or in Coating › 2D (the CFD setup)'],
     // (MH-3: the law's own parameters, then the viscosity it gives at 2.7 1/s -- worked out, against your measurement)
     ...[...RHEO_MODELS[CFDG.model].uses, 'g'].map(k => { const c = cf(k), fit = (MAT.rheo.side || {})[k];
-      return fit && fit.v === P[k] ? [c.l, (+P[k]).toFixed(c.d), c.u, 'measured', fit.src] : [c.l, (+P[k]).toFixed(c.d), c.u, flag(c), c.h || 'you (measured)']; }),
+      return fit && fit.v === P[k] ? [c.l, (+P[k]).toFixed(c.d), c.u, 'measured', fit.src] : [c.l, (+P[k]).toFixed(c.d), c.u, 'given', hubVal({ b: { t: 'inp', k } }).src]; }),
     ...(CFDG.model === 'newtonian' ? [] : [['Viscosity at 2.7 1/s, the law', Number.isFinite(P.mu) ? (+P.mu.toPrecision(4)).toString() : '—', 'Pa·s', 'calc', `from its parameters; measured ${RHEO_MEASURED.mu} Pa·s (${RHEO_MEASURED.src})`]]),
   ];
 }
@@ -367,16 +367,15 @@ function matRheoRows() {
 function matFibreRows() {
   const fib = FIBRES[CFDG.fibre], st = fibreStructure(), rep = k => fib.set[k] === CFDG[k] ? 'measured' : 'given';
   const src = k => fib.set[k] === CFDG[k] ? 'the test report' : `you (the report: ${fib.set[k]})`;
-  const asm = k => fib.set[k] === CFDG[k] ? 'assumed' : 'given';
   return [
     ['Test report', fib.l, '', 'measured', fib.note],
     ['Thickness', P.tf.toFixed(2), 'mm', 'given', 'you (measured); the inputs bar\'s fibre thickness'],
     ['Basis weight', String(CFDG.gsm), 'g/m²', rep('gsm'), src('gsm')],
-    ['Fibre density', String(CFDG.rhoF), 'kg/m³', asm('rhoF'), fib.set.rhoF === CFDG.rhoF ? 'assumed (the polymer\'s)' : 'you'],
+    ['Fibre density', String(CFDG.rhoF), 'kg/m³', 'given', fib.set.rhoF === CFDG.rhoF ? 'the polymer\'s density' : 'you'],
     ['Air permeability', String(CFDG.airPerm), '×10⁻³ m³/m²·s', rep('airPerm'), src('airPerm')],
     ['Porosity', st.ok ? st.eps.toFixed(3) : '—', '', 'calc', 'from the basis weight, the fibre density and the thickness'],
     ['Filament diameter', Number.isFinite(st.d) ? (st.d * 1e6).toFixed(1) : '—', 'µm', 'calc', CFDG.dFrom === 'yarn' ? `from the ${CFDG.den} denier yarn of ${CFDG.nf} filaments and the fibre density` : 'from the air permeability (Kozeny–Carman)'],
-    ['Air fraction, top surface', String(CFDG.airFrac), '', asm('airFrac'), fib.set.airFrac === CFDG.airFrac ? 'assumed (= porosity)' : 'you'],
+    ['Air fraction, top surface', String(CFDG.airFrac), '', 'given', fib.set.airFrac === CFDG.airFrac ? 'the porosity' : 'you'],
     ['Use temperature, continuous', String(fib.tUse), '°C', 'measured', 'the test report'],
   ];
 }

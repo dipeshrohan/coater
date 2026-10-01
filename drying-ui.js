@@ -132,7 +132,7 @@ function procOvenTable() {
   return `<div class="proc-zones-wrap"><table class="proc-kv proc-grid proc-zones"><thead><tr><th>Zone</th>${th.map(f => `<th>${f[1]} <small>${f[2]}</small></th>`).join('')}<th>Above the film</th></tr></thead><tbody>
     ${z.map((q, i) => `<tr><th>${i + 1}</th>${th.map(f => cell(q, i, f)).join('')}${top(q, i)}</tr>`).join('')}</tbody></table></div>`;
 }
-function procOvenLine() { const o = ovenTime(lineSpeed()); return `${OVEN.zones.length} zones, ${+o.len.toFixed(2)} m: the film ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} in it at ${P.U} m/min (assumed values)`; }
+function procOvenLine() { const o = ovenTime(lineSpeed()); return `${OVEN.zones.length} zones, ${+o.len.toFixed(2)} m: the film ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} in it at ${P.U} m/min`; }
 /** The section's frame (filled by dryRender after the page is drawn). */
 function drySectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
@@ -390,7 +390,7 @@ function dryTable() {
 }
 function dryNoteText(r) {
   const d = MAT.dry, len = ovenTime(lineSpeed()).len;
-  return `Each film is a strip of the wet film on its web, followed from the blade through the room (${P.oven} m, ${d.Troom.v} °C, ${d.rhRoom.v} % humidity) and the oven (${+len.toFixed(2)} m, ${OVEN.zones.length} zones) at the line's speed; through its thickness the water moves against the flakes (their collective diffusion, Routh–Russel) and leaves at the surface; where the solids reach the dry film's packing (${MAT.slurry.phiDry.v}) a skin forms and the water then leaves as vapour through it; the heat comes from the air blown up through the fibre, the air or IR above (each zone's), the walls' radiation, and goes into evaporating the water. The dry GO keeps ${(r.Xb * 100).toFixed(1)} % water at the last zone's humidity (its isotherm, the Drying card). All of it assumed until measured: compare with your oven temperatures and the film at the exit below. Solved in ${(DRY.ms / 1000).toFixed(1)} s.`;
+  return `Each film is a strip of the wet film on its web, followed from the blade through the room (${P.oven} m, ${d.Troom.v} °C, ${d.rhRoom.v} % humidity) and the oven (${+len.toFixed(2)} m, ${OVEN.zones.length} zones) at the line's speed; through its thickness the water moves against the flakes (their collective diffusion, Routh–Russel) and leaves at the surface; where the solids reach the dry film's packing (${MAT.slurry.phiDry.v}) a skin forms and the water then leaves as vapour through it; the heat comes from the air blown up through the fibre, the air or IR above (each zone's), the walls' radiation, and goes into evaporating the water. The dry GO keeps ${(r.Xb * 100).toFixed(1)} % water at the last zone's humidity (its isotherm, the Drying card). Compare with your oven temperatures and the film at the exit below. Solved in ${(DRY.ms / 1000).toFixed(1)} s.`;
 }
 
 // ---- measured drying (Q54): temperatures in the oven, values at its exit ----

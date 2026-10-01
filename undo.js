@@ -66,12 +66,9 @@ function furnUndoLabel(a, b) {
 function matUndoLabel(k, a, b, rows = MAT_SLURRY) {
   const [, l, u, , , , d] = rows.find(q => q[0] === k);
   // (MH-4b: its definition in temperature -- a table or an expression; its value at 20 °C follows it)
-  if (a && b && JSON.stringify(a.def || null) !== JSON.stringify(b.def || null)) return `${l}: ${!b.def ? 'constant' : b.def.kind === 'table' ? 'a table in temperature' : 'an expression in temperature'}`;
+  if (a && b && JSON.stringify(a.def || null) !== JSON.stringify(b.def || null)) return `${l}: ${!b.def ? 'constant' : b.def.kind === 'table' ? 'a table in temperature' : 'an equation in temperature'}`;
   if (a && b && a.v !== b.v) return undoChange(l, a.v, b.v, v => undoNum(v, d), u);
-  // (MH-5: its provenance, the hub's kinds)
-  if (a && b && a.prov !== b.prov && typeof HUB_PROV !== 'undefined' && HUB_PROV[b.prov]) return `${l}: ${HUB_PROV[b.prov].l.toLowerCase()}`;
-  if (a && b && a.flag !== b.flag) return `${l}: ${(MAT_FLAGS.find(f => f[0] === b.flag) || [0, b.flag])[1].toLowerCase()}`;
-  return `${l}: source`;
+  return `${l}: data source`;
 }
 const scalarName = v => v === 'none' ? 'none' : (SCALARS[v] || {}).label || v;
 const FV_UNDO = {
@@ -184,10 +181,11 @@ const UNDO_UNITS = (() => {
   // (the drying card and the drying measured, GO-3)
   for (const [k] of MAT_DRY) u.push({ id: 'matd.' + k, get: () => MAT.dry[k], set: v => { MAT.dry[k] = v ? { ...v } : matDefaults().dry[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_DRY) });
   for (const [k] of MAT_LIB) u.push({ id: 'matl.' + k, get: () => MAT.lib[k], set: v => { MAT.lib[k] = v ? { ...v } : matDefaults().lib[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_LIB) });
-  // (the inputs bar's material values' provenance, the material hub's: MH-5)
+  // (the material's identity; the inputs bar's material values' data sources, the material hub's: MH-5)
+  u.push({ id: 'mat.meta', get: () => MAT.meta || {}, set: v => { MAT.meta = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: () => 'A material\'s identity and notes' });
   u.push({ id: 'mat.prov', get: () => MAT.prov || {}, set: v => { MAT.prov = v ? JSON.parse(JSON.stringify(v)) : {}; },
-    label: (a, b) => { const k = Object.keys({ ...(a || {}), ...(b || {}) }).find(x => JSON.stringify((a || {})[x]) !== JSON.stringify((b || {})[x])); const c = k && CFG.find(q => 'in.' + q.k === k), q = k && (b || {})[k];
-      return `${c ? c.l : 'An input'}: ${q && typeof HUB_PROV !== 'undefined' && HUB_PROV[q.kind] ? HUB_PROV[q.kind].l.toLowerCase() + (JSON.stringify(((a || {})[k] || {}).src) !== JSON.stringify(q.src) && ((a || {})[k] || {}).kind === q.kind ? ', source' : '') : 'provenance'}`; } });
+    label: (a, b) => { const k = Object.keys({ ...(a || {}), ...(b || {}) }).find(x => JSON.stringify((a || {})[x]) !== JSON.stringify((b || {})[x])); const c = k && CFG.find(q => 'in.' + q.k === k);
+      return `${c ? c.l : 'An input'}: data source`; } });
   u.push({ id: 'mat.dryMeas', get: () => MAT.dryMeas || { temps: [], exit: [] }, set: v => { MAT.dryMeas = v ? JSON.parse(JSON.stringify(v)) : { temps: [], exit: [] }; },
     label: (a, b) => { a = a || { temps: [], exit: [] }; b = b || { temps: [], exit: [] }; return b.temps.length !== a.temps.length ? (b.temps.length > a.temps.length ? `Import temperatures ${b.temps[b.temps.length - 1].name}` : 'Remove measured temperatures') : b.exit.length > a.exit.length ? 'Add a measured exit value' : 'Remove a measured exit value'; } });
   // (the film's card, the film measured and the peel's place and the winder's core, GO-4)

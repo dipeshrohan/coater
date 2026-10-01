@@ -47,12 +47,12 @@ const FIBRES = {
   thin: {
     l: 'Thin PET (130)', tf: 0.20, tUse: 130, tMom: null,
     set: { gsm: 138, rhoF: 1380, dFrom: 'yarn', den: 150, nf: 48, airPerm: 25, airDP: 0, kozeny: 5, airFrac: 0.5 },
-    note: 'report 2018-01-29: polyester filament, 150D×2 plain weave, 0.20 mm, 138 g/m², 25.9 / 22 threads/cm, air permeability 20–30 ×10⁻³ m³/m²·s (test pressure not stated), below 130 °C continuous. Filaments per yarn (48; not in the report), PET density and the top-surface air fraction (= porosity) assumed.',
+    note: 'report 2018-01-29: polyester filament, 150D×2 plain weave, 0.20 mm, 138 g/m², 25.9 / 22 threads/cm, air permeability 20–30 ×10⁻³ m³/m²·s (test pressure not stated), below 130 °C continuous. Not in the report: filaments per yarn (48), PET density and the top-surface air fraction (= porosity).',
   },
   thick: {
     l: 'Thick PP (RX001)', tf: 0.90, tUse: 90, tMom: 110,
     set: { gsm: 600, rhoF: 905, dFrom: 'air', den: 0, nf: 0, airPerm: 125, airDP: 127, kozeny: 5, airFrac: 0.26 },
-    note: 'report 2026-03-20: polypropylene, heat set, 0.90 mm, 600 g/m², 55 / 19.5 threads/cm, air flow 1 L/s through 80 cm² at 127 Pa (= 125 ×10⁻³ m³/m²·s), 90 °C continuous, 110 °C momentary. Filament size not in the report: inferred from the air permeability. PP density (905, literature 900–910) and the top-surface air fraction (= porosity) assumed.',
+    note: 'report 2026-03-20: polypropylene, heat set, 0.90 mm, 600 g/m², 55 / 19.5 threads/cm, air flow 1 L/s through 80 cm² at 127 Pa (= 125 ×10⁻³ m³/m²·s), 90 °C continuous, 110 °C momentary. Filament size not in the report: inferred from the air permeability. Not in the report: PP density (905, literature 900–910) and the top-surface air fraction (= porosity).',
   },
 };
 // Shaped blades (cfd-blade.js; the land is the sidebar's land length L where a shape has one):
@@ -272,7 +272,7 @@ function wireOvenZones(changed, redraw) {
 /** The oven under the zones: its length and the time the film spends in it at the web speed. */
 function ovenNote() {
   const o = ovenTime(P.U / 60), n = OVEN.zones.length;
-  return `Assumed values. The oven: ${n} zone${n === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m; the film is in it for ${Number.isFinite(o.t) ? `${fmtNum(o.t / 60)} min` : '—'} at the web speed.`;
+  return `The oven: ${n} zone${n === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m; the film is in it for ${Number.isFinite(o.t) ? `${fmtNum(o.t / 60)} min` : '—'} at the web speed.`;
 }
 /** The oven zones whose air is above a temperature limit, as a warning after it ('' when none is). */
 function ovenHotText(limit) {
