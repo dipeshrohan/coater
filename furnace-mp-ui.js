@@ -33,7 +33,7 @@ function fmpInputs(dim) {
   const fo = q.o, P = q.P, v = k => MAT.furn[k].v, d = MAT.dry, N = Math.max(1, Math.round(OVEN.furn.N)), mid = Math.floor((N - 1) / 2);
   return { dim, Lx: fo.Lx, Ly: fo.Ly, margin: fo.margin, N, h: P.h, tp: fo.paper.t, ends: fo.ends, plateT: fo.plate.t,
     go: { rho: P.rhoG, c: d.cS.v, kIn: d.kIn.v, kThr: d.kS.v, Xin: P.Xroom },
-    paper: { rho: fo.paper.rho, kIn: v('kPin'), kThr: v('kPthr'), D: fo.paper.D }, plate: { rho: v('rhoPl') * 1000, k: v('kPl') }, Rc: v('Rc') * 1e-4,
+    paper: { rho: fo.paper.rho, kIn: v('kPin'), kThr: v('kPthr'), D: fo.paper.D }, plate: { rho: v('rhoPl') * 1000, k: v('kPl'), B: fo.plate.B }, Rc: v('Rc') * 1e-4,
     runs: fo.runs, chem: fo.chem, stages: fo.stages, Hr: v('Hr') * 1e6, furnace: { eps: v('epsF'), gas: true },
     gas: { Dgal: fo.Dgal, Dmin: fo.Dmin, dIn: fo.dIn, sigZ: fo.sigZ, plateP: fo.plateP },
     plane: { Ep: fo.plane.Ep, nu: fo.plane.nu, bO: fo.plane.bO, bG: fo.plane.bG, am: fo.plane.am },
@@ -138,6 +138,8 @@ function fmpModelHTML(o, r) {
   const fu = OVEN.furn, f = MAT.furn, d = MAT.dry, dim = o.dim, mm = v => (v * 1000).toFixed(v * 1000 < 10 ? 2 : 1);
   const as = k => (f[k].flag === 'assumed' ? ' <small class="mp-as">assumed</small>' : '');
   const asD = k => (d[k].flag === 'assumed' ? ' <small class="mp-as">assumed</small>' : '');
+  // (the top and bottom pieces on the holder's plates: their gas through the plate there; the 1D follows the middle piece only)
+  const onPlates = o.ends === 'plates' && dim > 1 && o.plate && Number.isFinite(o.plate.B), fmpPlateB = () => `${f.Bpl.v} × 10⁻⁶ m²/s${as('Bpl')}, ${mm(o.plateT)} mm thick`;
   const Hs = o.N * o.h + (o.ends === 'plates' ? o.N - 1 : o.N + 1) * o.tp;
   const dom = { 1: `Along the pieces at the stack's middle height: from the middle of a piece to its paper's edge, ${mm(o.Lx / 2 + o.margin)} mm (a tall stack's middle, heated from its side)`,
     2: `A section through the holder from the middle to its side, ${mm(o.Lx / 2 + o.margin)} × ${mm(Hs + 2 * o.plateT)} mm: the ${o.N} pieces and their papers (${mm(Hs)} mm) between two ${mm(o.plateT)} mm plates, the stack taken long across`,
@@ -146,7 +148,7 @@ function fmpModelHTML(o, r) {
     ['Heat', '∂H/∂t = ∇·(k ∇T) + q_chem', `the stack as its layers combined: GO k ${d.kIn.v} along${asD('kIn')}, ${d.kS.v} through${asD('kS')}; paper ${f.kPin.v}${as('kPin')} along, ${f.kPthr.v}${as('kPthr')} through W/(m·K); a piece's face ${f.Rc.v} × 10⁻⁴ m²·K/W${as('Rc')}; plates k ${f.kPl.v}${as('kPl')}; graphite's heat capacity with temperature`,
       dim === 1 ? `the paper's edge sees the hot zone at the program's temperature (ε ${f.epsF.v}${as('epsF')}) and the argon (natural convection); above and below, the stack goes on` : `every outer face sees the hot zone at the program's temperature (ε ${f.epsF.v}${as('epsF')}) and the argon (natural convection); between the runs the stack cools to the room`],
     ['Chemistry', 'dα/dt = Σ w A e^(−E/RT) (1 − α)', `furnace.js's stages at every point at its own temperature; the labile oxygen gives ${f.Hr.v} kJ/g${as('Hr')}, the water takes its latent heat`, 'q_chem into the heat, Newton at the nodes: a runaway followed'],
-    ['Gas', '∇·(κ(T) ∇u) + G = 0,  u ≤ the load', 'each piece\'s gas (furnace.js\'s moles per stage) along its paper (furnace.js\'s conductance) and across the piece (G R T h / 8D)', 'the paper\'s edges at the argon\'s pressure; where the gas passes the load the paper lifts'],
+    ['Gas', '∇·(κ(T) ∇u) + G = 0,  u ≤ the load', `each piece's gas (furnace.js's moles per stage) along its paper (furnace.js's conductance) and across the piece (G R T h / 8D)${onPlates ? `; the top and bottom pieces' face on a plate: through the plate (its permeability ${fmpPlateB()})` : ''}`, `the paper's edges at the argon's pressure; where the gas passes the load the paper lifts${onPlates ? ', and a piece lifts off its plate' : ''}`],
     ['Stress', dim === 3 ? 'plane stress in each piece: σ = C (ε − ε*)' : 'along each piece\'s edge: σ_yy = E (ε̄ − ε*)', `ε* its shrink as its oxygen leaves (${f.bO.v} %) and it graphitizes (${f.bG.v} %)`, 'free in its plane (the papers\' friction: the Results step)'],
   ];
   const E = r ? r.energy : null, bal = E ? Math.abs(E.faces + E.reaction + E.between - E.held) / Math.max(1e-30, Math.abs(E.faces)) : null;
