@@ -95,5 +95,17 @@ for (const dim of [1, 2, 3]) {
   check('properties in temperature as inputs (MH-4b): flat tables at the constants, the stack bit for bit; a rising k through it, another', strip(a) === strip(b) && strip(c) !== strip(a), `${strip(a).length} chars`);
 }
 
+
+// N. the built-in laws as inputs (MC-1b): none given or its own given, the same to the last bit; water's c_p given reaches
+//    the stack's heat (a piece's heat capacity: slower to warm with more), and the air's laws through drying.js
+{
+  const o = { ...base, dim: 1 }, key = r => JSON.stringify([r.series, r.summary, r.energy, r.water]);
+  const own = { ...JSON.parse(JSON.stringify(DR.DR_PROPS)) };
+  const a = key(S.smpStack(o)), b = key(S.smpStack({ ...o, props: own })), hot = S.smpStack({ ...o, tol: 1e-10, props: { waterCp: 6000 } }), c = key(S.smpStack(o));
+  check('laws as inputs: none given, or its own given: the same result to the last bit; after one with others, its own again', a === b && a === c && key(hot) !== a);
+  const r0 = S.smpStack({ ...o, tol: 1e-10 }), dT = JSON.stringify(r0.series[5]) !== JSON.stringify(hot.series[5]);
+  const eE = Math.abs(hot.energy.in - hot.energy.held) / Math.abs(hot.energy.in), eW = Math.abs(hot.water.out - hot.water.lostHeld) / hot.water.start;
+  check('  water\'s c_p 6000 J/(kg K) given: the stack warms differently (its heat capacity); heat in = held, water out = lost still', dT && eE < 1e-6 && eW < 1e-8, `energy ${fmt(eE)}, water ${fmt(eW)}`);
+}
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

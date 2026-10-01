@@ -38,7 +38,8 @@ function fmpInputs(dim) {
     gas: { Dgal: fo.Dgal, Dmin: fo.Dmin, dIn: fo.dIn, sigZ: fo.sigZ, plateP: fo.plateP },
     plane: { Ep: fo.plane.Ep, nu: fo.plane.nu, bO: fo.plane.bO, bG: fo.plane.bG, am: fo.plane.am },
     mesh: dim === 3 ? { nx: 5, ny: 5, nm: 1, nz: 6, nPlate: 1 } : { nx: 8, nm: 2, nz: 12, nPlate: 2 },
-    dT: dim === 3 ? 4 : 2, dTHigh: dim === 3 ? 20 : 10, jumpMax: dim === 3 ? 200 : 100, tol: 1e-7, follow: [0, mid, N - 1], snapUneven: true, snapTimes: fmpSnapTimes(fo.runs) };
+    dT: dim === 3 ? 4 : 2, dTHigh: dim === 3 ? 20 : 10, jumpMax: dim === 3 ? 200 : 100, tol: 1e-7, follow: [0, mid, N - 1], snapUneven: true, snapTimes: fmpSnapTimes(fo.runs),
+    ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}) };
 }
 const fmpKeyNow = dim => { const o = fmpInputs(dim); return o ? JSON.stringify(o) : null; };
 const fmpCurrent = dim => !!FMS.res[dim] && FMS.key[dim] === fmpKeyNow(dim);

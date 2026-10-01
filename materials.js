@@ -161,6 +161,12 @@ const MAT_LIB = [
   ['plE', 'Isostatic graphite plates: Young\'s modulus', 'GPa', 1, 40, 0.5, 1, 10, 'assumed', 'isostatic graphites 8–14 GPa; the plates\' datasheet gives it'],
   ['webNupt', 'Fibre web: Poisson\'s ratio, plane to thickness', '', 0, 0.49, 0.01, 2, 0.1, 'assumed', 'a fabric\'s thickness change under an in-plane stress: small'],
   ['gelNu', 'Wet GO film: Poisson\'s ratio', '', 0, 0.499, 0.005, 3, 0.45, 'assumed', 'a water-filled gel: nearly incompressible'],
+  // (MC-1b: the fluids' constants the solvers had in their code -- drying.js DR_CL and drAir, stack-mp.js SMP_CW,
+  //  furnace-mp.js FMP_CW and fmpArgon; their first values the solvers' own)
+  ['waterCp', 'Water: specific heat capacity', 'J/(kg·K)', 3500, 4500, 1, 0, 4180, 'assumed', 'liquid water 4178–4216 J/(kg·K) from 20 to 100 °C'],
+  ['airCp', 'Air: specific heat capacity', 'J/(kg·K)', 900, 1200, 1, 0, 1007, 'assumed', 'dry air near the room temperature'],
+  ['arCp', 'Argon: specific heat capacity', 'J/(kg·K)', 400, 700, 0.1, 1, 520.3, 'assumed', 'a monatomic ideal gas: 5/2 R / M'],
+  ['arPr', 'Argon: Prandtl number', '', 0.4, 1, 0.001, 4, 2 / 3, 'assumed', 'a monatomic gas (Eucken): Pr = ⅔'],
 ];
 const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
@@ -176,7 +182,7 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // its own in its entry, as prov beside its flag)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB), meta: {} });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB), meta: {}, law: {} });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;

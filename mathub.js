@@ -79,14 +79,50 @@ const HUB_LAW = {
   arRho: { q: { kind: 'law', law: 'idealGas', params: { M: 0.039948 } }, u: 'kg/m³', T: [20, 3000], p: 101325, solver: 'furnace-mp.js fmpArgon', src: 'ideal gas, M 39.948 g/mol, at 1 atm' },
   gCp: { q: { kind: 'law', law: 'butlandMaddison', params: { c: [0.54212, -2.42667e-6, -90.2725, -43449.3, 1.59309e7, -1.43688e9] } }, u: 'J/(kg·K)', T: [20, 3000], solver: 'furnace-mp.js fmpCg', src: 'Butland and Maddison, J. Nucl. Mater. 49 (1973) 45: 200–3500 K' },
 };
-const HUB_CONST = {
-  waterCp: { v: 4180, u: 'J/(kg·K)', solver: 'drying.js DR_CL, stack-mp.js SMP_CW, furnace-mp.js FMP_CW', src: 'liquid water 4178–4216 J/(kg·K) from 20 to 100 °C' },
-  airCp: { v: 1007, u: 'J/(kg·K)', solver: 'drying.js drAir', src: 'dry air near the room temperature' },
-  arCp: { v: 520.3, u: 'J/(kg·K)', solver: 'furnace-mp.js fmpArgon', src: 'a monatomic ideal gas: 5/2 R / M' },
-  arPr: { v: 2 / 3, u: '', solver: 'furnace-mp.js fmpArgon', src: 'a monatomic gas (Eucken): Pr = ⅔' },
-};
-/** A built-in law's value at T (°C) in SI. */
-const hubLawAt = (id, Tc) => { const L = HUB_LAW[id]; return mlQEval(L.q, { T: Tc + 273.15, p: L.p || 101325 }); };
+/** The fluids' constants the solvers take (MC-1b: the material constants card's, MAT.lib, editable): where in the code. */
+const HUB_CONST_CODE = { waterCp: 'drying.js DR_P.waterCp, stack-mp.js, furnace-mp.js FMP_P.waterCp', airCp: 'drying.js drAir', arCp: 'furnace-mp.js fmpArgon', arPr: 'furnace-mp.js fmpArgon' };
+const HUB_CONST = Object.fromEntries(Object.entries(HUB_CONST_CODE).map(([id, solver]) => {
+  const row = () => MAT_LIB.find(q => q[0] === id);
+  return [id, { solver, get v() { return typeof MAT !== 'undefined' && MAT.lib && MAT.lib[id] ? MAT.lib[id].v : row()[7]; }, get u() { return row()[2]; }, get src() { return row()[9]; } }];
+}));
+/** A built-in law's parameters now (MC-1b): the project's edits (MAT.law) over its own. */
+const hubLawParams = id => ({ ...HUB_LAW[id].q.params, ...((typeof MAT !== 'undefined' && MAT.law && MAT.law[id]) || {}) });
+const hubLawQ = (id, params = hubLawParams(id)) => ({ ...HUB_LAW[id].q, params });
+/** A built-in law's value at T (°C) in SI, with its parameters now. */
+const hubLawAt = (id, Tc) => { const L = HUB_LAW[id]; return mlQEval(hubLawQ(id), { T: Tc + 273.15, p: L.p || 101325 }); };
+/** Why a law's parameters cannot stand (or ''): every value finite and positive over its valid range, every 5 °C. */
+function hubLawProblem(id, params) {
+  const L = HUB_LAW[id], q = hubLawQ(id, params);
+  for (const [k, x] of Object.entries(params)) if (Array.isArray(x) ? !x.every(Number.isFinite) : !Number.isFinite(x)) return `${k} is not a number`;
+  for (let T = L.T[0]; T <= L.T[1] + 1e-9; T += Math.max(5, (L.T[1] - L.T[0]) / 600)) {
+    let y; try { y = mlQEval(q, { T: T + 273.15, p: L.p || 101325 }); } catch (e) { return e.message; }
+    if (!Number.isFinite(y) || y <= 0) return `it gives ${Number.isFinite(y) ? hubFmt(y, -3) : 'no number'} ${L.u} at ${+T.toFixed(1)} °C: it must stay positive from ${L.T[0]} to ${L.T[1]} °C`;
+  }
+  return '';
+}
+/** Set a law's parameter k (its i-th, for a list): refused (thrown, said why) when the law would not hold. */
+function hubSetLawParam(id, k, i, v) {
+  const own = HUB_LAW[id].q.params, cur = hubLawParams(id);
+  if (!(k in own)) throw new Error(`${id} has no parameter ${k}`);
+  const x = Array.isArray(own[k]) ? cur[k].map((q, j) => (j === i ? v : q)) : v, next = { ...cur, [k]: x }, why = hubLawProblem(id, next);
+  if (why) throw new Error(why);
+  const edits = { ...((MAT.law || {})[id] || {}) };
+  if (JSON.stringify(x) === JSON.stringify(own[k])) delete edits[k]; else edits[k] = x;
+  MAT.law = { ...(MAT.law || {}) };
+  if (Object.keys(edits).length) MAT.law[id] = edits; else delete MAT.law[id];
+}
+/**
+ * The built-in laws and the fluids' constants as the solvers take them (their o.props, MC-1b): only what differs from
+ * the solvers' own values (drying.js DR_PROPS, furnace-mp.js FMP_PROPS), so a project that edits none solves as before
+ * (undefined then).
+ */
+function matSolverProps() {
+  const out = {}, put = (k, v, own) => { if (JSON.stringify(v) !== JSON.stringify(own)) out[k] = v; }, L = id => hubLawParams(id), O = id => HUB_LAW[id].q.params;
+  for (const id of ['waterMu', 'waterL', 'airMu', 'airK', 'airDv', 'arMu']) put(id, L(id), O(id));
+  put('psat', L('waterPsat').n, O('waterPsat').n); put('airM', L('airRho').M, O('airRho').M); put('arM', L('arRho').M, O('arRho').M); put('gCp', L('gCp').c, O('gCp').c);
+  for (const id of Object.keys(HUB_CONST_CODE)) put(id, MAT.lib[id].v, MAT_LIB.find(q => q[0] === id)[7]);
+  return Object.keys(out).length ? out : undefined;
+}
 
 // ---- the records ----
 // property: { id, l, sym, b (binding), phys: [solver keys], note?, show? (() => text when not used as set) }
@@ -176,7 +212,7 @@ const HUB_RECORDS = [
     groups: [
       { l: 'Basic', props: [
         { id: 'rhoL', sym: 'ρ_w', l: 'Density', b: hC('slurry', 'rhoL'), phys: ['mix', 'coat', 'dry', 'film'] },
-        { id: 'cp', sym: 'c_p', l: 'Specific heat capacity', b: { t: 'const', id: 'waterCp' }, phys: ['dry', 'film', 'mp1', 'mp2'] },
+        { id: 'cp', sym: 'c_p', l: 'Specific heat capacity', b: hC('lib', 'waterCp'), phys: ['dry', 'film', 'mp1', 'mp2'] },
       ] },
       { l: 'Temperature dependent', props: [
         { id: 'mu', sym: 'μ(T)', l: 'Viscosity', b: { t: 'law', id: 'waterMu' }, phys: ['dry', 'film'], note: 'the flakes\' Brownian and collective diffusion' },
@@ -193,7 +229,7 @@ const HUB_RECORDS = [
         { id: 'rho', sym: 'ρ(T)', l: 'Density', b: { t: 'law', id: 'airRho' }, phys: ['dry', 'film', 'mp1', 'coat'] },
         { id: 'mu', sym: 'μ(T)', l: 'Viscosity', b: { t: 'law', id: 'airMu' }, phys: ['dry', 'film', 'mp1', 'coat'] },
         { id: 'k', sym: 'k(T)', l: 'Thermal conductivity', b: { t: 'law', id: 'airK' }, phys: ['dry', 'film', 'mp1'] },
-        { id: 'cp', sym: 'c_p', l: 'Specific heat capacity', b: { t: 'const', id: 'airCp' }, phys: ['dry', 'film', 'mp1'] },
+        { id: 'cp', sym: 'c_p', l: 'Specific heat capacity', b: hC('lib', 'airCp'), phys: ['dry', 'film', 'mp1'] },
         { id: 'Dv', sym: 'D_v(T)', l: 'Water vapour diffusivity in air', b: { t: 'law', id: 'airDv' }, phys: ['dry', 'film', 'mp1'] },
       ] },
       { l: 'The room (between the blade and the oven)', props: [
@@ -207,8 +243,8 @@ const HUB_RECORDS = [
       { l: 'Temperature dependent', props: [
         { id: 'rho', sym: 'ρ(T)', l: 'Density', b: { t: 'law', id: 'arRho' }, phys: ['mp2'] },
         { id: 'mu', sym: 'μ(T)', l: 'Viscosity', b: { t: 'law', id: 'arMu' }, phys: ['mp2'] },
-        { id: 'cp', sym: 'c_p', l: 'Specific heat capacity', b: { t: 'const', id: 'arCp' }, phys: ['mp2'] },
-        { id: 'Pr', sym: 'Pr', l: 'Prandtl number', b: { t: 'const', id: 'arPr' }, phys: ['mp2'] },
+        { id: 'cp', sym: 'c_p', l: 'Specific heat capacity', b: hC('lib', 'arCp'), phys: ['mp2'] },
+        { id: 'Pr', sym: 'Pr', l: 'Prandtl number', b: hC('lib', 'arPr'), phys: ['mp2'] },
         { id: 'k', sym: 'k(T)', l: 'Thermal conductivity', b: hCalc(() => hubLawAt('arMu', 20) * HUB_CONST.arCp.v / HUB_CONST.arPr.v, 'W/(m·K)', 4, 'μ(T) c_p / Pr (at 20 °C here)'), phys: ['mp2'] },
       ] },
     ] },
@@ -662,6 +698,8 @@ function hubExport(ids = hubAll().map(r => r.id)) {
   for (const id of ids) {
     const r = hubRec(id), props = {};
     for (const p of hubProps(r)) {
+      // (a built-in law: its parameters as they are, MC-1b)
+      if (p.b.t === 'law') { const L = HUB_LAW[p.b.id]; props[p.id] = { law: L.q.law, parameters: hubLawParams(p.b.id), unit: L.u, name: p.l }; continue; }
       if (!['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) continue;
       const v = hubVal(p);
       props[p.id] = { value: v.v, unit: v.u, source: v.src, name: p.l, ...(p.b.t === 'card' && MAT[p.b.card][p.b.k].def ? { definition: MAT[p.b.card][p.b.k].def } : {}) };
@@ -713,7 +751,7 @@ function hubParseTCsv(text, unit) {
 }
 /** Read a material file: what it would change (and what it cannot), applied when apply is true. */
 function hubImport(data, apply = false, { keepDefs = false } = {}) {
-  const changes = [], skipped = [], metas = [];
+  const changes = [], skipped = [], metas = [], laws = [];
   if (!data || data.format !== HUB_FILE || !Array.isArray(data.materials)) throw new Error('not a material file of this app (its format is not bcdl-materials)');
   for (const m of data.materials) {
     const r = hubRec(m && m.id);
@@ -722,6 +760,18 @@ function hubImport(data, apply = false, { keepDefs = false } = {}) {
     if (m.meta && typeof m.meta === 'object') for (const [k] of HUB_META_FIELDS) if (typeof m.meta[k] === 'string' && m.meta[k] !== hubMeta(r)[k]) metas.push({ r, k, val: m.meta[k] });
     for (const [pid, q] of Object.entries(m.props || {})) {
       const p = hubProps(r).find(x => x.id === pid);
+      // (a built-in law's parameters, MC-1b: each one the law has, a number (a list as long as its own); the law then
+      //  finite and positive over its range -- else none of them taken, said why)
+      if (p && p.b.t === 'law' && q && q.parameters && typeof q.parameters === 'object') {
+        const id = p.b.id, own = HUB_LAW[id].q.params, next = { ...hubLawParams(id) };
+        const bad = Object.entries(q.parameters).find(([k, x]) => !(k in own) || (Array.isArray(own[k]) ? !(Array.isArray(x) && x.length === own[k].length && x.every(Number.isFinite)) : !Number.isFinite(x)));
+        if (bad) { skipped.push(`${r.name} · ${p.l}: its parameter ${bad[0]} is not one this law has, or not a number`); continue; }
+        Object.assign(next, q.parameters);
+        const why = hubLawProblem(id, next);
+        if (why) { skipped.push(`${r.name} · ${p.l}: ${why}`); continue; }
+        if (JSON.stringify(next) !== JSON.stringify(hubLawParams(id))) laws.push({ r, p, id, params: next });
+        continue;
+      }
       if (!p || !['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) { skipped.push(`${r.name} · ${pid}: not an editable property here`); continue; }
       const cur = hubVal(p);
       // (a sheet's single number does not replace a definition in temperature: that is changed in its row)
@@ -749,8 +799,12 @@ function hubImport(data, apply = false, { keepDefs = false } = {}) {
       changes.push({ r, p, from: cur.v, to: value, prov, src: q.source, def, unit: unitConv ? q.unit : null });
     }
   }
-  if (apply) { for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); } for (const q of metas) hubSetMeta(q.r, q.k, q.val); }
-  return { changes, skipped, metas };
+  if (apply) {
+    for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); }
+    for (const q of metas) hubSetMeta(q.r, q.k, q.val);
+    for (const q of laws) { const own = HUB_LAW[q.id].q.params, ed = Object.fromEntries(Object.entries(q.params).filter(([k, x]) => JSON.stringify(x) !== JSON.stringify(own[k]))); MAT.law = { ...(MAT.law || {}) }; if (Object.keys(ed).length) MAT.law[q.id] = ed; else delete MAT.law[q.id]; }
+  }
+  return { changes, skipped, metas, laws };
 }
 // ---- the material data sheet: every editable value, as a CSV to fill in and read back ----
 const HUB_SHEET_COLS = ['Material id', 'Property id', 'Material', 'Property', 'Symbol', 'Value now', 'Unit', 'Allowed from', 'Allowed to', 'Data source',
@@ -764,6 +818,17 @@ function hubSheetRows() {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push([r.id, p.id, hubName(r), hubPropName(r, p), p.sym.replace(/_/g, ''), v.v, v.u, v.lo, v.hi, v.src || '', '', '', '']);
+  }
+  // (the built-in laws' parameters, MC-1b: one row each -- a list's coefficients each its own, "n.3"; their check is the law's)
+  const lawSeen = new Set();
+  for (const r of hubAll()) for (const p of hubProps(r)) {
+    if (p.b.t !== 'law' || lawSeen.has(p.b.id)) continue;
+    lawSeen.add(p.b.id);
+    const L = HUB_LAW[p.b.id], law = ML_LAWS[L.q.law];
+    for (const [k, x] of Object.entries(hubLawParams(p.b.id))) {
+      const row = (key, val, lab) => out.push([r.id, `${p.id}:${key}`, hubName(r), `${hubPropName(r, p)}: ${lab}`, p.sym.replace(/_/g, ''), val, Array.isArray(x) ? '' : law.params[k] || '', '', '', L.src, '', '', '']);
+      if (Array.isArray(x)) x.forEach((q, i) => row(`${k}.${i + 1}`, q, `${law.formula}, ${k}${i + 1}`)); else row(k, x, `${law.formula}, ${k}`);
+    }
   }
   return out;
 }
@@ -803,6 +868,17 @@ function hubSheetToFile(text) {
     if (!Number.isFinite(num)) { skipped.push(`${what}: "${raw}" is not a number`); return; }
     const id = g('Material id');
     if (!mats.has(id)) mats.set(id, { id, props: {} });
+    // (a law's parameter, "mu:A" or "psat:n.3": into that law's parameters, its others as they are now)
+    const lp = /^(\w+):(\w+)(?:\.(\d+))?$/.exec(g('Property id'));
+    if (lp) {
+      const r = hubRec(id), p = r && hubProps(r).find(x => x.id === lp[1] && x.b.t === 'law');
+      if (!p) { skipped.push(`${what}: not a law of this material`); return; }
+      const props = mats.get(id).props, cur = props[lp[1]] || (props[lp[1]] = { parameters: JSON.parse(JSON.stringify(hubLawParams(p.b.id))) });
+      if (lp[3] != null && Array.isArray(cur.parameters[lp[2]]) && +lp[3] >= 1 && +lp[3] <= cur.parameters[lp[2]].length) cur.parameters[lp[2]][+lp[3] - 1] = num;
+      else if (lp[3] == null && lp[2] in cur.parameters && !Array.isArray(cur.parameters[lp[2]])) cur.parameters[lp[2]] = num;
+      else { skipped.push(`${what}: no parameter ${lp[2]}${lp[3] ? ' ' + lp[3] : ''}`); return; }
+      n++; return;
+    }
     mats.get(id).props[g('Property id')] = { value: num, unit: g('Your unit') || g('Unit'), ...(g('Your source') ? { source: g('Your source') } : {}) };
     n++;
   });

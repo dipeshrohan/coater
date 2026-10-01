@@ -228,5 +228,21 @@ const base = {
   check('conductivities in temperature as inputs (MH-4b), 1D and 2D: flat tables at the constants, the furnace bit for bit; the paper\'s k rising through it, another', same && other, `1D and 2D: the same ${same}, another ${other}`);
 }
 
+
+// N. the built-in laws as inputs (MC-1b): argon's and graphite's laws given equal matlib's evaluation of them; none given or
+//    their own given, a solve the same to the last bit; given others, it differs
+{
+  const ML = require('./matlib.js'), q = (law, params, T) => ML.mlQEval({ kind: 'law', law, params }, { T: T + K0, p: 101325 });
+  const g = { arMu: { y0: 2.3e-5, T0: 300, b: 0.7 }, arM: 0.04, arCp: 525, arPr: 0.67, gCp: F.FMP_PROPS.gCp.map((x, i) => (i === 0 ? 0.55 : x)) };
+  F.fmpUse(g);
+  let e = 0;
+  for (const T of [25, 600, 1500, 2800]) { const a = F.fmpArgon(T); e = Math.max(e, rel(a.mu, q('powerT', g.arMu, T)), rel(a.rho, q('idealGas', { M: g.arM }, T)), rel(a.k, a.mu * 525 / 0.67), rel(F.fmpCg(T), q('butlandMaddison', { c: g.gCp }, T))); }
+  let eh = 0; for (const T of [30, 900, 2700]) eh = Math.max(eh, rel((F.fmpHg(T + 1e-3) - F.fmpHg(T - 1e-3)) / 2e-3, F.fmpCg(T)));
+  F.fmpUse();
+  check('laws as inputs: argon\'s μ (power law), M, c_p, Pr and graphite\'s c_p coefficients given = matlib\'s evaluation of them; the enthalpy still its integral', e < 1e-14 && eh < 1e-7, `${fmt(e)}, ${fmt(eh)}`);
+  const o = { ...base, dim: 1, N: 3, runs: [run1], mesh: { nx: 3, nm: 1, nz: 4, nPlate: 1 }, dT: 4, dTHigh: 20 }, key = r => JSON.stringify([r.series, r.chemEnd]);
+  const a = key(F.fmpStack(o)), b = key(F.fmpStack({ ...o, props: JSON.parse(JSON.stringify(F.FMP_PROPS)) })), x = key(F.fmpStack({ ...o, props: { gCp: g.gCp, waterCp: 3000 } })), c = key(F.fmpStack(o));
+  check('  a 1D solve: none given or their own given, the same to the last bit; graphite\'s c_p and water\'s given, it differs; its own again after', a === b && a === c && x !== a);
+}
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

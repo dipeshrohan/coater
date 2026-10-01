@@ -190,6 +190,16 @@ function applyMaterials(m) {
   const mt = m && m.meta;
   if (mt && typeof mt === 'object') MAT.meta = Object.fromEntries(Object.entries(mt).filter(([id, q]) => typeof id === 'string' && q && typeof q === 'object')
     .map(([id, q]) => [id, Object.fromEntries(Object.entries(q).filter(([k, x]) => ['name', 'desc', 'grade', 'supplier', 'dataSrc', 'version', 'notes'].includes(k) && typeof x === 'string'))]));
+  // (the built-in laws' parameters as edited, MC-1b: each one the law has, finite, a list as long as its own; the law
+  //  still valid over its range -- else that law as built in)
+  const lw = m && m.law;
+  MAT.law = {};
+  if (lw && typeof lw === 'object' && typeof HUB_LAW !== 'undefined') for (const [id, q] of Object.entries(lw)) {
+    const L = HUB_LAW[id];
+    if (!L || !q || typeof q !== 'object') continue;
+    const own = L.q.params, ok = Object.entries(q).every(([k, x]) => k in own && (Array.isArray(own[k]) ? Array.isArray(x) && x.length === own[k].length && x.every(Number.isFinite) : Number.isFinite(x)));
+    if (ok && !hubLawProblem(id, { ...own, ...q })) MAT.law[id] = JSON.parse(JSON.stringify(q));
+  }
   const pv = m && m.prov;
   if (pv && typeof pv === 'object') MAT.prov = Object.fromEntries(Object.entries(pv).filter(([k, q]) => /^in\.[A-Za-z0-9]+$/.test(k) && q && typeof q.kind === 'string' && (typeof HUB_PROV === 'undefined' || HUB_PROV[q.kind])).map(([k, q]) => [k, { kind: q.kind, src: String(q.src ?? '') }]));
 }

@@ -30,7 +30,7 @@
  * SI inside (m, s, kg, Pa); temperatures in °C.
  */
 const SMP = typeof mpMesh === 'function' ? { mpMesh, mpHeatMoisture, mpElastic, mpAt } : require('./mp-core.js');
-const SMP_DR = typeof drPsat === 'function' ? { drPsat, drLatent, drNat, drAir } : require('./drying.js');
+const SMP_DR = typeof drPsat === 'function' ? { drPsat, drLatent, drNat, drAir, drUse } : require('./drying.js');
 const SMP_PR = typeof prGAB === 'function' ? { prGAB, prGABslope, prActivity, prProps } : require('./press.js');
 const SMP_ML = typeof mlQEval === 'function' ? { mlQEval } : require('./matlib.js');
 /** A property in temperature (MH-4b): its definition q (matlib's, in kelvin) at T (°C), else its constant v. */
@@ -85,6 +85,9 @@ function smpAir(kind, Ts, Ta, L, air) {
  *   equal to what flowed in and out, exactly; rise, lost: start to end), mesh, ms }.
  */
 function smpStack(o) {
+  // (the built-in laws, the material hub's when edited: the air's and water's through drying.js, MC-1b)
+  if (SMP_DR.drUse) SMP_DR.drUse(o.props);
+  const SMP_CWo = o.props && Number.isFinite(o.props.waterCp) ? o.props.waterCp : SMP_CW;
   const t0 = Date.now(), dim = o.dim, N = o.N, hp = o.h, go = o.go, AL = o.al || SMP_AL;
   // (each conductivity and heat capacity at the point's temperature when defined in T, MH-4b; else its constant)
   const kInT = smpAtT(go.kInT, go.kIn), kThrT = smpAtT(go.kThrT, go.kThr), cT = smpAtT(go.cT, go.c), alkT = smpAtT(AL.kT, AL.k), alcT = smpAtT(AL.cT, AL.c);
@@ -136,7 +139,7 @@ function smpStack(o) {
   const hm = SMP.mpHeatMoisture(M, {
     kT: (m, T) => (iso ? 1e6 : m === 1 ? alkT(T) : vec3(kInT(T), kThrT(T))),
     // (a piece's heat capacity with its water as cut)
-    CT: (m, T) => (m === 1 ? AL.rho * alcT(T) : go.rhoS * (cT(T) + o.X0 * SMP_CW)),
+    CT: (m, T) => (m === 1 ? AL.rho * alcT(T) : go.rhoS * (cT(T) + o.X0 * SMP_CWo)),
     Kv: () => vec3(go.K, go.Kthr), S, dS, L: iso ? 0 : T => SMP_DR.drLatent(T), wet: m => m === 0,
     T0: Tstart, p0: x => (inStack(x) ? p0 : pvAir),
     bcT: iso ? faces.map(face => ({ face, type: 'value', u: () => Tair })) : bcT,

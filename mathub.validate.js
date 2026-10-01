@@ -26,7 +26,7 @@ const load = (f, extra = '') => vm.runInContext(fs.readFileSync(f, 'utf8') + '\n
 load('materials.js'); load('matlib.js');
 load('drying.js', ';this.__dr = { DR_CL, DR_IF97, DR_MA, DR_R, drAir, drMuWater, drPsat, drLatent };');
 load('furnace.js', ';this.__fu = { FU_EPL };');
-load('mathub.js', ';this.__hub = { HUB_RECORDS, HUB_IFACES, HUB_PHYS, HUB_CARDS, HUB_LAW, HUB_CONST, HUB_PROV, hubProvOf, hubLawAt, hubStiff, hubT2: typeof hubT2 === "function" ? hubT2 : null };');
+load('mathub.js', ';this.__hub = { HUB_RECORDS, HUB_IFACES, HUB_PHYS, HUB_CARDS, HUB_LAW, HUB_CONST, HUB_PROV, hubProvOf, hubLawAt, hubStiff, hubT2: typeof hubT2 === "function" ? hubT2 : null, hubLawParams, hubSetLawParam, hubLawProblem, matSolverProps };');
 const H = ctx.__hub, DRc = ctx.__dr, FUc = ctx.__fu, L = require('./matlib.js');
 const SM = require('./stack-mp.js'), FM = require('./furnace-mp.js'), FL = require('./film.js');
 const smpSrc = fs.readFileSync('stack-mp.js', 'utf8'), fmpSrc = fs.readFileSync('furnace-mp.js', 'utf8'), filmSrc = fs.readFileSync('film.js', 'utf8');
@@ -38,7 +38,7 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   for (const r of all) for (const p of props(r)) if (p.b.t === 'card') { const k = `${p.b.card}.${p.b.k}`; seen.set(k, [...(seen.get(k) || []), `${r.id}.${p.id}`]); }
   const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`));
   const missing = cards.filter(k => !seen.has(k)), twice = [...seen].filter(([, v]) => v.length > 1), extra = [...seen.keys()].filter(k => !cards.includes(k));
-  check(`bindings: the ${cards.length} card values (the six stage cards' 99 and the material constants' 6) each a property of exactly one record`, cards.length === 105 && !missing.length && !twice.length && !extra.length,
+  check(`bindings: the ${cards.length} card values (the six stage cards' 99 and the material constants' 10) each a property of exactly one record`, cards.length === 109 && !missing.length && !twice.length && !extra.length,
     `missing ${missing.join(', ') || 'none'}; twice ${twice.map(([k, v]) => `${k} (${v.join(', ')})`).join('; ') || 'none'}; unknown ${extra.join(', ') || 'none'}`);
   const dup = all.filter(r => new Set(props(r).map(p => p.id)).size !== props(r).length).map(r => r.id);
   check('  property ids unique within each record; record ids unique', !dup.length && new Set(all.map(r => r.id)).size === all.length, dup.join(', '));
@@ -133,6 +133,29 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
     for (let i = 0; i < M.N; i++) e = Math.max(e, Math.abs(r.u[i] - inv(th(T0) + (th(T1) - th(T0)) * M.X[i] / Lx)));
   }
   check('a conductivity in temperature (MH-4b): k = k0 (1 + b T) from 20 to 600 °C, mp-core\'s steady conduction = Kirchhoff\'s exact profile at the nodes', e < 1e-9, `max ${fmt(e)} K`);
+}
+// 7. the built-in laws and the fluids' constants as inputs (MC-1b): their first values the solvers' own (drying.js DR_PROPS,
+//    furnace-mp.js FMP_PROPS); nothing passed to the solvers until one differs; a parameter that would make a law
+//    non-positive over its range refused; what is passed is what was set
+{
+  const DRm = require('./drying.js'), own = H.HUB_LAW, D0 = DRm.DR_PROPS, F0 = FM.FMP_PROPS, j = JSON.stringify;
+  const same = j(own.waterMu.q.params) === j(D0.waterMu) && j(own.waterL.q.params) === j(D0.waterL) && j(own.airMu.q.params) === j(D0.airMu) && j(own.airK.q.params) === j(D0.airK)
+    && j(own.airDv.q.params) === j(D0.airDv) && own.airRho.q.params.M === D0.airM && j(own.waterPsat.q.params.n) === j(D0.psat) && j(own.arMu.q.params) === j(F0.arMu)
+    && own.arRho.q.params.M === F0.arM && j(own.gCp.q.params.c) === j(F0.gCp);
+  const lib = vm.runInContext('matDefaults().lib', ctx);
+  const cs = lib.waterCp.v === D0.waterCp && lib.waterCp.v === F0.waterCp && lib.airCp.v === D0.airCp && lib.arCp.v === F0.arCp && lib.arPr.v === F0.arPr;
+  check('laws as inputs (MC-1b): the hub\'s laws and constants at first the solvers\' own (DR_PROPS, FMP_PROPS: Vogel, IAPWS, latent heat, Sutherland, M, D_v, argon, graphite; c_p of water, air, argon, Pr)', same && cs);
+  vm.runInContext('this.MAT = matDefaults();', ctx);
+  check('  nothing passed to the solvers at first (a project solves as before)', H.matSolverProps() === undefined);
+  let why = ''; try { H.hubSetLawParam('waterMu', 'A', null, -1e-5); } catch (e) { why = e.message; }
+  let why2 = ''; try { H.hubSetLawParam('arMu', 'b', null, NaN); } catch (e) { why2 = e.message; }
+  check('  a parameter that makes its law non-positive over its range refused, said why; not a number refused', /positive/.test(why) && /not a number/.test(why2) && H.matSolverProps() === undefined, `${why} | ${why2}`);
+  H.hubSetLawParam('airMu', 'S', null, 120); H.hubSetLawParam('gCp', 'c', 0, 0.55); vm.runInContext('MAT.lib = { ...MAT.lib, waterCp: { ...MAT.lib.waterCp, v: 4200 } };', ctx);
+  const pr = H.matSolverProps();
+  check('  set: air\'s S 120 K, graphite\'s a 0.55, water\'s c_p 4200 -- exactly these passed, the rest the solvers\' own', j(Object.keys(pr).sort()) === j(['airMu', 'gCp', 'waterCp']) && pr.airMu.S === 120 && pr.airMu.y0 === D0.airMu.y0 && pr.gCp[0] === 0.55 && pr.gCp[1] === F0.gCp[1] && pr.waterCp === 4200
+    && Math.abs(H.hubLawAt('airMu', 20) - 1.716e-5 * Math.pow(293.15 / 273.15, 1.5) * (273.15 + 120) / (293.15 + 120)) < 1e-20, j(pr).slice(0, 200));
+  H.hubSetLawParam('airMu', 'S', null, 110.4); H.hubSetLawParam('gCp', 'c', 0, F0.gCp[0]); vm.runInContext('MAT.lib = matDefaults().lib;', ctx);
+  check('  set back to their own: nothing passed again, no edit kept', H.matSolverProps() === undefined && j(vm.runInContext('MAT.law', ctx)) === '{}');
 }
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exitCode = fails ? 1 : 0;
