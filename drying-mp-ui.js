@@ -205,7 +205,7 @@ SWB_ADAPT.dry = {
   auto: dim => { DMS.dim = dim; if (dim < 3 && !dmpCurrent(dim) && !dmpFailed(dim)) dmpRequest(dim); },
   stop: () => dmpStop(),
   why: () => 'The drying is solved after the coating: the wet film across the web (Coating, 1D Across the web).',
-  slow3: 'The 3D takes about a minute',
+  slow3: 'The 3D takes a minute or two',
   dofs: () => 1, coupled: 'the temperature; each place\'s water on its own grid',
   axes: (dim, o) => {
     const ax = dmpAxes(o), ms = o.mesh;

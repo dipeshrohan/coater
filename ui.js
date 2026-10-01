@@ -782,7 +782,9 @@ SECTIONS.forEach((s, i) => {
     : `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[s.icon]}</svg><span>${s.t}</span>`;
   b.type = 'button';
   b.dataset.sec = s.k;
-  b.title = s.groups ? s.groups.map(g => g.t).join(' · ') : s.pages.length > 1 ? s.pages.map(navTitle).join(' · ') : navQ(s.pages[0]);
+  // (a stage with its multiphysics pages, MP-W: what the stage is -- its own page's question -- and its sub tabs)
+  const own = s.groups && s.groups.find(g => !g.d && g.pages.length === 1 && g.pages[0] === s.k);
+  b.title = s.groups ? `${own ? navQ(own.pages[0]) + ' ' : ''}${s.groups.map(g => g.t).join(' · ')}` : s.pages.length > 1 ? s.pages.map(navTitle).join(' · ') : navQ(s.pages[0]);
   NAV_TIP.set(s.k, b.title);
   b.setAttribute('role', 'tab');
   b.onclick = () => goSection(i);
