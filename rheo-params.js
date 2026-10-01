@@ -17,6 +17,14 @@
 const RHEO_PRIMARY = { newtonian: 'mu', power: 'K', hb: 'K', carreau: 'eta0', cross: 'eta0' };
 /** The inputs set exactly (not through a slider's step): the law's own and its viscosity at 2.7 1/s. */
 const RHEO_EXACT = new Set(['mu', 'K', 'eta0']);
+/**
+ * The inputs bar's material values kept exactly as given -- typed, fitted, imported, read back from a project or undone --
+ * not rounded to the slider's step (a fitted n of 0.473 is not 0.45, a measured 0.068 N/m not 0.07): the law's own, n and
+ * τy, the surface tension, the contact angles and their variation, the fibre's thickness. Dragging a slider still steps.
+ */
+const INPUT_EXACT = new Set([...RHEO_EXACT, 'n', 'ty', 'g', 'th', 'thw', 'dth', 'tf']);
+/** A value as its box shows it: to the input's decimals, or to six significant digits when it has more (an exact value). */
+const inputShow = (v, d) => (+(+v).toFixed(d) === +v ? (+v).toFixed(d) : String(+(+v).toPrecision(6)));
 /** What a project from before MH-3 needed kept (the old floor or cap acting), shown until the law is next changed. */
 let RHEO_NOTE = '';
 let RHEO_HOLD = 0;
@@ -57,7 +65,7 @@ function rheoShow(k) {
   const c = CFG.find(q => q.k === k), sl = document.getElementById('s_' + k), num = document.getElementById('n_' + k);
   if (!c || !sl) return;
   sl.value = P[k];
-  if (num && document.activeElement !== num) num.value = Number.isFinite(P[k]) ? (+P[k]).toFixed(c.d) : '';
+  if (num && document.activeElement !== num) num.value = Number.isFinite(P[k]) ? inputShow(P[k], c.d) : '';
   if (typeof syncSliderFill === 'function') syncSliderFill(sl);
 }
 /**

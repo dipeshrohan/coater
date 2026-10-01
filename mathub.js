@@ -441,7 +441,7 @@ function hubVal(p) {
       const prov = fitted ? 'fitted' : pv && HUB_PROV[pv.kind] ? pv.kind : dflt ? dflt[0] : /assumed/.test(c.h || '') ? 'assumed' : 'user';
       const src = fitted ? (fit || MAT.rheo.side.mu).src : pv && pv.src != null ? pv.src : dflt ? dflt[1] : c.h || 'you (the inputs bar)';
       const u = b.k === 'K' ? `Pa·s${P.n === 1 ? '' : `^${+P.n.toFixed(3)}`}` : c.u;
-      return { v: P[b.k], u, d: c.d, prov, src, edit: true, lo: c.min, hi: c.max, step: c.step, label: c.l, exact: RHEO_EXACT.has(b.k) };
+      return { v: P[b.k], u, d: c.d, prov, src, edit: true, lo: c.min, hi: c.max, step: c.step, label: c.l, exact: INPUT_EXACT.has(b.k) };
     }
     case 'cfdg': {
       const f = FIBRES[CFDG.fibre], same = f.set[b.k] === CFDG[b.k];
@@ -672,7 +672,7 @@ function hubParseTCsv(text, unit) {
   return { x: pts.map(p => +(tK ? p[0] : p[0] + 273.15).toPrecision(12)), y: pts.map(p => (conv ? conv.v(p[1]) : p[1])) };
 }
 /** Read a material file: what it would change (and what it cannot), applied when apply is true. */
-function hubImport(data, apply = false) {
+function hubImport(data, apply = false, { keepDefs = false } = {}) {
   const changes = [], skipped = [];
   if (!data || data.format !== HUB_FILE || !Array.isArray(data.materials)) throw new Error('not a material file of this app (its format is not bcdl-materials)');
   for (const m of data.materials) {
@@ -682,6 +682,8 @@ function hubImport(data, apply = false) {
       const p = hubProps(r).find(x => x.id === pid);
       if (!p || !['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) { skipped.push(`${r.name} · ${pid}: not an editable property here`); continue; }
       const cur = hubVal(p);
+      // (a sheet's single number does not replace a definition in temperature: that is changed in its row)
+      if (keepDefs && !q.definition && p.b.t === 'card' && MAT[p.b.card][p.b.k].def) { skipped.push(`${r.name} · ${p.l}: defined in temperature; change its table or expression in its row`); continue; }
       // (its unit: this app's, or another of the same dimension converted to it -- kPa to MPa, W/(m·K) to mW/(m·K)...; a
       // name or a share (no unit to parse) must be this app's)
       let value = q.value, unitConv = null;
@@ -708,6 +710,66 @@ function hubImport(data, apply = false) {
   if (apply) for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); }
   return { changes, skipped };
 }
+// ---- the measurement sheet: every value still assumed or published, as a CSV to fill in and read back ----
+const HUB_SHEET_COLS = ['Material id', 'Property id', 'Material', 'Property', 'Symbol', 'Value now', 'Unit', 'Allowed from', 'Allowed to', 'Marked as', 'What the app says',
+  'Your value', 'Your unit', 'Your provenance', 'Your source'];
+/** The sheet's rows: each editable value marked Assumed or Published (all editable values when all), each binding once. */
+function hubSheetRows(all = false) {
+  const out = [], seen = new Set();
+  for (const r of hubAll()) for (const p of hubProps(r)) {
+    if (!['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) continue;
+    const key = JSON.stringify(p.b), v = hubVal(p);
+    if (seen.has(key) || (!all && !['assumed', 'published'].includes(v.prov))) continue;
+    seen.add(key);
+    out.push([r.id, p.id, r.name, hubPropName(r, p), p.sym.replace(/_/g, ''), v.v, v.u, v.lo, v.hi, (HUB_PROV[v.prov] || HUB_PROV_RO[v.prov] || { l: v.prov }).l, v.src || '', '', '', '', '']);
+  }
+  return out;
+}
+/** The sheet as CSV text (commas; quoted where needed). */
+function hubSheetCSV(all = false) {
+  const q = x => { const t = String(x ?? ''); return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  return [HUB_SHEET_COLS, ...hubSheetRows(all)].map(r => r.map(q).join(',')).join('\r\n') + '\r\n';
+}
+/** CSV text to rows (RFC 4180 quoting; the separator a comma, or a semicolon as some spreadsheets save it). */
+function hubParseCSV(text) {
+  const t = String(text).replace(/^\uFEFF/, ''), first = t.split(/\r?\n/)[0] || '';
+  const sep = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+  const rows = []; let row = [], cell = '', inQ = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (inQ) { if (c === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else inQ = false; } else cell += c; continue; }
+    if (c === '"') inQ = true;
+    else if (c === sep) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && t[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return { rows: rows.filter(r => r.some(x => x.trim() !== '')), sep };
+}
+/**
+ * A filled sheet to a material file (hubImport's): each row with "Your value" -- in "Your unit" (else the row's), with
+ * "Your provenance" (a kind's name; empty: From you, as you typed it) and "Your source". Rows left empty are not read.
+ */
+function hubSheetToFile(text) {
+  const { rows, sep } = hubParseCSV(text), head = (rows[0] || []).map(h => h.trim()), col = n => head.indexOf(n), skipped = [];
+  for (const n of ['Material id', 'Property id', 'Unit', 'Your value']) if (col(n) < 0) throw new Error(`not this app's measurement sheet (no "${n}" column)`);
+  const byLabel = Object.fromEntries(Object.entries(HUB_PROV).flatMap(([k, d]) => [[d.l.toLowerCase(), k], [k, k]]));
+  const mats = new Map(); let n = 0;
+  rows.slice(1).forEach((r, i) => {
+    const g = name => (col(name) < 0 ? '' : String(r[col(name)] ?? '').trim()), raw = g('Your value');
+    if (raw === '') return;
+    const num = Number(sep === ';' ? raw.replace(',', '.') : raw), what = `line ${i + 2} (${g('Material') || g('Material id')} · ${g('Property') || g('Property id')})`;
+    if (!Number.isFinite(num)) { skipped.push(`${what}: "${raw}" is not a number`); return; }
+    const pv = g('Your provenance').toLowerCase(), prov = pv === '' ? 'user' : byLabel[pv];
+    if (!prov) { skipped.push(`${what}: provenance "${g('Your provenance')}" is not one of ${HUB_PROV_SET.map(k => HUB_PROV[k].l).join(', ')}`); return; }
+    const id = g('Material id');
+    if (!mats.has(id)) mats.set(id, { id, props: {} });
+    mats.get(id).props[g('Property id')] = { value: num, unit: g('Your unit') || g('Unit'), provenance: prov, ...(g('Your source') ? { source: g('Your source') } : {}) };
+    n++;
+  });
+  return { file: { format: HUB_FILE, version: 1, materials: [...mats.values()] }, skipped, n };
+}
+
 /** Set a property (its value, and optionally its provenance and source), the way its own input would. */
 function hubSet(p, v, { prov = null, src = null } = {}) {
   const b = p.b;

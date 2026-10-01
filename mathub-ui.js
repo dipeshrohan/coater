@@ -53,6 +53,7 @@ function viewMaterials() {
       <span class="hub-tools">
         <button type="button" class="btn btn-secondary btn-sm" id="hubImport">${uiIco('upload')}Import…</button>
         <button type="button" class="btn btn-secondary btn-sm" id="hubExport">${uiIco('download')}Export</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="hubSheet">${uiIco('download')}Measurement sheet</button>
         <details class="hub-menu" id="hubDefaults"><summary class="btn btn-secondary btn-sm">${uiIco('restart')}Defaults</summary>
           <div class="hub-menu-pop" role="menu">${[['matReset', 'slurry'], ['matRheoReset', 'rheo'], ['matOrReset', 'orient'], ['matDryReset', 'dry'], ['matFilmReset', 'film'], ['matFurnReset', 'furn'], ['matLibReset', 'lib']].map(([id, c]) => `<button type="button" role="menuitem" id="${id}" data-hubreset="${c}">The ${HUB_CARD_T[c]}<small>its ${HUB_CARDS[c].length} values back to their first values</small></button>`).join('')}</div></details>
       </span>`,
@@ -65,6 +66,7 @@ function viewMaterials() {
   view.querySelectorAll('[data-hubview]').forEach(b => { b.onclick = () => { HUB.view = b.dataset.hubview; render(); }; });
   document.getElementById('hubExport').onclick = hubExportFile;
   document.getElementById('hubImport').onclick = hubImportFile;
+  document.getElementById('hubSheet').onclick = hubSheetFile;
   view.querySelectorAll('[data-hubreset]').forEach(b => { b.onclick = () => {
     const c = b.dataset.hubreset; document.getElementById('hubDefaults').open = false;
     undoHint(`The ${HUB_CARD_T[c]}: back to its defaults`);
@@ -599,18 +601,36 @@ function hubDownload(name, data) {
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
+/** A text file to save (the measurement sheet: with a byte-order mark, so spreadsheets read its µ, ³ and ° as written). */
+function hubDownloadText(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF' + text], { type })); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+function hubSheetFile() {
+  const n = hubSheetRows().length;
+  hubDownloadText(`materials-to-measure-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv');
+  imgToast(n ? `Measurement sheet: ${n} values marked Assumed or Published. Fill "Your value" (and its unit, provenance, source), then Import the file.` : 'Measurement sheet: no value is marked Assumed or Published.');
+}
 function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport()); }
 function hubImportFile() {
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.type = 'file'; inp.accept = '.json,.csv,application/json,text/csv';
   inp.onchange = async () => {
     const f = inp.files && inp.files[0];
     if (!f) return;
-    let res;
-    try { res = hubImport(JSON.parse(await f.text())); } catch (e) { imgToast(`${f.name}: ${e.message}.`, 'error'); return; }
-    if (!res.changes.length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`); return; }
+    // (a material file, or a filled measurement sheet: its rows read as a material file, a sheet's single numbers kept off definitions)
+    const text = await f.text(), csv = /\.csv$/i.test(f.name) || !/^\s*[{[]/.test(text.replace(/^\uFEFF/, ''));
+    let res, data, pre = [];
+    try {
+      if (csv) { const sh = hubSheetToFile(text); data = sh.file; pre = sh.skipped; if (!sh.n && !pre.length) { imgToast(`${f.name}: no "Your value" filled in.`); return; } } else data = JSON.parse(text);
+      res = hubImport(data, false, { keepDefs: csv });
+    } catch (e) { imgToast(`${f.name}: ${e.message}.`, 'error'); return; }
+    res.skipped = [...pre, ...res.skipped];
+    if (!res.changes.length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`, res.skipped.length ? 'error' : undefined); return; }
     undoHint(`Import materials from ${f.name}`);
-    hubImport(JSON.parse(await f.text()), true);
+    hubImport(data, true, { keepDefs: csv });
     const nConv = res.changes.filter(c => c.unit).length;
     imgToast(`${f.name}: ${res.changes.length} values taken${nConv ? ` (${nConv} converted to this app's units)` : ''}${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
     render();
