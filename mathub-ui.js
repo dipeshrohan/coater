@@ -157,6 +157,7 @@ function hubPropsHTML(r) {
 /** A property's value cell: its input (an editable value), select or switch, else the value. */
 function hubValCell(p, v) {
   const b = p.b;
+  if (b.t === 'card' && v.def) { const [attr, pre] = HUB_ATTR[b.card]; return `<span class="hub-num">${hubFmt(v.v, -4)}</span><small class="hub-at">at 20 °C</small><span class="hub-tdef" title="Defined in temperature: open the row">${v.def.kind === 'table' ? `table, ${v.def.x.length} points` : 'f(T)'}</span><input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" value="${v.v}" hidden disabled>`; }
   if (b.t === 'card') { const [attr, pre] = HUB_ATTR[b.card]; return `<input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v}" aria-label="${hubEsc(p.l)}">`; }
   if (b.t === 'inp') return `<input type="number" id="hubin_${b.k}" data-hubp="${p.id}" data-help="in.${b.k}" min="${v.lo}" max="${v.hi}" step="${v.exact ? 'any' : v.step}" value="${v.exact ? +(+v.v).toPrecision(6) : (+v.v).toFixed(v.d)}" aria-label="${hubEsc(p.l)}">`;
   if (b.t === 'cfdg') return `<input type="number" id="hubg_${b.k}" data-hubp="${p.id}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v}" aria-label="${hubEsc(p.l)}">`;
@@ -192,6 +193,12 @@ function hubDetailHTML(r, p, v) {
   const help = helpKey && typeof helpOf === 'function' ? helpOf(helpKey) : null;
   const si = hubSI(p, v);
   if (['card', 'inp', 'cfdg', 'peel'].includes(b.t)) {
+    if (hubTdep(p)) return `<div class="hub-d">${hubDefHTML(p, v)}${kv([
+      help ? ['What it is', hubEsc(help.d)] : null,
+      ['Stage card', `the ${HUB_CARD_T[b.card]} (its Defaults: the Defaults menu above)`],
+      ['Provenance', `${hubProvL(v.prov)}: ${hubEsc((HUB_PROV[v.prov] || HUB_PROV_RO[v.prov] || {}).d || '')}`],
+      ['Source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`],
+    ])}${usedHTML}</div>`;
     return `<div class="hub-d">${kv([
       ['Definition', 'Constant'],
       help ? ['What it is', hubEsc(help.d)] : null,
@@ -216,6 +223,27 @@ function hubDetailHTML(r, p, v) {
   if (b.t === 'model') return `<div class="hub-d">${kv([['Law', hubEsc(ML_RHEO[CFDG.model].formula)], ['Parameters', 'the rows below; those of another law are kept, not used'], ['Its plot', '<button type="button" class="hub-link" data-hubtab="models">Models and plots</button>']])}${usedHTML}</div>`;
   if (b.t === 'measured') return `<div class="hub-d">${kv([['Definition', 'Your measurement'], ['Value', `${RHEO_MEASURED.mu} Pa·s at ${RHEO_MEASURED.gd} 1/s`], ['The law there', `${hubFmt(P.mu, -4)} Pa·s (${hubFmt((P.mu - RHEO_MEASURED.mu) / RHEO_MEASURED.mu * 100, 1)} %)`], ['Fit a flow curve', 'Measured data: import a rheometer test and use its fit']])}</div>`;
   return `<div class="hub-d">${kv([['Definition', hubEsc(v.src)]])}${usedHTML}</div>`;
+}
+/**
+ * A property a solver can take in temperature (MH-4b): its definition -- a constant, a table in T (linear or monotone
+ * cubic between its points; outside them held at its ends, carried on, or refused), or an expression in T (kelvin) --
+ * edited here, checked (matlib's checks; positive over its range), plotted; the solvers that evaluate it named.
+ */
+function hubDefHTML(p, v) {
+  const q = v.def, kind = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr', [solv, range] = hubTdep(p), names = solv.map(k => hubPhys(k).l).join(' and ');
+  const seg = `<span class="seg" role="tablist" aria-label="${hubEsc(p.l)}: its definition">${[['const', 'Constant'], ['table', 'Table in T'], ['expr', 'Expression in T']].map(([k, t]) => `<button type="button" role="tab" id="hubdk_${p.id}_${k}" data-hubdefkind="${p.id}|${k}" aria-selected="${k === kind}">${t}</button>`).join('')}</span>`;
+  let body = '';
+  if (kind === 'const') body = `<p class="hub-muted">${hubFmt(v.v, -6)} ${hubEsc(v.u)} at every temperature. A table or an expression in T makes ${names} take it at each point's temperature.</p>`;
+  else if (kind === 'table') body = `<div class="hub-dt-wrap"><table class="hub-dt" aria-label="${hubEsc(p.l)} against temperature"><thead><tr><th scope="col">T <small>°C</small></th><th scope="col">${hubSym(p.sym)} <small>${hubEsc(v.u)}</small></th><th></th></tr></thead><tbody>
+      ${q.x.map((x, i) => `<tr><td><input type="number" step="any" id="hubdt_${p.id}_x${i}" data-hubdt="${p.id}" data-c="x" value="${+(x - 273.15).toFixed(6)}" aria-label="Point ${i + 1}: temperature"></td><td><input type="number" step="any" id="hubdt_${p.id}_y${i}" data-hubdt="${p.id}" data-c="y" value="${q.y[i]}" aria-label="Point ${i + 1}: value"></td><td>${q.x.length > 2 ? `<button type="button" class="hub-link" id="hubdtdel_${p.id}_${i}" data-hubdtdel="${p.id}|${i}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table>
+      <div class="hub-dt-ctl"><span class="hub-dt-btns"><button type="button" class="btn btn-secondary btn-sm" id="hubdtadd_${p.id}" data-hubdtadd="${p.id}">${uiIco('plus')}Add a point</button><button type="button" class="btn btn-secondary btn-sm" id="hubdtcsv_${p.id}" data-hubdtcsv="${p.id}">${uiIco('upload')}Load CSV…</button></span>
+        <label>Between points <select class="hub-sel" id="hubdto_${p.id}_interp" data-hubdtopt="${p.id}" data-o="interp"><option value="linear"${q.interp !== 'pchip' ? ' selected' : ''}>Linear</option><option value="pchip"${q.interp === 'pchip' ? ' selected' : ''}>Monotone cubic</option></select></label>
+        <label>Outside them <select class="hub-sel" id="hubdto_${p.id}_extrap" data-hubdtopt="${p.id}" data-o="extrap">${[['clamp', 'Held at the end values'], ['extrapolate', 'Carried on'], ['error', 'Refused (the solve stops)']].map(([k, t]) => `<option value="${k}"${(q.extrap || 'error') === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label></div></div>`;
+  else body = `<label class="hub-expr-l">${hubSym(p.sym)}(T) = <input type="text" class="hub-expr" id="hubdexpr_${p.id}" data-hubdexpr="${p.id}" value="${hubEsc(q.src)}" spellcheck="false" aria-label="${hubEsc(p.l)} as an expression in T"></label>
+      <p class="hub-muted hub-small">T in kelvin; + − × (*) ÷ (/) ^, exp, log, sqrt, pow, min, max, abs, pi. In ${hubEsc(v.u)}.</p>`;
+  return `<div class="hub-def"><div class="hub-def-h"><span class="hub-d-l">Definition</span>${seg}</div>${body}<p class="hub-err" id="hubDefErr_${p.id}" hidden></p>
+    ${kind !== 'const' ? `<figure class="hub-fig hub-def-fig"><canvas id="hubDefCv" data-hubdefplot="${p.id}" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure>` : ''}
+    <p class="hub-muted hub-small">${names} take it at each point's temperature${kind === 'const' ? '' : `; the others its value at 20 °C, ${hubFmt(v.v, -4)} ${hubEsc(v.u)}`}. Checked positive from ${range[0]} to ${range[1]} °C.</p></div>`;
 }
 /** A value in SI (its unit parsed: the factor and the base units), or '' when the unit is a name (a share, a ratio). */
 function hubSI(p, v) {
@@ -428,6 +456,64 @@ function hubWireEditor(r) {
     if (r.id === 'slurry') rheoSync('extras');
     render();
   };
+  // (a definition in temperature, MH-4b: each change checked before it is taken; the error shown, the value kept)
+  const defSet = (id, q, label) => {
+    const p = prop(id), err = document.getElementById(`hubDefErr_${id}`);
+    let bad = [];
+    try { bad = q ? hubDefCheck(q, hubTdep(p)[1]) : []; } catch (e) { bad = [e.message]; }
+    if (bad.length) { if (err) { err.textContent = `Not taken: ${/does not increase/.test(bad[0]) ? 'two points at one temperature' : bad[0]}`; err.hidden = false; } return; }
+    undoHint(`${r.name}: ${hubPropName(r, p).toLowerCase()}, ${label}`);
+    hubSetDef(p, q); hubSoon();
+  };
+  const defOf = id => { const p = prop(id); return { p, q: MAT[p.b.card][p.b.k].def || null, v: MAT[p.b.card][p.b.k].v }; };
+  view.querySelectorAll('[data-hubdefkind]').forEach(b => { b.onclick = () => {
+    const [id, k] = b.dataset.hubdefkind.split('|'), { p, q, v } = defOf(id), cur = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr';
+    if (k === cur) return;
+    const hi = hubTdep(p)[1][1] > 300 ? 1273.15 : 373.15;
+    if (k === 'const') defSet(id, null, 'constant again');
+    else if (k === 'table') defSet(id, { kind: 'table', var: 'T', x: [293.15, hi], y: [v, v], interp: 'linear', extrap: 'clamp' }, 'as a table in T');
+    else defSet(id, { kind: 'expr', src: String(v) }, 'as an expression in T');
+  }; });
+  const tableOf = id => {
+    const rows = [...view.querySelectorAll(`[data-hubdt="${id}"][data-c="x"]`)].map((el, i) => [+el.value + 273.15, +view.querySelector(`#hubdt_${id}_y${i}`).value]);
+    rows.sort((a, b) => a[0] - b[0]);
+    return { kind: 'table', var: 'T', x: rows.map(q => q[0]), y: rows.map(q => q[1]), interp: defOf(id).q.interp || 'linear', extrap: defOf(id).q.extrap || 'error' };
+  };
+  view.querySelectorAll('input[data-hubdt]').forEach(el => el.addEventListener('change', () => {
+    if (el.value.trim() === '' || !Number.isFinite(+el.value)) { const e = document.getElementById(`hubDefErr_${el.dataset.hubdt}`); if (e) { e.textContent = 'Not taken: a number is needed.'; e.hidden = false; } return; }
+    defSet(el.dataset.hubdt, tableOf(el.dataset.hubdt), 'table edited');
+  }));
+  view.querySelectorAll('[data-hubdtadd]').forEach(b => { b.onclick = () => {
+    const id = b.dataset.hubdtadd, { q } = defOf(id), n = q.x.length, x = q.x[n - 1] + (n > 1 ? q.x[n - 1] - q.x[n - 2] : 100);
+    defSet(id, { ...q, x: [...q.x, x], y: [...q.y, q.y[n - 1]] }, 'a point added');
+  }; });
+  view.querySelectorAll('[data-hubdtdel]').forEach(b => { b.onclick = () => {
+    const [id, i] = b.dataset.hubdtdel.split('|'), { q } = defOf(id);
+    defSet(id, { ...q, x: q.x.filter((_, j) => j !== +i), y: q.y.filter((_, j) => j !== +i) }, 'a point removed');
+  }; });
+  // (a table read from a CSV: its points replace the table's; its file the source; the way between and outside kept)
+  view.querySelectorAll('[data-hubdtcsv]').forEach(b => { b.onclick = () => {
+    const id = b.dataset.hubdtcsv, { p, q } = defOf(id), inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.csv,.txt,text/csv,text/plain';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0], err = document.getElementById(`hubDefErr_${id}`);
+      if (!f) return;
+      let t;
+      try { t = hubParseTCsv(await f.text(), hubVal(p).u); } catch (e) { if (err) { err.textContent = `Not taken: ${f.name}: ${e.message}.`; err.hidden = false; } return; }
+      const nq = { kind: 'table', var: 'T', x: t.x, y: t.y, interp: (q && q.interp) || 'linear', extrap: (q && q.extrap) || 'clamp' };
+      let bad = [];
+      try { bad = hubDefCheck(nq, hubTdep(p)[1]); } catch (e) { bad = [e.message]; }
+      if (bad.length) { if (err) { err.textContent = `Not taken: ${f.name}: ${/does not increase/.test(bad[0]) ? 'two points at one temperature' : bad[0]}`; err.hidden = false; } return; }
+      undoHint(`${r.name}: ${hubPropName(r, p).toLowerCase()}, a table from ${f.name}`);
+      hubSetDef(p, nq); hubSet(p, null, { src: f.name }); hubSoon();
+    };
+    inp.click();
+  }; });
+  view.querySelectorAll('select[data-hubdtopt]').forEach(el => el.addEventListener('change', () => {
+    const id = el.dataset.hubdtopt, { q } = defOf(id);
+    defSet(id, { ...q, [el.dataset.o]: el.value }, el.dataset.o === 'interp' ? 'its interpolation' : 'outside its points');
+  }));
+  view.querySelectorAll('input[data-hubdexpr]').forEach(el => el.addEventListener('change', () => defSet(el.dataset.hubdexpr, { kind: 'expr', src: el.value.trim() }, 'expression edited')));
   const re = document.getElementById('hubRecExport');
   if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubExport([r.id]));
   if (HUB.tab === 'meas' && r.id === 'slurry') rtDraw();
@@ -435,7 +521,18 @@ function hubWireEditor(r) {
   if (HUB.tab === 'props' && HUB.open) requestAnimationFrame(() => {
     const p = prop(HUB.open), cv = document.getElementById('hubDetCv');
     if (p && cv && p.b.t === 'law') { const L = HUB_LAW[p.b.id]; hubLine(cv, hubLawCurve(p.b.id).map(([T, y]) => [T, y / (HUB_LAW_SCALE[p.b.id] || 1)]), { xl: 'temperature (°C)', yl: `${p.sym} (${L.u})`, x0: L.T[0], x1: L.T[1], aspect: 0.55, yf: v => hubFmt(v, -3) }); }
+    const dc = document.getElementById('hubDefCv');
+    if (p && dc && dc.dataset.hubdefplot === p.id) hubDrawDef(dc, p);
   });
+}
+/** A definition in temperature against T over the range its solvers check (the table's points marked; 20 °C marked). */
+function hubDrawDef(cv, p) {
+  const e = MAT[p.b.card][p.b.k], q = e.def, [, [t0, t1]] = hubTdep(p), pts = [];
+  if (!q) return;
+  const lo = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.max(t0, q.x[0] - 273.15) : t0, hi = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.min(t1, q.x[q.x.length - 1] - 273.15) : t1;
+  for (let i = 0; i <= 200; i++) { const T = lo + (hi - lo) * i / 200; try { const y = hubDefAt(q, T); if (Number.isFinite(y)) pts.push([T, y]); } catch (err) { /* outside a refusing table */ } }
+  const u = hubVal(p).u, extra = q.kind === 'table' ? [{ p: q.x.map((x, i) => [x - 273.15, q.y[i]]).filter(([x]) => x >= t0 && x <= t1), c: cssVar('--ink'), line: false, dots: true }] : [];
+  hubLine(cv, pts, { xl: 'temperature (°C)', yl: `${p.sym.replace(/_/g, '')} (${u})`, x0: t0, x1: t1, aspect: 0.42, extra, marks: [{ x: 20, c: cssVar('--muted'), t: '20 °C' }], yf: v => hubFmt(v, -3) });
 }
 /** Draw the page again once the change's event is over (the focus moved on by then: it is kept). */
 let hubTimer = 0;
@@ -514,7 +611,8 @@ function hubImportFile() {
     if (!res.changes.length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`); return; }
     undoHint(`Import materials from ${f.name}`);
     hubImport(JSON.parse(await f.text()), true);
-    imgToast(`${f.name}: ${res.changes.length} values taken${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
+    const nConv = res.changes.filter(c => c.unit).length;
+    imgToast(`${f.name}: ${res.changes.length} values taken${nConv ? ` (${nConv} converted to this app's units)` : ''}${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
     render();
   };
   inp.click();

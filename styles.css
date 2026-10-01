@@ -2400,6 +2400,24 @@ body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"
 .hub-model h3 { margin: 0 0 2px; font-size: 14px; font-weight: 650; }
 .hub-model > .hub-muted { margin: 0 0 10px; }
 .hub-fig-w { max-width: 860px; }
+.hub-tdef { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 10px; background: var(--soft); border: 1px solid var(--line); color: var(--ink); font-size: 11px; white-space: nowrap; }
+.hub-def { display: grid; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.hub-def-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hub-def .hub-muted { margin: 0; }
+.hub-dt-wrap { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.hub-dt { border-collapse: collapse; font-size: 12.5px; }
+.hub-dt th { text-align: left; font-weight: 600; color: var(--muted); padding: 0 8px 4px 0; }
+.hub-dt th small { font-weight: 400; }
+.hub-dt td { padding: 2px 8px 2px 0; }
+.hub-dt input { width: 110px; height: 27px; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; background: var(--surface); color: var(--ink); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.hub-dt input:focus-visible, .hub-expr:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.hub-dt-ctl { display: grid; gap: 8px; justify-items: start; font-size: 12.5px; color: var(--muted); }
+.hub-dt-ctl label { display: flex; align-items: center; gap: 8px; }
+.hub-dt-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.hub-expr-l { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); }
+.hub-expr { flex: 1; max-width: 560px; height: 28px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; background: var(--surface); color: var(--ink); font: 12.5px var(--mono); }
+.hub-err { margin: 0; color: var(--bad); font-size: 12.5px; }
+.hub-def-fig { max-width: 720px; }
 .hub-plots { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 18px; }
 .hub-rheo { max-width: 520px; margin-top: 10px; }
 .hub-conv { margin-top: 12px; max-width: 760px; }

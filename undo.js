@@ -65,6 +65,8 @@ function furnUndoLabel(a, b) {
 }
 function matUndoLabel(k, a, b, rows = MAT_SLURRY) {
   const [, l, u, , , , d] = rows.find(q => q[0] === k);
+  // (MH-4b: its definition in temperature -- a table or an expression; its value at 20 °C follows it)
+  if (a && b && JSON.stringify(a.def || null) !== JSON.stringify(b.def || null)) return `${l}: ${!b.def ? 'constant' : b.def.kind === 'table' ? 'a table in temperature' : 'an expression in temperature'}`;
   if (a && b && a.v !== b.v) return undoChange(l, a.v, b.v, v => undoNum(v, d), u);
   // (MH-5: its provenance, the hub's kinds)
   if (a && b && a.prov !== b.prov && typeof HUB_PROV !== 'undefined' && HUB_PROV[b.prov]) return `${l}: ${HUB_PROV[b.prov].l.toLowerCase()}`;
