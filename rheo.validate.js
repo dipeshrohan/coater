@@ -40,12 +40,18 @@ const rel = (a, b) => Math.abs(a - b) / Math.max(Math.abs(b), 1e-300);
   const x = { model: 'cross', etaInf: 0.01, L: 1 };
   check('  cfd-solver.js hands them over: muEffLocal and shearRateFromStress with the extras', rel(S0.muEffLocal(5, 10.5, 0, 0.6, x), R.rheoCompile(10.5, 0, 0.6, x).mu(5)) < 1e-15 && rel(S0.shearRateFromStress(30, 10.5, 0, 0.6, x), R.rheoCompile(10.5, 0, 0.6, x).gdOf(30)) < 1e-15);
   let same = true;
-  for (const [muRef, ty, n] of [[10.5, 5, 1], [10.5, 5, 0.6], [3, 0, 0.8], [10.5, 40, 0.5]]) for (const g of [1e-3, 0.5, 2.7, 80, 1e4]) {
+  for (const [muRef, ty, n] of [[10.5, 5, 1], [10.5, 5, 0.6], [3, 0, 0.8], [10.5, 25, 0.5]]) for (const g of [1e-3, 0.5, 2.7, 80, 1e4]) {
     const hb = R.rheoCompile(muRef, ty, n);
     same = same && hb.mu(g) === S0.muEffLocal(g, muRef, ty, n) && S0.muEffLocal(g, muRef, ty, n, { model: 'hb' }) === S0.muEffLocal(g, muRef, ty, n);
     const t = hb.tau(g); same = same && hb.gdOf(t) === S0.shearRateFromStress(t, muRef, ty, n);
   }
   check('Herschel–Bulkley (and power law, Newtonian) unchanged, bit for bit', same);
+  // (MH-3: a yield stress the viscosity at 2.7 1/s cannot carry -- 40 Pa with 10.5 Pa·s: K would be ≤ 0 -- is refused, named,
+  //  in both; it was quietly held at a floor of 5 % of μref before. η∞ at or above μref likewise)
+  const refused = (f, re) => { try { f(); return false; } catch (e) { return re.test(e.message); } };
+  check('  a law that cannot hold is refused with its reason (τy 40 Pa at 10.5 Pa·s; η∞ ≥ μref), not quietly changed',
+    refused(() => R.rheoCompile(10.5, 40, 0.5), /contradict/) && refused(() => S0.muEffLocal(1, 10.5, 40, 0.5), /contradict/) && refused(() => S0.shearRateFromStress(60, 10.5, 40, 0.5), /contradict/)
+    && refused(() => R.rheoCompile(10.5, 0, 0.5, { model: 'carreau', etaInf: 11, L: 1, a: 2 }), /η∞/));
 }
 
 // 2. the structure

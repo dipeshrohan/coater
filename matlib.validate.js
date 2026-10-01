@@ -192,7 +192,8 @@ const fmt = x => (typeof x === 'number' ? x.toExponential(2) : String(x));
     f40.floored && f40.conflict && rel(f40.Kraw, 10.5 - 40 / 2.7) < 1e-14 && f27.floored && !f27.conflict && !f26.floored, `${f40.Kraw.toFixed(3)}; ${f27.Kraw.toFixed(3)}`);
   e = 0;
   for (const [model, n, x] of [['carreau', 0.5, { etaInf: 0.01, L: 1, a: 2 }], ['carreau', 0.3, { etaInf: 0.2, L: 5, a: 0.7 }], ['cross', 0.4, { etaInf: 0.05, L: 2 }], ['carreau', 0.5, { etaInf: 9, L: 1, a: 2 }]]) {
-    const xs = { model, ...x, a: x.a ?? 1 }, st = L.mlRheoFromSolver(model, 10.5, 0, n, xs), law = RH.rheoCompile(10.5, 0, n, xs);
+    // (a project from before with η∞ above the old cap: its law kept by migrating η∞ to the capped value it was solved with)
+    const xs = { model, ...x, a: x.a ?? 1 }, st = L.mlRheoFromSolver(model, 10.5, 0, n, xs), law = RH.rheoCompile(10.5, 0, n, { ...xs, etaInf: st.etaInf });
     for (const gd of [1e-3, 0.1, 2.7, 50, 1e4]) e = Math.max(e, rel(L.mlRheoMu(st, gd), law.mu(gd)));
   }
   check('  Carreau–Yasuda and Cross from the solvers\' form = rheo.js\'s law at every shear rate (η∞ capped as it was: named)', e < 1e-12 && L.mlRheoFromSolver('carreau', 10.5, 0, 0.5, { etaInf: 9, L: 1, a: 2 }).capped, fmt(e));

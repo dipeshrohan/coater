@@ -292,9 +292,9 @@ function rfFitFlow(gd, tau) {
       if (!best || r.cost < best.cost) best = r;
     }
     const q = lawOf(best.p), muRef = etaOf(q, 2.7);
-    const appOf = p => { const w = lawOf(p), mr = etaOf(w, 2.7); return { muRef: mr, n: w.n, etaInf: Math.min(w.ei, 0.5 * mr), L: w.L, ...(cy ? { a: w.a } : {}) }; };
+    const appOf = p => { const w = lawOf(p), mr = etaOf(w, 2.7); return { muRef: mr, n: w.n, etaInf: w.ei, L: w.L, ...(cy ? { a: w.a } : {}) }; };
     const lim = [...(q.n < 0.05 + 1e-3 || q.n > 1.2 - 1e-3 ? ['n'] : []), ...(cy && (q.a < 0.2 + 1e-3 || q.a > 5 - 1e-3) ? ['a'] : [])];
-    out[model] = withErr({ params: { eta0: q.e0, etaInf: q.ei, L: q.L, a: q.a, n: q.n }, app: { muRef, n: q.n, ty: 0, etaInf: Math.min(q.ei, 0.5 * muRef), L: q.L, a: q.a }, rms: rms(res(best.p)) }, res, best.p, appOf, lim);
+    out[model] = withErr({ params: { eta0: q.e0, etaInf: q.ei, L: q.L, a: q.a, n: q.n }, app: { muRef, n: q.n, ty: 0, etaInf: q.ei, L: q.L, a: q.a }, rms: rms(res(best.p)) }, res, best.p, appOf, lim);
   }
   return out;
 }

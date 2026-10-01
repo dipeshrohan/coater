@@ -2251,3 +2251,15 @@ body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"
 .num-kv th { text-align: left; font-weight: 400; color: var(--muted); padding: 5px 8px 5px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 .num-kv td { text-align: right; white-space: normal; }
 .step-view + .num-panel { margin-top: 16px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+
+/* MH-3: the slurry's law under its inputs -- its viscosity at 2.7 1/s against the measurement, and why it cannot hold */
+#rheoOut:empty { display: none; }
+.rheo-out { margin: 4px 0 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #fff); font-size: 12px; }
+.rheo-out.bad { border-color: var(--bad); }
+.rheo-law { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; margin-bottom: 4px; }
+.rheo-row { display: flex; justify-content: space-between; gap: 8px; line-height: 1.6; }
+.rheo-row span { color: var(--muted); }
+.rheo-row b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rheo-row small { color: var(--warn); font-weight: 500; margin-left: 4px; }
+.rheo-err { color: var(--bad); margin: 6px 0 0; }
+.rheo-note { color: var(--warn); margin: 6px 0 0; }

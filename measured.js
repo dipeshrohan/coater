@@ -537,7 +537,10 @@ function measApplyFit() {
   const fit = MEAS.fit;
   if (!fit) return;
   undoHint(`Apply fit: ${fit.keys.map(k => `${measSetName(k).toLowerCase()} ${fit.vals[k]}`).join(', ')}`);
-  for (const k of fit.keys) setInput(k, fit.vals[k]);
+  // (MH-3: a fit of the viscosity at 2.7 1/s, n and the yield stress: set together, then the law's own parameter from them)
+  const rheo = fit.keys.filter(k => ['mu', 'n', 'ty'].includes(k));
+  for (const k of fit.keys) if (!rheo.includes(k)) setInput(k, fit.vals[k]);
+  if (rheo.length) rheoSetAnchor(Object.fromEntries(rheo.map(k => [k, fit.vals[k]])));
   fit.applied = true;
   render();
 }

@@ -25,7 +25,12 @@ const CFG = [
   { k: 'tf', l: 'Fibre thickness', min: 0.05, max: 1.0, step: 0.01, u: 'mm', d: 2, v: 0.20 },
   { k: 'oven', l: 'Distance to oven', min: 0.1, max: 2, step: 0.05, u: 'm', d: 2, v: 0.5 },
 
-  { g: 'Slurry', k: 'mu', l: 'Apparent viscosity at 2.7 1/s', min: 2, max: 30, step: 0.5, u: 'Pa·s', d: 1, v: 10.5 },
+  { g: 'Slurry', k: 'mu', l: 'Viscosity μ (at 2.7 1/s)', min: 2, max: 30, step: 0.5, u: 'Pa·s', d: 1, v: 10.5, h: 'Newtonian: τ = μ γ̇; the other laws: the value they give at 2.7 1/s' },
+  // (MH-3: the laws' own parameters; K for the default (Herschel–Bulkley, τy 5 Pa, n 1) is the one that gives your 10.5 Pa·s at
+  //  2.7 1/s: 10.5 − 5/2.7 Pa·s; η0 the Carreau–Yasuda law's with n 1. P.mu also carries every law's viscosity at 2.7 1/s:
+  //  rheo-params.js keeps it in step)
+  { k: 'K', l: 'Consistency K', min: 0.01, max: 100, step: 0.01, u: 'Pa·sⁿ', d: 3, v: 10.5 - 5 / 2.7, h: 'τ = τy + K γ̇ⁿ (power law: τy = 0)' },
+  { k: 'eta0', l: 'Zero-shear viscosity η0', min: 0.01, max: 10000, step: 0.01, u: 'Pa·s', d: 2, v: 10.5, h: 'Carreau–Yasuda, Cross: the plateau at low shear' },
   { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian (assumed)' },
   { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'assumed, not measured' },
   { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'assumed, water-like' },
@@ -66,10 +71,11 @@ const gapHeight = () => P.Hm - P.tf;
 /**
  * Apparent (shear-rate-dependent) viscosity, Herschel–Bulkley-style:
  *   mu_eff(gd) = ty/gd + base * (gd/2.7)^(n-1)
- * "base" is picked so that at the reference shear rate (2.7 1/s, where the
- * viscosity slider is defined) mu_eff reproduces exactly P.mu:
- *   ty/2.7 + base = P.mu  =>  base = P.mu - ty/2.7
- * floored at 5% of P.mu so a large yield stress can't drive it negative.
+ * "base" is picked so that at the reference shear rate (2.7 1/s) mu_eff
+ * reproduces exactly P.mu, the law's viscosity there (rheo-params.js keeps
+ * it in step with τy, K, n):
+ *   ty/2.7 + base = P.mu  =>  base = P.mu - ty/2.7 = K 2.7^(n-1) > 0
+ * (MH-3: no floor -- it silently changed the law; NaN where none holds).
  * gd is clamped away from 0 because the yield-stress term diverges there
  * (physically correct for a yield-stress fluid — apparent viscosity really
  * does go to infinity as shear rate goes to zero — but a literal 0 would
@@ -78,7 +84,8 @@ const gapHeight = () => P.Hm - P.tf;
 function muEff(gd) {
   gd = Math.max(gd, 1e-6);
   const ref = P.mu, ty = P.ty;
-  const base = Math.max(ref - ty / 2.7, 0.05 * ref);
+  const base = ref - ty / 2.7;
+  if (!(base > 0)) return NaN;
   return ty / gd + base * Math.pow(gd / 2.7, P.n - 1);
 }
 

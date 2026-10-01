@@ -389,10 +389,14 @@ function solveChannelNS(opts) {
 // page and the workers, required in Node; x = { model, etaInf, L, a } names one, anchored at muRef as below)
 const RHEO_LIB = typeof rheoCached === 'function' ? { rheoCached } : typeof require === 'function' ? require('./rheo.js') : null;
 const rheoExtra = x => !!(x && RHEO_LIB && (x.model === 'carreau' || x.model === 'cross'));
+// (MH-3: no floor under base. It was held at 5 % of μref, which silently changed the law -- the viscosity at 2.7 1/s no
+// longer the one given -- once τy passed 0.95 × 2.7 μref; base = K 2.7^(n−1) > 0 is the law's own consistency, and a yield
+// stress at or above 2.7 μref contradicts the viscosity given: an error, never a quiet change)
+const hbBase = (muRef, ty) => { const base = muRef - ty / 2.7; if (!(base > 0)) throw new Error(`the yield stress (${ty} Pa) and the viscosity at 2.7 1/s (${muRef} Pa·s) contradict each other: no Herschel–Bulkley law gives both (K would be ≤ 0)`); return base; };
 function muEffLocal(gd, muRef, ty, n, x) {
   if (rheoExtra(x)) return RHEO_LIB.rheoCached(muRef, ty, n, x).mu(gd);
   gd = Math.max(gd, 1e-9);
-  const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
+  const base = hbBase(muRef, ty);
   return ty / gd + base * Math.pow(gd / 2.7, n - 1);
 }
 
@@ -405,7 +409,7 @@ function muEffLocal(gd, muRef, ty, n, x) {
 function shearRateFromStress(absTau, muRef, ty, n, x) {
   if (rheoExtra(x)) return RHEO_LIB.rheoCached(muRef, ty, n, x).gdOf(absTau);
   if (absTau <= ty) return 0;
-  const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
+  const base = hbBase(muRef, ty);
   // Invert |tau| = ty + base*gd^n / 2.7^(n-1):
   //   gd = [(|tau|-ty)/base]^(1/n) * 2.7^((n-1)/n)
   return Math.pow((absTau - ty) / base, 1 / n) * Math.pow(2.7, (n - 1) / n);

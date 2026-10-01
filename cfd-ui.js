@@ -140,11 +140,12 @@ function bladeText(G = CFDG, L = P.L) {
   }
 }
 const RHEO_MODELS = {
-  newtonian: { l: 'Newtonian', uses: [], law: 'μ = the viscosity at 2.7 1/s; n and yield stress not used' },
-  power: { l: 'Power law', uses: ['n'], law: 'μ = μ(2.7 1/s) · (γ̇ / 2.7)^(n−1); yield stress not used' },
-  hb: { l: 'Herschel–Bulkley', uses: ['n', 'ty'], law: 'μ = τy / γ̇ + K (γ̇ / 2.7)^(n−1), K such that μ(2.7 1/s) is the viscosity input' },
-  carreau: { l: 'Carreau–Yasuda', uses: ['n'], law: 'μ = μ∞ + (μ0 − μ∞)[1 + (λγ̇)^a]^((n−1)/a), μ0 such that μ(2.7 1/s) is the viscosity input; λ, a and μ∞ on Materials; yield stress not used' },
-  cross: { l: 'Cross', uses: ['n'], law: 'μ = μ∞ + (μ0 − μ∞) / (1 + (λγ̇)^(1−n)), μ0 such that μ(2.7 1/s) is the viscosity input; λ and μ∞ on Materials; yield stress not used' },
+  // (MH-3: each law in its own standard parameters -- uses: the inputs it takes, its own parameter first)
+  newtonian: { l: 'Newtonian', uses: ['mu'], law: 'τ = μ γ̇; n and yield stress not used' },
+  power: { l: 'Power law', uses: ['K', 'n'], law: 'τ = K γ̇ⁿ; yield stress not used' },
+  hb: { l: 'Herschel–Bulkley', uses: ['K', 'n', 'ty'], law: 'τ = τy + K γ̇ⁿ above the yield stress τy; below it, no flow' },
+  carreau: { l: 'Carreau–Yasuda', uses: ['eta0', 'n'], law: 'η = η∞ + (η0 − η∞)[1 + (λγ̇)^a]^((n−1)/a); λ, a and η∞ on Materials; yield stress not used' },
+  cross: { l: 'Cross', uses: ['eta0', 'n'], law: 'η = η∞ + (η0 − η∞) / (1 + (λγ̇)^(1−n)); λ and η∞ on Materials; yield stress not used' },
 };
 /** The law's extras for the solvers (Carreau–Yasuda, Cross: rheo.js), or null. */
 const cfdRheoX = () => CFDG.model === 'carreau' || CFDG.model === 'cross' ? { model: CFDG.model, etaInf: matR('etaInf'), L: matR('lamT'), a: matR('aCY') } : null;
@@ -304,6 +305,8 @@ const LOC_INPUTS = [
   { k: 'U', l: 'Web speed', u: 'm/min', step: 0.01, d: 2, lo: 0.01, hi: 10 },
   { k: 'Pup', l: 'Bead pressure', u: 'kPa', step: 0.02, d: 2, lo: -5, hi: 20 },
   { k: 'mu', l: 'Viscosity at 2.7 1/s', u: 'Pa·s', step: 0.5, d: 1, lo: 0.01, hi: 1000 },
+  { k: 'K', l: 'Consistency K', u: 'Pa·sⁿ', step: 0.01, d: 3, lo: 0.001, hi: 1000 },
+  { k: 'eta0', l: 'Zero-shear viscosity η0', u: 'Pa·s', step: 0.01, d: 2, lo: 0.001, hi: 1e5 },
   { k: 'n', l: 'Shear-thinning n', u: '', step: 0.05, d: 2, lo: 0.1, hi: 1.5 },
   { k: 'ty', l: 'Yield stress', u: 'Pa', step: 0.5, d: 1, lo: 0, hi: 500 },
   { k: 'g', l: 'Surface tension', u: 'N/m', step: 0.005, d: 3, lo: 0.005, hi: 0.1 },
@@ -355,10 +358,10 @@ const fmtTol = t => t.toExponential(0).replace('e-', '×10⁻').replace(/\d+$/, 
 const solverValue = (q, v) => { v = Math.min(q.hi, Math.max(q.lo, v)); return q.d === 0 ? Math.round(v) : +v.toFixed(q.d); };
 /** The rheology law (as physics.js muEff) for given parameters. */
 function muLaw(gd, muRef, ty, n, x) {
-  if (x) return muEffLocal(Math.max(gd, 1e-6), muRef, ty, n, x);   // (Carreau–Yasuda, Cross: rheo.js)
+  if (x) { try { return muEffLocal(Math.max(gd, 1e-6), muRef, ty, n, x); } catch (e) { return NaN; } }   // (Carreau–Yasuda, Cross: rheo.js; NaN where the law cannot hold)
   gd = Math.max(gd, 1e-6);
-  const base = Math.max(muRef - ty / 2.7, 0.05 * muRef);
-  return ty / gd + base * Math.pow(gd / 2.7, n - 1);
+  const base = muRef - ty / 2.7;   // (MH-3: no floor; NaN where the yield stress contradicts the viscosity at 2.7 1/s)
+  return base > 0 ? ty / gd + base * Math.pow(gd / 2.7, n - 1) : NaN;
 }
 const cfdRuns = CFD_LOCS.map(() => ({ status: 'idle' }));
 let cfdEditLoc = null; // location whose own inputs are open for editing
@@ -499,14 +502,14 @@ function cfdGeometry(i) {
   const U = v('U') / 60 * Math.cos(skewRad());   // m/min -> m/s; across the blade (skewed: the web's speed x cos(skew))
   const H = v('gap') / 1000;                // mm -> m, gap at the metering edge
   const ty = uses.includes('ty') ? v('ty') : 0, n = uses.includes('n') ? v('n') : 1; // the model's parameters
-  const rheoX = cfdRheoX();   // (Carreau–Yasuda, Cross: their extras from Materials)
+  const rheoX = cfdRheoX(), muRef = locMuRef(i);   // (Carreau–Yasuda, Cross: their extras from Materials; the location's law)
   return {
     z, shape: CFDG.shape, U, H, L: P.L / 1000, R: CFDG.R / 1000, Xup: Math.min(CFDG.pool, 0.8 * CFDG.R) / 1000, exitAngle: CFDG.exitAngle,
     ...(bladeLegacy() ? {} : { blade: bladeSpec(H), clModel: CFDG.clModel }),   // (a shaped blade: its profile's spec, and the contact-line model)
     contactDeg: v('th'), webSlip: 1 / fibreSlip().b,
     Pup: v('Pup') * 1000,                   // kPa -> Pa, applied at the inlet (pool edge / start of the land)
-    muRef: v('mu'),                         // the rheology law's reference (viscosity at 2.7 1/s, as the slider defines it)
-    muRep: muLaw(U / H, v('mu'), ty, n, rheoX),    // at the representative shear rate U/H: one-viscosity estimates only
+    muRef,                                  // the law's viscosity at 2.7 1/s (its standard parameters' exact form for the solvers: rheo-params.js)
+    muRep: muLaw(U / H, muRef, ty, n, rheoX),    // at the representative shear rate U/H: one-viscosity estimates only
     ...(rheoX ? { rheoX } : {}),
     ...(matStruct() ? { struct: matStruct() } : {}),   // (the structure model, when on: the 2D carries it along its flow)
     ...(matOrient() ? { orient: matOrient() } : {}),   // (the flakes' alignment, when on: along the flow, then to the oven)
@@ -958,7 +961,7 @@ function viewCFD() {
   document.getElementById('cfdFibreSel').addEventListener('change', e => { selectFibre(e.target.value); viewCFD(); });
   document.getElementById('cfdDFrom').addEventListener('change', e => { CFDG.dFrom = e.target.value; viewCFD(); });
   wireOvenZones(renderCFD, viewCFD);
-  document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
+  document.getElementById('cfdModel').addEventListener('change', e => { CFDG.model = e.target.value; rheoSync('model'); document.getElementById('cfdModelNote').textContent = RHEO_MODELS[CFDG.model].law; renderCFD(); });
   document.getElementById('cfdMesh').addEventListener('change', e => {
     const was = CFDS.mesh; CFDS.mesh = e.target.value;
     if (CFDS.mesh === 'custom' && was !== 'custom') {
@@ -1729,7 +1732,7 @@ function renderLocCards() {
       </div>`;
     edit.hidden = false;
     edit.innerHTML = `<div class="loc-edit-head"><b>Location ${loc.id}: its own inputs</b><span class="fv-why">empty = the shared value (shown faint)</span></div>
-      <div class="loc-in-grid">${LOC_INPUTS.map(q => { const off = (q.k === 'n' || q.k === 'ty') && !RHEO_MODELS[CFDG.model].uses.includes(q.k); return `<label${off ? ` title="not used by the ${RHEO_MODELS[CFDG.model].l} model"` : ''}><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}${off ? ' <small>(not used)</small>' : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-li="${i}" data-k="${q.k}" id="li_${i}_${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}"${off ? ' disabled' : ''} aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`; }).join('')}</div>
+      <div class="loc-in-grid">${LOC_INPUTS.map(q => { const off = ['mu', 'K', 'eta0', 'n', 'ty'].includes(q.k) && !RHEO_MODELS[CFDG.model].uses.includes(q.k) && !(q.k === 'mu' && loc.over.mu != null); return `<label${off ? ` title="not used by the ${RHEO_MODELS[CFDG.model].l} model"` : ''}><span>${q.l}${q.u ? ` <small>${q.u}</small>` : ''}${off ? ' <small>(not used)</small>' : ''}</span><input type="number" step="${q.step}" min="${q.lo}" max="${q.hi}" data-li="${i}" data-k="${q.k}" id="li_${i}_${q.k}" value="${loc.over[q.k] ?? ''}" placeholder="${locShared(i, q.k).toFixed(q.d)}"${off ? ' disabled' : ''} aria-label="Location ${loc.id}: ${q.l}${q.u ? ', ' + q.u : ''} (empty = shared value)"></label>`; }).join('')}</div>
       ${solverGrid}
       <div class="loc-edit-actions"><button class="btn btn-secondary btn-sm" type="button" data-clear="${i}"${own ? '' : ' disabled'}>Use shared values</button><button class="btn btn-secondary btn-sm" type="button" data-edit="${i}">Close</button></div>`;
   }
