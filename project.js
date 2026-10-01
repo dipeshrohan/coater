@@ -80,6 +80,8 @@ function setInput(k, v) {
   const sl = document.getElementById('s_' + k);
   // (MH-3: the slurry law's own values and its viscosity at 2.7 1/s exactly as given -- a slider's step would round them)
   if (sl && typeof RHEO_EXACT !== 'undefined' && RHEO_EXACT.has(k)) { P[k] = v; rheoShow(k); rheoSync(k); queueRender(); return; }
+  // (a material value as given, not to the slider's step: rheo-params.js INPUT_EXACT; n and τy keep the law in step as their slider does)
+  if (sl && typeof INPUT_EXACT !== 'undefined' && INPUT_EXACT.has(k)) { P[k] = v; rheoShow(k); if (k === 'n' || k === 'ty') rheoSync(k); queueRender(); return; }
   if (sl) { sl.value = v; sl.dispatchEvent(new Event('input')); } else P[k] = v;
 }
 /** Stop whatever is solving: every solve and fit, on every page (New, Open: their answers belong to the project being left). */

@@ -62,8 +62,8 @@ function syncSliderFill(input) {
     slider.addEventListener('input', () => { P[c.k] = +slider.value; if (inputProblems.has(num.id)) clearRejected(num.id); showValue(); if (rheoIn) rheoSync(c.k); queueRender(); });
     // (a typed value outside the slider's range is rejected: see validate.js; the law's own values as typed, not to the slider's step)
     num.addEventListener('change', () => {
-      guardNumber(num, { label: c.l, lo: c.min, hi: c.max, unit: c.u }, v => { if (RHEO_EXACT.has(c.k)) setInput(c.k, v); else { slider.value = v; slider.dispatchEvent(new Event('input')); } });
-      num.value = (RHEO_EXACT.has(c.k) ? +P[c.k] : +slider.value).toFixed(c.d);
+      guardNumber(num, { label: c.l, lo: c.min, hi: c.max, unit: c.u }, v => { if (INPUT_EXACT.has(c.k)) setInput(c.k, v); else { slider.value = v; slider.dispatchEvent(new Event('input')); } });
+      num.value = INPUT_EXACT.has(c.k) ? inputShow(P[c.k], c.d) : (+slider.value).toFixed(c.d);
     });
   });
   // the slurry's law under its inputs: its viscosity at 2.7 1/s against the measurement, and why it cannot hold if it cannot
@@ -926,7 +926,7 @@ document.getElementById('reset').onclick = () => {
   // (the defaults are one consistent law: set as they are, the slurry's law not re-derived on the way)
   rheoHold(() => CFG.forEach(c => {
     P[c.k] = c.v;
-    if (RHEO_EXACT.has(c.k)) { setInput(c.k, c.v); return; }
+    if (INPUT_EXACT.has(c.k)) { setInput(c.k, c.v); return; }
     const s = document.getElementById('s_' + c.k);
     s.value = c.v;
     s.dispatchEvent(new Event('input'));
