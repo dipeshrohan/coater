@@ -326,6 +326,7 @@ async function repMaterials() {
     + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
     + '<h3>Material constants</h3>' + repRows(ro(libCardRows()), head)
+    + (hubDefRows().length ? '<h3>Defined in temperature</h3>' + repRows(hubDefRows().map(([l, h, s]) => [repEsc(l), repEsc(h), repEsc(s)]), ['', 'Definition', 'Taken in temperature by']) : '')
     + '<h3>Built into the solvers</h3>' + repRows([...Object.entries(HUB_LAW).map(([id, L]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(hubLawAt(id, 20), -4), L.u)) + ' at 20 °C', 'Built-in law', repEsc(`${ML_LAWS[L.q.law].formula}; ${L.src}; ${L.solver}`)]),
       ...Object.entries(HUB_CONST).map(([id, c]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(c.v, -4), c.u)), 'Built-in', repEsc(`${c.src}; ${c.solver}`)])], head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');

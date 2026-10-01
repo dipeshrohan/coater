@@ -32,6 +32,9 @@
  * SI inside (m, s, kg, Pa, mol); temperatures in °C (the programs in K, as furnace.js's).
  */
 const FMP = typeof mpMesh === 'function' ? { mpMesh, mpTransport, mpElastic, mpAt, MP_SIGMA } : require('./mp-core.js');
+const FMP_ML = typeof mlQEval === 'function' ? { mlQEval } : require('./matlib.js');
+/** A property in temperature (MH-4b): its definition q (matlib's, in kelvin) at T (°C), else its constant v. */
+const fmpAtT = (q, v) => (q ? T => FMP_ML.mlQEval(q, { T: T + 273.15 }) : () => v);
 const FMP_FU = typeof fuStage === 'function' ? { fuStage, fuArrInt, fuChem, fuTempAt, fuAdvance, fuConv, FU_R, FU_M, FU_K0 } : require('./furnace.js');
 
 const FMP_K0 = 273.15, FMP_G = 9.80665, FMP_CW = 4180, FMP_DG = 0.3354, FMP_DT = 0.344;
@@ -124,15 +127,17 @@ function fmpStack(o) {
   // ---- the materials: conductivities (along, through), enthalpy per volume ----
   const kAr = T => fmpArgon(T, pa).k, epsGap = epsF;
   const kGap = T => kAr(T) + 4 * FMP.MP_SIGMA * epsGap / (2 - epsGap) * Math.pow(T + FMP_K0, 3) * h;   // (a gap a piece thick: argon and radiation across)
-  const kxS = fGO * go.kIn + fP * P.kIn, kzS = Hs / (N * h / go.kThr + nPap * tp / P.kThr + nC * Rc);
+  // (the GO's, the papers' and the plates' conductivities at the temperature when defined in it, MH-4b; else constants)
+  const gIn = fmpAtT(go.kInT, go.kIn), gThr = fmpAtT(go.kThrT, go.kThr), pIn = fmpAtT(P.kInT, P.kIn), pThr = fmpAtT(P.kThrT, P.kThr), plk = fmpAtT(o.plate.kT, o.plate.k);
+  const kxS = u => fGO * gIn(u) + fP * pIn(u), kzS = u => Hs / (N * h / gThr(u) + nPap * tp / pThr(u) + nC * Rc);
   const rc = go.c / fmpCg(20);   // (the GO's heat capacity: graphite's scaled to its card's at the room)
   const vecK = (kx, kz) => (dim === 1 ? [kx, kx, kx] : dim === 2 ? [kx, kz, kz] : [kx, kx, kz]);
   const K = (m, u) => {
-    if (m === 0) return o.plate.k;
-    if (m === 1) return vecK(kxS, kzS);
-    if (m === 2) return vecK(fP * P.kIn + (1 - fP) * kAr(u), Hs / (nPap * tp / P.kThr + N * h / kGap(u)));
-    if (m === 3) return vecK(go.kIn, go.kThr);
-    if (m === 4) return vecK(P.kIn, P.kThr);
+    if (m === 0) return plk(u);
+    if (m === 1) return vecK(kxS(u), kzS(u));
+    if (m === 2) return vecK(fP * pIn(u) + (1 - fP) * kAr(u), Hs / (nPap * tp / pThr(u) + N * h / kGap(u)));
+    if (m === 3) return vecK(gIn(u), gThr(u));
+    if (m === 4) return vecK(pIn(u), pThr(u));
     return vecK(kAr(u), kGap(u) * 1);
   };
   const goS = (u, f) => go.rho * (f.kept * rc * fmpHg(u) + f.wleft * go.Xin * FMP_CW * u), goC = (u, f) => go.rho * (f.kept * rc * fmpCg(u) + f.wleft * go.Xin * FMP_CW);

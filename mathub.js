@@ -433,7 +433,7 @@ function hubVal(p) {
   switch (b.t) {
     case 'card': {
       const q = hubRow(b.card, b.k), e = MAT[b.card][b.k];
-      return { v: e.v, u: q[2], d: q[6], prov: hubProvOf(e), src: e.src, edit: true, lo: q[3], hi: q[4], step: q[5], label: q[1] };
+      return { v: e.v, u: q[2], d: q[6], prov: hubProvOf(e), src: e.src, edit: !e.def, lo: q[3], hi: q[4], step: q[5], label: q[1], def: e.def || null };
     }
     case 'inp': {
       const c = CFG.find(q => q.k === b.k), pv = (MAT.prov || {})['in.' + b.k], fit = (MAT.rheo.side || {})[b.k], dflt = HUB_INP_PROV[b.k];
@@ -514,6 +514,43 @@ function hubOff(p) {
   return '';
 }
 
+// ---- properties in temperature (MH-4b) ----
+/**
+ * The card values a solver can take in temperature: card.key → [the solvers that evaluate it at each point's
+ * temperature, the range it is checked over (°C)]. The others (the drying, Peel and wind) take its value at 20 °C: the
+ * value kept beside a definition.
+ */
+const HUB_TDEP = { 'dry.kIn': [['mp1', 'mp2'], [0, 3000]], 'dry.kS': [['mp1', 'mp2'], [0, 3000]], 'dry.cS': [['mp1'], [0, 300]], 'furn.kPin': [['mp2'], [0, 3000]],
+  'furn.kPthr': [['mp2'], [0, 3000]], 'furn.kPl': [['mp2'], [0, 3000]], 'lib.alK': [['mp1'], [0, 300]], 'lib.alC': [['mp1'], [0, 300]] };
+const hubTdep = p => (p.b.t === 'card' && HUB_TDEP[`${p.b.card}.${p.b.k}`]) || null;
+/** A solver's inputs: { name: definition } of the card values given that have one (none: nothing added, the inputs as before). */
+const hubDefsOf = m => Object.fromEntries(Object.entries(m).filter(([, e]) => e && e.def).map(([k, e]) => [k, e.def]));
+/** A definition's value at T (°C). */
+const hubDefAt = (q, Tc) => mlQEval(q, { T: Tc + 273.15 });
+/** A definition's problems: matlib's own checks; an expression in T alone; its values finite and positive over the range. */
+function hubDefCheck(q, range = [0, 3000]) {
+  const out = mlQCheck(q).filter(c => c.level === 'error').map(c => c.msg);
+  if (out.length) return out;
+  if (q.kind === 'expr') { try { mlExpr(q.src, ['T'], q.params || {}); } catch (e) { return [e.message]; } }
+  const lo = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.max(range[0], q.x[0] - 273.15) : range[0], hi = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.min(range[1], q.x[q.x.length - 1] - 273.15) : range[1];
+  for (let i = 0; i <= 60; i++) {
+    const T = lo + (hi - lo) * i / 60; let v;
+    try { v = hubDefAt(q, T); } catch (e) { return [`at ${+T.toFixed(1)} °C: ${e.message}`]; }
+    if (!Number.isFinite(v) || !(v > 0)) return [`at ${+T.toFixed(1)} °C it is ${Number.isFinite(v) ? +v.toPrecision(4) : 'not a number'}: a conductivity or a heat capacity must be positive`];
+  }
+  return [];
+}
+/** Set (q) or clear (null) a card value's definition in temperature; its value follows it at 20 °C. Throws when q cannot hold. */
+function hubSetDef(p, q) {
+  const b = p.b, e = MAT[b.card][b.k], n = { ...e };
+  if (q) {
+    const bad = hubDefCheck(q, hubTdep(p)[1]);
+    if (bad.length) throw new Error(bad[0]);
+    n.def = q; n.v = +hubDefAt(q, 20).toPrecision(12);
+  } else delete n.def;
+  MAT[b.card] = { ...MAT[b.card], [b.k]: n };
+}
+
 // ---- checks: a record's problems (blocking errors, warnings) ----
 function hubChecks(r) {
   const out = [], c = MAT.slurry, add = (level, msg, prop) => out.push({ level, msg, prop });
@@ -587,7 +624,7 @@ function hubExport(ids = hubAll().map(r => r.id)) {
     for (const p of hubProps(r)) {
       if (!['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) continue;
       const v = hubVal(p);
-      props[p.id] = { value: v.v, unit: v.u, provenance: v.prov, source: v.src, name: p.l };
+      props[p.id] = { value: v.v, unit: v.u, provenance: v.prov, source: v.src, name: p.l, ...(p.b.t === 'card' && MAT[p.b.card][p.b.k].def ? { definition: MAT[p.b.card][p.b.k].def } : {}) };
     }
     out.materials.push({ id, name: r.name, class: r.cls, kind: r.sub, props });
   }
@@ -607,11 +644,15 @@ function hubImport(data, apply = false) {
       if (q.unit !== cur.u && !(p.b.k === 'K')) { skipped.push(`${r.name} · ${p.l}: its unit ${q.unit} is not this app's (${cur.u})`); continue; }
       if (!Number.isFinite(q.value) || q.value < cur.lo || q.value > cur.hi) { skipped.push(`${r.name} · ${p.l}: ${q.value} is outside ${cur.lo}–${cur.hi} ${cur.u}`); continue; }
       const prov = HUB_PROV[q.provenance] ? q.provenance : null;
-      if (q.value === cur.v && (!prov || prov === cur.prov) && (q.source == null || q.source === cur.src)) continue;
-      changes.push({ r, p, from: cur.v, to: q.value, prov, src: q.source });
+      // (a definition in temperature, MH-4b: taken when the property may have one and it holds; its value then follows it)
+      let def;
+      if (q.definition) { if (!hubTdep(p)) { skipped.push(`${r.name} · ${p.l}: a definition in temperature, which this property does not take`); continue; } const bad = hubDefCheck(q.definition, hubTdep(p)[1]); if (bad.length) { skipped.push(`${r.name} · ${p.l}: its definition ${bad[0]}`); continue; } def = q.definition; }
+      const curDef = p.b.t === 'card' ? MAT[p.b.card][p.b.k].def : undefined;
+      if (q.value === cur.v && (!prov || prov === cur.prov) && (q.source == null || q.source === cur.src) && JSON.stringify(def) === JSON.stringify(curDef)) continue;
+      changes.push({ r, p, from: cur.v, to: q.value, prov, src: q.source, def });
     }
   }
-  if (apply) for (const c of changes) hubSet(c.p, c.to, { prov: c.prov, src: c.src });
+  if (apply) for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); }
   return { changes, skipped };
 }
 /** Set a property (its value, and optionally its provenance and source), the way its own input would. */
@@ -634,6 +675,28 @@ function hubSet(p, v, { prov = null, src = null } = {}) {
   }
 }
 
+/** A property's full name: a row under another (a tensor's component) with its parent's ("Thermal conductivity, in the plane"). */
+function hubPropName(r, p) {
+  if (!p.sub) return p.l;
+  const ps = hubProps(r), i = ps.indexOf(p);
+  for (let j = i - 1; j >= 0; j--) if (!ps[j].sub) return `${ps[j].l}, ${p.l}`;
+  return p.l;
+}
+/** The card values defined in temperature (MH-4b), as rows: its name, its definition in words, the solvers that take it in T. */
+function hubDefRows() {
+  const out = [], seen = new Set();
+  for (const r of HUB_RECORDS) for (const p of hubProps(r)) {
+    const t = hubTdep(p), key = t && `${p.b.card}.${p.b.k}`, q = t && MAT[p.b.card][p.b.k].def;
+    if (!q || seen.has(key)) continue;
+    seen.add(key);
+    const u = hubVal(p).u, f = x => String(+(+x).toPrecision(6));
+    const how = q.kind === 'table'
+      ? `table: ${q.x.map((x, i) => `${f(x - 273.15)} °C → ${f(q.y[i])}`).join('; ')} ${u}; ${q.interp === 'pchip' ? 'monotone cubic' : 'linear'} between, ${{ clamp: 'held at the ends', extrapolate: 'carried on', error: 'refused' }[q.extrap || 'error']} outside`
+      : `${p.sym.replace(/_/g, '')}(T) = ${q.src} ${u}, T in kelvin`;
+    out.push([`${r.name}: ${hubPropName(r, p).toLowerCase()}`, how, t[0].map(k => hubPhys(k).l).join(', ')]);
+  }
+  return out;
+}
 /** A built-in law's or constant's name: its material's and its property's. */
 function hubLawName(id) {
   for (const r of HUB_RECORDS) for (const p of hubProps(r)) if ((p.b.t === 'law' || p.b.t === 'const') && p.b.id === id) return `${r.name}: ${p.l.toLowerCase()}`;

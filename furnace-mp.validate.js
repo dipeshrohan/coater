@@ -210,5 +210,23 @@ const base = {
   check('converting evenly (at the program\'s temperature everywhere): no stress in a piece', pk < 1e-6, `${fmt(pk)} MPa`);
 }
 
+// the GO's, the papers' and the plates' conductivities in temperature (MH-4b): defined flat at their constants, the furnace
+// bit for bit as with the constants; the paper's k rising with temperature, another (in 1D and 2D; the 1D runs across the
+// stack's width, where the paper's in-plane k counts, its through-thickness k not)
+{
+  const flat = v => ({ kind: 'table', var: 'T', x: [273.15, 3273.15], y: [v, v], extrap: 'clamp' });
+  const strip = r => JSON.stringify(r, (k, v) => (k === 'ms' || k === 'elapsedMs' ? undefined : v));
+  const runs = [FU.fuProgram([{ rate: 10, to: 1000, hold: 0 }], 25, 0)];
+  let same = true, other = true;
+  for (const dim of [1, 2]) {
+    const o = { ...base, dim, runs, mesh: { nx: 6, nm: 2, nz: 6, nPlate: 2 } };
+    const a = F.fmpStack(o);
+    const b = F.fmpStack({ ...o, go: { ...o.go, kInT: flat(o.go.kIn), kThrT: flat(o.go.kThr) }, paper: { ...o.paper, kInT: flat(o.paper.kIn), kThrT: flat(o.paper.kThr) }, plate: { ...o.plate, kT: flat(o.plate.k) } });
+    const c = F.fmpStack({ ...o, paper: { ...o.paper, kInT: { kind: 'table', var: 'T', x: [298.15, 1273.15], y: [150, 300], interp: 'linear', extrap: 'clamp' }, kThrT: { kind: 'table', var: 'T', x: [298.15, 1273.15], y: [5, 20], interp: 'linear', extrap: 'clamp' } } });
+    same = same && strip(a) === strip(b); other = other && strip(c) !== strip(a);
+  }
+  check('conductivities in temperature as inputs (MH-4b), 1D and 2D: flat tables at the constants, the furnace bit for bit; the paper\'s k rising through it, another', same && other, `1D and 2D: the same ${same}, another ${other}`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

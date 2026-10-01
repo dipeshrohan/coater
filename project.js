@@ -171,6 +171,18 @@ function applyMaterials(m) {
   // (the material constants' card, MH-2: a project from before has none -- the solvers' own values, as it was solved)
   const lc = m && m.lib;
   if (lc) for (const k of Object.keys(MAT.lib)) if (lc[k] && Number.isFinite(lc[k].v)) MAT.lib[k] = { ...MAT.lib[k], ...lc[k] };
+  // (a card value's definition in temperature, MH-4b: kept only on a value a solver takes in temperature, and only when it
+  // holds -- matlib's checks, positive over its range; its value then its value at 20 °C. Anything else: the value as saved)
+  for (const card of ['slurry', 'rheo', 'orient', 'dry', 'film', 'furn', 'lib']) for (const k of Object.keys(MAT[card] || {})) {
+    const e = MAT[card][k];
+    if (!e || typeof e !== 'object' || !('def' in e)) continue;
+    const range = typeof HUB_TDEP !== 'undefined' && HUB_TDEP[`${card}.${k}`];
+    let ok = false;
+    try { ok = !!(range && e.def && typeof e.def === 'object' && !hubDefCheck(e.def, range[1]).length); } catch (err) { ok = false; }
+    const n = { ...e };
+    if (ok) { n.def = JSON.parse(JSON.stringify(e.def)); n.v = +hubDefAt(n.def, 20).toPrecision(12); } else delete n.def;
+    MAT[card] = { ...MAT[card], [k]: n };
+  }
   // (the inputs bar's material values' provenance, MH-5: as saved when it has its shape; a project from before has none)
   const pv = m && m.prov;
   if (pv && typeof pv === 'object') MAT.prov = Object.fromEntries(Object.entries(pv).filter(([k, q]) => /^in\.[A-Za-z0-9]+$/.test(k) && q && typeof q.kind === 'string' && (typeof HUB_PROV === 'undefined' || HUB_PROV[q.kind])).map(([k, q]) => [k, { kind: q.kind, src: String(q.src ?? '') }]));

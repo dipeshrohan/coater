@@ -32,8 +32,8 @@ function fmpInputs(dim) {
   if (!q) return null;
   const fo = q.o, P = q.P, v = k => MAT.furn[k].v, d = MAT.dry, N = Math.max(1, Math.round(OVEN.furn.N)), mid = Math.floor((N - 1) / 2);
   return { dim, Lx: fo.Lx, Ly: fo.Ly, margin: fo.margin, N, h: P.h, tp: fo.paper.t, ends: fo.ends, plateT: fo.plate.t,
-    go: { rho: P.rhoG, c: d.cS.v, kIn: d.kIn.v, kThr: d.kS.v, Xin: P.Xroom },
-    paper: { rho: fo.paper.rho, kIn: v('kPin'), kThr: v('kPthr'), D: fo.paper.D }, plate: { rho: v('rhoPl') * 1000, k: v('kPl'), B: fo.plate.B }, Rc: v('Rc') * 1e-4,
+    go: { rho: P.rhoG, c: d.cS.v, kIn: d.kIn.v, kThr: d.kS.v, Xin: P.Xroom, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS }) },
+    paper: { rho: fo.paper.rho, kIn: v('kPin'), kThr: v('kPthr'), D: fo.paper.D, ...hubDefsOf({ kInT: MAT.furn.kPin, kThrT: MAT.furn.kPthr }) }, plate: { rho: v('rhoPl') * 1000, k: v('kPl'), B: fo.plate.B, ...hubDefsOf({ kT: MAT.furn.kPl }) }, Rc: v('Rc') * 1e-4,
     runs: fo.runs, chem: fo.chem, stages: fo.stages, Hr: v('Hr') * 1e6, furnace: { eps: v('epsF'), gas: true },
     gas: { Dgal: fo.Dgal, Dmin: fo.Dmin, dIn: fo.dIn, sigZ: fo.sigZ, plateP: fo.plateP },
     plane: { Ep: fo.plane.Ep, nu: fo.plane.nu, bO: fo.plane.bO, bG: fo.plane.bG, am: fo.plane.am },

@@ -32,6 +32,9 @@
 const SMP = typeof mpMesh === 'function' ? { mpMesh, mpHeatMoisture, mpElastic, mpAt } : require('./mp-core.js');
 const SMP_DR = typeof drPsat === 'function' ? { drPsat, drLatent, drNat, drAir } : require('./drying.js');
 const SMP_PR = typeof prGAB === 'function' ? { prGAB, prGABslope, prActivity, prProps } : require('./press.js');
+const SMP_ML = typeof mlQEval === 'function' ? { mlQEval } : require('./matlib.js');
+/** A property in temperature (MH-4b): its definition q (matlib's, in kelvin) at T (°C), else its constant v. */
+const smpAtT = (q, v) => (q ? T => SMP_ML.mlQEval(q, { T: T + 273.15 }) : () => v);
 
 const SMP_AL = { k: 200, rho: 2700, c: 900 };   // aluminium (plate): W/(m K) (alloys 150–235), kg/m³, J/(kg K)
 const SMP_CW = 4180;                            // liquid water's specific heat, J/(kg K)
@@ -65,7 +68,8 @@ function smpAir(kind, Ts, Ta, L, air) {
  *   dim: 1 | 2 | 3, Lx, Ly (m, the pieces), N (pieces), h (m, a piece), plateT (m, the plate), X0 (the water as cut),
  *   Troom (°C: the stack at the start, the room), rhRoom, stages: [{ tEnd (s), Tair (°C), creep (bool) }] (the oven,
  *   then the room under the plate), air: { fan (m/s; 0: still air) }, shelf: 'wire' | 'solid', epsPlate, epsGO,
- *   al: { k, rho, c } (the plate's aluminium; MH-2: the Materials' constants, SMP_AL when not given),
+ *   al: { k, rho, c } (the plate's aluminium; MH-2: the Materials' constants, SMP_AL when not given); go's kIn, kThr, c
+ *   and al's k, c each with its definition in temperature when it has one (kInT, kThrT, cT, kT: matlib quantities in K, MH-4b),
  *   go: { kIn, kThr (W/(m K)), c (J/(kg K)), rhoS (kg/m³, the GO per film volume), gab, Xcap, K (along a piece),
  *   Kthr (through it; kg/(m s Pa)), alpha (1/K, in its plane), nu, tab (the film's rows [X, A, D, eFlat, κ]), tau (s,
  *   the creep time at X0) },
@@ -82,6 +86,8 @@ function smpAir(kind, Ts, Ta, L, air) {
  */
 function smpStack(o) {
   const t0 = Date.now(), dim = o.dim, N = o.N, hp = o.h, go = o.go, AL = o.al || SMP_AL;
+  // (each conductivity and heat capacity at the point's temperature when defined in T, MH-4b; else its constant)
+  const kInT = smpAtT(go.kInT, go.kIn), kThrT = smpAtT(go.kThrT, go.kThr), cT = smpAtT(go.cT, go.c), alkT = smpAtT(AL.kT, AL.k), alcT = smpAtT(AL.cT, AL.c);
   const hx = o.Lx / 2, hy = o.Ly / 2, ms = o.mesh || {}, nx = ms.nx || 8, ny = ms.ny || nx, grade = ms.grade || 12, nPl = ms.nPlate || 4;
   const Hs = N * hp, H = Hs + o.plateT, zi = dim - 1;
   const pvAir = o.rhRoom * SMP_DR.drPsat(o.Troom);   // the room's air, heated in the oven: the same vapour pressure
@@ -128,9 +134,9 @@ function smpStack(o) {
   const vec3 = (a, b) => (dim === 1 ? b : dim === 2 ? [a, b] : [a, a, b]);
   const faces = dim === 1 ? ['x0', 'x1'] : dim === 2 ? ['x0', 'x1', 'y0', 'y1'] : ['x0', 'x1', 'y0', 'y1', 'z0', 'z1'];
   const hm = SMP.mpHeatMoisture(M, {
-    kT: m => (iso ? 1e6 : m === 1 ? AL.k : vec3(go.kIn, go.kThr)),
+    kT: (m, T) => (iso ? 1e6 : m === 1 ? alkT(T) : vec3(kInT(T), kThrT(T))),
     // (a piece's heat capacity with its water as cut)
-    CT: m => (m === 1 ? AL.rho * AL.c : go.rhoS * (go.c + o.X0 * SMP_CW)),
+    CT: (m, T) => (m === 1 ? AL.rho * alcT(T) : go.rhoS * (cT(T) + o.X0 * SMP_CW)),
     Kv: () => vec3(go.K, go.Kthr), S, dS, L: iso ? 0 : T => SMP_DR.drLatent(T), wet: m => m === 0,
     T0: Tstart, p0: x => (inStack(x) ? p0 : pvAir),
     bcT: iso ? faces.map(face => ({ face, type: 'value', u: () => Tair })) : bcT,

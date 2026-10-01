@@ -85,5 +85,15 @@ for (const dim of [1, 2, 3]) {
   check('the plate\'s aluminium as an input (MH-2): given as SMP_AL, the stack bit for bit as without; another alloy, another stack', strip(a) === strip(b) && strip(c) !== strip(a), `${strip(a).length} chars`);
 }
 
+// the GO's and the plate's conductivities and heat capacities in temperature (MH-4b): defined flat at their constants, the
+// stack bit for bit as with the constants; rising with temperature, another
+{
+  const o = { ...base, dim: 1, steps: 8, stages: [{ tEnd: 1800, Tair: 100, creep: true }] }, flat = v => ({ kind: 'table', var: 'T', x: [273.15, 573.15], y: [v, v], extrap: 'clamp' });
+  const strip = r => JSON.stringify(r, (k, v) => (k === 'ms' || k === 'elapsedMs' ? undefined : v));
+  const a = S.smpStack(o), b = S.smpStack({ ...o, go: { ...go, kInT: flat(go.kIn), kThrT: flat(go.kThr), cT: flat(go.c) }, al: { ...S.SMP_AL, kT: flat(200), cT: flat(900) } });
+  const c = S.smpStack({ ...o, go: { ...go, kThrT: { kind: 'table', var: 'T', x: [273.15, 573.15], y: [0.1, 0.6], extrap: 'clamp' } } });
+  check('properties in temperature as inputs (MH-4b): flat tables at the constants, the stack bit for bit; a rising k through it, another', strip(a) === strip(b) && strip(c) !== strip(a), `${strip(a).length} chars`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

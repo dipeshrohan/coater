@@ -83,7 +83,7 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   const web = /fmTransIso\(W\.Ew, W\.Ew \* W\.soft, W\.nuw, W\.nupt \?\? ([\d.]+), W\.Ew \* W\.soft \/ 2\)/.exec(filmSrc), gel = /fmIso\(o\.gel\.Eg, o\.gel\.nu \?\? ([\d.]+)\)/.exec(filmSrc);
   check('  the web\'s ν₁₃ (G₁₃ = E₁ soft / 2) and the gel\'s ν: film.js\'s fallbacks', web && +web[1] === lv('webNupt') && gel && +gel[1] === lv('gelNu'), `${web && web[1]}, ${gel && gel[1]}`);
   const ui = ['stack-mp-ui.js', 'furnace-ui.js', 'film-ui.js'].map(f => fs.readFileSync(f, 'utf8')).join('\n');
-  check('  and the solvers given the card\'s: the plate\'s aluminium (MP-1), the holder plates\' E (the furnace), the web\'s ν₁₃ and the gel\'s ν (Peel and wind)', /al: \{ k: MAT\.lib\.alK\.v, rho: MAT\.lib\.alRho\.v, c: MAT\.lib\.alC\.v \}/.test(ui) && /E: MAT\.lib\.plE\.v \* 1e9/.test(ui) && /nupt: MAT\.lib\.webNupt\.v/.test(ui) && /nu: MAT\.lib\.gelNu\.v/.test(ui));
+  check('  and the solvers given the card\'s: the plate\'s aluminium (MP-1), the holder plates\' E (the furnace), the web\'s ν₁₃ and the gel\'s ν (Peel and wind)', /al: \{ k: MAT\.lib\.alK\.v, rho: MAT\.lib\.alRho\.v, c: MAT\.lib\.alC\.v, \.\.\.hubDefsOf\(\{ kT: MAT\.lib\.alK, cT: MAT\.lib\.alC \}\) \}/.test(ui) && /E: MAT\.lib\.plE\.v \* 1e9/.test(ui) && /nupt: MAT\.lib\.webNupt\.v/.test(ui) && /nu: MAT\.lib\.gelNu\.v/.test(ui));
 }
 
 // 4. stiffness = Peel and wind's plane-strain block
@@ -120,6 +120,19 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   check('provenance: each kind maps to a card flag (measured, fitted → measured; from you, datasheet → given; published, assumed → assumed)', ok && P.fitted.flag === 'measured' && P.supplier.flag === 'given' && P.published.flag === 'assumed');
   check('  a kind kept only while it matches its flag; else the flag\'s own', H.hubProvOf({ flag: 'assumed', prov: 'published' }) === 'published' && H.hubProvOf({ flag: 'measured', prov: 'published' }) === 'measured'
     && H.hubProvOf({ flag: 'given' }) === 'user' && H.hubProvOf({ flag: 'measured', prov: 'fitted' }) === 'fitted' && H.hubProvOf({ flag: 'assumed', prov: 'bogus' }) === 'assumed');
+}
+// 7. a property in temperature (MH-4b): mp-core with a matlib expression k(T) solves steady conduction exactly at its nodes
+//    (Kirchhoff: θ = T + b T²/2 is linear in x for k = k0 (1 + b T)), on any mesh
+{
+  const C = require('./mp-core.js'), k0 = 1, b = 2e-3, T0 = 20, T1 = 600, Lx = 0.01;
+  const q = { kind: 'expr', src: 'k0*(1 + b*(T - 273.15))', params: { k0, b } }, th = T => T + b * T * T / 2, inv = t => (-1 + Math.sqrt(1 + 2 * b * t)) / b;
+  let e = 0;
+  for (const n of [10, 40]) {
+    const M = C.mpMesh({ dim: 1, p: 1, axes: [[{ L: Lx, n }]] });
+    const r = C.mpScalar(M, { K: (m, u) => L.mlQEval(q, { T: u + 273.15 }), steady: true, picard: 60, tol: 1e-13, bc: [{ face: 'x0', type: 'value', u: T0 }, { face: 'x1', type: 'value', u: T1 }] });
+    for (let i = 0; i < M.N; i++) e = Math.max(e, Math.abs(r.u[i] - inv(th(T0) + (th(T1) - th(T0)) * M.X[i] / Lx)));
+  }
+  check('a conductivity in temperature (MH-4b): k = k0 (1 + b T) from 20 to 600 °C, mp-core\'s steady conduction = Kirchhoff\'s exact profile at the nodes', e < 1e-9, `max ${fmt(e)} K`);
 }
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exitCode = fails ? 1 : 0;
