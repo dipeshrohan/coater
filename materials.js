@@ -168,6 +168,30 @@ const MAT_LIB = [
   ['arCp', 'Argon: specific heat capacity', 'J/(kg·K)', 400, 700, 0.1, 1, 520.3, 'assumed', 'a monatomic ideal gas: 5/2 R / M'],
   ['arPr', 'Argon: Prandtl number', '', 0.4, 1, 0.001, 4, 2 / 3, 'assumed', 'a monatomic gas (Eucken): Pr = ⅔'],
 ];
+/**
+ * The materials the spec names that no solver reads at present (MC-2): the GO paste the slurry is made from, the film
+ * between the furnace's two runs (carbonized), the blade's material. No value until one is given (null), none made up.
+ */
+const MAT_XREC = [
+  ['paRhoS', 'GO paste: solids content', 'wt%', 0, 100, 0.1, 1, null, 'assumed', ''],
+  ['paRho', 'GO paste: density', 'kg/m³', 500, 3000, 1, 0, null, 'assumed', ''],
+  ['paMu', 'GO paste: viscosity', 'Pa·s', 0.001, 1e6, 0.1, 2, null, 'assumed', ''],
+  ['paTy', 'GO paste: yield stress', 'Pa', 0, 1e5, 0.1, 1, null, 'assumed', ''],
+  ['paCp', 'GO paste: specific heat capacity', 'J/(kg·K)', 100, 6000, 10, 0, null, 'assumed', ''],
+  ['paK', 'GO paste: thermal conductivity', 'W/(m·K)', 0.01, 10, 0.01, 2, null, 'assumed', ''],
+  ['cfRho', 'Carbonized film: density', 'kg/m³', 100, 2300, 1, 0, null, 'assumed', ''],
+  ['cfCp', 'Carbonized film: specific heat capacity', 'J/(kg·K)', 100, 3000, 10, 0, null, 'assumed', ''],
+  ['cfKin', 'Carbonized film: thermal conductivity in the plane', 'W/(m·K)', 0.01, 3000, 0.1, 1, null, 'assumed', ''],
+  ['cfKthr', 'Carbonized film: thermal conductivity through the thickness', 'W/(m·K)', 0.001, 100, 0.01, 2, null, 'assumed', ''],
+  ['cfE', 'Carbonized film: Young\'s modulus in the plane', 'GPa', 0.01, 1000, 0.1, 1, null, 'assumed', ''],
+  ['cfCO', 'Carbonized film: C/O ratio', '', 1, 1000, 0.1, 1, null, 'assumed', ''],
+  ['blRho', 'Blade: density', 'kg/m³', 500, 20000, 1, 0, null, 'assumed', ''],
+  ['blCp', 'Blade: specific heat capacity', 'J/(kg·K)', 100, 3000, 1, 0, null, 'assumed', ''],
+  ['blK', 'Blade: thermal conductivity', 'W/(m·K)', 0.1, 500, 0.1, 1, null, 'assumed', ''],
+  ['blE', 'Blade: Young\'s modulus', 'GPa', 0.1, 1000, 0.5, 1, null, 'assumed', ''],
+  ['blNu', 'Blade: Poisson\'s ratio', '', 0, 0.5, 0.01, 2, null, 'assumed', ''],
+  ['blAlpha', 'Blade: thermal expansion', '×10⁻⁶/K', -10, 100, 0.1, 1, null, 'assumed', ''],
+];
 const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
@@ -182,7 +206,7 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // its own in its entry, as prov beside its flag)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB), meta: {}, law: {} });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB), meta: {}, law: {}, inst: {}, assign: {}, xrec: matCard(MAT_XREC) });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;
@@ -287,4 +311,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

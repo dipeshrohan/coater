@@ -2496,3 +2496,12 @@ body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"
 .hub-lp input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 .hub-lp input.invalid { border-color: var(--bad); }
 .hub-lp-reset { font-size: 12px; margin-top: 2px; }
+
+/* copies of a material and their domains (MC-2) */
+.hub-item-copy { padding-left: 26px; }
+.hub-item-copy .hub-item-t b { font-weight: 500; }
+.hub-shared { color: var(--muted); }
+.hub-domt th[scope=row] { font-weight: 500; min-width: 220px; }
+.hub-domt .hub-sel { min-width: 180px; }
+.hub-dom-keep { display: block; margin-top: 3px; color: var(--muted); font-size: 11.5px; }
+.hub-dom-on th[scope=row] { color: var(--accent); }

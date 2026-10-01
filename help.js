@@ -416,6 +416,9 @@ const HELP = {
   'hub.ready': { t: 'A solver', d: 'Opens the properties the solver reads, each with its status (required and complete, required and missing, optional, a definition it cannot take) and a link to it.', u: 'Materials' },
   'hub.lawParam': { t: 'A law\'s parameter', d: 'One of the law\'s parameters (or coefficients), in the unit shown. Taken when the law stays finite and positive over its valid range, checked every few degrees; else refused, said why. The solvers that read the law take it at their next solve; a project keeps it, the material file and the CSV sheet carry it.', u: 'Materials' },
   'hub.lawReset': { t: 'Back to the law\'s own values', d: 'Every parameter of this law back to the values it is built with (Undo goes back).', u: 'Materials' },
+  'hub.dup': { t: 'Duplicate', d: 'A copy of this material, with its values as they are now: edited apart from it, and assigned on Domain Assignments to the domains whose solvers should take it. The original and its other domains are left as they are.', u: 'Materials' },
+  'hub.del': { t: 'Delete this copy', d: 'Removes the copy; the domains it was assigned to take their material\'s own values again (Undo brings it back).', u: 'Materials' },
+  'hub.assign': { t: 'The material assigned', d: 'The material this domain\'s solvers take: the record\'s own or one of its copies. A solve already made is kept as it was and shown out of date until it is solved again with the material now assigned.', u: 'Materials' },
   'hub.method': { t: 'Definition method', d: 'Constant: one value at every temperature. Table in T: values at temperatures you give. Equation in T: a formula in T. The row opens the table or the equation; the pre heat treatment and furnace multiphysics take it at each point\'s temperature.', u: 'Materials' },
   'hub.meta': { t: 'Material identity', d: 'The material\'s name, description, grade or formulation, material source (its supplier or how it is made), data source, version and notes. Saved in the project and the material file; the name shows in the library, the editor and the report.', u: 'Materials' },
   'hub.go': { t: 'Open', d: 'The solver\'s page (its results when solved), or where the data was entered.', u: 'Materials' },
@@ -431,6 +434,8 @@ const HELP = {
   'hub.cmpT': { t: 'Compared at', d: 'The temperature the laws are evaluated at; a law outside its valid range, or a liquid above 100 °C, is left blank.', u: 'Materials' },
 };
 // (the alignment's and the drying's card values: their help from their rows -- what each is and where its value is from)
+// (the spec's materials no solver reads at present, MC-2: their help from their rows, no value until given)
+if (typeof MAT_XREC !== 'undefined') for (const [k, l, u, lo, hi] of MAT_XREC) HELP[`matx.${k}`] = { t: l, d: `${l.split(': ')[1].charAt(0).toUpperCase()}${l.split(': ')[1].slice(1)}: empty until you give it. No solver reads it at present.`, r: `Range ${lo} to ${hi}${u ? ' ' + u : ''}`, u: 'Materials' };
 for (const [pre, rows] of [['mato', typeof MAT_ORIENT !== 'undefined' ? MAT_ORIENT : []], ['matd', typeof MAT_DRY !== 'undefined' ? MAT_DRY : []], ['matl', typeof MAT_LIB !== 'undefined' ? MAT_LIB : []]])
   for (const [k, l, u, lo, hi, , , , , src] of rows) if (!HELP[`${pre}.${k}`]) HELP[`${pre}.${k}`] = { t: l, d: `${src.charAt(0).toUpperCase()}${src.slice(1)}.`, r: `Range ${lo} to ${hi}${u ? ' ' + u : ''}`, u: 'Materials' };
 // result names (metrics, mesh study, DOE outputs), by their label
@@ -522,7 +527,7 @@ const HELP_BY_ID = {
   fvVecNorm: 'dp.vecNorm', fvVecColor: 'dp.vecColor',
   doeRun: 'doe.run', doeStop: 'doe.stop', doeLoc: 'doe.loc', doeWorkers: 'doe.workers', doeCsv: 'doe.csv', doeOut: 'doe.out',
   hubg_gsm: 'cfd.gsm', hubg_rhoF: 'cfd.rhoF', hubg_den: 'cfd.den', hubg_nf: 'cfd.nf', hubg_airPerm: 'cfd.airPerm', hubg_airDP: 'cfd.airDP', hubg_kozeny: 'cfd.koz', hubg_airFrac: 'cfd.airFrac', hubFibre: 'cfd.fibre',
-  hubImport: 'hub.import', hubExport: 'hub.export', hubSheet: 'hub.sheet', hubRecReset: 'hub.recReset', hubRecExport: 'hub.recExport', hubQ: 'hub.search', matModel: 'cfd.model', matOrModel: 'mato.model', matOrOn: 'mato.on', matStructOn: 'matr.structOn',
+  hubImport: 'hub.import', hubRecDup: 'hub.dup', hubRecDel: 'hub.del', hubExport: 'hub.export', hubSheet: 'hub.sheet', hubRecReset: 'hub.recReset', hubRecExport: 'hub.recExport', hubQ: 'hub.search', matModel: 'cfd.model', matOrModel: 'mato.model', matOrOn: 'mato.on', matStructOn: 'matr.structOn',
   measImport: 'meas.import', measSel: 'meas.sel', measCfd: 'meas.cfd', measStop: 'meas.stop', measCsv: 'meas.csv', measFitGo: 'meas.fit', measApply: 'meas.apply',
 };
 const HELP_BY_SELECTOR = [
@@ -535,7 +540,7 @@ const HELP_BY_SELECTOR = [
   ['.rt-pick', 'rt.test'], ['.rt-x', 'rt.remove'], ['.rt-use', 'rt.use'],
   ['[data-hubview]', 'hub.views'], ['#hubDefaults > summary', 'hub.defaults'], ['[data-hubreset]', 'hub.defaults'], ['[data-hubtab]', 'hub.tab'], ['[data-hubopen]', 'hub.prop'], ['[data-hubopenp]', 'hub.prop'], ['[data-hubsel]', 'hub.lib'],
   ['[data-hubready]', 'hub.ready'], ['[data-hubjump]', 'hub.prop'], ['[data-hubcmpt]', 'hub.cmpT'], ['[data-hubdefkind]', 'hub.defKind'], ['input[data-hubdt][data-c="x"]', 'hub.defT'], ['input[data-hubdt][data-c="y"]', 'hub.defY'], ['[data-hubdtadd]', 'hub.defAdd'], ['[data-hubdtcsv]', 'hub.defCsv'], ['[data-hubdtdel]', 'hub.defDel'],
-  ['select[data-hubdtopt][data-o="interp"]', 'hub.defInterp'], ['select[data-hubdtopt][data-o="extrap"]', 'hub.defExtrap'], ['input[data-hubdexpr]', 'hub.defExpr'], ['select[data-hubmethod]', 'hub.method'], ['input[data-hublawp]', 'hub.lawParam'], ['[data-hublawreset]', 'hub.lawReset'], ['[data-hubmeta]', 'hub.meta'], ['[data-hubgo]', 'hub.go'], ['[data-hubgonav]', 'hub.go'],
+  ['select[data-hubdtopt][data-o="interp"]', 'hub.defInterp'], ['select[data-hubdtopt][data-o="extrap"]', 'hub.defExtrap'], ['input[data-hubdexpr]', 'hub.defExpr'], ['select[data-hubmethod]', 'hub.method'], ['select[data-hubassign]', 'hub.assign'], ['input[data-hublawp]', 'hub.lawParam'], ['[data-hublawreset]', 'hub.lawReset'], ['[data-hubmeta]', 'hub.meta'], ['[data-hubgo]', 'hub.go'], ['[data-hubgonav]', 'hub.go'],
   ['.zoom-ctl [data-z="in"]', 'zm.in'], ['.zoom-ctl [data-z="out"]', 'zm.out'], ['.zoom-ctl [data-z="fit"]', 'zm.fit'], ['.zoom-ctl [data-z="edge"]', 'zm.edge'],
   ['.zoom-ctl [data-z="meniscus"]', 'zm.meniscus'], ['.zoom-ctl [data-z="box"]', 'zm.box'], ['.zoom-ctl [data-z="img"]', 'zm.img'],
   ['#cfdLocs input[data-i]', 'loc.z'], ['#cfdLocs [data-edit]', 'loc.own'], ['#cfdLocs [data-run]', 'loc.run'], ['#cfdLocs [data-pick]', 'loc.pick'],
@@ -598,6 +603,7 @@ function applyHelp() {
   document.querySelectorAll('input[type=number][data-mo]').forEach(el => set(el, 'mato.' + el.dataset.mo));
   document.querySelectorAll('input[type=number][data-mdr]').forEach(el => set(el, 'matd.' + el.dataset.mdr));
   document.querySelectorAll('input[type=number][data-mlb]').forEach(el => set(el, 'matl.' + el.dataset.mlb));
+  document.querySelectorAll('input[type=number][data-mxr]').forEach(el => set(el, 'matx.' + el.dataset.mxr));
   document.querySelectorAll('input.mat-src[data-mo], input.mat-src[data-mdr], input.mat-src[data-mlb], input.hub-src').forEach(el => set(el, 'mat.src'));
   // (the film card's values, GO-4)
   document.querySelectorAll('input[type=number][data-mfl]').forEach(el => { const key = 'matf.' + el.dataset.mfl; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });

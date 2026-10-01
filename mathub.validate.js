@@ -38,7 +38,7 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   for (const r of all) for (const p of props(r)) if (p.b.t === 'card') { const k = `${p.b.card}.${p.b.k}`; seen.set(k, [...(seen.get(k) || []), `${r.id}.${p.id}`]); }
   const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`));
   const missing = cards.filter(k => !seen.has(k)), twice = [...seen].filter(([, v]) => v.length > 1), extra = [...seen.keys()].filter(k => !cards.includes(k));
-  check(`bindings: the ${cards.length} card values (the six stage cards' 99 and the material constants' 10) each a property of exactly one record`, cards.length === 109 && !missing.length && !twice.length && !extra.length,
+  check(`bindings: the ${cards.length} card values (the six stage cards' 99, the material constants' 10, the spec's three materials' 18) each a property of exactly one record`, cards.length === 127 && !missing.length && !twice.length && !extra.length,
     `missing ${missing.join(', ') || 'none'}; twice ${twice.map(([k, v]) => `${k} (${v.join(', ')})`).join('; ') || 'none'}; unknown ${extra.join(', ') || 'none'}`);
   const dup = all.filter(r => new Set(props(r).map(p => p.id)).size !== props(r).length).map(r => r.id);
   check('  property ids unique within each record; record ids unique', !dup.length && new Set(all.map(r => r.id)).size === all.length, dup.join(', '));
@@ -156,6 +156,35 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
     && Math.abs(H.hubLawAt('airMu', 20) - 1.716e-5 * Math.pow(293.15 / 273.15, 1.5) * (273.15 + 120) / (293.15 + 120)) < 1e-20, j(pr).slice(0, 200));
   H.hubSetLawParam('airMu', 'S', null, 110.4); H.hubSetLawParam('gCp', 'c', 0, F0.gCp[0]); vm.runInContext('MAT.lib = matDefaults().lib;', ctx);
   check('  set back to their own: nothing passed again, no edit kept', H.matSolverProps() === undefined && j(vm.runInContext('MAT.law', ctx)) === '{}');
+}
+// 8. copies of a material and their domains (MC-2): a copy's values its own; the solvers in a domain it is assigned to take
+//    them, every other solver the project's; nothing assigned, the solvers' inputs exactly as before; a copy removed, its
+//    domains back to the record's
+{
+  const R = code => vm.runInContext(code, ctx);
+  R('MAT = matDefaults();');
+  const id = R("hubDuplicate('gofilm')"), r = R(`hubRec('${id}')`);
+  const kS = R(`hubProps(hubRec('${id}')).find(p => p.id === 'kS')`);
+  R(`hubSet(hubProps(hubRec('${id}')).find(p => p.id === 'kS'), 0.35)`);
+  const a1 = R(`({ copy: hubVal(hubProps(hubRec('${id}')).find(p => p.id === 'kS')).v, own: MAT.dry.kS.v, name: hubName(hubRec('${id}')), vals: Object.keys(MAT.inst['${id}'].vals).length })`);
+  check('a copy (Dried GO film): its own values -- its k₃₃ set to 0.35, the project\'s still 0.2; named "(copy)"', id === 'gofilm~1' && r && r.inst === id && kS.b.inst === id && a1.copy === 0.35 && a1.own === 0.2 && /\(copy\)$/.test(a1.name) && a1.vals > 40, JSON.stringify(a1));
+  const none = R("[matRun('mp1', () => MAT), matRun('dry', () => MAT)].every(m => m === MAT)");
+  check('  not assigned: every solver\'s inputs from the project\'s own state, the same object', none);
+  R(`hubAssign('gofilm', 2, '${id}')`);   // (the pre heat's stack)
+  const a2 = R("({ mp1: matRun('mp1', () => MAT.dry.kS.v), stack: matRun('stack', () => MAT.dry.kS.v), dry: matRun('dry', () => MAT.dry.kS.v), furn: matRun('mp2', () => MAT.dry.kS.v), nested: matRun('mp1', () => [MAT.dry.kS.v, matRun('dry', () => MAT.dry.kS.v), MAT.dry.kS.v]), after: MAT.dry.kS.v })");
+  check('  assigned to the pre heat\'s stack: its two solvers take 0.35; the drying and the furnace 0.2; nested, each its own; the project untouched', a2.mp1 === 0.35 && a2.stack === 0.35 && a2.dry === 0.2 && a2.furn === 0.2 && JSON.stringify(a2.nested) === '[0.35,0.2,0.35]' && a2.after === 0.2, JSON.stringify(a2));
+  const rd = R("(() => { const a = hubAssignedFor('gofilm', 'mp1'); return { r: a, v: hubVal(hubProps(hubInstRec(a)).find(p => p.id === 'kS')).v, dry: hubAssignedFor('gofilm', 'dry') }; })()");
+  check('  the material each solver takes: the pre heat\'s multiphysics the copy (k₃₃ 0.35), the drying its record', rd.r === id && rd.v === 0.35 && rd.dry === null, JSON.stringify(rd));
+  const lawId = R("hubDuplicate('water')");
+  R(`hubSetLawParam('waterMu', 'C', null, 135, '${lawId}')`);
+  const a3 = R(`({ copy: hubInInst('${lawId}', () => hubLawParams('waterMu').C), own: hubLawParams('waterMu').C, props: matSolverProps() })`);
+  check('  a copy\'s law (water\'s viscosity, C 135 K): its own; the project\'s and what the solvers take unchanged until assigned', a3.copy === 135 && a3.own === 140 && a3.props === undefined, JSON.stringify(a3));
+  R(`hubDeleteInst('${id}')`);
+  const a4 = R("({ inst: Object.keys(MAT.inst), assign: JSON.stringify(MAT.assign.gofilm), mp1: matRun('mp1', () => MAT.dry.kS.v) })");
+  check('  the copy deleted: its domain takes the record\'s own again', !a4.inst.includes(id) && a4.assign === '{}' && a4.mp1 === 0.2, JSON.stringify(a4));
+  const xr = R("['paste', 'cfilm', 'blade'].map(i => { const r = hubRec(i); return [i, hubProps(r).length, hubProps(r).every(p => hubVal(p).v === null && p.phys.length === 0)]; })");
+  check('the spec\'s GO paste, carbonized film and blade material: records with their properties, no value made up, read by no solver at present', xr.every(([, n, ok]) => n >= 6 && ok), JSON.stringify(xr));
+  R('MAT = matDefaults();');
 }
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exitCode = fails ? 1 : 0;
