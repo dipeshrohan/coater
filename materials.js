@@ -158,10 +158,12 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // sem: the measured alignment -- SEM images and tables of flake angles, orient-ui.js;
 // dry: the drying card; dryMeas: the drying measured -- temperatures in the oven and values at its exit, drying-ui.js;
 // film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js;
-// furn: the furnace's card; furnMeas: the graphene film measured -- its thickness, weight and heat conduction, furnace-ui.js)
+// furn: the furnace's card; furnMeas: the graphene film measured -- its thickness, weight and heat conduction, furnace-ui.js;
+// prov: the provenance of the inputs bar's material values, { 'in.k': { kind, src } }, the material hub's (MH-5): a card value keeps
+// its own in its entry, as prov beside its flag)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] } });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {} });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;

@@ -33,55 +33,6 @@ function orRestS(U) {
 // ---- the Materials card ----
 /** A card row not used as things are: all when the alignment is off; the other model's values. */
 const orRowOff = q => !MAT.orient.on ? 'the alignment is off' : q[10] !== 'num' && q[10] !== MAT.orient.model ? `used by the ${q[10] === 'dh' ? 'liquid crystal (Doi–Hess)' : 'suspension (Folgar–Tucker)'}` : false;
-function orCardHTML() {
-  const o = MAT.orient;
-  return `<section class="mat-card" aria-labelledby="matOrH">
-    <header><h3 id="matOrH">${uiBadge('fibre')}Flakes: how they line up</h3><button type="button" class="linkish" id="matOrSee">See them in Coating › 2D</button></header>
-    <div class="mat-sub"><label class="mat-switch"><input type="checkbox" id="matOrOn"${o.on ? ' checked' : ''}><b>Alignment</b></label><span>${o.on ? 'on: computed with each 2D run, along its flow to the film and on the web to the oven' : 'off: the 2D computes no alignment'}</span></div>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    <div class="mat-row${o.on ? '' : ' mat-off'}"><label class="mat-l" for="matOrModel">Model</label><span class="mat-v"><select id="matOrModel" class="mat-msel"${o.on ? '' : ' disabled'}>${Object.entries(OR_MODELS).map(([k, l]) => `<option value="${k}"${k === o.model ? ' selected' : ''} title="${l}">${l.replace(/ \(.*/, '')}</option>`).join('')}</select></span>${matFlagChip('given')}<span class="mat-src-t" title="${OR_MODELS[o.model]}">${OR_MODELS[o.model]}: the default (you), for your ${MAT.slurry.phi.v} vol% of flakes about ${Math.round(1 / matFlakeRatio())} × wider than thick</span></div>
-    ${matEditRows(MAT_ORIENT, o, 'mo', 'mato', orRowOff)}
-    <div id="matOrDerived"></div>
-    <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matOrReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matOrCount"></span></div>
-  </section>`;
-}
-function orWire() {
-  const key = k => MAT_ORIENT.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mo]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mo, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.orient[k] = { ...MAT.orient[k], v }; });
-    el.value = MAT.orient[k].v;
-    orDerived();
-  }));
-  view.querySelectorAll('select[data-mo]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mo; MAT.orient[k] = { ...MAT.orient[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    orDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mo]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mo; MAT.orient[k] = { ...MAT.orient[k], src: el.value.trim() }; }));
-  document.getElementById('matOrOn').addEventListener('change', e => { MAT.orient.on = e.target.checked; render(); });
-  document.getElementById('matOrModel').addEventListener('change', e => { MAT.orient.model = e.target.value; render(); });
-  document.getElementById('matOrReset').onclick = () => { undoHint('Alignment values back to their defaults'); MAT = { ...MAT, orient: matDefaults().orient }; render(); };
-  document.getElementById('matOrSee').onclick = () => { tab = 4; FV.step = 'results'; FV.dock = 'flakes'; render(); };
-  orDerived();
-}
-/** What follows from the card (the flakes' shape, the order at rest), its counts and warnings: in place. */
-function orDerived() {
-  const o = MAT.orient, r = matFlakeRatio(), beta = (r * r - 1) / (r * r + 1), used = MAT_ORIENT.filter(q => !orRowOff(q) && q[10] !== 'num');
-  const rows = [['Flakes, thickness / width', r < 0.01 ? r.toExponential(2) : r.toFixed(3), '', `the slurry card: ${MAT.slurry.tFlake.v} nm thick, ${MAT.slurry.dMean.v} µm wide; Jeffery's shape factor β = ${beta.toFixed(6)}`]];
-  const probs = [];
-  if (o.model === 'dh') {
-    const S = orRestS(o.U.v);
-    rows.push(['Order at rest, S', S.toFixed(3), '', S > 0 ? 'the liquid crystal at rest (Maier–Saupe, from U): 1 all lined up, 0 random' : 'U below about 4.5: at rest the flakes point every way (not a liquid crystal)']);
-    if (o.U.v > 4.4 && o.U.v < 5.1) probs.push(`U = ${o.U.v} is at the edge of the liquid crystal (4.5 to 5): its order settles slowly and the result depends on it strongly.`);
-    if (!(o.Dr.v > 0)) probs.push('D_r = 0: the liquid crystal needs its rotary diffusion (its ordering acts through it); nothing would relax.');
-  } else if (!(o.Ci.v > 0)) probs.push('C_i = 0: no diffusion, the flakes only turn with the flow (Jeffery): they never settle to a steady state at the inlet.');
-  const der = document.getElementById('matOrDerived');
-  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${orEsc(s)}">${s}</span></div>`).join('')
-    + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
-  const cnt = document.getElementById('matOrCount'), n = f => used.filter(q => o[q[0]].flag === f).length;
-  if (cnt) cnt.textContent = o.on ? `of the ${used.length} in use: ${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured` : 'the alignment is off';
-}
 /** The card read-only (the report): the switch, the model, its values in use, the flakes' shape. */
 function orCardRows() {
   const o = MAT.orient, r = matFlakeRatio();

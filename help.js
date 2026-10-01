@@ -82,7 +82,7 @@ const HELP = {
   'mat.tFlake': { t: 'Flake thickness', d: 'Thickness of a GO flake. Assumed: about 1 nm (a single sheet).', r: 'Range 0.5 to 1000 nm', u: 'The card (the flakes\' aspect ratio in a later phase)' },
   'mat.co': { t: 'C/O ratio', d: 'Carbon to oxygen ratio of the GO. Assumed: about 2.', r: 'Range 1 to 20', u: 'The card (reduction in a later phase)' },
   'mat.phiDry': { t: 'Dry film packing', d: 'Solids fraction of the dry film: the stacked flakes and the pores between them. Assumed: 0.85.', r: 'Range 0.3 to 1', e: 'Higher: a thinner, denser dry film for the same wet film.', u: 'Coating › Results › Wet and dry film (the dry film\'s thickness, its density)' },
-  'mat.flag': { t: 'Where the value is from', d: 'From you (you gave it), Assumed (a typical value until measured) or Measured. The counts at the top of the card and the pills follow it.', u: 'Materials' },
+  'mat.flag': { t: 'Provenance', d: 'Where the value is from: Measured (on this material), Fitted (to your measured data), From you, Datasheet (the supplier\'s datasheet or test report), Published (a published value for a similar material) or Assumed (a typical value until measured). Measured and Fitted count as measured, From you and Datasheet as yours, Published and Assumed as assumed: the provenance bars and each solver\'s readiness follow it.', u: 'Materials' },
   'mat.src': { t: 'Source', d: 'Where the value comes from, in words: a datasheet, a test, a paper, you.', u: 'Materials, the report' },
   'mat.reset': { t: 'Defaults', d: 'The slurry card back to its first values (with Undo to go back).', u: 'Materials' },
   // (how it flows, GO-1: the laws' extras and the structure, on the rheology card)
@@ -402,7 +402,24 @@ const HELP = {
   'doe.map': { t: 'Response map', d: 'An output over two factors: a cell per pair of levels, coloured on one scale with its value printed.' },
   'doe.effects': { t: 'Main effects', d: 'Each factor\'s mean output at each level, over all the other factors\' levels: the steeper, the stronger the factor.' },
   'doe.out': { t: 'Output', d: 'The result plotted.' },
+  // (the material hub, MH-5)
+  'hub.views': { t: 'Materials: the view', d: 'Materials: the library and the material picked, its properties, models and plots, measured data and the solvers that read it. Readiness: each solver\'s values by provenance, and what blocks it. Compare: the materials side by side at one temperature.', u: 'Materials' },
+  'hub.search': { t: 'Search', d: 'The materials and interfaces whose name, kind or a property\'s name or symbol has the text.', u: 'Materials' },
+  'hub.import': { t: 'Import materials', d: 'Read a material file (JSON, written by Export): each value it holds, in this app\'s unit and range, is taken with its provenance and source (one undo step); the others are listed and left.', u: 'Materials' },
+  'hub.export': { t: 'Export materials', d: 'Every material\'s and interface\'s editable values to a material file (JSON): value, unit, provenance, source. Read it back with Import, in this project or another.', u: 'Materials' },
+  'hub.defaults': { t: 'Defaults by stage', d: 'A stage card\'s values back to their first values (with Undo to go back): the slurry, its flow law\'s extras and structure, the alignment, the drying, the film, the furnace.', u: 'Materials' },
+  'hub.recReset': { t: 'This material\'s defaults', d: 'The material\'s own values back to their first values, its provenance and sources too (with Undo to go back).', u: 'Materials' },
+  'hub.recExport': { t: 'Export this material', d: 'This material\'s editable values to a material file (JSON).', u: 'Materials' },
+  'hub.tab': { t: 'The material\'s pages', d: 'Properties: every property with its symbol, value, unit, provenance and source; a row opens its definition. Models and plots: its laws and models drawn. Measured data: what was measured of it. Used by: the solvers that read it.', u: 'Materials' },
+  'hub.prop': { t: 'A property', d: 'Opens its definition: a constant, a calculated value (how), a built-in law (its formula, parameters, range, source and plot), a tensor (its matrix in the material\'s frame, eigenvalues, what each solver takes) or a stiffness (its 6 × 6 and the plane-strain block); its range and the solvers that read it.', u: 'Materials' },
+  'hub.lib': { t: 'A material', d: 'Shows it. The bar under its name: its values by provenance (green measured, blue yours or a datasheet, amber assumed or published, grey built in); a dot: a check fails.', u: 'Materials' },
+  'hub.ready': { t: 'A solver', d: 'Opens what it reads assumed or published, each a link to its property.', u: 'Materials' },
+  'hub.go': { t: 'Open', d: 'The solver\'s page (its results when solved), or where the data was entered.', u: 'Materials' },
+  'hub.cmpT': { t: 'Compared at', d: 'The temperature the laws are evaluated at; a law outside its valid range, or a liquid above 100 °C, is left blank.', u: 'Materials' },
 };
+// (the alignment's and the drying's card values: their help from their rows -- what each is and where its value is from)
+for (const [pre, rows] of [['mato', typeof MAT_ORIENT !== 'undefined' ? MAT_ORIENT : []], ['matd', typeof MAT_DRY !== 'undefined' ? MAT_DRY : []]])
+  for (const [k, l, u, lo, hi, , , , , src] of rows) if (!HELP[`${pre}.${k}`]) HELP[`${pre}.${k}`] = { t: l, d: `${src.charAt(0).toUpperCase()}${src.slice(1)}.`, r: `Range ${lo} to ${hi}${u ? ' ' + u : ''}`, u: 'Materials' };
 // result names (metrics, mesh study, DOE outputs), by their label
 const HELP_RESULTS = {
   'Rheology model': 'The viscosity law of this run.',
@@ -491,6 +508,8 @@ const HELP_BY_ID = {
   fvDir: 'dp.dir', fvStreamInt: 'dp.int', fvLineColor: 'dp.lineColor', fvLineW: 'dp.lineW', fvArrows: 'dp.arrows', fvVecDensity: 'dp.vecDensity', fvVecScale: 'dp.vecScale',
   fvVecNorm: 'dp.vecNorm', fvVecColor: 'dp.vecColor',
   doeRun: 'doe.run', doeStop: 'doe.stop', doeLoc: 'doe.loc', doeWorkers: 'doe.workers', doeCsv: 'doe.csv', doeOut: 'doe.out',
+  hubg_gsm: 'cfd.gsm', hubg_rhoF: 'cfd.rhoF', hubg_den: 'cfd.den', hubg_nf: 'cfd.nf', hubg_airPerm: 'cfd.airPerm', hubg_airDP: 'cfd.airDP', hubg_kozeny: 'cfd.koz', hubg_airFrac: 'cfd.airFrac', hubFibre: 'cfd.fibre',
+  hubImport: 'hub.import', hubExport: 'hub.export', hubRecReset: 'hub.recReset', hubRecExport: 'hub.recExport', hubQ: 'hub.search', matModel: 'cfd.model', matOrModel: 'mato.model', matOrOn: 'mato.on', matStructOn: 'matr.structOn',
   measImport: 'meas.import', measSel: 'meas.sel', measCfd: 'meas.cfd', measStop: 'meas.stop', measCsv: 'meas.csv', measFitGo: 'meas.fit', measApply: 'meas.apply',
 };
 const HELP_BY_SELECTOR = [
@@ -501,6 +520,8 @@ const HELP_BY_SELECTOR = [
   ['[data-acrp="tilt"]', 'in.tilt'], ['[data-acrp="dH"]', 'in.dH'], ['[data-acrp="lw"]', 'in.lw'], ['[data-acrp="skew"]', 'in.skew'], ['[data-acrp="dt"]', 'in.dt'], ['[data-acrp="dth"]', 'in.dth'],
   ['#fvMore > summary', 'tb.display'], ['#cfdExport > summary', 'tb.export'],
   ['.rt-pick', 'rt.test'], ['.rt-x', 'rt.remove'], ['.rt-use', 'rt.use'],
+  ['[data-hubview]', 'hub.views'], ['#hubDefaults > summary', 'hub.defaults'], ['[data-hubreset]', 'hub.defaults'], ['[data-hubtab]', 'hub.tab'], ['[data-hubopen]', 'hub.prop'], ['[data-hubopenp]', 'hub.prop'], ['[data-hubsel]', 'hub.lib'],
+  ['[data-hubready]', 'hub.ready'], ['[data-hubjump]', 'hub.prop'], ['[data-hubcmpt]', 'hub.cmpT'], ['select[data-hubprov]', 'mat.flag'], ['[data-hubgo]', 'hub.go'], ['[data-hubgonav]', 'hub.go'],
   ['.zoom-ctl [data-z="in"]', 'zm.in'], ['.zoom-ctl [data-z="out"]', 'zm.out'], ['.zoom-ctl [data-z="fit"]', 'zm.fit'], ['.zoom-ctl [data-z="edge"]', 'zm.edge'],
   ['.zoom-ctl [data-z="meniscus"]', 'zm.meniscus'], ['.zoom-ctl [data-z="box"]', 'zm.box'], ['.zoom-ctl [data-z="img"]', 'zm.img'],
   ['#cfdLocs input[data-i]', 'loc.z'], ['#cfdLocs [data-edit]', 'loc.own'], ['#cfdLocs [data-run]', 'loc.run'], ['#cfdLocs [data-pick]', 'loc.pick'],
@@ -561,6 +582,10 @@ function applyHelp() {
   document.querySelectorAll('input[type=number][data-mr]').forEach(el => { const key = 'matr.' + el.dataset.mr; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
   document.querySelectorAll('select[data-mr]').forEach(el => set(el, 'mat.flag'));
   document.querySelectorAll('input.mat-src[data-mr]').forEach(el => set(el, 'mat.src'));
+  // (the alignment's and the drying's values, as the material hub shows them)
+  document.querySelectorAll('input[type=number][data-mo]').forEach(el => set(el, 'mato.' + el.dataset.mo));
+  document.querySelectorAll('input[type=number][data-mdr]').forEach(el => set(el, 'matd.' + el.dataset.mdr));
+  document.querySelectorAll('input.mat-src[data-mo], input.mat-src[data-mdr], input.hub-src').forEach(el => set(el, 'mat.src'));
   // (the film card's values, GO-4)
   document.querySelectorAll('input[type=number][data-mfl]').forEach(el => { const key = 'matf.' + el.dataset.mfl; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
   document.querySelectorAll('select[data-mfl]').forEach(el => set(el, 'mat.flag'));

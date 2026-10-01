@@ -292,14 +292,16 @@ async function repMaterials() {
   tab = 13; render(); await repFrame();
   const c = MAT.slurry, flag = f => (MAT_FLAGS.find(q => q[0] === f) || [0, f])[1];
   const card = MAT_SLURRY.map(([k, l, u, , , , d]) => [repEsc(l), repEsc(repUnit(repNum(c[k].v, d), u)), repEsc(flag(c[k].flag)), repEsc(c[k].src)]);
-  const derived = [...document.querySelectorAll('#matDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))]);
+  // (what follows from the cards: the material hub's calculated values, MH-5)
+  const derived = [...hubCalcRows('slurry', ['rho', 'wm', 'X0']), ...hubCalcRows('gofilm', ['rho'])].map(([l, v, u, s]) => [repEsc(l), repEsc(repUnit(v, u)), 'Worked out', repEsc(s)]);
   const ro = rows => rows.map(([l, v, u, f, s]) => [repEsc(l), repEsc(repUnit(v, u)), f === 'calc' ? 'Worked out' : repEsc(flag(f)), repEsc(s)]);
   const head = ['', 'Value', 'From', 'Source'];
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   // the rheometer tests (GO-1): each one's plot and fit table, as the card shows them
   let tests = '';
   if ((MAT.tests || []).length) {
-    const keepSel = RT.sel;
+    const keepSel = RT.sel, keepHub = { ...HUB };
+    Object.assign(HUB, { view: 'lib', sel: 'slurry', tab: 'meas' });
     tests = '<h3>Rheometer tests</h3>';
     for (const t of MAT.tests) {
       RT.sel = t.id; render(); await repFrame();
@@ -309,7 +311,7 @@ async function repMaterials() {
         + [...document.querySelectorAll('#rtTable .mat-warn, #rtBody > .mat-warn')].map(p => `<p class="warn">${repEsc(cleanText(p))}</p>`).join('')
         + [...document.querySelectorAll('#rtTable .rt-note')].map(p => `<p class="lede">${repEsc(cleanText(p))}</p>`).join('');
     }
-    RT.sel = keepSel; render(); await repFrame();
+    RT.sel = keepSel; Object.assign(HUB, keepHub); render(); await repFrame();
   }
   // the flakes' alignment card, and what was measured of it (SEM images, tables of angles)
   const semRows = [...(MAT.sem.images || []).map(im => { const p = orImagePoints(im), q = p.angles.length ? orCutStatsSafe(p) : null; return [repEsc(im.name), im.cut === 'cd' ? 'across the web' : 'along the web', p.angles.length ? `${p.angles.length} angles${im.auto && im.useAuto !== false ? ' (read automatically)' : ''}${im.hand.length ? `, ${im.hand.length} by hand` : ''}` : 'not read', q ? `mean ${q.mean.toFixed(1)}°, spread ${q.spread.toFixed(1)}°` : '—']; }),
@@ -318,11 +320,13 @@ async function repMaterials() {
     + '<h3>Slurry: how it flows</h3>' + repRows(ro(matRheoRows()), head)
     + '<h3>Flakes: how they line up</h3>' + repRows(ro(orCardRows()), head)
     + (semRows.length ? '<h4>Measured: SEM cross-sections and angle tables</h4>' + repRows(semRows, ['Measured', 'Cut', 'Angles', '']) : '')
-    + '<h3>Drying: the film in the oven</h3>' + repRows([...ro(dryCardRows()), ...[...document.querySelectorAll('#matDryDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))])], head)
-    + '<h3>Film: the dry film on the fibre web</h3>' + repRows([...ro(filmCardRows()), ...[...document.querySelectorAll('#matFilmDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))])], head)
-    + '<h3>Furnace: the furnace and the graphene film</h3>' + repRows([...ro(furnCardRows()), ...[...document.querySelectorAll('#matFurnDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))])], head)
+    + '<h3>Drying: the film in the oven</h3>' + repRows([...ro(dryCardRows()), ...[...hubCalcRows('slurry', ['D0', 'Dc']), ...hubCalcRows('gofilm', ['Xlast'])].map(([l, v, u, s]) => [repEsc(l), repEsc(repUnit(v, u)), 'Worked out', repEsc(s)])], head)
+    + '<h3>Film: the dry film on the fibre web</h3>' + repRows([...ro(filmCardRows()), ...[...hubCalcRows('gofilm', ['epsF', 'Ewet', 'swell']), ...hubCalcRows('web', ['EA'])].map(([l, v, u, s]) => [repEsc(l), repEsc(repUnit(v, u)), 'Worked out', repEsc(s)])], head)
+    + '<h3>Furnace: the furnace and the graphene film</h3>' + repRows([...ro(furnCardRows()), ...[...hubCalcRows('gofilm', ['kept', 'co1', 'co2', 'split']), ...hubCalcRows('gfilm', ['k'])].map(([l, v, u, s]) => [repEsc(l), repEsc(repUnit(v, u)), 'Worked out', repEsc(s)])], head)
     + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
+    + '<h3>Built into the solvers</h3>' + repRows([...Object.entries(HUB_LAW).map(([id, L]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(hubLawAt(id, 20), -4), L.u)) + ' at 20 °C', 'Built-in law', repEsc(`${ML_LAWS[L.q.law].formula}; ${L.src}; ${L.solver}`)]),
+      ...Object.entries(HUB_CONST).map(([id, c]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(c.v, -4), c.u)), 'Built-in', repEsc(`${c.src}; ${c.solver}`)])], head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
 }
 /** Coating › 3D: its setup, then the page (the 3D view drawn once three.js is in). */

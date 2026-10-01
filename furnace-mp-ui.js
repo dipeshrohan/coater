@@ -123,7 +123,8 @@ function fmpWire(sec) {
     if (t.dataset.fmsnap) { FMS.snap = +t.dataset.fmsnap; fmpField(); return; }
     if (t.id === 'fmpSolve') { fmpRequest(FMS.dim); fmpRender(); return; }
     if (t.id === 'fmpCsv') { fmpCsv(); return; }
-    if (t.dataset.mat === 'furn') { navGo('materials'); setTimeout(() => { const h = document.getElementById('matFurnH'); if (h) h.scrollIntoView({ block: 'start' }); }, 60); }
+    // (the materials it reads: the hub's readiness, the multiphysics' own opened -- MH-5)
+    if (t.dataset.mat === 'furn') hubShow({ view: 'ready', ready: 'mp2' });
   });
 }
 function fmpStatus() {
@@ -166,7 +167,7 @@ function fmpModelHTML(o, r) {
     </tbody></table>
     <table class="mp-phys"><thead><tr><th scope="col">Physics</th><th scope="col">Equation</th><th scope="col">Materials</th><th scope="col">Faces</th></tr></thead>
       <tbody>${rows.map(([a, b, c, e]) => `<tr><th scope="row">${a}</th><td class="mp-eq">${b}</td><td>${c}</td><td>${e}</td></tr>`).join('')}</tbody></table>
-    <p class="mp-couple"><b>Coupling</b> heat ⇄ chemistry in one system at every node (its heat and its rate at the local temperature) → the gas each step → each piece's stress.${balT ? ` <b>Balance</b> ${balT}.` : ''} <button type="button" class="linkish" data-mat="furn">The Furnace card (Materials)</button></p>`;
+    <p class="mp-couple"><b>Coupling</b> heat ⇄ chemistry in one system at every node (its heat and its rate at the local temperature) → the gas each step → each piece's stress.${balT ? ` <b>Balance</b> ${balT}.` : ''} <button type="button" class="linkish" data-mat="furn">What it reads (Materials)</button></p>`;
 }
 function fmpClear() {
   for (const id of ['fmp1', 'fmp2', 'fmp3', 'fmp4', 'fmp5']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, id === 'fmp5' ? 0.42 : FILM_ASPECT); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }

@@ -339,8 +339,6 @@ function drawProcessTable(locs, web) {
 }
 
 // ---- Materials ----
-const MAT_FLAG_CLASS = { given: 'f-given', assumed: 'f-assumed', measured: 'f-measured' };
-const matFlagChip = f => f === 'calc' ? '<span class="mat-flag f-calc">Worked out</span>' : `<span class="mat-flag ${MAT_FLAG_CLASS[f] || ''}">${(MAT_FLAGS.find(q => q[0] === f) || [0, f])[1]}</span>`;
 /** The rheology card's first rows: the model and the sidebar's slurry inputs, as they are. */
 function matRheoBase() {
   const flag = c => /assumed/.test(c.h || '') ? 'assumed' : 'given', cf = k => CFG.find(c => c.k === k);
@@ -365,16 +363,6 @@ function matRheoRows() {
     ...MAT_RHEO.filter(q => q[10] === 'struct').map(row),
   ];
 }
-/** An edited card's rows (the slurry's: data-mk, ids mat_*; the rheology's: data-mr, ids matr_*): value, where it is from, source. */
-function matEditRows(rows, vals, attr, pre, off = () => false) {
-  return rows.map(q => { const [k, l, u, lo, hi, step] = q, v = vals[k], o = off(q);
-    return `<div class="mat-row${o ? ' mat-off' : ''}" data-${attr}="${k}"${o ? ` title="${String(o).replace(/"/g, '&quot;')}"` : ''}>
-      <label class="mat-l" for="${pre}_${k}">${l}${o ? `<small class="mat-note">${o}</small>` : ''}</label>
-      <span class="mat-v"><input type="number" id="${pre}_${k}" data-${attr}="${k}" min="${lo}" max="${hi}" step="${step}" value="${v.v}"><span class="prop-u">${u}</span></span>
-      <select id="${pre}f_${k}" data-${attr}="${k}" class="mat-fsel ${MAT_FLAG_CLASS[v.flag] || ''}" aria-label="${l}: where the value is from">${MAT_FLAGS.map(([f, t]) => `<option value="${f}"${f === v.flag ? ' selected' : ''}>${t}</option>`).join('')}</select>
-      <input type="text" id="${pre}s_${k}" data-${attr}="${k}" class="mat-src" value="${String(v.src).replace(/"/g, '&quot;')}" aria-label="${l}: source">
-    </div>`; }).join('');
-}
 /** The fibre web card: the fibre's test report and the 2D setup's fibre values, as they are. */
 function matFibreRows() {
   const fib = FIBRES[CFDG.fibre], st = fibreStructure(), rep = k => fib.set[k] === CFDG[k] ? 'measured' : 'given';
@@ -392,119 +380,4 @@ function matFibreRows() {
     ['Use temperature, continuous', String(fib.tUse), '°C', 'measured', 'the test report'],
   ];
 }
-function viewMaterials() {
-  const c = MAT.slurry, r = MAT.rheo;
-  const ro = rows => rows.map(([l, v, u, f, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip(f)}<span class="mat-src-t" title="${String(s).replace(/"/g, '&quot;')}">${s}</span></div>`).join('');
-  const base = matRheoBase();
-  const off = q => matRheoUsed(q) ? false : matRheoNotUsed(q);
-  view.innerHTML = moduleFrame({
-    top: `<div class="mat-cards">
-      <section class="mat-card" aria-labelledby="matSlurryH">
-        <header><h3 id="matSlurryH">${uiBadge('drop')}Slurry: GO in water</h3><span class="mat-count" id="matCount"></span></header>
-        <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-        ${matEditRows(MAT_SLURRY, c, 'mk', 'mat')}
-        <div class="mat-derived" id="matDerived"></div>
-        <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matReset">${uiIco('restart')}Defaults</button></div>
-      </section>
-      <section class="mat-card" aria-labelledby="matRheoH">
-        <header><h3 id="matRheoH">${uiBadge('model')}Slurry: how it flows</h3><button type="button" class="linkish" id="matRheoEdit">Edit in the inputs</button></header>
-        <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-        <div class="mat-row"><label class="mat-l" for="matModel">Rheology model</label><span class="mat-v"><select id="matModel" class="mat-msel">${Object.entries(RHEO_MODELS).map(([k, m]) => `<option value="${k}"${k === CFDG.model ? ' selected' : ''}>${m.l}</option>`).join('')}</select></span>${matFlagChip('given')}<span class="mat-src-t" title="${RHEO_MODELS[CFDG.model].law}">${base[0][4]}</span></div>
-        ${ro(base.slice(1))}
-        <div class="mat-sub"><b>Carreau–Yasuda and Cross</b><span>the law's shape beyond the viscosity and n${CFDG.model === 'carreau' || CFDG.model === 'cross' ? '' : ` · not used by ${RHEO_MODELS[CFDG.model].l}`}</span></div>
-        ${matEditRows(MAT_RHEO.filter(q => q[10] === 'law'), r, 'mr', 'matr', off)}
-        <div class="mat-sub"><label class="mat-switch"><input type="checkbox" id="matStructOn"${r.structOn ? ' checked' : ''}><b>Structure (thixotropy)</b></label><span id="matStructNote">${r.structOn ? 'on: it breaks down under shear and rebuilds at rest; the 2D carries it along its flow, the 1D along the blade, and it rebuilds on the web' : 'off: every result from the steady flow curve'}</span></div>
-        ${matEditRows(MAT_RHEO.filter(q => q[10] === 'struct'), r, 'mr', 'matr', off)}
-        <div id="matRheoDerived"></div>
-        <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matRheoReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matRheoCount"></span></div>
-      </section>
-      ${orCardHTML()}
-      ${dryCardHTML()}
-      ${filmCardHTML()}
-      ${furnCardHTML()}
-      ${rtCardHTML()}
-      <section class="mat-card" aria-labelledby="matFibreH">
-        <header><h3 id="matFibreH">${uiBadge('fibre')}Fibre web: what it is coated onto</h3><button type="button" class="linkish" id="matFibreEdit">Edit in Coating › 2D</button></header>
-        ${ro(matFibreRows())}
-      </section>
-    </div>`,
-    panes: [],
-  });
-  // the slurry card
-  const guardKey = k => MAT_SLURRY.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mk]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mk, [, l, u, lo, hi] = guardKey(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.slurry[k] = { ...MAT.slurry[k], v }; });
-    el.value = MAT.slurry[k].v;
-    matDerived();
-  }));
-  view.querySelectorAll('select[data-mk]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mk; MAT.slurry[k] = { ...MAT.slurry[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    matDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mk]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mk; MAT.slurry[k] = { ...MAT.slurry[k], src: el.value.trim() }; }));
-  document.getElementById('matReset').onclick = () => { undoHint('Slurry card back to its defaults'); MAT = { ...MAT, slurry: matDefaults().slurry }; render(); };
-  // the rheology card: the model (as Coating › 2D's), the laws' extras and the structure
-  document.getElementById('matModel').addEventListener('change', e => { CFDG.model = e.target.value; rheoSync('model'); render(); });
-  const rKey = k => MAT_RHEO.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mr, [, l, u, lo, hi] = rKey(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.rheo[k] = { ...MAT.rheo[k], v }; });
-    el.value = MAT.rheo[k].v;
-    rheoSync('extras');   // (MH-3: η0 kept, the law's viscosity at 2.7 1/s follows its new shape)
-    matRheoDerived(); matDerived();
-  }));
-  view.querySelectorAll('select[data-mr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mr; MAT.rheo[k] = { ...MAT.rheo[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    matRheoDerived(); matDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mr; MAT.rheo[k] = { ...MAT.rheo[k], src: el.value.trim() }; }));
-  document.getElementById('matStructOn').addEventListener('change', e => { MAT.rheo.structOn = e.target.checked; render(); });
-  document.getElementById('matRheoReset').onclick = () => { undoHint('Rheology values back to their defaults'); MAT = { ...MAT, rheo: matDefaults().rheo }; rheoSync('extras'); render(); };
-  document.getElementById('matRheoEdit').onclick = () => { setPanelHidden('model', false); const d = [...document.querySelectorAll('#params > details.grp')].find(x => /Slurry/.test((x.querySelector('summary') || {}).textContent || '')); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); } };
-  document.getElementById('matFibreEdit').onclick = () => { FV.tree.fibre = true; tab = 4; render(); };
-  matDerived();
-  matRheoDerived();
-  orWire();
-  dryWireCard();
-  filmWireCard();
-  furnWireCard();
-  rtDraw();
-}
-/** The rheology card's counts and warnings (in place). */
-function matRheoDerived() {
-  const r = MAT.rheo, used = MAT_RHEO.filter(matRheoUsed), n = f => used.filter(q => r[q[0]].flag === f).length;
-  const probs = [];
-  { const re = rheoError(); if (re) probs.push(re); }   // (MH-3: a law that cannot hold, never quietly changed)
-  const der = document.getElementById('matRheoDerived');
-  if (der) der.innerHTML = probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
-  const cnt = document.getElementById('matRheoCount');
-  if (cnt) cnt.textContent = used.length ? `of the ${used.length} in use: ${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured` : 'none of these in use';
-}
-/** What follows from the slurry card (its density, the dry film's), the counts, the pills and the tiles: redrawn in place, so the card keeps its focus. */
-function matDerived() {
-  const c = MAT.slurry, keys = Object.keys(c), n = f => keys.filter(k => c[k].flag === f).length;
-  const rho = slurryRho(), wm = slurrySolidsMass(), dryRho = c.phiDry.v * c.rhoS.v * 1000;
-  const probs = [];
-  if (c.phiDry.v * 100 < c.phi.v) probs.push(`The dry film's packing (${c.phiDry.v}) is below the solids fraction (${c.phi.v} vol%): the film would not shrink as it dries.`);
-  if (!(c.dMin.v <= c.dMean.v && c.dMean.v <= c.dMax.v)) probs.push('The particle sizes are out of order: smallest ≤ mean ≤ largest.');
-  const der = document.getElementById('matDerived');
-  if (der) der.innerHTML = [
-    ['Slurry density', rho.toFixed(0), 'kg/m³', `from the solids: ${c.phi.v} % × ${c.rhoS.v * 1000} + ${(100 - c.phi.v).toFixed(1)} % × ${c.rhoL.v}; the flow models use it`],
-    ['Solids by mass', (wm * 100).toFixed(1), '%', 'from the solids fraction and the two densities'],
-    ['Dry film density', dryRho.toFixed(0), 'kg/m³', 'the dry film\'s packing × the GO density (its pores empty)'],
-  ].map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t">${s}</span></div>`).join('')
-    + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
-  const cnt = document.getElementById('matCount');
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
-  const st = document.getElementById('st');
-  if (st) st.innerHTML = pill(`The slurry: ${c.phi.v} vol% GO (${(wm * 100).toFixed(1)} % by mass) in water, ${rho.toFixed(0)} kg/m³`, '')
-    + pill(`${n('assumed')} of ${keys.length} slurry values assumed: measure them to firm up the answers`, n('assumed') ? 'warn' : 'ok')
-    + probs.map(t => pill(t, 'bad')).join('')
-    + (MAT.rheo.structOn ? pill(`Structure (thixotropy) on: ${MAT_RHEO.filter(q => q[10] === 'struct' && MAT.rheo[q[0]].flag === 'assumed').length} of its 4 values assumed`, MAT_RHEO.some(q => q[10] === 'struct' && MAT.rheo[q[0]].flag === 'assumed') ? 'warn' : 'ok') : pill('Structure (thixotropy) off: the steady flow curve everywhere', ''));
-  const ss = document.getElementById('ss');
-  if (ss) ss.innerHTML = [['Slurry density', `${rho.toFixed(0)} kg/m³`, 'density'], ['Solids by mass', `${(wm * 100).toFixed(1)} %`, 'weight'], ['Dry film density', `${dryRho.toFixed(0)} kg/m³`, 'density'], ['Particle size', `${c.dMin.v}–${c.dMax.v} µm`, 'range']]
-    .map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${uiBadge(a[2])}${a[0]}</span><strong>${a[1]}</strong></div>`).join('');
-}
+// (the Materials page: the material hub, mathub-ui.js's viewMaterials)

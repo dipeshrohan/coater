@@ -555,46 +555,6 @@ function wireFilmPeel(changed) {
 }
 
 // ---- Materials: the Film card ----
-function filmCardHTML() {
-  return `<section class="mat-card" aria-labelledby="matFilmH">
-    <header><h3 id="matFilmH">${uiBadge('film')}The dry film on the fibre web</h3><button type="button" class="linkish" id="matFilmSee">See it on Peel and wind</button></header>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    ${matEditRows(MAT_FILM, MAT.film, 'mfl', 'matf')}
-    <div id="matFilmDerived"></div>
-    <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matFilmReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matFilmCount"></span></div>
-  </section>`;
-}
-function filmWireCard() {
-  const key = k => MAT_FILM.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mfl]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfl, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.film[k] = { ...MAT.film[k], v }; });
-    el.value = MAT.film[k].v;
-    filmDerived();
-  }));
-  view.querySelectorAll('select[data-mfl]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfl; MAT.film[k] = { ...MAT.film[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    filmDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mfl]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfl; MAT.film[k] = { ...MAT.film[k], src: el.value.trim() }; }));
-  document.getElementById('matFilmReset').onclick = () => { undoHint('Film values back to their defaults'); MAT = { ...MAT, film: matDefaults().film }; render(); };
-  document.getElementById('matFilmSee').onclick = () => navGo('peel', 'results');
-  filmDerived();
-}
-/** What follows from the Film card: in place. */
-function filmDerived() {
-  const f = MAT.film, pm = MAT.slurry.phiDry.v, em = (1 - pm) / pm, Xcap = 0.9 * em * MAT.slurry.rhoL.v / (MAT.slurry.rhoS.v * 1000);
-  const rows = [
-    ['Its failure strain (strength / stiffness)', (f.sigF.v / (f.Ep.v * 1000) * 100).toFixed(2), '%', 'bent round a core of diameter D, its surface strains by its thickness / D'],
-    ['Its stiffness wet (at the pores\' water, ' + Xcap.toFixed(3) + ' kg/kg)', (f.Ep.v / (1 + Xcap / f.Xh.v)).toFixed(1), 'GPa', 'softer with water, as set above'],
-    ['The web\'s stiffness per width', (f.Ew.v * 1e9 * P.tf / 1000 / 1000).toFixed(0), 'kN/m', `along it, over its ${P.tf} mm (the inputs bar's fibre thickness)`],
-    ['Swelling from dry to the pores\' water', (f.beta.v * Xcap * 100).toFixed(2), '%', 'along the film: its water from none to the most the dry film\'s pores hold'],
-  ];
-  const der = document.getElementById('matFilmDerived');
-  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('');
-  const cnt = document.getElementById('matFilmCount'), n = fl => MAT_FILM.filter(q => f[q[0]].flag === fl).length;
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
-}
+// (its values are edited in the material hub, mathub-ui.js)
 /** The card read-only (the report). */
 const filmCardRows = () => MAT_FILM.map(([k, l, u, , , , dd]) => [l, (+MAT.film[k].v).toFixed(dd), u, MAT.film[k].flag, MAT.film[k].src]);

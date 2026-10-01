@@ -484,51 +484,6 @@ function dryExportCSV() {
 }
 
 // ---- Materials: the drying card ----
-function dryCardHTML() {
-  return `<section class="mat-card" aria-labelledby="matDryH">
-    <header><h3 id="matDryH">${uiBadge('oven')}Drying: the film in the oven</h3><button type="button" class="linkish" id="matDrySee">See it on Drying</button></header>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    ${matEditRows(MAT_DRY, MAT.dry, 'mdr', 'matd')}
-    <div id="matDryDerived"></div>
-    <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matDryReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matDryCount"></span></div>
-  </section>`;
-}
-function dryWireCard() {
-  const key = k => MAT_DRY.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mdr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mdr, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.dry[k] = { ...MAT.dry[k], v }; });
-    el.value = MAT.dry[k].v;
-    dryDerived();
-  }));
-  view.querySelectorAll('select[data-mdr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mdr; MAT.dry[k] = { ...MAT.dry[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    dryDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mdr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mdr; MAT.dry[k] = { ...MAT.dry[k], src: el.value.trim() }; }));
-  document.getElementById('matDryReset').onclick = () => { undoHint('Drying values back to their defaults'); MAT = { ...MAT, dry: matDefaults().dry }; render(); };
-  document.getElementById('matDrySee').onclick = () => navGo('dry', 'results');
-  dryDerived();
-}
-/** What follows from the drying card (the flakes' diffusion, the water the dry GO keeps), its counts and warnings: in place. */
-function dryDerived() {
-  const d = MAT.dry, c = MAT.slurry, R = c.dMean.v * 1e-6 / 2, phi0 = c.phi.v / 100, pm = c.phiDry.v;
-  const D0 = drD0(25, R), Dc = drDcoll(phi0, 25, R, pm, d.mul.v), gab = { Xm: d.gabXm.v, C: d.gabC.v, K: d.gabK.v };
-  const last = OVEN.zones[OVEN.zones.length - 1], X = drGAB(last.rh / 100, gab), em = (1 - pm) / pm, swell = X * c.rhoS.v * 1000 / c.rhoL.v > 0.9 * em;
-  const rows = [
-    ['A flake\'s Brownian diffusion (25 °C)', D0.toExponential(2), 'm²/s', `a thin disc ${c.dMean.v} µm across in water: kT / (12 μ R)`],
-    ['The flakes\' collective diffusion at ' + c.phi.v + ' vol%', Dc.toExponential(2), 'm²/s', 'the card\'s factor × the hard-sphere law (25 °C): how fast the water spreads against the flakes; small means a skin forms'],
-    ['Water the dry GO keeps at the last zone\'s ' + last.rh + ' % humidity', (X * 100).toFixed(1), '% of its mass', 'the isotherm above: the water left in a dry film at the exit'],
-  ];
-  const probs = [];
-  if (swell) probs.push(`At ${last.rh} % humidity the isotherm puts more water in the dry GO than its packing's pores hold: it swells; the water left will be at least what is shown.`);
-  if (d.mul.v > 1e5) probs.push('A collective diffusion over 10⁵ × the hard-sphere law is near what the solver resolves in double precision (10⁶ at most).');
-  const der = document.getElementById('matDryDerived');
-  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('')
-    + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
-  const cnt = document.getElementById('matDryCount'), n = f => MAT_DRY.filter(q => d[q[0]].flag === f).length;
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
-}
+// (its values are edited in the material hub, mathub-ui.js)
 /** The card read-only (the report). */
 const dryCardRows = () => MAT_DRY.map(([k, l, u, , , , dd]) => [l, (+MAT.dry[k].v).toFixed(dd), u, MAT.dry[k].flag, MAT.dry[k].src]);

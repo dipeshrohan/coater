@@ -1,0 +1,121 @@
+/*
+ * mathub.validate.js — checks of the material hub's records (mathub.js) against the solvers they describe.
+ * Run: node mathub.validate.js
+ *  1. Bindings: every value on the six stage cards (99) is a property of exactly one record, with no other binding
+ *     to a card value; every record's property ids are unique; each solver key a property names is a solver.
+ *  2. Built-in laws: each equals the solver's own function, at temperatures across its range (water: drying.js
+ *     drMuWater, drPsat, drLatent; air: drying.js drAir; argon: furnace-mp.js fmpArgon; graphite: fmpCg).
+ *  3. Built-in constants: equal to the solvers' (aluminium's in stack-mp.js, water's c_p in drying.js, stack-mp.js and
+ *     furnace-mp.js, the plates' E in furnace.js, argon's c_p and Pr, the web's ν₁₃ and the gel's ν in film.js).
+ *  4. Stiffness: the hub's transversely isotropic C (matlib) gives Peel and wind's plane-strain block (film.js
+ *     fmTransIso: C11, C13, C33, C55) for the film card's values and for the web's; positive definite.
+ *  5. Tensors: the conduction and vapour-permeability tensors in the material frame are the cards' two values on the
+ *     diagonal, as the solvers take them (k_zz = kS through the film; kIn along it).
+ *  6. Provenance: each kind maps to its flag; a kind is kept only while it matches its flag.
+ */
+const vm = require('vm'), fs = require('fs');
+let fails = 0;
+const check = (name, ok, info = '') => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); };
+const rel = (a, b) => Math.abs(a - b) / Math.max(1e-300, Math.abs(b));
+const fmt = x => (typeof x === 'number' ? x.toExponential(2) : String(x));
+
+// the page's scripts the records need, in one context (as the page loads them), with the solvers' own constants out
+const ctx = vm.createContext({ console, Math, JSON, Object, Array, Number, String, Set, Map, Float64Array, Infinity, NaN, isFinite, parseFloat });
+const load = (f, extra = '') => vm.runInContext(fs.readFileSync(f, 'utf8') + '\n' + extra, ctx, { filename: f });
+load('materials.js'); load('matlib.js');
+load('drying.js', ';this.__dr = { DR_CL, DR_IF97, DR_MA, DR_R, drAir, drMuWater, drPsat, drLatent };');
+load('furnace.js', ';this.__fu = { FU_EPL };');
+load('mathub.js', ';this.__hub = { HUB_RECORDS, HUB_IFACES, HUB_PHYS, HUB_CARDS, HUB_LAW, HUB_CONST, HUB_PROV, hubProvOf, hubLawAt, hubStiff, hubT2: typeof hubT2 === "function" ? hubT2 : null };');
+const H = ctx.__hub, DRc = ctx.__dr, FUc = ctx.__fu, L = require('./matlib.js');
+const SM = require('./stack-mp.js'), FM = require('./furnace-mp.js'), FL = require('./film.js');
+const smpSrc = fs.readFileSync('stack-mp.js', 'utf8'), fmpSrc = fs.readFileSync('furnace-mp.js', 'utf8'), filmSrc = fs.readFileSync('film.js', 'utf8');
+const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g => g.props);
+
+// 1. bindings
+{
+  const seen = new Map();
+  for (const r of all) for (const p of props(r)) if (p.b.t === 'card') { const k = `${p.b.card}.${p.b.k}`; seen.set(k, [...(seen.get(k) || []), `${r.id}.${p.id}`]); }
+  const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`));
+  const missing = cards.filter(k => !seen.has(k)), twice = [...seen].filter(([, v]) => v.length > 1), extra = [...seen.keys()].filter(k => !cards.includes(k));
+  check(`bindings: the ${cards.length} card values each a property of exactly one record`, cards.length === 99 && !missing.length && !twice.length && !extra.length,
+    `missing ${missing.join(', ') || 'none'}; twice ${twice.map(([k, v]) => `${k} (${v.join(', ')})`).join('; ') || 'none'}; unknown ${extra.join(', ') || 'none'}`);
+  const dup = all.filter(r => new Set(props(r).map(p => p.id)).size !== props(r).length).map(r => r.id);
+  check('  property ids unique within each record; record ids unique', !dup.length && new Set(all.map(r => r.id)).size === all.length, dup.join(', '));
+  const phys = new Set(H.HUB_PHYS.map(p => p.k)), badPh = all.flatMap(r => props(r).flatMap(p => p.phys.filter(k => !phys.has(k)).map(k => `${r.id}.${p.id}: ${k}`)));
+  check('  every solver a property names is one of the solvers', !badPh.length, badPh.join(', '));
+  const inp = new Set(all.flatMap(r => props(r).filter(p => p.b.t === 'inp').map(p => p.b.k)));
+  check('  the inputs bar\'s material values are all in a record: μ, K, η0, n, τy, γ, θ, θw, Δθ, the fibre\'s thickness', ['mu', 'K', 'eta0', 'n', 'ty', 'g', 'th', 'thw', 'dth', 'tf'].every(k => inp.has(k)), [...inp].join(' '));
+  const tens = all.flatMap(r => props(r).filter(p => p.b.t === 'tensor').map(p => [r, p])), okT = tens.every(([r, p]) => [p.b.axial, p.b.trans].every(k => props(r).some(q => q.b.t === 'card' && q.b.k === k)));
+  check(`  each tensor's two components are properties of its own record (${tens.length} tensors)`, tens.length === 3 && okT);
+}
+
+// 2. built-in laws = the solvers' functions
+{
+  const cases = [
+    ['waterMu', T => DRc.drMuWater(T)], ['waterPsat', T => DRc.drPsat(T)], ['waterL', T => DRc.drLatent(T)],
+    ['airMu', T => DRc.drAir(T, 101325).mu], ['airK', T => DRc.drAir(T, 101325).k], ['airRho', T => DRc.drAir(T, 101325).rho], ['airDv', T => DRc.drAir(T, 101325).Dv],
+    ['arMu', T => FM.fmpArgon(T).mu], ['arRho', T => FM.fmpArgon(T).rho], ['gCp', T => FM.fmpCg(T)],
+  ];
+  for (const [id, f] of cases) {
+    const Lw = H.HUB_LAW[id], n = 25; let e = 0;
+    for (let i = 0; i <= n; i++) { const T = Lw.T[0] + (Lw.T[1] - Lw.T[0]) * i / n; e = Math.max(e, rel(H.hubLawAt(id, T), f(T))); }
+    check(`built-in law ${id} = ${Lw.solver} over ${Lw.T[0]}–${Lw.T[1]} °C`, e < 1e-14, `max rel ${fmt(e)}`);
+  }
+  let e = 0;
+  for (const T of [20, 500, 1500, 2800]) e = Math.max(e, rel(H.hubLawAt('arMu', T) * H.HUB_CONST.arCp.v / H.HUB_CONST.arPr.v, FM.fmpArgon(T).k));
+  check('  argon\'s k = μ(T) c_p / Pr = fmpArgon\'s k', e < 1e-14, fmt(e));
+  check('  the gas constant and air\'s molar mass the drying\'s (ideal gas)', L.ML_CONST.R === DRc.DR_R && H.HUB_LAW.airRho.q.params.M === DRc.DR_MA);
+  check('  water\'s saturation line: IAPWS-IF97 coefficients the drying\'s own array', H.HUB_LAW.waterPsat.q.params.n === DRc.DR_IF97 || JSON.stringify(H.HUB_LAW.waterPsat.q.params.n) === JSON.stringify(DRc.DR_IF97));
+}
+
+// 3. built-in constants = the solvers'
+{
+  const C = H.HUB_CONST;
+  check('constants: aluminium k, ρ, c = stack-mp.js SMP_AL', C.alK.v === SM.SMP_AL.k && C.alRho.v === SM.SMP_AL.rho && C.alC.v === SM.SMP_AL.c, JSON.stringify(SM.SMP_AL));
+  const cw = [DRc.DR_CL, +/const SMP_CW = ([\d.]+)/.exec(smpSrc)[1], +/FMP_CW = ([\d.]+)/.exec(fmpSrc)[1]];
+  check('  water\'s c_p = drying.js DR_CL = stack-mp.js SMP_CW = furnace-mp.js FMP_CW', cw.every(v => v === C.waterCp.v), cw.join(', '));
+  check('  the holder plates\' E = furnace.js FU_EPL', C.plE.v * 1e9 === FUc.FU_EPL, `${FUc.FU_EPL}`);
+  const ar = FM.fmpArgon(300);
+  check('  argon c_p and Pr = fmpArgon\'s', C.arCp.v === ar.cp && C.arPr.v === ar.Pr);
+  check('  air c_p = drAir\'s', C.airCp.v === DRc.drAir(20, 101325).cp);
+  const web = /fmTransIso\(W\.Ew, W\.Ew \* W\.soft, W\.nuw, ([\d.]+), W\.Ew \* W\.soft \/ 2\)/.exec(filmSrc), gel = /fmIso\(o\.gel\.Eg, ([\d.]+)\)/.exec(filmSrc);
+  check('  the web\'s ν₁₃ and G₁₃ = E₁ soft / 2, the gel\'s ν: film.js\'s own (its source)', web && +web[1] === C.webNupt.v && gel && +gel[1] === C.gelNu.v, `${web && web[1]}, ${gel && gel[1]}`);
+}
+
+// 4. stiffness = Peel and wind's plane-strain block
+{
+  ctx.MAT = ctx.matDefaults ? vm.runInContext('matDefaults()', ctx) : null;
+  vm.runInContext('MAT = matDefaults()', ctx);
+  const f = vm.runInContext('MAT.film', ctx), v = k => f[k].v;
+  const C = H.hubStiff('go'), ref = FL.fmTransIso(v('Ep') * 1e9, v('Et') * 1e9, v('nup'), v('nupt'), v('Gpt') * 1e9);
+  const e = Math.max(rel(C[0][0], ref.C11), rel(C[0][2], ref.C13), rel(C[2][2], ref.C33), rel(C[4][4], ref.C55));
+  check('stiffness: the dried film\'s C (matlib, transversely isotropic about its normal) gives film.js\'s C11, C13, C33, C55', e < 1e-12, `max rel ${fmt(e)}; C11 ${fmt(C[0][0])} Pa`);
+  const W = H.hubStiff('web'), rw = FL.fmTransIso(v('Ew') * 1e9, v('Ew') * v('soft') * 1e9, v('nuw'), 0.1, v('Ew') * v('soft') * 1e9 / 2);
+  const ew = Math.max(rel(W[0][0], rw.C11), rel(W[0][2], rw.C13), rel(W[2][2], rw.C33), rel(W[4][4], rw.C55));
+  check('  the web\'s the same (its ν₁₃ and G₁₃ the solver\'s)', ew < 1e-12, fmt(ew));
+  check('  both positive definite (Cholesky)', !L.mlCCheck(C).length && !L.mlCCheck(W).length);
+  const S = L.mlInv6(C), Ep = 1 / S[0][0], Et = 1 / S[2][2], nup = -S[0][1] * Ep, nupt = -S[0][2] * Ep, Gpt = 1 / S[4][4];
+  const eb = Math.max(rel(Ep, v('Ep') * 1e9), rel(Et, v('Et') * 1e9), rel(nup, v('nup')), rel(nupt, v('nupt')), rel(Gpt, v('Gpt') * 1e9));
+  check('  its compliance gives back the card\'s moduli (E₁, E₃, ν₁₂, ν₁₃ with ε₃ = −ν₁₃ σ₁/E₁, G₁₃)', eb < 1e-12, fmt(eb));
+}
+
+// 5. tensors
+{
+  const rec = H.HUB_RECORDS.find(r => r.id === 'gofilm'), k = props(rec).find(p => p.id === 'k'), Kv = props(rec).find(p => p.id === 'Kv');
+  const d = vm.runInContext('MAT.dry', ctx), fl = vm.runInContext('MAT.film', ctx);
+  const V = vm.runInContext('hubT2', ctx)(k), W = vm.runInContext('hubT2', ctx)(Kv);
+  check('tensors: the film\'s conduction in its frame diag(kIn, kIn, kS), no off-diagonal (what the drying, MP-1 and MP-2 take)', V[0] === d.kIn.v && V[1] === d.kIn.v && V[2] === d.kS.v && V.slice(3).every(x => x === 0), JSON.stringify(V));
+  check('  its vapour permeability diag(stackK × 10⁻⁷, …, skinK × 10⁻¹²) kg/(m·s·Pa) (MP-1\'s K along, Kthr through)', W[0] === fl.stackK.v * 1e-7 && W[2] === d.skinK.v * 1e-12, JSON.stringify(W));
+  const P = L.mlT2Proj(V, [0, 2]);
+  check('  projected to a 2D section (x and the thickness): diag(kIn, kS), the solvers\' fast path', Array.isArray(P) && P[0] === d.kIn.v && P[1] === d.kS.v, JSON.stringify(P));
+}
+
+// 6. provenance
+{
+  const P = H.HUB_PROV, ok = Object.entries(P).every(([, q]) => ['given', 'assumed', 'measured'].includes(q.flag));
+  check('provenance: each kind maps to a card flag (measured, fitted → measured; from you, datasheet → given; published, assumed → assumed)', ok && P.fitted.flag === 'measured' && P.supplier.flag === 'given' && P.published.flag === 'assumed');
+  check('  a kind kept only while it matches its flag; else the flag\'s own', H.hubProvOf({ flag: 'assumed', prov: 'published' }) === 'published' && H.hubProvOf({ flag: 'measured', prov: 'published' }) === 'measured'
+    && H.hubProvOf({ flag: 'given' }) === 'user' && H.hubProvOf({ flag: 'measured', prov: 'fitted' }) === 'fitted' && H.hubProvOf({ flag: 'assumed', prov: 'bogus' }) === 'assumed');
+}
+console.log(fails ? `${fails} FAILED` : 'ALL PASS');
+process.exitCode = fails ? 1 : 0;
