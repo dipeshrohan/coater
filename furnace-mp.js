@@ -102,35 +102,48 @@ function fmpNat(kind, Ts, Tg, L, p) {
  * Returns { dim, series, snaps, summary, follow, energy { faces, reaction, between (the heat given up between the
  * runs), held (= faces + reaction + between, step by step) }, mesh, ms }.
  */
-function fmpStack(o) {
-  fmpUse(o.props);
-  const t0 = Date.now(), dim = o.dim, N = Math.max(1, Math.round(o.N)), h = o.h, tp = o.tp, go = o.go, P = o.paper;
+/**
+ * The holder's domain and mesh (MP-W: the solve's and the page's drawing alike): x (and y) the piece then the paper's
+ * margin, graded to the piece's edge; z the plates and the stack (one layered medium graded to its faces, or each piece
+ * and paper resolved). o: fmpStack's (dim, Lx, Ly, margin, N, h, tp, ends, plateT, plates, resolve, sealY, mesh).
+ * Returns { hx, hy, mg, Hs (the stack's height), plT (a plate's, 0 without), H, zi, nPap, nStackSeg, layers, xAxis, yAxis,
+ * zAxis, axes (mpMesh's), mat (ijk, seg) → 0 the plates, 1 the stack over the pieces, 2 over the margin (resolved: 3 a
+ * piece, 4 a paper, 5 a gap in the margin), and the mesh's numbers }.
+ */
+function fmpAxes(o) {
+  const dim = o.dim, N = Math.max(1, Math.round(o.N)), h = o.h, tp = o.tp;
   const hx = o.Lx / 2, hy = o.Ly / 2, mg = o.margin || 0, ms = o.mesh || {}, nx = ms.nx || 8, ny = ms.ny || nx, nm = ms.nm || 2;
-  const grade = ms.grade || 4, nPl = ms.nPlate || 3, iso = !!o.isothermal, resolve = !!o.resolve && dim > 1;
+  const grade = ms.grade || 4, nPl = ms.nPlate || 3, resolve = !!o.resolve && dim > 1;
   const plates = o.plates !== false && dim > 1, onPl = (o.ends || 'plates') === 'plates';
   const nPap = onPl ? N - 1 : N + 1, Hs = N * h + nPap * tp, plT = plates ? o.plateT : 0, H = Hs + 2 * plT, zi = dim - 1;
-  const plT0 = o.plateT || 0;   // (a plate's thickness, for its gas)
-  const fGO = N * h / Hs, fP = nPap * tp / Hs, nC = 2 * N;   // (the GO's and the papers' shares of the stack; its contacts)
-  const Rc = resolve ? 0 : (o.Rc || 0), pa = (o.furnace && o.furnace.p) || 101325;
-  const epsF = o.furnace ? o.furnace.eps : 0.8, useGas = !(o.furnace && o.furnace.gas === false);
-  // ---- the mesh: x (and y) the piece then the margin; z the plates and the stack (layered, or each layer resolved) ----
   const xAxis = [{ L: hx, n: nx, grade, end: 'hi' }].concat(mg > 0 ? [{ L: mg, n: nm }] : []);
   const yAxis = [{ L: hy, n: ny, grade, end: 'hi' }].concat(mg > 0 && !o.sealY ? [{ L: mg, n: nm }] : []);   // (sealed: the stack long across, no margin there)
   // (resolved: from the bottom, [paper] piece paper piece … [paper]; each layer one element through)
   const layers = [];
   if (resolve) { if (!onPl) layers.push('P'); for (let i = 0; i < N; i++) { layers.push('G'); if (i < N - 1 || !onPl) layers.push('P'); } }
-  const stackZ = resolve ? layers.map(k => ({ L: k === 'G' ? h : tp, n: 1 })) : [{ L: Hs, n: ms.nz || Math.min(24, Math.max(4, 2 * Math.ceil(Math.sqrt(N)))), grade: ms.gradeZ || 2, end: 'both' }];
+  const nz = ms.nz || Math.min(24, Math.max(4, 2 * Math.ceil(Math.sqrt(N))));
+  const stackZ = resolve ? layers.map(k => ({ L: k === 'G' ? h : tp, n: 1 })) : [{ L: Hs, n: nz, grade: ms.gradeZ || 2, end: 'both' }];
   const nStackSeg = stackZ.length, zAxis = plates ? [{ L: plT, n: nPl }, ...stackZ, { L: plT, n: nPl }] : stackZ;
   const axes = dim === 1 ? [xAxis] : dim === 2 ? [xAxis, zAxis] : [xAxis, yAxis, zAxis];
-  // (materials: 0 the plates; 1 the stack over the pieces; 2 over the margin (papers and the gaps between them);
-  //  resolved: 3 a piece, 4 a paper, 5 a gap in the margin)
-  const M = FMP.mpMesh({ dim, p: 1, axes, mat: (ijk, seg) => {
+  const mat = (ijk, seg) => {
     const zs = dim === 1 ? (plates ? 1 : 0) : seg[zi], s = plates ? zs - 1 : zs;
     if (s < 0 || s >= nStackSeg) return 0;
     const margin = seg[0] === 1 || (dim === 3 && seg[1] === 1);
     if (!resolve) return margin ? 2 : 1;
     return layers[s] === 'P' ? 4 : margin ? 5 : 3;
-  } });
+  };
+  return { hx, hy, mg, ms, nx, ny, nm, nz, grade, nPl, resolve, plates, onPl, nPap, Hs, plT, H, zi, nStackSeg, layers, xAxis, yAxis, zAxis, axes, mat };
+}
+function fmpStack(o) {
+  fmpUse(o.props);
+  const t0 = Date.now(), dim = o.dim, N = Math.max(1, Math.round(o.N)), h = o.h, tp = o.tp, go = o.go, P = o.paper;
+  const { hx, hy, mg, ms, nx, ny, nm, grade, nPl, resolve, plates, onPl, nPap, Hs, plT, H, zi, layers, xAxis, yAxis, axes, mat } = fmpAxes(o);
+  const iso = !!o.isothermal;
+  const plT0 = o.plateT || 0;   // (a plate's thickness, for its gas)
+  const fGO = N * h / Hs, fP = nPap * tp / Hs, nC = 2 * N;   // (the GO's and the papers' shares of the stack; its contacts)
+  const Rc = resolve ? 0 : (o.Rc || 0), pa = (o.furnace && o.furnace.p) || 101325;
+  const epsF = o.furnace ? o.furnace.eps : 0.8, useGas = !(o.furnace && o.furnace.gas === false);
+  const M = FMP.mpMesh({ dim, p: 1, axes, mat });
   const zOf = x => (dim === 1 ? plT + Hs / 2 : x[zi]);
   // ---- the materials: conductivities (along, through), enthalpy per volume ----
   const kAr = T => fmpArgon(T, pa).k, epsGap = epsF;
@@ -506,4 +519,4 @@ function fmpSummary(series, follow, o, gasPk) {
   return { runs, labileMid: half('aM'), labileEdge: half('aE'), labileRef, gas: follow.map((i, j) => ({ i, ...gasPk[j] })), pull, pullAt, mid };
 }
 
-if (typeof module !== 'undefined') module.exports = { fmpStack, fmpSummary, fmpGasLevel, fmpSlabPeak, fmpCg, fmpHg, fmpArgon, fmpNat, fmpUse, FMP_PROPS };
+if (typeof module !== 'undefined') module.exports = { fmpStack, fmpAxes, fmpSummary, fmpGasLevel, fmpSlabPeak, fmpCg, fmpHg, fmpArgon, fmpNat, fmpUse, FMP_PROPS };

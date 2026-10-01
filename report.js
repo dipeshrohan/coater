@@ -90,14 +90,16 @@ function repFigure(target, caption, flag = '') {
 }
 /** A multiphysics step's chart (MP-1, MP-2): solved for the inputs as they are, in the dimension shown; any other chart: true. */
 function repMpSolved(cv) {
-  const s = cv.closest('#mpSec, #fmpSec');
+  const s = cv.closest('#mpSec, #fmpSec, #dmpSec');
   if (!s) return true;
+  if (s.id === 'dmpSec') return typeof dmpCurrent === 'function' && !!dmpCurrent(DMS.dim);
   return s.id === 'mpSec' ? typeof mpCurrent === 'function' && !!mpCurrent(MPS.dim) : typeof fmpCurrent === 'function' && !!fmpCurrent(FMS.dim);
 }
 /** Which multiphysics a chart is (its captions are the page's: "Temperatures" in both), before its caption; '' for any other. */
 function repMpName(cv) {
-  const s = cv && cv.closest('#mpSec, #fmpSec');
+  const s = cv && cv.closest('#mpSec, #fmpSec, #dmpSec');
   if (!s) return '';
+  if (s.id === 'dmpSec') return `The drying's multiphysics (MP-5, ${DMP_DIMS[DMS.dim]}) · `;
   return s.id === 'mpSec' ? `The stack's multiphysics (MP-1, ${MP_DIMS[MPS.dim]}) · ` : `The furnace's multiphysics (MP-2, ${MP_DIMS[FMS.dim]}, ${FURN_RUNS[FMS.run]}) · `;
 }
 /** The Numerics panel as a table (NUM-1): each stage, its method and its setting, Automatic resolved. */
@@ -222,6 +224,20 @@ async function repProcessAll() {
     }
   }
   if (keepState) { SHEET.state = keepState; sheetRender(); }
+  // the drying's multiphysics (MP-5): each dimension solved for the inputs as they are, its answers side by side
+  let dmpRep = '';
+  if (typeof dmpCurrent === 'function') {
+    const dims = [1, 2, 3].filter(d => dmpCurrent(d));
+    if (dims.length) {
+      const S = d => DMS.res[d].summary, m = v => (v == null ? '—' : `${v.toFixed(2)} m`);
+      const rows = [['Skin forms (the film\'s middle)', d => m(S(d).mid.skin)], ['Dry (the film\'s middle)', d => (S(d).mid.dry != null ? m(S(d).mid.dry) : 'not in the oven')],
+        ['Water at the exit (the middle)', d => `${S(d).mid.waterPct.toFixed(1)} % of its GO`], ['Film\'s ends at the exit', d => (S(d).endL ? `${S(d).endL.waterPct.toFixed(1)} %` : '—')],
+        ['Air under the film', d => (d === 1 ? 'up through the web at the zone\'s speed' : `${(S(d).under * 1000).toFixed(2)} mm/s`)], ['Hottest film', d => `${S(d).Tmax.toFixed(1)} °C`],
+        ['Drying stress, largest', d => (DMS.res[d].stress && DMS.res[d].stress.peak != null ? `${(DMS.res[d].stress.peak / 1e6).toFixed(2)} MPa` : 'none')], ['Solved in', d => `${(DMS.res[d].ms / 1000).toFixed(1)} s`]];
+      dmpRep = `<h4>The drying's multiphysics (MP-5)</h4><p class="lede">${repEsc(`Heat, water, the oven's air through the web and the drying stress solved together; the water leaving ${dmpWhere() === 'both' ? 'from the top and the underside' : 'from the top only'}.`)}</p>`
+        + repRows(rows.map(([l, f]) => [repEsc(l), ...dims.map(d => repEsc(f(d)))]), ['', ...dims.map(d => DMP_DIMS[d])]);
+    }
+  }
   // the stack's multiphysics (MP-1): each dimension solved for the inputs as they are, its answers side by side
   if (typeof mpCurrent === 'function') {
     const dims = [1, 2, 3].filter(d => mpCurrent(d)), mid = MP_N / 2;
@@ -282,7 +298,7 @@ async function repProcessAll() {
     }
   }
   return '<h3>The chain</h3>' + repRows(chain.map(([a, b, c]) => [a, b, c]), ['Stage', 'Where it stands', '']) + html
-    + drying
+    + drying + dmpRep
     + film + piece + furn
     + (t ? '<h3>The mass balance at each location</h3>' + repTable(t) + (note ? `<p class="lede">${repEsc(cleanText(note))}</p>` : '') : '')
     + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1])), 'Above the film']) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min.`)}</p>`;

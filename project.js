@@ -88,7 +88,7 @@ function setInput(k, v) {
 function projStopAll() {
   cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
   m3StudyStop(true); acc3Stop(); c3dStop();
-  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop();
+  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop();
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
 function projRunning() {
@@ -259,6 +259,18 @@ function applyOven(o, cfdSetup) {
   if (pl) { OVEN.peel.shelf = OVEN_SHELVES[pl.shelf] ? pl.shelf : OVEN_PEEL_DEFAULT.shelf; OVEN.peel.shelfSet = typeof pl.shelfSet === 'boolean' ? pl.shelfSet : OVEN_PEEL_DEFAULT.shelfSet; }
   // (the furnace, GO-5: a project from before has none -- the defaults, assumed)
   OVEN.furn = applyFurn(o && o.furn);
+  // (the stages' multiphysics mesh and time settings, MP-W: numbers only, each checked against its range when used;
+  //  the drying's (MP-5) also where its water leaves)
+  OVEN.mp = {};
+  if (o && o.mp && typeof o.mp === 'object') for (const [st, D] of Object.entries(o.mp)) {
+    if (!D || typeof D !== 'object' || !['stack', 'furn', 'dry'].includes(st)) continue;
+    if (st === 'dry' && D.where === 'both') (OVEN.mp.dry = OVEN.mp.dry || {}).where = 'both';
+    for (const [dim, q] of Object.entries(D)) {
+      if (!['1', '2', '3'].includes(dim) || !q || typeof q !== 'object') continue;
+      const keep = Object.fromEntries(Object.entries(q).filter(([, v]) => Number.isFinite(v)));
+      if (Object.keys(keep).length) (OVEN.mp[st] = OVEN.mp[st] || {})[dim] = keep;
+    }
+  }
   if (o && Array.isArray(o.zones) && o.zones.length) { OVEN.zones = o.zones.slice(0, OVEN_MAX_ZONES).map(z => ({ ...OVEN_ZONE_DEFAULT, ...z })); return; }
   const c = cfdSetup || {};
   for (const z of OVEN.zones) for (const k of ['airU', 'airT', 'plenum']) if (Number.isFinite(c[k])) z[k] = c[k];
@@ -320,7 +332,7 @@ function applyProject(p) {
   tab = Number.isInteger(p.view && p.view.module) && p.view.module < TABS.length ? p.view.module : tab;
   // (the stage and part it was on; a project from before WF-2 opens the Process view on its stage as it is)
   const pg = p.view && NAV[p.view.page];
-  if (pg && pg.v === tab) { if (pg.st) PROC.stage = pg.st; if (pg.fv) FILM.view = pg.fv; if (pg.fp) FURN.part = pg.fp; }
+  if (pg && pg.v === tab) { if (pg.st) PROC.stage = pg.st; if (pg.fv) FILM.view = pg.fv; if (pg.fp) FURN.part = pg.fp; if (pg.v === 12) SWB_DIM[procStepKey()] = pg.md || 0; }
   render();
   undoReset();
 }

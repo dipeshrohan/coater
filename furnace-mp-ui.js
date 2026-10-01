@@ -37,10 +37,20 @@ function fmpInputs(dim) {
     runs: fo.runs, chem: fo.chem, stages: fo.stages, Hr: v('Hr') * 1e6, furnace: { eps: v('epsF'), gas: true },
     gas: { Dgal: fo.Dgal, Dmin: fo.Dmin, dIn: fo.dIn, sigZ: fo.sigZ, plateP: fo.plateP },
     plane: { Ep: fo.plane.Ep, nu: fo.plane.nu, bO: fo.plane.bO, bG: fo.plane.bG, am: fo.plane.am },
-    mesh: dim === 3 ? { nx: 5, ny: 5, nm: 1, nz: 6, nPlate: 1 } : { nx: 8, nm: 2, nz: 12, nPlate: 2 },
-    dT: dim === 3 ? 4 : 2, dTHigh: dim === 3 ? 20 : 10, jumpMax: dim === 3 ? 200 : 100, tol: 1e-7, follow: [0, mid, N - 1], snapUneven: true, snapTimes: fmpSnapTimes(fo.runs),
+    ...fmpMesh(dim), tol: 1e-7, follow: [0, mid, N - 1], snapUneven: true, snapTimes: fmpSnapTimes(fo.runs),
     ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}) };
 }
+/** The holder's mesh and the program's steps for a dimension (MP-W: the Mesh step's settings, editable; at their defaults
+ *  the solve is as before MP-W, to the last bit): the elements along the piece (and across, 3D), in the paper's margin,
+ *  through the stack and the plates, their grading; the program's steps (K) below and above 400 °C, the largest. */
+function fmpMesh(dim) {
+  const m = typeof swbSettings === 'function' ? swbSettings(SWB_ADAPT['furn:runs'], dim) : FMP_MESH_DEF[dim];
+  const mesh = dim === 1 ? { nx: m.nx, nm: m.nm, grade: m.grade } : dim === 2 ? { nx: m.nx, nm: m.nm, nz: m.nz, nPlate: m.nPlate, grade: m.grade } : { nx: m.nx, ny: m.ny, nm: m.nm, nz: m.nz, nPlate: m.nPlate, grade: m.grade };
+  return { mesh, dT: m.dT, dTHigh: m.dTHigh, jumpMax: m.jumpMax };
+}
+/** The defaults: the solves' as they were before MP-W. */
+const FMP_MESH_DEF = { 1: { nx: 8, nm: 2, grade: 4, dT: 2, dTHigh: 10, jumpMax: 100 }, 2: { nx: 8, nm: 2, nz: 12, nPlate: 2, grade: 4, dT: 2, dTHigh: 10, jumpMax: 100 },
+  3: { nx: 5, ny: 5, nm: 1, nz: 6, nPlate: 1, grade: 4, dT: 4, dTHigh: 20, jumpMax: 200 } };
 const fmpKeyNow = dim => { const o = fmpInputs(dim); return o ? JSON.stringify(o) : null; };
 const fmpCurrent = dim => !!FMS.res[dim] && FMS.key[dim] === fmpKeyNow(dim);
 /** The followed pieces' names (0 the bottom). */
@@ -55,18 +65,18 @@ function fmpRequest(dim) {
   FMS.busy = true; FMS.bdim = dim; FMS.pending = key; FMS.prog = null; FMS.again = null;
   const id = ++FMS.id;
   if (!FMS.worker) FMS.worker = makeWorker('cfd-mp-worker.js');
-  const done = () => { FMS.busy = false; FMS.pending = null; FMS.bdim = null; if (FMS.again) { const a = FMS.again; FMS.again = null; fmpRequest(a); } fmpRender(); };
+  const done = () => { FMS.busy = false; FMS.pending = null; FMS.bdim = null; if (FMS.again) { const a = FMS.again; FMS.again = null; fmpRequest(a); } if (typeof swbRefresh === 'function' && swbRefresh('furn:runs')) return; fmpRender(); };
   FMS.worker.onmessage = e => {
     const m = e.data;
     if (m.id !== id) return;
-    if (m.progress) { FMS.prog = m.progress; fmpStatus(); return; }
+    if (m.progress) { FMS.prog = m.progress; if (typeof swbOn === 'function' && swbOn('furn:runs')) swbProgress(); else fmpStatus(); return; }
     FMS.key[dim] = key;
     if (m.ok) { FMS.res[dim] = m.res; FMS.error[dim] = null; } else { FMS.res[dim] = null; FMS.error[dim] = m.error; }
     done();
   };
   FMS.worker.onerror = ev => { FMS.key[dim] = key; FMS.res[dim] = null; FMS.error[dim] = ev.message || 'the multiphysics worker failed'; FMS.worker = null; done(); };
   FMS.worker.postMessage({ id, kind: 'furnace', o });
-  fmpStatus();
+  if (!(typeof swbOn === 'function' && swbOn('furn:runs'))) fmpStatus();
 }
 /** Stop the multiphysics solve (New, Open): its worker ended, what was asked next dropped. */
 function fmpStop() {
@@ -84,10 +94,10 @@ async function fmpWait(dim = FMS.dim) {
 }
 
 // ---- the page ----
-function fmpHTML() {
+function fmpHTML(bench = false) {
   const pane = (id, icon, title, aria) => `<figure class="pane mp-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
-  return `<section class="mp-sec" id="fmpSec" aria-labelledby="fmpH">
-    <header class="mp-bar">
+  return `<section class="mp-sec${bench ? ' mp-bench' : ''}" id="fmpSec" ${bench ? 'aria-label="The furnace\'s multiphysics: its answers"' : 'aria-labelledby="fmpH"'}>
+    ${bench ? '' : `<header class="mp-bar">
       <h4 id="fmpH">${uiBadge('mesh')}Multiphysics solver <small>heat · chemistry · gas · stress, solved together</small></h4>
       <div class="seg" role="tablist" aria-label="The solver's dimension" id="fmpDim">${Object.entries(MP_DIMS).map(([k, t]) => `<button type="button" role="tab" data-fmdim="${k}" aria-selected="${+k === FMS.dim}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span>
@@ -96,7 +106,7 @@ function fmpHTML() {
       <button type="button" class="btn btn-secondary btn-sm" id="fmpCsv">Export CSV</button>
     </header>
     <div class="mp-prog" id="fmpProg" hidden><span class="mp-prog-bar"><i id="fmpProgFill"></i></span><span id="fmpProgT"></span></div>
-    <div class="mp-model" id="fmpModel"></div>
+    <div class="mp-model" id="fmpModel"></div>`}
     <div class="stats mp-stats" id="fmpStats"></div>
     <div class="mp-runbar"><span class="mp-runbar-l">The charts for</span><span class="seg seg-sm" role="tablist" aria-label="Which run the charts show" id="fmpRun">${FURN_RUNS.map((t, r) => `<button type="button" role="tab" data-fmrun="${r}" aria-selected="${r === FMS.run}">${t}</button>`).join('')}</span><span class="fv-why" id="fmpRunWhat"></span></div>
     <div class="dry-grid mp-grid mp-grid2">
@@ -110,6 +120,7 @@ function fmpHTML() {
         <span class="seg seg-sm" role="tablist" aria-label="The field shown" id="fmpField"></span>
         <span class="seg seg-sm" role="tablist" aria-label="When" id="fmpSnap"></span></figcaption>
       <canvas id="fmp5" role="img" aria-label="The field chosen at the moment chosen"></canvas><div class="pane-legend" id="fmp5Lg"></div></figure>
+    ${bench && FMS.dim === 3 ? `<figure class="pane mp-field"><figcaption>${uiBadge(9)}<span id="fmpIsoT">The quarter in 3D</span></figcaption><canvas id="fmpIso" role="img" aria-label="The quarter of the holder in 3D: its temperature on its outer faces at the moment chosen"></canvas><div class="pane-legend" id="fmpIsoLg"></div></figure>` : ''}
     <div class="mp-compare" id="fmpCompare"></div>
   </section>`;
 }
@@ -180,15 +191,15 @@ function fmpRender() {
   sec.querySelectorAll('[data-fmdim]').forEach(b => b.setAttribute('aria-selected', String(+b.dataset.fmdim === FMS.dim)));
   sec.querySelectorAll('[data-fmrun]').forEach(b => b.setAttribute('aria-selected', String(+b.dataset.fmrun === FMS.run)));
   const dim = FMS.dim, o = fmpInputs(dim), model = document.getElementById('fmpModel');
-  if (!o) { model.innerHTML = '<p class="fv-why">After the film and its cut piece are solved (the Film stage).</p>'; fmpClear(); fmpStatus(); return; }
+  if (!o) { if (model) model.innerHTML = '<p class="fv-why">After the film and its cut piece are solved (the Film stage).</p>'; fmpClear(); fmpStatus(); return; }
   if (!fmpCurrent(dim) && dim < 3 && !(FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim))) fmpRequest(dim);
   fmpStatus();
   const r = fmpCurrent(dim) ? FMS.res[dim] : null;
-  model.innerHTML = fmpModelHTML(o, r);
+  if (model) model.innerHTML = fmpModelHTML(o, r);
   if (!r) {
     fmpClear();
     const err = FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim);
-    document.getElementById('fmpStats').innerHTML = err ? `<p class="dry-msg">${pill(`The ${MP_DIMS[dim]} could not be solved: ${dryEsc(FMS.error[dim])}`, 'bad')}</p>` : dim === 3 && !(FMS.busy && FMS.bdim === 3) ? '<p class="fv-why mp-empty">The 3D solves a quarter of the holder through both runs in about two minutes: press Solve.</p>' : '';
+    document.getElementById('fmpStats').innerHTML = err ? `<p class="dry-msg">${pill(`The ${MP_DIMS[dim]} could not be solved: ${dryEsc(FMS.error[dim])}`, 'bad')}</p>` : dim === 3 && !(FMS.busy && FMS.bdim === 3) ? '<p class="fv-why mp-empty">The 3D solves a quarter of the holder through both runs in about two minutes: press Solve.</p>' : FMS.busy && FMS.bdim === dim ? `<p class="fv-why mp-empty">Solving the ${MP_DIMS[dim]}: its answers here when it is done.</p>` : '';
     return;
   }
   fmpTiles(o, r); fmpCharts(o, r); fmpField(); fmpCompare(o, r);
@@ -269,6 +280,7 @@ function fmpField() {
   document.getElementById('fmpField').innerHTML = fields.map(([k, t]) => `<button type="button" role="tab" data-fmfield="${k}" aria-selected="${k === FMS.field}">${t}</button>`).join('');
   document.getElementById('fmpSnap').innerHTML = snaps.map((s, i) => `<button type="button" role="tab" data-fmsnap="${i}" aria-selected="${i === FMS.snap}" title="${FURN_RUNS[s.run]}, ${s.t.toFixed(2)} h in, the program at ${s.Tprog.toFixed(0)} °C">${fmpSnapLabel(s)}</button>`).join('');
   const sn = snaps[FMS.snap], title = document.getElementById('fmpFieldT'), N = OVEN.furn.N;
+  if (dim === 3) fmpIso(r, sn);
   const when = `${FURN_RUNS[sn.run]}, the program at ${sn.Tprog.toFixed(0)} °C${sn.mark === 'over' ? ' (where the stack\'s own heat takes it furthest above the program)' : sn.mark === 'uneven' ? ' (the stack at its most uneven)' : ''}`;
   const bar = (lut, sc, unit, fmtv) => `<div class="mp-cbar"><span class="mp-cbar-scale" style="background:linear-gradient(90deg,${[0, 0.25, 0.5, 0.75, 1].map(t => lutColor(lut, t)).join(',')})"></span><span class="mp-cbar-t"><span>${fmtv(sc.min)}</span><span>${unit}</span><span>${fmtv(sc.max)}</span></span></div>`;
   const xs = r.mesh.x.map(v => v * 1000), Lp = (r.mesh.x[r.mesh.x.length - 1] - (OVEN.furn.margin || 0) / 1000) * 1000;
@@ -351,4 +363,119 @@ function fmpCsv() {
     ...r.follow.flatMap(i => [`${name(i)} middle (°C)`, `${name(i)} edge (°C)`, `${name(i)} oxygen gone, middle`, `${name(i)} gas ÷ hold`, `${name(i)} pull (MPa)`])]];
   for (const q of r.series) rows.push([MP_DIMS[r.dim], q.run + 1, q.t, q.Tprog, q.lo, q.hi, q.oRef, ...r.follow.flatMap(i => { const p = q.pieces[i]; return [p.mid, p.edge, p.oM, p.hold > 0 ? p.middle / p.hold : '', p.pull]; })]);
   downloadCSV(`furnace-multiphysics-${MP_DIMS[r.dim]}-${csvStamp()}.csv`, rows);
+}
+
+/** The quarter in 3D (MP-W): the holder's temperature on its outer faces at the moment chosen. */
+function fmpIso(r, sn) {
+  const cv = document.getElementById('fmpIso'), lg = document.getElementById('fmpIsoLg'), A = SWB_ADAPT['furn:runs'];
+  if (!cv || !sn.T3 || !A) return;
+  const o = fmpInputs(3), vals = sn.T3, f = id => vals[id];
+  const sc = { min: Math.min(...vals), max: Math.max(...vals), levels: 0 }; if (sc.max - sc.min < 1e-3) { sc.min -= 0.5; sc.max += 0.5; }
+  const lut = mpHeatLut();
+  swbDrawIso(cv, A, o, 'results', { f, sc, lut });
+  document.getElementById('fmpIsoT').textContent = 'The quarter in 3D: its temperature on its faces';
+  lg.innerHTML = `<div class="mp-cbar"><span class="mp-cbar-scale" style="background:linear-gradient(90deg,${[0, 0.25, 0.5, 0.75, 1].map(t => lutColor(lut, t)).join(',')})"></span><span class="mp-cbar-t"><span>${sc.min.toFixed(0)}</span><span>°C</span><span>${sc.max.toFixed(0)}</span></span></div><p class="fv-why">${FURN_RUNS[sn.run]}, the program at ${sn.Tprog.toFixed(0)} °C. Seen from the holder's outer corner: its top plate, its two outer sides (the plates, the stack, the papers' margin); its middle, on the mirror planes, behind.</p>`;
+}
+
+// ---- MP-W: the furnace's pages 1D, 2D, 3D (mp-bench-ui.js): its domain, mesh, faces and answers ----
+SWB_ADAPT['furn:runs'] = {
+  key: 'furn', sk: 'furn:runs', t: 'Furnace', ready: 'mp2',
+  S: () => FMS,
+  inputs: dim => fmpInputs(dim),
+  current: dim => fmpCurrent(dim),
+  failed: dim => !!(FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim)),
+  request: dim => fmpRequest(dim),
+  // (1D and 2D solve by themselves when their page is shown, as before; 3D on Solve)
+  auto: dim => { if (dim < 3 && !fmpCurrent(dim) && !(FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim))) fmpRequest(dim); },
+  stop: () => fmpStop(),
+  why: () => 'The furnace is solved after the film and the piece cut from it (Peel and wind, Cutting).',
+  slow3: 'The 3D takes about two minutes',
+  dofs: () => 1, coupled: 'temperature with the chemistry at every node',
+  axes: (dim, o) => fmpAxes(o),
+  axisNames: dim => (dim === 1 ? ['Along the pieces (x)'] : dim === 2 ? ['From the middle out (x)', 'Up the holder (z)'] : ['Along the line (x)', 'Across it (y)', 'Up the holder (z)']),
+  meshFields: dim => [
+    { k: 'nx', t: dim === 3 ? 'Elements along a piece, middle to edge' : 'Elements along a piece, middle to edge', min: 2, max: dim === 3 ? 20 : 60, step: 1, int: true, def: FMP_MESH_DEF[dim].nx },
+    ...(dim === 3 ? [{ k: 'ny', t: 'Elements across a piece, middle to edge', min: 2, max: 20, step: 1, int: true, def: FMP_MESH_DEF[3].ny }] : []),
+    { k: 'nm', t: 'Elements in the paper\'s margin', min: 1, max: 20, step: 1, int: true, def: FMP_MESH_DEF[dim].nm },
+    { k: 'grade', t: 'Grading to the piece\'s edge (largest / smallest)', min: 1, max: 50, step: 0.5, def: FMP_MESH_DEF[dim].grade },
+    ...(dim > 1 ? [{ k: 'nz', t: 'Elements up the stack', min: 2, max: 60, step: 1, int: true, def: FMP_MESH_DEF[dim].nz }, { k: 'nPlate', t: 'Elements through a plate', min: 1, max: 12, step: 1, int: true, def: FMP_MESH_DEF[dim].nPlate }] : []),
+    { k: 'dT', t: 'The program\'s step below 400 °C', u: 'K', min: 0.25, max: 20, step: 0.25, def: FMP_MESH_DEF[dim].dT },
+    { k: 'dTHigh', t: 'The program\'s step above 400 °C', u: 'K', min: 1, max: 100, step: 1, def: FMP_MESH_DEF[dim].dTHigh },
+    { k: 'jumpMax', t: 'Largest change a step (the runaway: smaller steps)', u: 'K', min: 10, max: 1000, step: 10, def: FMP_MESH_DEF[dim].jumpMax },
+  ],
+  meshHow: dim => `Linear elements, the heat stored as enthalpy; the stack one layered medium (its pieces and papers combined), graded toward its faces${dim > 1 ? ', the plates their own elements' : ''}; along the pieces graded toward their edges, where the gas leaves and the heat comes in. The default is the mesh the solve has always used.`,
+  extraMeshes: (dim, o) => `Each followed piece's gas on its own ${dim === 3 ? 'plane' : 'line'} under its paper (the heat's in-plane nodes)${dim > 1 ? `; its stress on its own ${dim === 3 ? 'plane, plane stress' : 'line along it'}` : ''}.`,
+  layout: (dim, o) => {
+    const { hx, hy, mg, Hs, plT, H } = fmpAxes(o), X1 = hx + mg;
+    const plate = { k: 'plate', t: 'Isostatic graphite plates', c: '--graphite' }, stack = { k: 'stack', t: `The stack (${o.N} pieces, their papers)`, c: '--go-film' }, margin = { k: 'margin', t: 'The papers\' margin', c: '#a8a29a' };
+    if (dim === 3) {
+      const P = [{ ...plate, rects: [] }, { ...stack, rects: [] }, { ...margin, rects: [] }];
+      return { parts: P, partAt: (x, y, z) => (z < plT || z > plT + Hs ? P[0] : x > hx || y > hy ? P[2] : P[1]), zLines: [plT, plT + Hs], xLines: [hx], yLines: [hy], kz: 1 };
+    }
+    if (dim === 1) {
+      const t = X1 * 0.07;
+      return { x0: 0, x1: X1, z0: 0, z1: t, zAxis: false, parts: [{ ...stack, rects: [[0, 0, hx, t]], label: { t: 'a piece and its papers' } }, { ...margin, rects: [[hx, 0, X1, t]] }],
+        dims: [{ at: 0, a: 0, b: hx, t: `${swbMm(hx)} mm, the middle to the piece's edge`, off: 22 }, { at: 0, a: hx, b: X1, t: `${swbMm(mg)} mm`, off: 40 }] };
+    }
+    return { x0: 0, x1: X1, z0: 0, z1: H,
+      parts: [{ ...plate, rects: [[0, 0, X1, plT], [0, plT + Hs, X1, H]], label: { t: 'graphite plate' } }, { ...stack, rects: [[0, plT, hx, plT + Hs]], layers: { n: o.N }, label: { t: `${o.N} pieces, ${o.ends === 'plates' ? o.N - 1 : o.N + 1} papers` } }, { ...margin, rects: [[hx, plT, X1, plT + Hs]] }],
+      bands: [{ z0: 0, z1: plT, share: 0.2 }, { z0: plT, z1: plT + Hs, share: 0.6 }, { z0: plT + Hs, z1: H, share: 0.2 }],
+      mirrors: [{ x0: 0, z0: 0, x1: 0, z1: H }],
+      dims: [{ at: 0, a: 0, b: hx, t: `${swbMm(hx)} mm, the middle to the piece's edge`, off: 22 }, { v: true, at: 0, a: plT, b: plT + Hs, t: `${swbMm(Hs)} mm`, off: -14 }, { v: true, at: 0, a: 0, b: plT, t: `${swbMm(plT)} mm`, off: -14 }] };
+  },
+  domain: (dim, o) => ({ 1: 'the line along the pieces at the stack\'s middle height, from a piece\'s middle to its paper\'s edge', 2: 'a section through the holder from its middle to its side, the stack taken long across', 3: 'a quarter of the holder, on its two mirror planes' }[dim]),
+  domainShort: (dim, o) => { const { hx, hy, mg, H } = fmpAxes(o); return dim === 1 ? `${swbMm(hx + mg)} mm along a piece` : dim === 2 ? `${swbMm(hx + mg)} × ${swbMm(H)} mm` : `${swbMm(hx + mg)} × ${swbMm(hy + mg)} × ${swbMm(H)} mm`; },
+  parts: (dim, o) => {
+    const { hx, mg, Hs, plT, nPap } = fmpAxes(o), f = MAT.furn;
+    return [{ t: 'Pieces', c: '--go-film', mat: 'Dried GO film', rec: 'gofilm', size: `${o.N} × ${swbMm(o.h)} mm, ${swbMm(o.Lx)} × ${swbMm(o.Ly)} mm`, how: 'in the stack, combined with the papers as layers' },
+      { t: 'Papers', c: '#a8a29a', mat: 'Graphite paper', rec: 'paper', size: `${nPap} × ${swbMm(o.tp)} mm, ${swbMm(mg)} mm larger all round`, how: 'in the stack; alone in the margin' },
+      ...(dim > 1 ? [{ t: 'Plates', c: '--graphite', mat: 'Isostatic graphite', rec: 'plate', size: `2 × ${swbMm(plT)} mm, the papers' size`, how: 'their own elements' }] : []),
+      { t: 'The furnace\'s gas', c: '#7048e8', mat: 'Argon', rec: 'argon', size: `at ${(101325 / 1000).toFixed(0)} kPa`, how: 'on every outer face, and in the papers' }];
+  },
+  domainRows: (dim, o) => {
+    const { hx, hy, mg, Hs, plT, H } = fmpAxes(o);
+    return [['Domain', SWB_ADAPT['furn:runs'].domain(dim, o)], ['Size', dim === 1 ? `${swbMm(hx + mg)} mm along a piece` : dim === 2 ? `${swbMm(hx + mg)} mm (the middle to the side) × ${swbMm(H)} mm high` : `${swbMm(hx + mg)} × ${swbMm(hy + mg)} mm (a quarter) × ${swbMm(H)} mm high`],
+      ['The stack', `${o.N} pieces and their papers, ${swbMm(Hs)} mm${dim > 1 ? `, between two ${swbMm(plT)} mm plates` : ''}`], ['Mirror planes', dim === 1 ? 'the piece\'s middle (x = 0)' : dim === 2 ? 'the holder\'s middle (x = 0)' : 'its middle along and across (x = 0, y = 0)'],
+      ['The top and bottom pieces touch', FURN_ENDS[o.ends === 'papers' ? 'papers' : 'plates']]];
+  },
+  geoTiles: (dim, o) => { const { hx, hy, mg, Hs, H } = fmpAxes(o); return [['Pieces', `${o.N} × ${swbMm(o.h)} mm`, `${swbMm(Hs)} mm with their papers`, 'film'], ['Plates', dim > 1 ? `2 × ${swbMm(o.plateT)} mm` : '—', 'isostatic graphite', 'weight'],
+    ['Domain', dim === 1 ? `${swbMm(hx + mg)} mm` : dim === 2 ? `${swbMm(hx + mg)} × ${swbMm(H)} mm` : `${swbMm(hx + mg)} × ${swbMm(hy + mg)} × ${swbMm(H)}`, dim === 3 ? 'mm, a quarter' : dim === 2 ? 'the section' : 'the line', 'section'], ['Runs', `${o.runs.length}`, o.runs.map(q => `${(q[q.length - 1][0] / 3600).toFixed(1)} h`).join(' + '), 'period']]; },
+  geoNote: (dim, o) => (dim === 1 ? 'A tall stack\'s middle height: its heat comes in from the side through the papers; above and below it, the stack goes on.' : dim === 2 ? 'The stack is thin against its width: Layers stretched draws it taller.' : 'The quarter seen from the holder\'s outer corner: its middle is on the two mirror planes behind.'),
+  meshNote: (dim, o) => 'The stack one layered medium, graded toward its faces; the plates their own elements; along the pieces graded toward their edges.',
+  physics: (dim, o) => {
+    const f = MAT.furn, d = MAT.dry;
+    return [['Heat', '∂H/∂t = ∇·(k ∇T) + q_chem', `the stack's layers combined: GO k ${d.kIn.v} along, ${d.kS.v} through; paper ${f.kPin.v} along, ${f.kPthr.v} through W/(m·K); a piece's face ${f.Rc.v} × 10⁻⁴ m²·K/W; plates k ${f.kPl.v}; graphite's heat capacity with temperature`],
+      ['Chemistry', 'dα/dt = Σ w A e^(−E/RT) (1 − α)', `furnace.js's stages at every point at its own temperature; the labile oxygen gives ${f.Hr.v} kJ/g, the water takes its latent heat`],
+      ['Gas', '∇·(κ(T) ∇u) + G = 0,  u ≤ the load', 'each piece\'s gas (furnace.js\'s moles per stage) along its paper (its conductance) and across the piece (G R T h / 8D)'],
+      ['Stress', dim === 3 ? 'plane stress in each piece: σ = C (ε − ε*)' : 'along each piece\'s edge: σ_yy = E (ε̄ − ε*)', `ε* its shrink as its oxygen leaves (${f.bO.v} %) and it graphitizes (${f.bG.v} %); free in its plane`]];
+  },
+  coupling: () => 'heat ⇄ chemistry in one system at every node (its heat and its rate at the local temperature), Newton → the gas each step → each followed piece\'s stress.',
+  bcCols: ['Heat', 'Gas', 'Stress'],
+  faces: (dim, o) => {
+    const { hx, hy, mg, Hs, plT, H } = fmpAxes(o), X1 = hx + mg, f = MAT.furn, hot = cssVar('--heat'), gas = '#7048e8', sym = cssVar('--muted');
+    const zone = `the hot zone at the program's temperature (radiation, ε ${f.epsF.v}) + the argon (natural convection)`;
+    if (dim === 1) return [{ t: 'The paper\'s edge', c: gas, kind: 'open', segs: [[[X1, 0], [X1, X1 * 0.07]]], side: 'right', bc: [zone, 'the argon\'s pressure', 'free'] },
+      { t: 'The piece\'s middle (mirror)', c: sym, kind: 'sym', segs: [[[0, 0], [0, X1 * 0.07]]], side: 'left', bc: ['no heat across', 'no gas across', 'symmetry'] }];
+    const F = [{ t: 'The top plate\'s top', c: hot, kind: 'conv', segs: [[[0, H], [X1, H]]], side: 'top', face3: 'z1', at3: (X, Y, Z) => [X * 0.5, Y * 0.5, Z], bc: [zone, '— (graphite: its own gas through it, the top and bottom pieces)', '—'] },
+      { t: 'The bottom plate\'s underside', c: hot, kind: 'conv', segs: [[[0, 0], [X1, 0]]], side: 'bottom', bc: [zone, '—', '—'] },
+      { t: dim === 3 ? 'The papers\' edges (along and across)' : 'The papers\' edge', c: gas, kind: 'open', segs: [[[X1, plT], [X1, plT + Hs]]], side: 'right', face3: ['x1', 'y1'], where: (x, y, z) => z >= plT && z <= plT + Hs, at3: (X, Y, Z) => [X, Y * 0.5, plT + Hs / 2], bc: [zone, 'the argon\'s pressure: the gas leaves', 'free'] },
+      { t: dim === 3 ? 'The plates\' sides' : 'The plates\' side', c: hot, kind: 'conv', segs: [[[X1, 0], [X1, plT]], [[X1, plT + Hs], [X1, H]]], side: 'right', face3: ['x1', 'y1'], where: (x, y, z) => z < plT || z > plT + Hs, at3: (X, Y, Z) => [X * 0.5, Y, plT * 0.5], bc: [zone, '—', '—'] },
+      { t: dim === 3 ? 'Mirror planes (x = 0, y = 0)' : 'Mirror plane (x = 0)', c: sym, kind: 'sym', segs: [[[0, 0], [0, H]]], side: 'left', bc: ['no heat across (symmetry)', 'no gas across', 'symmetry'] }];
+    return F;
+  },
+  time: (dim, o) => o.runs.map((q, r) => [FURN_RUNS[r], `${(q[q.length - 1][0] / 3600).toFixed(1)} h`, `the program from ${(q[0][1] - 273.15).toFixed(0)} °C to ${(Math.max(...q.map(p => p[1])) - 273.15).toFixed(0)} °C${r === 0 ? '; then the stack cools to the room' : ''}`, `≤ ${o.dT} K a step (${o.dTHigh} K above 400 °C)`]),
+  solver: (dim, o, r) => [['Elements', `linear (${dim === 1 ? 'lines' : dim === 2 ? 'quadrilaterals' : 'hexahedra'}), the heat stored as enthalpy`], ['In time', `implicit, the program in steps of at most ${o.dT} K (${o.dTHigh} K above 400 °C); at most ${o.jumpMax} K a step (a runaway: shorter steps)`],
+    ['Heat and chemistry', 'one system, Newton at the nodes; tolerance ' + o.tol], ['Gas', 'steady Darcy under each paper, every step; where it passes the load the paper lifts'],
+    ...(r ? [['Balance', fmpBal(r, dim)], ['Solved in', `${(r.ms / 1000).toFixed(1)} s, ${r.series.length} program steps${r.substeps > r.series.length ? ` (${r.substeps} with the runaway's)` : ''}`]] : [])],
+  solveTiles: (dim, o, r) => [['Runs', `${o.runs.length}`, o.runs.map(q => `${(q[q.length - 1][0] / 3600).toFixed(1)} h`).join(' + '), 'period'], ['Program steps', r ? `${r.series.length}` : `≤ ${o.dT} K`, r ? (r.substeps > r.series.length ? `${r.substeps} with the runaway's` : 'as solved') : 'a step below 400 °C', 'conv'],
+    ['Hottest', `${(Math.max(...o.runs.flat().map(p => p[1])) - 273.15).toFixed(0)} °C`, 'the program\'s top', 'temp'], ['Solved in', r ? `${(r.ms / 1000).toFixed(1)} s` : '—', r ? 'for the inputs as they are' : 'not solved yet', 'play']],
+  resultsHTML: dim => fmpHTML(true),
+  renderResults: dim => fmpRender(),
+  csv: dim => { FMS.dim = dim; fmpCsv(); },
+  openInputs: () => { setPanelHidden('model', false); FV.tree.furn = true; const d = document.querySelector('#setupExtra details[data-tree="furn"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
+};
+/** The balance of a solve, in words. */
+function fmpBal(r, dim) {
+  const E = r.energy, bal = Math.abs(E.faces + E.reaction + E.between - E.held) / Math.max(1e-30, Math.abs(E.faces)), per = dim === 1 ? '/m²' : dim === 2 ? '/m' : '';
+  return `heat in through the faces ${(E.faces / 1e6).toPrecision(4)} MJ${per} + the chemistry's ${(E.reaction / 1e6).toPrecision(4)} MJ${per} + given up between the runs ${(E.between / 1e6).toPrecision(4)} MJ${per} = held ${(E.held / 1e6).toPrecision(4)} MJ${per} (${bal < 1e-6 ? 'closes' : `off by ${(bal * 100).toFixed(4)} %`})`;
 }

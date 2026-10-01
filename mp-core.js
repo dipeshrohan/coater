@@ -936,7 +936,10 @@ function mpReduce(C, dim, plane) {
 function mpElastic(M, o) {
   const dim = M.dim; if (dim === 1) throw new Error('mp-core: a 1D film is mpLaminate');
   const npe = M.npe, N = M.N, nd = N * dim, nq = M.p + 1, rule = mpRule(M.p, dim, nq);
-  const bw = mpBandwidth(M, dim), B = mpBand(nd, bw), R = new Float64Array(nd), dNdx = new Float64Array(npe * dim);
+  // (o.factored: an earlier solve's on the same mesh, materials, stiffness scale and supported unknowns -- its matrix
+  //  factored once; here only the loads: the eigenstrains, the supports' values, tractions, body forces)
+  const re = o.factored && o.factored.B && o.factored.B.sym && o.factored.B.n === nd ? o.factored : null;
+  const bw = re ? re.B.bw : mpBandwidth(M, dim), B = re ? null : mpBand(nd, bw), R = new Float64Array(nd), dNdx = new Float64Array(npe * dim);
   const Cm = o.mats.map(m => mpStiffness(m, dim - 1)), red = Cm.map(c => mpReduce(c, dim, o.plane || 'strain'));
   const nv = dim === 3 ? 6 : 3, Bm = new Float64Array(nv * npe * dim);
   const fieldNames = Object.keys(o.fields || {});
@@ -966,8 +969,10 @@ function mpElastic(M, o) {
       // (a stiffness scaled at the point: a modulus that goes with the water, a creep step's relaxed stiffness)
       const sc = o.scale ? o.scale(m, x, atGp(e, q), e, qi) : 1, W = W0 * sc;
       strainB(npe);
-      for (let i = 0; i < nv; i++) for (let c = 0; c < ne; c++) { let s = 0; for (let k = 0; k < nv; k++) s += D[i][k] * Bm[k * ne + c]; DB[i * ne + c] = s; }
-      for (let r = 0; r < ne; r++) for (let c = 0; c < ne; c++) { let s = 0; for (let k = 0; k < nv; k++) s += Bm[k * ne + r] * DB[k * ne + c]; ke[r * ne + c] += s * W; }
+      if (!re) {
+        for (let i = 0; i < nv; i++) for (let c = 0; c < ne; c++) { let s = 0; for (let k = 0; k < nv; k++) s += D[i][k] * Bm[k * ne + c]; DB[i * ne + c] = s; }
+        for (let r = 0; r < ne; r++) for (let c = 0; c < ne; c++) { let s = 0; for (let k = 0; k < nv; k++) s += Bm[k * ne + r] * DB[k * ne + c]; ke[r * ne + c] += s * W; }
+      }
       if (o.eig) {
         const e6 = o.eig(m, x, atGp(e, q), e, qi), es = sel.map(i => e6[i]);
         // plane strain: the eigenstrain along z still pushes in the plane (σ = C (ε − ε*), εzz = 0) -- and, a solid
@@ -988,7 +993,7 @@ function mpElastic(M, o) {
     }
     for (let a = 0; a < npe; a++) for (let d = 0; d < dim; d++) {
       const i = M.conn[e * npe + a] * dim + d; R[i] += fe[a * dim + d];
-      for (let b = 0; b < npe; b++) for (let d2 = 0; d2 < dim; d2++) mpAdd(B, i, M.conn[e * npe + b] * dim + d2, ke[(a * dim + d) * ne + b * dim + d2]);
+      if (!re) for (let b = 0; b < npe; b++) for (let d2 = 0; d2 < dim; d2++) mpAdd(B, i, M.conn[e * npe + b] * dim + d2, ke[(a * dim + d) * ne + b * dim + d2]);
     }
   }
   // tractions and pressures
@@ -1000,18 +1005,32 @@ function mpElastic(M, o) {
       for (let a = 0; a < npe; a++) for (let d = 0; d < dim; d++) R[M.conn[e * npe + a] * dim + d] += fp.N[a] * t[d] * fp.w;
     }
   }
-  const raw = { ...B, a: Float64Array.from(B.a) }, R0 = Float64Array.from(R);   // for the reactions
-  const fixed = [];
+  const raw = re ? re.raw : { ...B, a: Float64Array.from(B.a) }, R0 = Float64Array.from(R);   // for the reactions
+  const fixed = [], done = re ? new Uint8Array(nd) : null;
   for (const bc of o.bc || []) {
     if (!bc.fix) continue;
     const nodes = bc.node !== undefined ? [bc.node] : mpFaceNodes(M, bc.face);
     for (const n of nodes) {
       const x = Array.from(M.X.subarray(n * dim, n * dim + dim)), v = bc.value ? bc.value(x) : null;
-      for (const c of bc.fix) { const d = n * dim + c; mpFix(B, R, d, v ? v[c] : 0); fixed.push(d); }
+      for (const c of bc.fix) {
+        const d = n * dim + c, g = v ? v[c] : 0;
+        if (!re) { mpFix(B, R, d, g); fixed.push(d); continue; }
+        // (mpFix's on the right side alone: the column of the matrix as it stands then -- the rows fixed before it
+        //  already cleared)
+        if (!done[d]) {
+          done[d] = 1;
+          if (g) {
+            const { w, a } = raw;
+            for (let i = Math.max(0, d - bw); i < d; i++) if (!done[i]) R[i] -= a[d * w + (d - i)] * g;
+            for (let i = d + 1; i <= Math.min(nd - 1, d + bw); i++) if (!done[i]) R[i] -= a[i * w + (i - d)] * g;
+          }
+        }
+        R[d] = g; fixed.push(d);
+      }
     }
   }
-  mpFactor(B);
-  const u = mpBackSolve(B, R);
+  const Bf = re ? re.B : mpFactor(B);
+  const u = mpBackSolve(Bf, R);
   // strain and stress at the Gauss points, averaged to the nodes
   const strain = new Float64Array(N * 6), stress = new Float64Array(N * 6), cnt = new Float64Array(N), gp = [];
   for (let e = 0; e < M.E; e++) {
@@ -1043,7 +1062,7 @@ function mpElastic(M, o) {
     for (const n of mpFaceNodes(M, face)) for (let d = 0; d < dim; d++) f[d] += Ku[n * dim + d] - R0[n * dim + d];
     return Array.from(f);
   }
-  return { u, strain, stress, gp, vm, s1, M, reaction };
+  return { u, strain, stress, gp, vm, s1, M, reaction, factored: { B: Bf, raw } };
 }
 
 /** Von Mises of a Voigt stress. */
@@ -1112,6 +1131,6 @@ function mpLaminate(M, o) {
 
 if (typeof module !== 'undefined') module.exports = {
   MP_SIGMA, MP_GAUSS, mpLag1, mpShape, mpRule, mpAxisEdges, mpMesh, mpFaceNodes, mpFaceElems, mpJac, mpFacePoints,
-  mpBand, mpBandwidth, mpFactor, mpBackSolve, mpBandMul, mpFix, mpTransport, mpScalar, mpHeatMoisture, mpAt, mpStiffness, mpInv6, mpReduce, mpElastic,
+  mpBand, mpBandwidth, mpAdd, mpFactor, mpBackSolve, mpBandMul, mpFix, mpTransport, mpScalar, mpHeatMoisture, mpAt, mpStiffness, mpInv6, mpReduce, mpElastic,
   mpVonMises, mpPrincipal, mpLaminate,
 };

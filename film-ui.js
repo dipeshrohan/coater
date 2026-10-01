@@ -179,7 +179,7 @@ function filmSectionHTML() {
     <div id="filmTable" data-pstep="results" data-fview="film"></div>
     <div id="filmMeas" data-pstep="results" data-fview="film"></div>
     <div data-pstep="results">${typeof sheetSectionHTML === 'function' ? sheetSectionHTML() : ''}</div>
-    <div data-pstep="multi" data-fview="stack">${typeof mpStackHTML === 'function' ? mpStackHTML() : ''}</div>
+    ${PROC_ALL && typeof mpStackHTML === 'function' ? `<div data-fview="stack">${mpStackHTML()}</div>` : ''}
     <p class="fv-note" id="filmNote" data-pstep="solve"></p>
   </section>`;
 }
@@ -193,8 +193,9 @@ function filmRender() {
   if (!sec) return;
   if (!sec.dataset.wired) filmWire(sec);
   if (typeof sheetRender === 'function') sheetRender();   // (the piece in 3D, GO-4d: after the film, the film shown)
-  // (the stack's multiphysics, MP-1; for the report, every view open, drawn too once solved -- then it asks nothing of its solver)
-  if (typeof mpStackRender === 'function' && (FILM.view === 'stack' || (PROC_ALL && mpCurrent(MPS.dim)))) mpStackRender();
+  // (the stack's multiphysics, MP-1: its own pages, MP-W; for the report, every view open, drawn too once solved -- then it
+  //  asks nothing of its solver)
+  if (typeof mpStackRender === 'function' && PROC_ALL && mpCurrent(MPS.dim)) mpStackRender();
   sec.querySelectorAll('[data-film]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.film === DRY.sel)));
   const st = document.getElementById('filmState');
   if (!dryFilms().length) { st.innerHTML = `<p class="dry-msg">${pill('Waiting for the 1D: the film starts from the wet film', '')}</p>`; filmClear(); return; }

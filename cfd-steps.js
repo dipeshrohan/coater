@@ -22,6 +22,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest && e.target.closest('.step-bar [data-step]');
   if (!b) return;
   const kind = b.closest('.step-bar').dataset.kind;
+  if (kind === 'swb') { swbGoStep(b.dataset.step); return; }   // (a stage's multiphysics page, MP-W)
   if (kind === '2d') goStep2D(b.dataset.step); else goStep3D(b.dataset.step);
 });
 // (arrow keys along the bar open the step, as the sub tabs do)
@@ -31,7 +32,7 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   const bs = [...b.parentElement.querySelectorAll('[data-step]')], n = bs.length, k0 = bs.indexOf(b);
   const k = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (k0 + (e.key === 'ArrowRight' ? 1 : -1) + n) % n, kind = b.closest('.step-bar').dataset.kind, s = bs[k].dataset.step;
-  if (kind === '2d') goStep2D(s); else goStep3D(s);
+  if (kind === 'swb') swbGoStep(s); else if (kind === '2d') goStep2D(s); else goStep3D(s);
   const f = document.querySelector(`.step-bar [data-step="${s}"]`); if (f) f.focus();
 });
 
