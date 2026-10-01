@@ -79,8 +79,8 @@ function filmOpts() {
   return {
     film: { Ep: v('Ep') * 1e9, Et: v('Et') * 1e9, nup: v('nup'), nupt: v('nupt'), Gpt: v('Gpt') * 1e9, beta: v('beta'), alphaF: v('alphaF') * 1e-6, Xh: v('Xh'),
       sigF: v('sigF') * 1e6, GcF: v('GcF'), Gil: v('Gil'), Gi: v('Gi'), setFrac: v('setFrac') },
-    web: { Ew: v('Ew') * 1e9, nuw: v('nuw'), alphaW: v('alphaW') * 1e-6, tw: P.tf / 1000, soft: v('soft') },
-    gel: { Eg: v('Eg') * 1e3 }, gab: { Xm: d.gabXm.v, C: d.gabC.v, K: d.gabK.v }, rhoS: MAT.slurry.rhoS.v * 1000, rhoL: MAT.slurry.rhoL.v,
+    web: { Ew: v('Ew') * 1e9, nuw: v('nuw'), alphaW: v('alphaW') * 1e-6, tw: P.tf / 1000, soft: v('soft'), nupt: MAT.lib.webNupt.v },
+    gel: { Eg: v('Eg') * 1e3, nu: MAT.lib.gelNu.v }, gab: { Xm: d.gabXm.v, C: d.gabC.v, K: d.gabK.v }, rhoS: MAT.slurry.rhoS.v * 1000, rhoL: MAT.slurry.rhoL.v,
     skinK: d.skinK.v * 1e-12, K: 120, core: OVEN.peel.core / 1000, Troom: d.Troom.v, rhRoom: d.rhRoom.v / 100, P: 101325, Tdry: OVEN.peel.dryT,
   };
 }

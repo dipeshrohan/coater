@@ -77,5 +77,13 @@ for (const dim of [1, 2, 3]) {
   check('the air: a vertical face (Churchill–Chu) and a fan along the plate (laminar flat plate)', rel(h, Nu * a.k / L) < 1e-12 && rel(hf, hfe) < 1e-12, `${h.toFixed(3)} and ${hf.toFixed(3)} W/(m² K)`);
 }
 
+// the plate's aluminium through the inputs (MH-2): given as SMP_AL, the same stack bit for bit; another alloy's, another
+{
+  const o = { ...base, dim: 1, steps: 8, stages: [{ tEnd: 1800, Tair: 100, creep: true }] };
+  const a = S.smpStack(o), b = S.smpStack({ ...o, al: { ...S.SMP_AL } }), c = S.smpStack({ ...o, al: { ...S.SMP_AL, k: 120, c: 960 } });
+  const strip = r => JSON.stringify(r, (k, v) => (k === 'ms' || k === 'elapsedMs' ? undefined : v));
+  check('the plate\'s aluminium as an input (MH-2): given as SMP_AL, the stack bit for bit as without; another alloy, another stack', strip(a) === strip(b) && strip(c) !== strip(a), `${strip(a).length} chars`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

@@ -418,7 +418,7 @@ const HELP = {
   'hub.cmpT': { t: 'Compared at', d: 'The temperature the laws are evaluated at; a law outside its valid range, or a liquid above 100 °C, is left blank.', u: 'Materials' },
 };
 // (the alignment's and the drying's card values: their help from their rows -- what each is and where its value is from)
-for (const [pre, rows] of [['mato', typeof MAT_ORIENT !== 'undefined' ? MAT_ORIENT : []], ['matd', typeof MAT_DRY !== 'undefined' ? MAT_DRY : []]])
+for (const [pre, rows] of [['mato', typeof MAT_ORIENT !== 'undefined' ? MAT_ORIENT : []], ['matd', typeof MAT_DRY !== 'undefined' ? MAT_DRY : []], ['matl', typeof MAT_LIB !== 'undefined' ? MAT_LIB : []]])
   for (const [k, l, u, lo, hi, , , , , src] of rows) if (!HELP[`${pre}.${k}`]) HELP[`${pre}.${k}`] = { t: l, d: `${src.charAt(0).toUpperCase()}${src.slice(1)}.`, r: `Range ${lo} to ${hi}${u ? ' ' + u : ''}`, u: 'Materials' };
 // result names (metrics, mesh study, DOE outputs), by their label
 const HELP_RESULTS = {
@@ -585,7 +585,8 @@ function applyHelp() {
   // (the alignment's and the drying's values, as the material hub shows them)
   document.querySelectorAll('input[type=number][data-mo]').forEach(el => set(el, 'mato.' + el.dataset.mo));
   document.querySelectorAll('input[type=number][data-mdr]').forEach(el => set(el, 'matd.' + el.dataset.mdr));
-  document.querySelectorAll('input.mat-src[data-mo], input.mat-src[data-mdr], input.hub-src').forEach(el => set(el, 'mat.src'));
+  document.querySelectorAll('input[type=number][data-mlb]').forEach(el => set(el, 'matl.' + el.dataset.mlb));
+  document.querySelectorAll('input.mat-src[data-mo], input.mat-src[data-mdr], input.mat-src[data-mlb], input.hub-src').forEach(el => set(el, 'mat.src'));
   // (the film card's values, GO-4)
   document.querySelectorAll('input[type=number][data-mfl]').forEach(el => { const key = 'matf.' + el.dataset.mfl; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
   document.querySelectorAll('select[data-mfl]').forEach(el => set(el, 'mat.flag'));

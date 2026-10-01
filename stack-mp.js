@@ -65,6 +65,7 @@ function smpAir(kind, Ts, Ta, L, air) {
  *   dim: 1 | 2 | 3, Lx, Ly (m, the pieces), N (pieces), h (m, a piece), plateT (m, the plate), X0 (the water as cut),
  *   Troom (°C: the stack at the start, the room), rhRoom, stages: [{ tEnd (s), Tair (°C), creep (bool) }] (the oven,
  *   then the room under the plate), air: { fan (m/s; 0: still air) }, shelf: 'wire' | 'solid', epsPlate, epsGO,
+ *   al: { k, rho, c } (the plate's aluminium; MH-2: the Materials' constants, SMP_AL when not given),
  *   go: { kIn, kThr (W/(m K)), c (J/(kg K)), rhoS (kg/m³, the GO per film volume), gab, Xcap, K (along a piece),
  *   Kthr (through it; kg/(m s Pa)), alpha (1/K, in its plane), nu, tab (the film's rows [X, A, D, eFlat, κ]), tau (s,
  *   the creep time at X0) },
@@ -80,7 +81,7 @@ function smpAir(kind, Ts, Ta, L, air) {
  *   equal to what flowed in and out, exactly; rise, lost: start to end), mesh, ms }.
  */
 function smpStack(o) {
-  const t0 = Date.now(), dim = o.dim, N = o.N, hp = o.h, go = o.go;
+  const t0 = Date.now(), dim = o.dim, N = o.N, hp = o.h, go = o.go, AL = o.al || SMP_AL;
   const hx = o.Lx / 2, hy = o.Ly / 2, ms = o.mesh || {}, nx = ms.nx || 8, ny = ms.ny || nx, grade = ms.grade || 12, nPl = ms.nPlate || 4;
   const Hs = N * hp, H = Hs + o.plateT, zi = dim - 1;
   const pvAir = o.rhRoom * SMP_DR.drPsat(o.Troom);   // the room's air, heated in the oven: the same vapour pressure
@@ -127,9 +128,9 @@ function smpStack(o) {
   const vec3 = (a, b) => (dim === 1 ? b : dim === 2 ? [a, b] : [a, a, b]);
   const faces = dim === 1 ? ['x0', 'x1'] : dim === 2 ? ['x0', 'x1', 'y0', 'y1'] : ['x0', 'x1', 'y0', 'y1', 'z0', 'z1'];
   const hm = SMP.mpHeatMoisture(M, {
-    kT: m => (iso ? 1e6 : m === 1 ? SMP_AL.k : vec3(go.kIn, go.kThr)),
+    kT: m => (iso ? 1e6 : m === 1 ? AL.k : vec3(go.kIn, go.kThr)),
     // (a piece's heat capacity with its water as cut)
-    CT: m => (m === 1 ? SMP_AL.rho * SMP_AL.c : go.rhoS * (go.c + o.X0 * SMP_CW)),
+    CT: m => (m === 1 ? AL.rho * AL.c : go.rhoS * (go.c + o.X0 * SMP_CW)),
     Kv: () => vec3(go.K, go.Kthr), S, dS, L: iso ? 0 : T => SMP_DR.drLatent(T), wet: m => m === 0,
     T0: Tstart, p0: x => (inStack(x) ? p0 : pvAir),
     bcT: iso ? faces.map(face => ({ face, type: 'value', u: () => Tair })) : bcT,

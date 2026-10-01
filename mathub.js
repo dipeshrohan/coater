@@ -59,11 +59,11 @@ function hubGoPhys(k) {
 }
 
 // ---- the card rows ----
-const HUB_CARDS = { slurry: MAT_SLURRY, rheo: MAT_RHEO, orient: MAT_ORIENT, dry: MAT_DRY, film: MAT_FILM, furn: MAT_FURN };
+const HUB_CARDS = { slurry: MAT_SLURRY, rheo: MAT_RHEO, orient: MAT_ORIENT, dry: MAT_DRY, film: MAT_FILM, furn: MAT_FURN, lib: MAT_LIB };
 /** Each card's attribute and id prefix (the cards' own: help, undo and the tests find a value by them). */
-const HUB_ATTR = { slurry: ['mk', 'mat'], rheo: ['mr', 'matr'], orient: ['mo', 'mato'], dry: ['mdr', 'matd'], film: ['mfl', 'matf'], furn: ['mfu', 'matu'] };
+const HUB_ATTR = { slurry: ['mk', 'mat'], rheo: ['mr', 'matr'], orient: ['mo', 'mato'], dry: ['mdr', 'matd'], film: ['mfl', 'matf'], furn: ['mfu', 'matu'], lib: ['mlb', 'matl'] };
 /** The stage cards (the values' groups by stage, as the help and the report name them: "the Film card"). */
-const HUB_CARD_T = { slurry: 'Slurry card', rheo: 'Rheology card', orient: 'Alignment card', dry: 'Drying card', film: 'Film card', furn: 'Furnace card' };
+const HUB_CARD_T = { slurry: 'Slurry card', rheo: 'Rheology card', orient: 'Alignment card', dry: 'Drying card', film: 'Film card', furn: 'Furnace card', lib: 'Material constants card' };
 const hubRow = (card, k) => HUB_CARDS[card].find(q => q[0] === k);
 
 // ---- built-in laws and constants (the solvers' own: restated, checked against them in mathub.validate.js) ----
@@ -84,12 +84,6 @@ const HUB_CONST = {
   airCp: { v: 1007, u: 'J/(kg·K)', solver: 'drying.js drAir', src: 'dry air near the room temperature' },
   arCp: { v: 520.3, u: 'J/(kg·K)', solver: 'furnace-mp.js fmpArgon', src: 'a monatomic ideal gas: 5/2 R / M' },
   arPr: { v: 2 / 3, u: '', solver: 'furnace-mp.js fmpArgon', src: 'a monatomic gas (Eucken): Pr = ⅔' },
-  alK: { v: 200, u: 'W/(m·K)', solver: 'stack-mp.js SMP_AL', src: 'aluminium alloys 150–235 W/(m·K)' },
-  alRho: { v: 2700, u: 'kg/m³', solver: 'stack-mp.js SMP_AL', src: 'aluminium' },
-  alC: { v: 900, u: 'J/(kg·K)', solver: 'stack-mp.js SMP_AL', src: 'aluminium' },
-  plE: { v: (typeof FU_EPL !== 'undefined' ? FU_EPL : 10e9) / 1e9, u: 'GPa', solver: 'furnace.js FU_EPL', src: 'isostatic graphite about 10 GPa' },
-  webNupt: { v: 0.1, u: '', solver: 'film.js (the web\'s stiffness)', src: 'a fabric\'s thickness change under an in-plane stress: small' },
-  gelNu: { v: 0.45, u: '', solver: 'film.js (the wet film\'s stiffness)', src: 'a water-filled gel: nearly incompressible' },
 };
 /** A built-in law's value at T (°C) in SI. */
 const hubLawAt = (id, Tc) => { const L = HUB_LAW[id]; return mlQEval(L.q, { T: Tc + 273.15, p: L.p || 101325 }); };
@@ -223,8 +217,8 @@ const HUB_RECORDS = [
     groups: [
       { l: 'Mechanical', props: [
         { id: 'Eg', sym: 'E', l: 'Young\'s modulus', b: hC('film', 'Eg'), phys: ['film'] },
-        { id: 'nu', sym: 'ν', l: 'Poisson\'s ratio', b: { t: 'const', id: 'gelNu' }, phys: ['film'] },
-        { id: 'G', sym: 'G', l: 'Shear modulus', b: hCalc(() => MAT.film.Eg.v / (2 * (1 + HUB_CONST.gelNu.v)), 'kPa', 1, 'E / (2 (1 + ν))'), phys: ['film'] },
+        { id: 'nu', sym: 'ν', l: 'Poisson\'s ratio', b: hC('lib', 'gelNu'), phys: ['film'] },
+        { id: 'G', sym: 'G', l: 'Shear modulus', b: hCalc(() => MAT.film.Eg.v / (2 * (1 + MAT.lib.gelNu.v)), 'kPa', 1, 'E / (2 (1 + ν))'), phys: ['film'] },
       ] },
     ] },
   { id: 'gofilm', name: 'Dried GO film', cls: 'Solid', sub: 'Laminate · transversely isotropic (axis: the film\'s normal)', icon: 'film',
@@ -343,7 +337,7 @@ const HUB_RECORDS = [
         { id: 'Ew', sym: 'E₁', l: 'Young\'s modulus along the line', b: hC('film', 'Ew'), phys: ['film'], sub: true },
         { id: 'soft', sym: 'E₃/E₁', l: 'Through the thickness and in shear, × E₁', b: hC('film', 'soft'), phys: ['film'], sub: true },
         { id: 'nuw', sym: 'ν₁₂', l: 'Poisson\'s ratio', b: hC('film', 'nuw'), phys: ['film'], sub: true },
-        { id: 'nupt', sym: 'ν₁₃', l: 'Poisson\'s ratio, plane to thickness', b: { t: 'const', id: 'webNupt' }, phys: ['film'], sub: true },
+        { id: 'nupt', sym: 'ν₁₃', l: 'Poisson\'s ratio, plane to thickness', b: hC('lib', 'webNupt'), phys: ['film'], sub: true },
         { id: 'Gpt', sym: 'G₁₃', l: 'Shear modulus through it', b: hCalc(() => MAT.film.Ew.v * MAT.film.soft.v / 2, 'GPa', 3, 'E₁ × (E₃/E₁) / 2: the solver\'s rule'), phys: ['film'], sub: true, prov: 'builtin' },
         { id: 'EA', sym: 'E₁ t', l: 'Tensile stiffness per width', b: hCalc(() => MAT.film.Ew.v * 1e9 * P.tf / 1000 / 1000, 'kN/m', 0, 'E₁ × its thickness, along it (the inputs bar\'s fibre thickness)'), phys: ['film'] },
       ] },
@@ -375,17 +369,17 @@ const HUB_RECORDS = [
         { id: 'epsF', sym: 'ε', l: 'Emissivity of its faces (to the hot zone)', b: hC('furn', 'epsF'), phys: ['mp2'] },
       ] },
       { l: 'Mechanical and gas', props: [
-        { id: 'E', sym: 'E', l: 'Young\'s modulus', b: { t: 'const', id: 'plE' }, phys: ['furn'] },
+        { id: 'E', sym: 'E', l: 'Young\'s modulus', b: hC('lib', 'plE'), phys: ['furn'] },
         { id: 'Bpl', sym: 'B', l: 'Gas permeability coefficient', b: hC('furn', 'Bpl'), phys: ['furn', 'mp2'] },
       ] },
     ] },
   { id: 'al', name: 'Aluminium', cls: 'Solid', sub: 'Pre heat plate · isotropic', icon: 'weight',
-    desc: 'The plate pressing the stack in the pre heat treatment.', domains: ['Pre heat multiphysics: the plate on the stack'],
+    desc: 'The plate pressing the stack in the pre heat treatment.', domains: ['Pre heat multiphysics: the plate on the stack'], cards: ['lib'],
     groups: [
       { l: 'Basic', props: [
-        { id: 'rho', sym: 'ρ', l: 'Density', b: { t: 'const', id: 'alRho' }, phys: ['mp1'] },
-        { id: 'c', sym: 'c_p', l: 'Specific heat capacity', b: { t: 'const', id: 'alC' }, phys: ['mp1'] },
-        { id: 'k', sym: 'k', l: 'Thermal conductivity', b: { t: 'const', id: 'alK' }, phys: ['mp1'] },
+        { id: 'rho', sym: 'ρ', l: 'Density', b: hC('lib', 'alRho'), phys: ['mp1'] },
+        { id: 'c', sym: 'c_p', l: 'Specific heat capacity', b: hC('lib', 'alC'), phys: ['mp1'] },
+        { id: 'k', sym: 'k', l: 'Thermal conductivity', b: hC('lib', 'alK'), phys: ['mp1'] },
         { id: 'epsPl', sym: 'ε', l: 'Emissivity', b: { t: 'peel', k: 'epsPl' }, phys: ['mp1'] },
       ] },
     ] },
@@ -510,7 +504,7 @@ function hubTensorOf(p) {
 /** The 6 × 6 stiffness (Pa) of the dried film ('go') or the web ('web'), in the material frame (3: the normal). */
 function hubStiff(which) {
   const f = MAT.film, v = k => f[k].v;
-  if (which === 'web') return mlCEval({ form: 'ti', Ep: v('Ew') * 1e9, Et: v('Ew') * v('soft') * 1e9, nup: v('nuw'), nupt: HUB_CONST.webNupt.v, Gpt: v('Ew') * v('soft') * 1e9 / 2, axis: 2 });
+  if (which === 'web') return mlCEval({ form: 'ti', Ep: v('Ew') * 1e9, Et: v('Ew') * v('soft') * 1e9, nup: v('nuw'), nupt: MAT.lib.webNupt.v, Gpt: v('Ew') * v('soft') * 1e9 / 2, axis: 2 });
   return mlCEval({ form: 'ti', Ep: v('Ep') * 1e9, Et: v('Et') * 1e9, nup: v('nup'), nupt: v('nupt'), Gpt: v('Gpt') * 1e9, axis: 2 });
 }
 /** Whether a property is used as things are set (its law, its model, its switch): '' when it is, else why not. */
@@ -645,6 +639,8 @@ function hubLawName(id) {
   for (const r of HUB_RECORDS) for (const p of hubProps(r)) if ((p.b.t === 'law' || p.b.t === 'const') && p.b.id === id) return `${r.name}: ${p.l.toLowerCase()}`;
   return id;
 }
+/** The material constants card read-only (the report, MH-2). */
+const libCardRows = () => MAT_LIB.map(([k, l, u, , , , dd]) => [l, (+MAT.lib[k].v).toFixed(dd), u, MAT.lib[k].flag, MAT.lib[k].src]);
 /** A record's calculated values as rows (label, value, unit, how): the report's. */
 const hubCalcRows = (id, only) => hubProps(hubRec(id)).filter(p => p.b.t === 'calc' && (!only || only.includes(p.id))).map(p => { const v = hubVal(p); return [p.l, typeof v.v === 'number' ? hubFmt(v.v, v.d) : String(v.v), v.u, v.src]; });
 

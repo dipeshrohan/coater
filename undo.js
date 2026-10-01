@@ -181,6 +181,7 @@ const UNDO_UNITS = (() => {
     label: (a, b) => { const n = x => ((x && x.images) || []).length + ((x && x.tables) || []).length; return n(b) > n(a) ? 'Add a measurement of the flakes' : n(b) < n(a) ? 'Remove a measurement of the flakes' : 'Marks on an SEM image'; } });
   // (the drying card and the drying measured, GO-3)
   for (const [k] of MAT_DRY) u.push({ id: 'matd.' + k, get: () => MAT.dry[k], set: v => { MAT.dry[k] = v ? { ...v } : matDefaults().dry[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_DRY) });
+  for (const [k] of MAT_LIB) u.push({ id: 'matl.' + k, get: () => MAT.lib[k], set: v => { MAT.lib[k] = v ? { ...v } : matDefaults().lib[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_LIB) });
   // (the inputs bar's material values' provenance, the material hub's: MH-5)
   u.push({ id: 'mat.prov', get: () => MAT.prov || {}, set: v => { MAT.prov = v ? JSON.parse(JSON.stringify(v)) : {}; },
     label: (a, b) => { const k = Object.keys({ ...(a || {}), ...(b || {}) }).find(x => JSON.stringify((a || {})[x]) !== JSON.stringify((b || {})[x])); const c = k && CFG.find(q => 'in.' + q.k === k), q = k && (b || {})[k];

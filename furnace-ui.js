@@ -50,7 +50,7 @@ function furnOpts(P, Lx, Ly) {
     dIn: v('dIn'), Dgal: v('Dgal') * 1e-10, Dmin: v('Dmin') * 1e-13, es: v('es'), sigZ: v('sigZ') * 1e3,
     paper: { t: fu.paperT / 1000, rho: v('rhoP') * 1000, D: v('Dp') * 1e-6, Ez: v('Ez') * 1e6 }, N: fu.N, room: fu.room, gap: fu.room === 'gap' ? fu.gap / 1000 : 0,
     // (the top and bottom pieces against the holder's plates, isostatic graphite, GO-7e)
-    ends: fu.ends === 'papers' ? 'papers' : 'plates', plate: { B: v('Bpl') * 1e-6, t: (fu.plateT || 30) / 1000, mu: v('muPl'), Tstick: v('TstPl') + 273.15, tauB: v('tauPl') * 1e6 },
+    ends: fu.ends === 'papers' ? 'papers' : 'plates', plate: { B: v('Bpl') * 1e-6, t: (fu.plateT || 30) / 1000, mu: v('muPl'), Tstick: v('TstPl') + 273.15, tauB: v('tauPl') * 1e6, E: MAT.lib.plE.v * 1e9 },
     // (a plate resting on the stack: its weight over the paper's area; GO-5b)
     plateP: (fu.plateW || 0) * FU_G / ((Lx + 2 * fu.margin / 1000) * (Ly + 2 * fu.margin / 1000)),
     La0: v('La0'), La1: v('La1'), ell: v('ell'), kG: v('kG'), nP: 12, nM: 2, dT: 1,

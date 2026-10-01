@@ -325,6 +325,7 @@ async function repMaterials() {
     + '<h3>Furnace: the furnace and the graphene film</h3>' + repRows([...ro(furnCardRows()), ...[...hubCalcRows('gofilm', ['kept', 'co1', 'co2', 'split']), ...hubCalcRows('gfilm', ['k'])].map(([l, v, u, s]) => [repEsc(l), repEsc(repUnit(v, u)), 'Worked out', repEsc(s)])], head)
     + tests
     + '<h3>Fibre web: what it is coated onto</h3>' + repRows(ro(matFibreRows()), head)
+    + '<h3>Material constants</h3>' + repRows(ro(libCardRows()), head)
     + '<h3>Built into the solvers</h3>' + repRows([...Object.entries(HUB_LAW).map(([id, L]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(hubLawAt(id, 20), -4), L.u)) + ' at 20 °C', 'Built-in law', repEsc(`${ML_LAWS[L.q.law].formula}; ${L.src}; ${L.solver}`)]),
       ...Object.entries(HUB_CONST).map(([id, c]) => [repEsc(hubLawName(id)), repEsc(repUnit(hubFmt(c.v, -4), c.u)), 'Built-in', repEsc(`${c.src}; ${c.solver}`)])], head)
     + (pills.length ? `<h3>Checks</h3><ul class="checks">${pills.join('')}</ul>` : '');
