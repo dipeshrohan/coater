@@ -1,31 +1,18 @@
 'use strict';
 /*
- * mathub-ui.js — the Materials page as a material hub (MH-5): the library of the project's materials and interfaces
- * on the left; the material picked on the right -- its identity, where it is in the line, its checks, its provenance,
- * then its tabs: Properties (a property table by group, every value with its symbol, unit, provenance and source;
- * a row opens its definition: the law and its plot, the tensor and its eigenvalues, the stiffness matrix, the range,
- * the solvers that read it), Models (the flow law's curve, the isotherm, the conversion in the furnace ...), Measured
- * data, Used by. Two more views: Readiness (each solver's properties by provenance, and what blocks it) and Compare.
+ * mathub-ui.js — the Materials page as a material hub: the library of the project's materials and interfaces on the
+ * left; the material picked on the right -- its identity, where it is in the line, its checks, then its tabs (the
+ * owner's spec): Overview (identity and metadata), Properties (a table by group: property, symbol, definition method,
+ * value, unit, validity range, data source; a row opens its definition), Constitutive Models, Experimental Data,
+ * Property Functions (each property's equation or table in T, plotted), Validity and Sources, Domain Assignments.
+ * Two more views: Readiness (per solver: required and complete, missing, optional, unsupported) and Compare.
  * The values are the ones the solvers read (mathub.js binds each property to it): an edit here is an edit there.
  */
 const HUB = { view: 'lib', sel: 'slurry', tab: 'props', open: null, q: '', cmpT: 20, readyOpen: null, conv: null };
 /** A symbol: escaped, its _sub as a subscript (x_dry, c_p, τ_y). */
 const hubSym = s => hubEsc(s).replace(/_([A-Za-z0-9,.₀-₉]+)/g, '<sub>$1</sub>');
 const hubEsc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-/** Provenance groups for the bars (the table names the kind itself). */
-const HUB_PG = [['meas', 'Measured', ['measured', 'fitted']], ['you', 'From you or a datasheet', ['user', 'supplier', 'report']], ['asm', 'Assumed or published', ['published', 'assumed']], ['blt', 'Built-in', ['builtin']]];
-const hubPG = k => (HUB_PG.find(g => g[2].includes(k)) || ['calc'])[0];
 const HUB_CLS_ORDER = ['Fluid', 'Particles', 'Gas', 'Solid', 'Porous solid'];
-
-/** A provenance bar: segments per group with their counts (and the count of each, written). */
-function hubProvBar(n, wide = false) {
-  const tot = HUB_PG.reduce((a, g) => a + g[2].reduce((s, k) => s + (n[k] || 0), 0), 0);
-  if (!tot) return '<span class="hub-pbar hub-pbar-empty"></span>';
-  const seg = HUB_PG.map(([c, l, ks]) => { const m = ks.reduce((s, k) => s + (n[k] || 0), 0); return m ? `<i class="pb-${c}" style="flex:${m}" title="${l}: ${m}"></i>` : ''; }).join('');
-  const txt = wide ? `<span class="hub-pleg">${HUB_PG.map(([c, l, ks]) => { const m = ks.reduce((s, k) => s + (n[k] || 0), 0); return m ? `<span><i class="pb-${c}"></i>${l} <b>${m}</b></span>` : ''; }).join('')}</span>` : '';
-  return `<span class="hub-pbar${wide ? ' wide' : ''}" role="img" aria-label="${HUB_PG.map(([, l, ks]) => `${l} ${ks.reduce((s, k) => s + (n[k] || 0), 0)}`).join(', ')}">${seg}</span>${txt}`;
-}
-const hubProvChip = k => `<span class="hub-prov pv-${hubPG(k)}">${hubProvL(k)}</span>`;
 
 /**
  * Show the hub: at a material (sel), its tab and a property opened (open) and scrolled to (or a row scrolled to:
@@ -53,7 +40,7 @@ function viewMaterials() {
       <span class="hub-tools">
         <button type="button" class="btn btn-secondary btn-sm" id="hubImport">${uiIco('upload')}Import…</button>
         <button type="button" class="btn btn-secondary btn-sm" id="hubExport">${uiIco('download')}Export</button>
-        <button type="button" class="btn btn-secondary btn-sm" id="hubSheet">${uiIco('download')}Measurement sheet</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="hubSheet">${uiIco('download')}Export CSV</button>
         <details class="hub-menu" id="hubDefaults"><summary class="btn btn-secondary btn-sm">${uiIco('restart')}Defaults</summary>
           <div class="hub-menu-pop" role="menu">${[['matReset', 'slurry'], ['matRheoReset', 'rheo'], ['matOrReset', 'orient'], ['matDryReset', 'dry'], ['matFilmReset', 'film'], ['matFurnReset', 'furn'], ['matLibReset', 'lib']].map(([id, c]) => `<button type="button" role="menuitem" id="${id}" data-hubreset="${c}">The ${HUB_CARD_T[c]}<small>its ${HUB_CARDS[c].length} values back to their first values</small></button>`).join('')}</div></details>
       </span>`,
@@ -87,16 +74,14 @@ function hubPaint() {
   root.innerHTML = `<div class="hub-grid"><nav class="hub-lib" id="hubLib" aria-label="The project's materials">${hubLibHTML()}</nav><section class="hub-main" id="hubMain" aria-labelledby="hubName">${hubEditorHTML(r)}</section></div>`;
   hubWireLib(); hubWireEditor(r);
 }
-/** The page's status line: the materials, their values by provenance, what blocks a solver. */
+/** The page's status line: the materials, required values missing, what blocks a solver. */
 function hubStatus() {
   const st = document.getElementById('st'), ss = document.getElementById('ss');
   if (ss) ss.innerHTML = '';
   if (!st) return;
-  const R = hubReadiness(), n = {};
-  for (const r of hubAll()) for (const [k, m] of Object.entries(hubCounts(r))) n[k] = (n[k] || 0) + m;
-  const g = ks => ks.reduce((s, k) => s + (n[k] || 0), 0), bad = R.filter(q => q.st === 'bad');
+  const R = hubReadiness(), miss = R.reduce((a, q) => a + q.n.missing, 0), bad = R.filter(q => q.st === 'bad');
   st.innerHTML = pill(`${HUB_RECORDS.length} materials · ${HUB_IFACES.length} interfaces`, '')
-    + pill(`${g(['measured', 'fitted'])} measured · ${g(['user', 'supplier', 'report'])} from you or a datasheet · ${g(['published', 'assumed'])} assumed · ${g(['builtin'])} built-in`, g(['published', 'assumed']) ? 'warn' : 'ok')
+    + (miss ? pill(`${miss} required values missing`, 'warn') : '')
     + (bad.length ? pill(`${bad.map(q => q.ph.l).join(', ')}: a material cannot hold as set`, 'bad') : '');
 }
 
@@ -104,21 +89,20 @@ function hubStatus() {
 function hubMatches(r) {
   const q = HUB.q.trim().toLowerCase();
   if (!q) return true;
-  return [r.name, r.sub, r.cls, ...hubProps(r).map(p => `${p.l} ${p.sym}`)].some(t => String(t).toLowerCase().includes(q));
+  return [hubName(r), r.name, r.sub, r.cls, ...hubProps(r).map(p => `${p.l} ${p.sym}`)].some(t => String(t).toLowerCase().includes(q));
 }
 function hubLibHTML() {
   const item = r => {
     const ch = hubChecks(r), lv = ch.some(c => c.level === 'error') ? 'bad' : ch.length ? 'warn' : '';
     return `<button type="button" class="hub-item${r.id === HUB.sel ? ' on' : ''}" data-hubsel="${r.id}" aria-current="${r.id === HUB.sel}">
-      ${uiBadge(r.icon)}<span class="hub-item-t"><b>${hubEsc(r.name)}</b><small>${hubEsc(r.sub)}</small>${hubProvBar(hubCounts(r))}</span>${lv ? `<i class="hub-dot hub-${lv}" title="${lv === 'bad' ? 'cannot hold as set' : 'a warning'}"></i>` : ''}</button>`;
+      ${uiBadge(r.icon)}<span class="hub-item-t"><b>${hubEsc(hubName(r))}</b><small>${hubEsc(r.sub)}</small></span>${lv ? `<i class="hub-dot hub-${lv}" title="${lv === 'bad' ? 'cannot hold as set' : 'a warning'}"></i>` : ''}</button>`;
   };
   const mats = HUB_RECORDS.filter(hubMatches), ifs = HUB_IFACES.filter(hubMatches);
   const groups = HUB_CLS_ORDER.map(c => [c, mats.filter(r => r.cls === c)]).filter(g => g[1].length);
   return `<label class="hub-search"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><input type="search" id="hubQ" placeholder="Search materials, properties" value="${hubEsc(HUB.q)}" aria-label="Search the materials and their properties"></label>
     ${groups.map(([c, rs]) => `<div class="hub-lib-h">${c === 'Particles' ? 'Particles' : c + (rs.length > 1 && !/s$/.test(c) ? 's' : '')}</div>${rs.map(item).join('')}`).join('')}
     ${ifs.length ? `<div class="hub-lib-h">Interfaces</div>${ifs.map(item).join('')}` : ''}
-    ${!groups.length && !ifs.length ? '<p class="hub-none">Nothing matches.</p>' : ''}
-    <div class="hub-lib-foot"><span><i class="pb-meas"></i>Measured</span><span><i class="pb-you"></i>Yours</span><span><i class="pb-asm"></i>Assumed</span><span><i class="pb-blt"></i>Built-in</span></div>`;
+    ${!groups.length && !ifs.length ? '<p class="hub-none">Nothing matches.</p>' : ''}`;
 }
 function hubWireLib() {
   view.querySelectorAll('[data-hubsel]').forEach(b => { b.onclick = () => { if (HUB.sel !== b.dataset.hubsel) { HUB.sel = b.dataset.hubsel; HUB.open = null; const r = hubRec(HUB.sel); if (!hubTabs(r).some(t => t[0] === HUB.tab)) HUB.tab = 'props'; } hubPaint(); }; });
@@ -127,34 +111,32 @@ function hubWireLib() {
 }
 
 // ---- the editor ----
+/** A material's tabs (the owner's spec), those with content: a material without models or measurements has no such tab. */
 function hubTabs(r) {
-  return [['props', 'Properties'], ...(r.models ? [['models', 'Models and plots']] : []), ...(hubMeasured(r) ? [['meas', 'Measured data']] : []), ['used', 'Used by']];
+  return [['overview', 'Overview'], ['props', 'Properties'], ...(r.models ? [['models', 'Constitutive Models']] : []), ...(hubMeasured(r) ? [['meas', 'Experimental Data']] : []),
+    ...(hubFuncProps(r).length ? [['funcs', 'Property Functions']] : []), ['valid', 'Validity and Sources'], ['domains', 'Domain Assignments']];
 }
+/** The properties with a function to show: a law in temperature, or a value a solver can take in temperature. */
+const hubFuncProps = r => hubProps(r).filter(p => p.b.t === 'law' || hubTdep(p));
 function hubEditorHTML(r) {
-  const used = new Set(hubProps(r).flatMap(p => p.phys)), ph = HUB_PHYS.map(q => q.k).filter(k => used.has(k)), ch = hubChecks(r), tabs = hubTabs(r), iface = r.id.startsWith('i-');
+  const ch = hubChecks(r), tabs = hubTabs(r), iface = r.id.startsWith('i-');
   if (!tabs.some(t => t[0] === HUB.tab)) HUB.tab = 'props';
   const parts = iface ? [r.a, r.bb].map(id => (id ? `<button type="button" class="hub-link" data-hubsel="${id}">${hubEsc(hubRec(id).name)}</button>` : '<span>the blade (rigid wall)</span>')).join(' <span class="hub-sep">|</span> ') : '';
   return `<header class="hub-head">
-      <div class="hub-title">${uiBadge(r.icon)}<div><h2 id="hubName">${hubEsc(r.name)}</h2><p class="hub-cls"><span class="hub-tag">${iface ? 'Interface' : r.cls}</span>${hubEsc(r.sub)}${r.desc ? ` · ${hubEsc(r.desc)}` : ''}</p></div>
+      <div class="hub-title">${uiBadge(r.icon)}<div><h2 id="hubName">${hubEsc(hubName(r))}</h2><p class="hub-cls"><span class="hub-tag">${iface ? 'Interface' : r.cls}</span>${hubEsc(r.sub)}${r.desc ? ` · ${hubEsc(r.desc)}` : ''}</p></div>
         <span class="hub-head-act"><button type="button" class="btn btn-secondary btn-sm" id="hubRecReset" title="This material's values back to their first values">${uiIco('restart')}Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="hubRecExport">${uiIco('download')}Export</button></span></div>
-      <dl class="hub-facts">
-        ${iface ? `<div><dt>Between</dt><dd>${parts}</dd></div>` : ''}
-        <div><dt>Where it is</dt><dd>${r.domains.map(hubEsc).join('<br>')}</dd></div>
-        <div><dt>Solved by</dt><dd class="hub-chips">${ph.map(k => `<button type="button" class="chip hub-ph" data-hubgo="${k}">${hubPhys(k).l}</button>`).join('')}</dd></div>
-        <div><dt>Provenance</dt><dd>${hubProvBar(hubCounts(r), true)}</dd></div>
-      </dl>
+      ${iface ? `<dl class="hub-facts"><div><dt>Between</dt><dd>${parts}</dd></div></dl>` : ''}
       ${r.note ? `<p class="hub-note">${hubEsc(r.note)}</p>` : ''}
       ${ch.length ? `<ul class="hub-checks">${ch.map(c => `<li class="hub-${c.level === 'error' ? 'bad' : 'warn'}"><i class="hub-dot hub-${c.level === 'error' ? 'bad' : 'warn'}"></i>${hubEsc(c.msg)}</li>`).join('')}</ul>` : ''}
     </header>
     <div class="hub-tabs" role="tablist" aria-label="${hubEsc(r.name)}: its pages">${tabs.map(([k, t]) => `<button type="button" role="tab" data-hubtab="${k}" aria-selected="${HUB.tab === k}">${t}</button>`).join('')}</div>
-    <div class="hub-tab" role="tabpanel">${HUB.tab === 'models' ? hubModelsHTML(r) : HUB.tab === 'meas' ? hubMeasHTML(r) : HUB.tab === 'used' ? hubUsedHTML(r) : hubPropsHTML(r)}</div>`;
+    <div class="hub-tab" role="tabpanel">${{ overview: hubOverviewHTML, models: hubModelsHTML, meas: hubMeasHTML, funcs: hubFuncsHTML, valid: hubValidHTML, domains: hubDomainsHTML }[HUB.tab]?.(r) ?? hubPropsHTML(r)}</div>`;
 }
 
 // the property table
 function hubPropsHTML(r) {
-  const body = r.groups.map(g => `<tbody class="hub-grp"><tr class="hub-grp-h"><th colspan="6" scope="rowgroup">${hubEsc(g.l)}</th></tr>${g.props.map(p => hubRowHTML(r, p)).join('')}</tbody>`).join('');
-  return `<div class="table-wrap"><table class="hub-table"><thead><tr><th scope="col">Property</th><th scope="col">Symbol</th><th scope="col" class="hub-c-v">Value</th><th scope="col">Unit</th><th scope="col">Provenance</th><th scope="col" class="hub-c-src">Source</th></tr></thead>${body}</table></div>
-    <p class="hub-foot">Click a property for its definition: the law and its plot, the tensor in the material's frame, its range, the solvers that read it. Values are the solvers' own: a change here is solved with.</p>`;
+  const body = r.groups.map(g => `<tbody class="hub-grp"><tr class="hub-grp-h"><th colspan="7" scope="rowgroup">${hubEsc(g.l)}</th></tr>${g.props.map(p => hubRowHTML(r, p)).join('')}</tbody>`).join('');
+  return `<div class="table-wrap"><table class="hub-table"><thead><tr><th scope="col">Property</th><th scope="col">Symbol</th><th scope="col">Method</th><th scope="col" class="hub-c-v">Value</th><th scope="col">Unit</th><th scope="col" class="hub-c-rng">Valid range</th><th scope="col" class="hub-c-src">Data source</th></tr></thead>${body}</table></div>`;
 }
 /** A property's value cell: its input (an editable value), select or switch, else the value. */
 function hubValCell(p, v) {
@@ -174,16 +156,17 @@ function hubValCell(p, v) {
 function hubRowHTML(r, p) {
   const v = hubVal(p), off = hubOff(p), open = HUB.open === p.id, b = p.b, ch = hubChecks(r).filter(c => c.prop === p.id);
   const lv = ch.some(c => c.level === 'error') ? 'bad' : ch.length ? 'warn' : '';
-  const provCell = b.t === 'card' || b.t === 'inp'
-    ? `<select class="hub-psel pv-${hubPG(v.prov)}" id="hubpv_${p.id}" data-hubprov="${p.id}" data-help="mat.flag" aria-label="${hubEsc(p.l)}: its provenance">${HUB_PROV_SET.map(k => `<option value="${k}"${k === v.prov ? ' selected' : ''}>${HUB_PROV[k].l}</option>`).join('')}</select>`
-    : hubProvChip(v.prov);
+  // (the definition method: a choice where a solver takes the property in temperature, else the method it has)
+  const kind = !v.def ? 'const' : v.def.kind === 'table' ? 'table' : 'expr';
+  const methodCell = hubTdep(p) ? `<select class="hub-sel hub-msel" id="hubm_${p.id}" data-hubmethod="${p.id}" aria-label="${hubEsc(p.l)}: its definition method">${[['const', 'Constant'], ['table', 'Table in T'], ['expr', 'Equation in T']].map(([k, t]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${t}</option>`).join('')}</select>`
+    : `<span class="hub-meth">${hubEsc(hubMethod(p, v))}</span>`;
   const srcCell = b.t === 'card' ? `<input type="text" class="mat-src hub-src" id="${HUB_ATTR[b.card][1]}s_${b.k}" data-${HUB_ATTR[b.card][0]}="${b.k}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`
     : b.t === 'inp' ? `<input type="text" class="hub-src" id="hubins_${b.k}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`
     : `<span class="hub-srct" title="${hubEsc(v.src)}">${hubEsc(v.src)}</span>`;
   const row = `<tr class="hub-row${off ? ' hub-off' : ''}${open ? ' open' : ''}${p.sub ? ' hub-subrow' : ''}${lv ? ' hub-r' + lv : ''}" data-hubrow="${p.id}"${b.t === 'card' ? ` data-${HUB_ATTR[b.card][0]}="${b.k}"` : ''}>
     <th scope="row"><button type="button" class="hub-pname" id="hubop_${p.id}" data-hubopen="${p.id}" aria-expanded="${open}"><svg class="hub-car" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>${hubEsc(p.l)}${lv ? `<i class="hub-dot hub-${lv}"></i>` : ''}</button>${off ? `<small class="hub-offn">${hubEsc(off)}</small>` : p.note ? `<small class="hub-offn">${hubEsc(p.note)}</small>` : ''}</th>
-    <td class="hub-sym">${hubSym(p.sym)}</td><td class="hub-c-v">${hubValCell(p, v)}</td><td class="hub-u">${hubEsc(v.u)}</td><td>${provCell}</td><td class="hub-c-src">${srcCell}</td></tr>`;
-  return row + (open ? `<tr class="hub-detail"><td colspan="6">${hubDetailHTML(r, p, v)}</td></tr>` : '');
+    <td class="hub-sym">${hubSym(p.sym)}</td><td>${methodCell}</td><td class="hub-c-v">${hubValCell(p, v)}</td><td class="hub-u">${hubEsc(v.u)}</td><td class="hub-c-rng">${hubEsc(hubValid(p, v))}</td><td class="hub-c-src">${srcCell}</td></tr>`;
+  return row + (open ? `<tr class="hub-detail"><td colspan="7">${hubDetailHTML(r, p, v)}</td></tr>` : '');
 }
 
 // a property's definition (its row opened)
@@ -198,33 +181,32 @@ function hubDetailHTML(r, p, v) {
     if (hubTdep(p)) return `<div class="hub-d">${hubDefHTML(p, v)}${kv([
       help ? ['What it is', hubEsc(help.d)] : null,
       ['Stage card', `the ${HUB_CARD_T[b.card]} (its Defaults: the Defaults menu above)`],
-      ['Provenance', `${hubProvL(v.prov)}: ${hubEsc((HUB_PROV[v.prov] || HUB_PROV_RO[v.prov] || {}).d || '')}`],
-      ['Source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`],
+      ['Valid range', hubEsc(hubValid(p, v))],
+      ['Data source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`],
     ])}${usedHTML}</div>`;
     return `<div class="hub-d">${kv([
-      ['Definition', 'Constant'],
+      ['Method', 'Constant'],
       help ? ['What it is', hubEsc(help.d)] : null,
       b.t === 'card' ? ['Stage card', `the ${HUB_CARD_T[b.card]} (its Defaults: the Defaults menu above)`] : null,
       si ? ['In SI', si] : null,
-      ['Allowed', `${v.lo} to ${v.hi} ${hubEsc(v.u)}`],
+      ['Valid range', `${v.lo} to ${v.hi} ${hubEsc(v.u)}`],
       b.t === 'inp' ? ['Also on', 'the inputs bar (left), the same value'] : b.t === 'cfdg' ? ['Also on', 'Coating › 2D, the fibre (the same value)'] : b.t === 'peel' ? ['Also on', 'Pre heat treatment, its inputs (the same value)'] : null,
-      ['Provenance', `${hubProvL(v.prov)}: ${hubEsc((HUB_PROV[v.prov] || HUB_PROV_RO[v.prov] || {}).d || '')}`],
-      b.t === 'card' || b.t === 'inp' ? ['Source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`] : ['Source', hubEsc(v.src)],
+      b.t === 'card' || b.t === 'inp' ? ['Data source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`] : ['Data source', hubEsc(v.src)],
     ])}${usedHTML}</div>`;
   }
-  if (b.t === 'calc') return `<div class="hub-d">${kv([['Definition', 'Calculated'], ['How', hubEsc(v.src)], si ? ['In SI', si] : null])}${usedHTML}</div>`;
-  if (b.t === 'const') { const c = HUB_CONST[b.id]; return `<div class="hub-d">${kv([['Definition', 'Constant, built into the solver'], ['Value', `${hubFmt(c.v, -6)} ${hubEsc(c.u)}`], ['Source', hubEsc(c.src)], ['In the code', `<code>${hubEsc(c.solver)}</code>`]])}${usedHTML}</div>`; }
+  if (b.t === 'calc') return `<div class="hub-d">${kv([['Method', 'Calculated'], ['How', hubEsc(v.src)], si ? ['In SI', si] : null])}${usedHTML}</div>`;
+  if (b.t === 'const') { const c = HUB_CONST[b.id]; return `<div class="hub-d">${kv([['Method', 'Constant'], ['Value', `${hubFmt(c.v, -6)} ${hubEsc(c.u)}`], ['Data source', hubEsc(c.src)], ['In the code', `<code>${hubEsc(c.solver)}</code>`]])}${usedHTML}</div>`; }
   if (b.t === 'law') {
     const L = HUB_LAW[b.id], law = ML_LAWS[L.q.law], prm = Object.entries(L.q.params).filter(([k]) => k !== 'n' && k !== 'c').map(([k, x]) => `${k} = ${hubFmt(x, -6)}${law.params[k] ? ' ' + law.params[k] : ''}`).join(' · ');
-    return `<div class="hub-d hub-d-plot"><div>${kv([['Definition', `Law in temperature: ${hubEsc(law.formula)}`], prm ? ['Parameters', hubEsc(prm)] : ['Coefficients', hubEsc((L.q.params.c || L.q.params.n || []).map(x => hubFmt(x, -6)).join(', '))],
-      ['Valid', `${L.T[0]} to ${L.T[1]} °C${L.p ? ', at 1 atm' : ''}`], ['Source', hubEsc(L.src)], ['In the code', `<code>${hubEsc(L.solver)}</code>, checked against it`]])}${usedHTML}</div>
+    return `<div class="hub-d hub-d-plot"><div>${kv([['Method', `Equation in T: ${hubEsc(law.formula)}`], prm ? ['Parameters', hubEsc(prm)] : ['Coefficients', hubEsc((L.q.params.c || L.q.params.n || []).map(x => hubFmt(x, -6)).join(', '))],
+      ['Valid range', `${L.T[0]} to ${L.T[1]} °C${L.p ? ', at 1 atm' : ''}`], ['Data source', hubEsc(L.src)], ['In the code', `<code>${hubEsc(L.solver)}</code>, checked against it`]])}${usedHTML}</div>
       <figure class="hub-fig"><canvas id="hubDetCv" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure></div>`;
   }
   if (b.t === 'tensor') return `<div class="hub-d">${hubTensorHTML(p)}${usedHTML}</div>`;
   if (b.t === 'stiff' || b.t === 'stiffWeb') return `<div class="hub-d">${hubStiffHTML(b.t === 'stiffWeb' ? 'web' : 'go')}${usedHTML}</div>`;
-  if (b.t === 'model') return `<div class="hub-d">${kv([['Law', hubEsc(ML_RHEO[CFDG.model].formula)], ['Parameters', 'the rows below; those of another law are kept, not used'], ['Its plot', '<button type="button" class="hub-link" data-hubtab="models">Models and plots</button>']])}${usedHTML}</div>`;
-  if (b.t === 'measured') return `<div class="hub-d">${kv([['Definition', 'Your measurement'], ['Value', `${RHEO_MEASURED.mu} Pa·s at ${RHEO_MEASURED.gd} 1/s`], ['The law there', `${hubFmt(P.mu, -4)} Pa·s (${hubFmt((P.mu - RHEO_MEASURED.mu) / RHEO_MEASURED.mu * 100, 1)} %)`], ['Fit a flow curve', 'Measured data: import a rheometer test and use its fit']])}</div>`;
-  return `<div class="hub-d">${kv([['Definition', hubEsc(v.src)]])}${usedHTML}</div>`;
+  if (b.t === 'model') return `<div class="hub-d">${kv([['Law', hubEsc(ML_RHEO[CFDG.model].formula)], ['Parameters', 'the rows below; those of another law are kept, not used'], ['Its plot', '<button type="button" class="hub-link" data-hubtab="models">Constitutive Models</button>']])}${usedHTML}</div>`;
+  if (b.t === 'measured') return `<div class="hub-d">${kv([['Method', 'Measured point'], ['Value', `${RHEO_MEASURED.mu} Pa·s at ${RHEO_MEASURED.gd} 1/s`], ['The law there', `${hubFmt(P.mu, -4)} Pa·s (${hubFmt((P.mu - RHEO_MEASURED.mu) / RHEO_MEASURED.mu * 100, 1)} %)`], ['Fit a flow curve', 'Measured data: import a rheometer test and use its fit']])}</div>`;
+  return `<div class="hub-d">${kv([['Method', hubEsc(hubMethod(p, v))], ['Data source', hubEsc(v.src)]])}${usedHTML}</div>`;
 }
 /**
  * A property a solver can take in temperature (MH-4b): its definition -- a constant, a table in T (linear or monotone
@@ -233,18 +215,18 @@ function hubDetailHTML(r, p, v) {
  */
 function hubDefHTML(p, v) {
   const q = v.def, kind = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr', [solv, range] = hubTdep(p), names = solv.map(k => hubPhys(k).l).join(' and ');
-  const seg = `<span class="seg" role="tablist" aria-label="${hubEsc(p.l)}: its definition">${[['const', 'Constant'], ['table', 'Table in T'], ['expr', 'Expression in T']].map(([k, t]) => `<button type="button" role="tab" id="hubdk_${p.id}_${k}" data-hubdefkind="${p.id}|${k}" aria-selected="${k === kind}">${t}</button>`).join('')}</span>`;
+  const seg = `<span class="seg" role="tablist" aria-label="${hubEsc(p.l)}: its definition">${[['const', 'Constant'], ['table', 'Table in T'], ['expr', 'Equation in T']].map(([k, t]) => `<button type="button" role="tab" id="hubdk_${p.id}_${k}" data-hubdefkind="${p.id}|${k}" aria-selected="${k === kind}">${t}</button>`).join('')}</span>`;
   let body = '';
-  if (kind === 'const') body = `<p class="hub-muted">${hubFmt(v.v, -6)} ${hubEsc(v.u)} at every temperature. A table or an expression in T makes ${names} take it at each point's temperature.</p>`;
+  if (kind === 'const') body = `<p class="hub-muted">${hubFmt(v.v, -6)} ${hubEsc(v.u)} at every temperature. A table or an equation in T makes ${names} take it at each point's temperature.</p>`;
   else if (kind === 'table') body = `<div class="hub-dt-wrap"><table class="hub-dt" aria-label="${hubEsc(p.l)} against temperature"><thead><tr><th scope="col">T <small>°C</small></th><th scope="col">${hubSym(p.sym)} <small>${hubEsc(v.u)}</small></th><th></th></tr></thead><tbody>
       ${q.x.map((x, i) => `<tr><td><input type="number" step="any" id="hubdt_${p.id}_x${i}" data-hubdt="${p.id}" data-c="x" value="${+(x - 273.15).toFixed(6)}" aria-label="Point ${i + 1}: temperature"></td><td><input type="number" step="any" id="hubdt_${p.id}_y${i}" data-hubdt="${p.id}" data-c="y" value="${q.y[i]}" aria-label="Point ${i + 1}: value"></td><td>${q.x.length > 2 ? `<button type="button" class="hub-link" id="hubdtdel_${p.id}_${i}" data-hubdtdel="${p.id}|${i}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table>
       <div class="hub-dt-ctl"><span class="hub-dt-btns"><button type="button" class="btn btn-secondary btn-sm" id="hubdtadd_${p.id}" data-hubdtadd="${p.id}">${uiIco('plus')}Add a point</button><button type="button" class="btn btn-secondary btn-sm" id="hubdtcsv_${p.id}" data-hubdtcsv="${p.id}">${uiIco('upload')}Load CSV…</button></span>
         <label>Between points <select class="hub-sel" id="hubdto_${p.id}_interp" data-hubdtopt="${p.id}" data-o="interp"><option value="linear"${q.interp !== 'pchip' ? ' selected' : ''}>Linear</option><option value="pchip"${q.interp === 'pchip' ? ' selected' : ''}>Monotone cubic</option></select></label>
         <label>Outside them <select class="hub-sel" id="hubdto_${p.id}_extrap" data-hubdtopt="${p.id}" data-o="extrap">${[['clamp', 'Held at the end values'], ['extrapolate', 'Carried on'], ['error', 'Refused (the solve stops)']].map(([k, t]) => `<option value="${k}"${(q.extrap || 'error') === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label></div></div>`;
-  else body = `<label class="hub-expr-l">${hubSym(p.sym)}(T) = <input type="text" class="hub-expr" id="hubdexpr_${p.id}" data-hubdexpr="${p.id}" value="${hubEsc(q.src)}" spellcheck="false" aria-label="${hubEsc(p.l)} as an expression in T"></label>
+  else body = `<label class="hub-expr-l">${hubSym(p.sym)}(T) = <input type="text" class="hub-expr" id="hubdexpr_${p.id}" data-hubdexpr="${p.id}" value="${hubEsc(q.src)}" spellcheck="false" aria-label="${hubEsc(p.l)} as an equation in T"></label>
       <p class="hub-muted hub-small">T in kelvin; + − × (*) ÷ (/) ^, exp, log, sqrt, pow, min, max, abs, pi. In ${hubEsc(v.u)}.</p>`;
   return `<div class="hub-def"><div class="hub-def-h"><span class="hub-d-l">Definition</span>${seg}</div>${body}<p class="hub-err" id="hubDefErr_${p.id}" hidden></p>
-    ${kind !== 'const' ? `<figure class="hub-fig hub-def-fig"><canvas id="hubDefCv" data-hubdefplot="${p.id}" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure>` : ''}
+    <figure class="hub-fig hub-def-fig"><canvas id="hubDefCv_${p.id}" data-hubdefplot="${p.id}" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure>
     <p class="hub-muted hub-small">${names} take it at each point's temperature${kind === 'const' ? '' : `; the others its value at 20 °C, ${hubFmt(v.v, -4)} ${hubEsc(v.u)}`}. Checked positive from ${range[0]} to ${range[1]} °C.</p></div>`;
 }
 /** A value in SI (its unit parsed: the factor and the base units), or '' when the unit is a name (a share, a ratio). */
@@ -417,14 +399,68 @@ function hubMeasHTML(r) {
 function hubUsedHTML(r) {
   const rows = HUB_PHYS.map(ph => [ph, hubProps(r).filter(p => p.phys.includes(ph.k))]).filter(q => q[1].length);
   const unused = hubProps(r).filter(p => !p.phys.length && ['card', 'inp', 'cfdg', 'peel'].includes(p.b.t));
-  return `<div class="table-wrap"><table class="cfd-table hub-used"><thead><tr><th scope="col">Solver</th><th scope="col">What it reads from ${hubEsc(r.name)}</th><th scope="col"></th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="cfd-table hub-used"><thead><tr><th scope="col">Solver</th><th scope="col">What it reads from ${hubEsc(hubName(r))}</th><th scope="col"></th></tr></thead><tbody>
     ${rows.map(([ph, ps]) => `<tr><th scope="row">${ph.l}<small>${hubEsc(ph.s)}</small></th><td class="hub-chips">${ps.map(p => `<button type="button" class="chip${hubOff(p) ? ' hub-chip-off' : ''}" data-hubopenp="${p.id}" title="${hubEsc(hubOff(p) || p.l)}">${hubEsc(p.l)}${p.sym ? ` <i>${hubSym(p.sym)}</i>` : ''}</button>`).join('')}</td><td><button type="button" class="btn btn-secondary btn-sm" data-hubgo="${ph.k}">Open</button></td></tr>`).join('')}
     ${unused.length ? `<tr><th scope="row">None<small>shown, not solved with</small></th><td class="hub-chips">${unused.map(p => `<span class="chip hub-chip-off">${hubEsc(p.l)}</span>`).join('')}</td><td></td></tr>` : ''}</tbody></table></div>`;
+}
+
+// ---- Overview: the material's identity and metadata ----
+function hubOverviewHTML(r) {
+  const m = hubMeta(r), used = new Set(hubProps(r).flatMap(p => p.phys)), iface = r.id.startsWith('i-');
+  const fld = ([k, l]) => `<div class="hub-of"><label for="hubmeta_${k}">${l}</label>${k === 'notes' || k === 'desc'
+    ? `<textarea id="hubmeta_${k}" data-hubmeta="${k}" rows="${k === 'notes' ? 3 : 2}">${hubEsc(m[k])}</textarea>`
+    : `<input type="text" id="hubmeta_${k}" data-hubmeta="${k}" value="${hubEsc(m[k])}"${k === 'name' ? ` placeholder="${hubEsc(r.name)}"` : ''}>`}</div>`;
+  return `<div class="hub-ov"><section class="hub-ov-id"><h3>Identity</h3><div class="hub-of-grid">${HUB_META_FIELDS.map(fld).join('')}</div></section>
+    <section class="hub-ov-at"><h3>In the process</h3><dl class="hub-kv">
+      <div><dt>Category</dt><dd>${iface ? 'Interface' : hubEsc(r.cls)}${r.sub ? ` · ${hubEsc(r.sub)}` : ''}</dd></div>
+      <div><dt>Where it is</dt><dd>${r.domains.map(hubEsc).join('<br>')}</dd></div>
+      <div><dt>Solved by</dt><dd class="hub-chips">${HUB_PHYS.filter(q => used.has(q.k)).map(q => `<button type="button" class="chip hub-ph" data-hubgo="${q.k}">${q.l}</button>`).join('')}</dd></div>
+      <div><dt>Properties</dt><dd>${hubProps(r).length} in ${r.groups.length} groups</dd></div></dl></section></div>`;
+}
+// ---- Property Functions: each property's equation or table in temperature, plotted ----
+function hubFuncsHTML(r) {
+  return `<div class="hub-funcs">${hubFuncProps(r).map(p => {
+    const v = hubVal(p);
+    if (p.b.t === 'law') {
+      const L = HUB_LAW[p.b.id], law = ML_LAWS[L.q.law], prm = Object.entries(L.q.params).filter(([k]) => k !== 'n' && k !== 'c').map(([k, x]) => `${k} = ${hubFmt(x, -6)}${law.params[k] ? ' ' + law.params[k] : ''}`).join(' · ');
+      return `<section class="hub-fn"><header><h3>${hubEsc(hubPropName(r, p))} <span class="hub-sym">${hubSym(p.sym)}</span></h3><span class="hub-meth">Equation in T</span></header>
+        <div class="hub-d-plot"><dl class="hub-kv"><div><dt>Equation</dt><dd><code>${hubEsc(law.formula)}</code></dd></div><div><dt>${prm ? 'Parameters' : 'Coefficients'}</dt><dd>${hubEsc(prm || (L.q.params.c || L.q.params.n || []).map(x => hubFmt(x, -6)).join(', '))}</dd></div>
+          <div><dt>Variable</dt><dd>T (temperature)</dd></div><div><dt>Valid range</dt><dd>${hubEsc(hubValid(p, v))}</dd></div><div><dt>Data source</dt><dd>${hubEsc(L.src)}</dd></div></dl>
+          <figure class="hub-fig"><canvas data-hublawplot="${p.b.id}" data-p="${p.id}" role="img" aria-label="${hubEsc(p.l)} against temperature"></canvas></figure></div></section>`;
+    }
+    return `<section class="hub-fn"><header><h3>${hubEsc(hubPropName(r, p))} <span class="hub-sym">${hubSym(p.sym)}</span></h3><span class="hub-meth">${hubEsc(hubMethod(p, v))}</span></header>${hubDefHTML(p, v)}</section>`;
+  }).join('')}</div>`;
+}
+// ---- Validity and Sources ----
+function hubValidHTML(r) {
+  const rows = hubProps(r).filter(p => !['model', 'orModel', 'switch'].includes(p.b.t)).map(p => {
+    const v = hubVal(p), b = p.b;
+    const src = b.t === 'card' ? `<input type="text" class="hub-src" id="hubvs_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`
+      : b.t === 'inp' ? `<input type="text" class="hub-src" id="hubvsi_${b.k}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`
+      : (t => `<span class="hub-srct" title="${hubEsc(t)}">${hubEsc(t)}</span>`)(b.t === 'law' ? HUB_LAW[b.id].src : b.t === 'const' ? HUB_CONST[b.id].src : v.src || '');
+    const code = b.t === 'law' ? HUB_LAW[b.id].solver : b.t === 'const' ? HUB_CONST[b.id].solver : '';
+    return `<tr><th scope="row">${hubEsc(hubPropName(r, p))}</th><td>${hubEsc(hubMethod(p, v))}</td><td>${hubEsc(hubValid(p, v)) || '<span class="hub-muted">—</span>'}${v.u && hubValid(p, v) && !/°C/.test(hubValid(p, v)) ? ` ${hubEsc(v.u)}` : ''}</td><td>${hubEsc(hubOutside(p, v)) || '<span class="hub-muted">—</span>'}</td><td class="hub-c-src">${src}</td><td class="hub-c-code">${code ? `<code>${hubEsc(code)}</code>` : ''}</td></tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="cfd-table hub-valid"><thead><tr><th scope="col">Property</th><th scope="col">Method</th><th scope="col">Valid range</th><th scope="col">Outside the range</th><th scope="col" class="hub-c-src">Data source</th><th scope="col" class="hub-c-code">In the solver</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+// ---- Domain Assignments: where the material is, and what each solver reads from it there ----
+function hubDomainsHTML(r) {
+  return `<div class="hub-dom"><div class="table-wrap"><table class="cfd-table hub-domt"><thead><tr><th scope="col">Domain</th><th scope="col">Material assigned</th></tr></thead><tbody>
+    ${r.domains.map(d => `<tr><td>${hubEsc(d)}</td><td>${hubEsc(hubName(r))}</td></tr>`).join('')}</tbody></table></div>
+    ${hubUsedHTML(r)}</div>`;
 }
 
 // ---- wiring the editor ----
 function hubWireEditor(r) {
   view.querySelectorAll('[data-hubtab]').forEach(b => { b.onclick = () => { HUB.tab = b.dataset.hubtab; hubPaint(); }; });
+  // (the tab strip scrolls when it is wider than the card: the open tab kept in sight, a fade where more tabs are)
+  const ts = view.querySelector('.hub-tabs'), tOn = ts && ts.querySelector('[aria-selected=true]');
+  if (ts) {
+    const a = tOn && tOn.getBoundingClientRect(), z = ts.getBoundingClientRect();
+    if (a && a.right > z.right) ts.scrollLeft += a.right - z.right + 24;
+    const more = () => { ts.classList.toggle('more-r', ts.scrollLeft + ts.clientWidth < ts.scrollWidth - 2); ts.classList.toggle('more-l', ts.scrollLeft > 2); };
+    more(); ts.addEventListener('scroll', more, { passive: true });
+  }
   view.querySelectorAll('[data-hubgo]').forEach(b => { b.onclick = () => hubGoPhys(b.dataset.hubgo); });
   view.querySelectorAll('[data-hubgonav]').forEach(b => { b.onclick = () => navGo(b.dataset.hubgonav); });
   view.querySelectorAll('[data-hubopen]').forEach(b => { b.onclick = () => { HUB.open = HUB.open === b.dataset.hubopen ? null : b.dataset.hubopen; hubPaint(); }; });
@@ -436,7 +472,6 @@ function hubWireEditor(r) {
     guardNumber(el, { label: v.label || p.l, lo: v.lo, hi: v.hi, unit: v.u }, x => hubSet(p, x));
     hubSoon();
   }));
-  view.querySelectorAll('select[data-hubprov]').forEach(el => el.addEventListener('change', () => { hubSet(prop(el.dataset.hubprov), null, { prov: el.value }); hubSoon(); }));
   view.querySelectorAll('input[data-hubsrc]').forEach(el => el.addEventListener('change', () => { hubSet(prop(el.dataset.hubsrc), null, { src: el.value.trim() }); hubSoon(); }));
   const on = (id, f) => { const el = document.getElementById(id); if (el) el.addEventListener('change', f); };
   on('matModel', e => { CFDG.model = e.target.value; rheoSync('model'); render(); });
@@ -468,14 +503,24 @@ function hubWireEditor(r) {
     hubSetDef(p, q); hubSoon();
   };
   const defOf = id => { const p = prop(id); return { p, q: MAT[p.b.card][p.b.k].def || null, v: MAT[p.b.card][p.b.k].v }; };
-  view.querySelectorAll('[data-hubdefkind]').forEach(b => { b.onclick = () => {
-    const [id, k] = b.dataset.hubdefkind.split('|'), { p, q, v } = defOf(id), cur = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr';
+  const setMethod = (id, k) => {
+    const { p, q, v } = defOf(id), cur = !q ? 'const' : q.kind === 'table' ? 'table' : 'expr';
     if (k === cur) return;
     const hi = hubTdep(p)[1][1] > 300 ? 1273.15 : 373.15;
     if (k === 'const') defSet(id, null, 'constant again');
     else if (k === 'table') defSet(id, { kind: 'table', var: 'T', x: [293.15, hi], y: [v, v], interp: 'linear', extrap: 'clamp' }, 'as a table in T');
-    else defSet(id, { kind: 'expr', src: String(v) }, 'as an expression in T');
-  }; });
+    else defSet(id, { kind: 'expr', src: String(v) }, 'as an equation in T');
+  };
+  view.querySelectorAll('[data-hubdefkind]').forEach(b => { b.onclick = () => { const [id, k] = b.dataset.hubdefkind.split('|'); setMethod(id, k); }; });
+  // (the Method column: the same choice; the row opens on its editor)
+  view.querySelectorAll('select[data-hubmethod]').forEach(el => el.addEventListener('change', () => { const id = el.dataset.hubmethod; if (el.value !== 'const') HUB.open = id; setMethod(id, el.value); }));
+  // (the Overview: a material's identity and metadata, one undo step per field)
+  view.querySelectorAll('[data-hubmeta]').forEach(el => el.addEventListener('change', () => {
+    const k = el.dataset.hubmeta, val = el.value.trim();
+    if (val === (hubMeta(r)[k] || '')) return;
+    undoHint(`${hubName(r)}: ${HUB_META_FIELDS.find(f => f[0] === k)[1].toLowerCase()}`);
+    hubSetMeta(r, k, val); hubSoon();
+  }));
   const tableOf = id => {
     const rows = [...view.querySelectorAll(`[data-hubdt="${id}"][data-c="x"]`)].map((el, i) => [+el.value + 273.15, +view.querySelector(`#hubdt_${id}_y${i}`).value]);
     rows.sort((a, b) => a[0] - b[0]);
@@ -523,14 +568,20 @@ function hubWireEditor(r) {
   if (HUB.tab === 'props' && HUB.open) requestAnimationFrame(() => {
     const p = prop(HUB.open), cv = document.getElementById('hubDetCv');
     if (p && cv && p.b.t === 'law') { const L = HUB_LAW[p.b.id]; hubLine(cv, hubLawCurve(p.b.id).map(([T, y]) => [T, y / (HUB_LAW_SCALE[p.b.id] || 1)]), { xl: 'temperature (°C)', yl: `${p.sym} (${L.u})`, x0: L.T[0], x1: L.T[1], aspect: 0.55, yf: v => hubFmt(v, -3) }); }
-    const dc = document.getElementById('hubDefCv');
-    if (p && dc && dc.dataset.hubdefplot === p.id) hubDrawDef(dc, p);
+    const dc = p && document.getElementById(`hubDefCv_${p.id}`);
+    if (dc) hubDrawDef(dc, p);
+  });
+  // (Property Functions: every definition's plot, every law's curve)
+  if (HUB.tab === 'funcs') requestAnimationFrame(() => {
+    view.querySelectorAll('[data-hubdefplot]').forEach(cv => { const q = prop(cv.dataset.hubdefplot); if (q) hubDrawDef(cv, q); });
+    view.querySelectorAll('[data-hublawplot]').forEach(cv => { const id = cv.dataset.hublawplot, L = HUB_LAW[id], q = prop(cv.dataset.p); hubLine(cv, hubLawCurve(id).map(([T, y]) => [T, y / (HUB_LAW_SCALE[id] || 1)]), { xl: 'temperature (°C)', yl: `${q ? q.sym.replace(/_/g, '') : ''} (${L.u})`, x0: L.T[0], x1: L.T[1], aspect: 0.42, yf: v => hubFmt(v, -3) }); });
   });
 }
 /** A definition in temperature against T over the range its solvers check (the table's points marked; 20 °C marked). */
 function hubDrawDef(cv, p) {
   const e = MAT[p.b.card][p.b.k], q = e.def, [, [t0, t1]] = hubTdep(p), pts = [];
-  if (!q) return;
+  // (a constant: its value at every temperature, a flat line over the range its solvers reach)
+  if (!q) { hubLine(cv, [[t0, e.v], [t1, e.v]], { xl: 'temperature (°C)', yl: `${p.sym.replace(/_/g, '')} (${hubVal(p).u})`, x0: t0, x1: t1, aspect: 0.42, marks: [{ x: 20, c: cssVar('--muted'), t: '20 °C' }], yf: v => hubFmt(v, -3) }); return; }
   const lo = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.max(t0, q.x[0] - 273.15) : t0, hi = q.kind === 'table' && (q.extrap || 'error') === 'error' ? Math.min(t1, q.x[q.x.length - 1] - 273.15) : t1;
   for (let i = 0; i <= 200; i++) { const T = lo + (hi - lo) * i / 200; try { const y = hubDefAt(q, T); if (Number.isFinite(y)) pts.push([T, y]); } catch (err) { /* outside a refusing table */ } }
   const u = hubVal(p).u, extra = q.kind === 'table' ? [{ p: q.x.map((x, i) => [x - 273.15, q.y[i]]).filter(([x]) => x >= t0 && x <= t1), c: cssVar('--ink'), line: false, dots: true }] : [];
@@ -541,20 +592,21 @@ let hubTimer = 0;
 function hubSoon() { clearTimeout(hubTimer); hubTimer = setTimeout(() => { if (tab === 13) viewMaterials(); }, 0); }
 
 // ---- readiness ----
+/** The order a solver's properties are listed in: what it lacks first, what it does not read last. */
+const HUB_RD_ORDER = { missing: 0, complete: 1, unsupported: 2, optional: 3, na: 4 };
 function hubReadyHTML() {
-  const R = hubReadiness(), L = { ok: ['Firm', 'every value it reads measured, yours or built in'], warn: ['Indicative', 'it reads assumed or published values'], bad: ['Blocked', 'a material it reads cannot hold as set'] };
-  const cnt = (n, ks) => ks.reduce((s, k) => s + (n[k] || 0), 0);
+  const R = hubReadiness(), L = { ok: ['Ready', 'every value it requires is set and holds'], warn: ['Missing data', 'a value it requires has none'], bad: ['Blocked', 'a material cannot hold as set'] };
+  const ST = { complete: 'Required, complete', missing: 'Required, missing', optional: 'Optional: not used as set', na: 'Not applicable: not read by this solver', unsupported: 'Defined in T: this solver takes its 20 °C value' };
   const rows = R.map(q => {
-    const open = HUB.readyOpen === q.ph.k, asm = q.used.flatMap(({ r, ps }) => ps.filter(p => ['published', 'assumed'].includes(hubVal(p).prov)).map(p => ({ r, p })));
+    const open = HUB.readyOpen === q.ph.k;
     return `<tr class="hub-rd${open ? ' open' : ''}"><th scope="row"><button type="button" class="hub-pname" data-hubready="${q.ph.k}" aria-expanded="${open}"><svg class="hub-car" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>${q.ph.l}</button><small>${hubEsc(q.ph.s)}</small></th>
-      <td>${q.total}<small>from ${q.used.length} materials</small></td><td class="hub-rd-bar">${hubProvBar(q.n)}</td>
-      <td>${cnt(q.n, ['measured', 'fitted'])}</td><td>${cnt(q.n, ['user', 'supplier', 'report'])}</td><td>${cnt(q.n, ['published', 'assumed'])}</td><td>${cnt(q.n, ['builtin'])}</td>
+      <td class="num">${q.n.complete}</td><td class="num">${q.n.missing}</td><td class="num">${q.n.optional}</td><td class="num">${q.n.na}</td><td class="num">${q.n.unsupported}</td>
       <td class="hub-st hub-st-${q.st}"><i class="hub-dot hub-${q.st}"></i>${L[q.st][0]}<small>${L[q.st][1]}</small></td><td><button type="button" class="btn btn-secondary btn-sm" data-hubgo="${q.ph.k}">Open</button></td></tr>
-      ${open ? `<tr class="hub-detail"><td colspan="9">${q.probs.length ? `<ul class="hub-checks">${q.probs.map(c => `<li class="hub-${c.level === 'error' ? 'bad' : 'warn'}"><i class="hub-dot hub-${c.level === 'error' ? 'bad' : 'warn'}"></i>${hubEsc(c.r.name)}: ${hubEsc(c.msg)}</li>`).join('')}</ul>` : ''}
-        ${asm.length ? `<p class="hub-d-l">Assumed or published (${asm.length}): measure these to firm it up</p><div class="hub-chips">${asm.map(({ r, p }) => `<button type="button" class="chip" data-hubjump="${r.id}|${p.id}">${hubEsc(r.name)} · ${hubEsc(p.l)}</button>`).join('')}</div>` : '<p class="hub-muted">Nothing it reads is assumed.</p>'}</td></tr>` : ''}`;
+      ${open ? `<tr class="hub-detail"><td colspan="8">${q.probs.length ? `<ul class="hub-checks">${q.probs.map(c => `<li class="hub-${c.level === 'error' ? 'bad' : 'warn'}"><i class="hub-dot hub-${c.level === 'error' ? 'bad' : 'warn'}"></i>${hubEsc(hubName(c.r))}: ${hubEsc(c.msg)}</li>`).join('')}</ul>` : ''}
+        <div class="table-wrap"><table class="cfd-table hub-rdt"><thead><tr><th scope="col">Material</th><th scope="col">Property</th><th scope="col">Value</th><th scope="col">Unit</th><th scope="col">Status</th></tr></thead><tbody>
+        ${[...q.rows].sort((a, b) => HUB_RD_ORDER[a.st] - HUB_RD_ORDER[b.st]).map(x => `<tr class="hub-rs-${x.st}"><td>${hubEsc(hubName(x.r))}</td><td><button type="button" class="hub-link" data-hubjump="${x.r.id}|${x.p.id}">${hubEsc(hubPropName(x.r, x.p))}</button></td><td class="num">${typeof x.v.v === 'number' ? hubFmt(x.v.v, x.v.d ?? -4) : hubEsc(x.v.v ?? '')}</td><td>${hubEsc(x.v.u || '')}</td><td>${ST[x.st]}${x.off ? ` <small>(${hubEsc(x.off)})</small>` : ''}</td></tr>`).join('')}</tbody></table></div></td></tr>` : ''}`;
   }).join('');
-  return `<div class="hub-sheet"><div class="table-wrap"><table class="cfd-table hub-ready"><thead><tr><th scope="col">Solver</th><th scope="col">Values it reads</th><th scope="col">Provenance</th><th scope="col">Measured</th><th scope="col">Yours</th><th scope="col">Assumed</th><th scope="col">Built-in</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="hub-foot">Values a solver reads as things are set (a law's parameters for the law chosen, a model's when it is on). Calculated values follow the ones they come from and are not counted.</p></div>`;
+  return `<div class="hub-sheet"><div class="table-wrap"><table class="cfd-table hub-ready"><thead><tr><th scope="col">Solver</th><th scope="col">Required, complete</th><th scope="col">Required, missing</th><th scope="col">Optional</th><th scope="col">Not applicable</th><th scope="col">Unsupported definition</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function hubWireReady() {
   view.querySelectorAll('[data-hubready]').forEach(b => { b.onclick = () => { HUB.readyOpen = HUB.readyOpen === b.dataset.hubready ? null : b.dataset.hubready; hubPaint(); }; });
@@ -610,8 +662,8 @@ function hubDownloadText(name, text, type) {
 }
 function hubSheetFile() {
   const n = hubSheetRows().length;
-  hubDownloadText(`materials-to-measure-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv');
-  imgToast(n ? `Measurement sheet: ${n} values marked Assumed or Published. Fill "Your value" (and its unit, provenance, source), then Import the file.` : 'Measurement sheet: no value is marked Assumed or Published.');
+  hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv');
+  imgToast(`Materials CSV: ${n} values. Enter yours under "Your value" (and its unit and source), then Import the file.`);
 }
 function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport()); }
 function hubImportFile() {
@@ -625,10 +677,11 @@ function hubImportFile() {
     let res, data, pre = [];
     try {
       if (csv) { const sh = hubSheetToFile(text); data = sh.file; pre = sh.skipped; if (!sh.n && !pre.length) { imgToast(`${f.name}: no "Your value" filled in.`); return; } } else data = JSON.parse(text);
+      // (a material file's metadata alone is a change too)
       res = hubImport(data, false, { keepDefs: csv });
     } catch (e) { imgToast(`${f.name}: ${e.message}.`, 'error'); return; }
     res.skipped = [...pre, ...res.skipped];
-    if (!res.changes.length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`, res.skipped.length ? 'error' : undefined); return; }
+    if (!res.changes.length && !(res.metas || []).length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`, res.skipped.length ? 'error' : undefined); return; }
     undoHint(`Import materials from ${f.name}`);
     hubImport(data, true, { keepDefs: csv });
     const nConv = res.changes.filter(c => c.unit).length;

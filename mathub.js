@@ -449,7 +449,7 @@ function hubVal(p) {
     }
     case 'peel': {
       const q = OVEN_PEEL_FIELDS.find(f => f[0] === b.k);
-      return { v: OVEN.peel[b.k], u: q[2], d: q[6], prov: OVEN.peel[q[7]] ? 'user' : 'assumed', src: OVEN.peel[q[7]] ? 'you (Pre heat treatment)' : (typeof helpOf === 'function' && helpOf('oven.' + b.k) ? helpOf('oven.' + b.k).d : 'assumed'), edit: true, lo: q[3], hi: q[4], step: q[5], label: q[1] };
+      return { v: OVEN.peel[b.k], u: q[2], d: q[6], prov: OVEN.peel[q[7]] ? 'user' : 'assumed', src: typeof helpOf === 'function' && helpOf('oven.' + b.k) ? helpOf('oven.' + b.k).d : '', edit: true, lo: q[3], hi: q[4], step: q[5], label: q[1] };
     }
     case 'calc': {
       let v; try { v = b.f(); } catch (e) { v = NaN; }
@@ -476,14 +476,14 @@ function hubVal(p) {
 /** The inputs bar's material values' first provenance, as their values came (until set otherwise). */
 const HUB_INP_PROV = {
   mu: ['measured', 'your measurement: 10.5 Pa·s at 2.7 1/s'],
-  K: ['assumed', 'from your measured 10.5 Pa·s at 2.7 1/s with the yield stress and n assumed: K = (η₂.₇ − τy/2.7) 2.7^(1−n)'],
-  eta0: ['assumed', 'from your measured 10.5 Pa·s at 2.7 1/s with η∞, λ, a and n assumed'],
-  n: ['assumed', 'assumed: 1 (no shear thinning) until a flow curve is fitted'],
-  ty: ['assumed', 'assumed, not measured: a flow curve or an amplitude sweep gives it'],
-  g: ['assumed', 'assumed: water-like (a pendant drop gives it)'],
-  th: ['assumed', 'assumed (a sessile drop on the blade\'s steel gives it)'],
-  thw: ['assumed', 'assumed (a sessile drop on the web gives it)'],
-  dth: ['assumed', 'assumed: contamination, residue'],
+  K: ['assumed', 'from your measured 10.5 Pa·s at 2.7 1/s with the yield stress and n: K = (η₂.₇ − τy/2.7) 2.7^(1−n)'],
+  eta0: ['assumed', 'from your measured 10.5 Pa·s at 2.7 1/s with η∞, λ, a and n'],
+  n: ['assumed', '1: no shear thinning (a flow curve fit gives it)'],
+  ty: ['assumed', 'a flow curve or an amplitude sweep gives it'],
+  g: ['assumed', 'water 0.072 N/m at 25 °C (a pendant drop gives it)'],
+  th: ['assumed', 'a sessile drop on the blade\'s steel gives it'],
+  thw: ['assumed', 'a sessile drop on the web gives it'],
+  dth: ['assumed', 'contamination, residue'],
   tf: ['supplier', 'the fibre\'s test report (0.20 mm)'],
 };
 /** A number for a table: d ≥ 0 decimals; d < 0: |d| significant digits (exponential when small or large). */
@@ -585,33 +585,73 @@ const hubT2 = p => { const t = hubTensorOf(p); return mlT2Eval({ form: 'ti', axi
 // ---- provenance counts and readiness ----
 const HUB_PROV_ORDER = ['measured', 'fitted', 'user', 'supplier', 'report', 'published', 'assumed', 'builtin', 'calc'];
 /** A record's typed values by provenance (the values a person can set or a solver fixes; not the calculated). */
-function hubCounts(r, filter = () => true) {
-  const n = {};
-  for (const p of hubProps(r)) {
-    if (!filter(p) || ['calc', 'tensor', 'stiff', 'stiffWeb', 'model', 'orModel', 'switch', 'measured'].includes(p.b.t) && p.prov !== 'builtin' && p.prov !== 'report') continue;
-    if (hubOff(p)) continue;
-    const k = hubVal(p).prov; n[k] = (n[k] || 0) + 1;
-  }
-  return n;
+/** A property's definition method, as the material card names it (the spec's: constant, equation, table, tensor ...). */
+function hubMethod(p, v = hubVal(p)) {
+  const b = p.b;
+  if (['card', 'inp', 'cfdg', 'peel'].includes(b.t)) return v.def ? (v.def.kind === 'table' ? 'Table in T' : 'Equation in T') : 'Constant';
+  return { calc: 'Calculated', law: 'Equation in T', const: 'Constant', tensor: 'Tensor', stiff: 'Tensor (6 × 6)', stiffWeb: 'Tensor (6 × 6)', model: 'Model',
+    orModel: 'Model', switch: 'On / off', fibreSel: 'Test report', measured: 'Measured point' }[b.t] || 'Constant';
 }
-/** Per solver: the properties it reads (as set: not those switched off), by provenance, and the problems in their records. */
+/** A property's validity range, as written on the card: an input's allowed range, a law's temperatures, a table's span. */
+function hubValid(p, v = hubVal(p)) {
+  const b = p.b, f = x => String(+(+x).toPrecision(6));
+  if (['card', 'inp', 'cfdg', 'peel'].includes(b.t)) {
+    if (v.def && v.def.kind === 'table') return `${f(v.def.x[0] - 273.15)} to ${f(v.def.x[v.def.x.length - 1] - 273.15)} °C`;
+    if (v.def) { const t = hubTdep(p); return t ? `${t[1][0]} to ${t[1][1]} °C` : ''; }
+    return Number.isFinite(v.lo) && Number.isFinite(v.hi) ? `${f(v.lo)} to ${f(v.hi)}` : '';
+  }
+  if (b.t === 'law') { const L = HUB_LAW[b.id]; return `${L.T[0]} to ${L.T[1]} °C${L.p ? ', 1 atm' : ''}`; }
+  return '';
+}
+/** What happens outside a property's range: an input refuses a value out of it; a table by its policy; a law refuses. */
+function hubOutside(p, v = hubVal(p)) {
+  const b = p.b;
+  if (['card', 'inp', 'cfdg', 'peel'].includes(b.t)) {
+    if (v.def && v.def.kind === 'table') return { clamp: 'Held at end values', extrapolate: 'Linear extension', error: 'Refused (solve stops)' }[v.def.extrap || 'error'];
+    return v.def ? 'Checked positive' : 'Refused';
+  }
+  if (b.t === 'law') return 'Not evaluated';
+  return '';
+}
+/** A material's identity and metadata (the Overview tab): its own, as edited, over the record's built-in ones. */
+const HUB_META_FIELDS = [['name', 'Material name'], ['desc', 'Description'], ['grade', 'Grade or formulation'], ['supplier', 'Material source'], ['dataSrc', 'Data source'], ['version', 'Version'], ['notes', 'Notes']];
+function hubMeta(r) {
+  const m = (MAT.meta || {})[r.id] || {};
+  return { name: m.name || r.name, desc: m.desc ?? (r.desc || ''), grade: m.grade || '', supplier: m.supplier || '', dataSrc: m.dataSrc || '', version: m.version || '1', notes: m.notes || '' };
+}
+const hubName = r => hubMeta(r).name;
+/** Set a material's metadata field (an empty name falls back to the record's own). */
+function hubSetMeta(r, k, val) {
+  const cur = { ...((MAT.meta || {})[r.id] || {}) };
+  if (val === '' || val == null) delete cur[k]; else cur[k] = String(val);
+  MAT.meta = { ...(MAT.meta || {}), [r.id]: cur };
+}
+/**
+ * Per solver, the material properties it reads (spec 14), each: complete (a value it takes), missing (required, no value),
+ * optional (not used as things are set: another law's parameter, a model switched off) or unsupported (defined in
+ * temperature, but this solver takes its value at 20 °C); the checks that block it.
+ */
 function hubReadiness() {
   return HUB_PHYS.map(ph => {
-    const used = [], probs = [];
+    const rows = [], probs = [];
     for (const r of hubAll()) {
-      const ps = hubProps(r).filter(p => p.phys.includes(ph.k) && !hubOff(p));
+      const ps = hubProps(r).filter(p => p.phys.includes(ph.k));
       if (!ps.length) continue;
-      used.push({ r, ps });
-      for (const c of hubChecks(r)) if (!c.prop || ps.some(p => p.id === c.prop)) probs.push({ r, ...c });
+      for (const p of ps) {
+        if (['model', 'orModel', 'switch', 'fibreSel'].includes(p.b.t)) continue;
+        const v = hubVal(p), off = hubOff(p), t = hubTdep(p);
+        const missing = v.v == null || (typeof v.v === 'number' && !Number.isFinite(v.v));
+        const st = off ? 'optional' : missing ? 'missing' : v.def && !(t && t[0].includes(ph.k)) ? 'unsupported' : 'complete';
+        rows.push({ r, p, v, st, off });
+      }
+      // (the spec's not applicable: the material's other properties, which this solver does not read)
+      for (const p of hubProps(r)) if (!p.phys.includes(ph.k) && !['model', 'orModel', 'switch', 'fibreSel'].includes(p.b.t)) rows.push({ r, p, v: hubVal(p), st: 'na', off: false });
+      for (const c of hubChecks(r)) if (!c.prop || ps.some(p => p.id === c.prop && !hubOff(p))) probs.push({ r, ...c });
     }
-    const n = {};
-    for (const { ps } of used) for (const p of ps) {
-      if (['calc', 'tensor', 'stiff', 'stiffWeb', 'model', 'orModel', 'switch', 'measured'].includes(p.b.t) && p.prov !== 'builtin' && p.prov !== 'report') continue;
-      const k = hubVal(p).prov; n[k] = (n[k] || 0) + 1;
-    }
-    const total = Object.values(n).reduce((a, b) => a + b, 0), firm = (n.measured || 0) + (n.fitted || 0) + (n.user || 0) + (n.supplier || 0) + (n.report || 0) + (n.builtin || 0);
-    const st = probs.some(q => q.level === 'error') ? 'bad' : (n.assumed || 0) + (n.published || 0) ? 'warn' : 'ok';
-    return { ph, used, probs, n, total, firm, st };
+    const n = { complete: 0, missing: 0, optional: 0, na: 0, unsupported: 0 };
+    for (const q of rows) n[q.st]++;
+    const st = probs.some(q => q.level === 'error') ? 'bad' : n.missing ? 'warn' : 'ok';
+    return { ph, rows, probs, n, st, missing: rows.filter(q => q.st === 'missing') };
   });
 }
 
@@ -624,9 +664,9 @@ function hubExport(ids = hubAll().map(r => r.id)) {
     for (const p of hubProps(r)) {
       if (!['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) continue;
       const v = hubVal(p);
-      props[p.id] = { value: v.v, unit: v.u, provenance: v.prov, source: v.src, name: p.l, ...(p.b.t === 'card' && MAT[p.b.card][p.b.k].def ? { definition: MAT[p.b.card][p.b.k].def } : {}) };
+      props[p.id] = { value: v.v, unit: v.u, source: v.src, name: p.l, ...(p.b.t === 'card' && MAT[p.b.card][p.b.k].def ? { definition: MAT[p.b.card][p.b.k].def } : {}) };
     }
-    out.materials.push({ id, name: r.name, class: r.cls, kind: r.sub, props });
+    out.materials.push({ id, name: hubName(r), class: r.cls, kind: r.sub, meta: { ...((MAT.meta || {})[id] || {}) }, props });
   }
   return out;
 }
@@ -673,11 +713,13 @@ function hubParseTCsv(text, unit) {
 }
 /** Read a material file: what it would change (and what it cannot), applied when apply is true. */
 function hubImport(data, apply = false, { keepDefs = false } = {}) {
-  const changes = [], skipped = [];
+  const changes = [], skipped = [], metas = [];
   if (!data || data.format !== HUB_FILE || !Array.isArray(data.materials)) throw new Error('not a material file of this app (its format is not bcdl-materials)');
   for (const m of data.materials) {
     const r = hubRec(m && m.id);
     if (!r) { skipped.push(`${m && m.name || m && m.id}: no such material here`); continue; }
+    // (its identity and metadata, as written in the file: the fields this app keeps, as text)
+    if (m.meta && typeof m.meta === 'object') for (const [k] of HUB_META_FIELDS) if (typeof m.meta[k] === 'string' && m.meta[k] !== hubMeta(r)[k]) metas.push({ r, k, val: m.meta[k] });
     for (const [pid, q] of Object.entries(m.props || {})) {
       const p = hubProps(r).find(x => x.id === pid);
       if (!p || !['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) { skipped.push(`${r.name} · ${pid}: not an editable property here`); continue; }
@@ -707,28 +749,28 @@ function hubImport(data, apply = false, { keepDefs = false } = {}) {
       changes.push({ r, p, from: cur.v, to: value, prov, src: q.source, def, unit: unitConv ? q.unit : null });
     }
   }
-  if (apply) for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); }
-  return { changes, skipped };
+  if (apply) { for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); } for (const q of metas) hubSetMeta(q.r, q.k, q.val); }
+  return { changes, skipped, metas };
 }
-// ---- the measurement sheet: every value still assumed or published, as a CSV to fill in and read back ----
-const HUB_SHEET_COLS = ['Material id', 'Property id', 'Material', 'Property', 'Symbol', 'Value now', 'Unit', 'Allowed from', 'Allowed to', 'Marked as', 'What the app says',
-  'Your value', 'Your unit', 'Your provenance', 'Your source'];
-/** The sheet's rows: each editable value marked Assumed or Published (all editable values when all), each binding once. */
-function hubSheetRows(all = false) {
+// ---- the material data sheet: every editable value, as a CSV to fill in and read back ----
+const HUB_SHEET_COLS = ['Material id', 'Property id', 'Material', 'Property', 'Symbol', 'Value now', 'Unit', 'Allowed from', 'Allowed to', 'Data source',
+  'Your value', 'Your unit', 'Your source'];
+/** The data sheet's rows: every editable material value, each binding once. */
+function hubSheetRows() {
   const out = [], seen = new Set();
   for (const r of hubAll()) for (const p of hubProps(r)) {
     if (!['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) continue;
     const key = JSON.stringify(p.b), v = hubVal(p);
-    if (seen.has(key) || (!all && !['assumed', 'published'].includes(v.prov))) continue;
+    if (seen.has(key)) continue;
     seen.add(key);
-    out.push([r.id, p.id, r.name, hubPropName(r, p), p.sym.replace(/_/g, ''), v.v, v.u, v.lo, v.hi, (HUB_PROV[v.prov] || HUB_PROV_RO[v.prov] || { l: v.prov }).l, v.src || '', '', '', '', '']);
+    out.push([r.id, p.id, hubName(r), hubPropName(r, p), p.sym.replace(/_/g, ''), v.v, v.u, v.lo, v.hi, v.src || '', '', '', '']);
   }
   return out;
 }
 /** The sheet as CSV text (commas; quoted where needed). */
-function hubSheetCSV(all = false) {
+function hubSheetCSV() {
   const q = x => { const t = String(x ?? ''); return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
-  return [HUB_SHEET_COLS, ...hubSheetRows(all)].map(r => r.map(q).join(',')).join('\r\n') + '\r\n';
+  return [HUB_SHEET_COLS, ...hubSheetRows()].map(r => r.map(q).join(',')).join('\r\n') + '\r\n';
 }
 /** CSV text to rows (RFC 4180 quoting; the separator a comma, or a semicolon as some spreadsheets save it). */
 function hubParseCSV(text) {
@@ -747,24 +789,21 @@ function hubParseCSV(text) {
   return { rows: rows.filter(r => r.some(x => x.trim() !== '')), sep };
 }
 /**
- * A filled sheet to a material file (hubImport's): each row with "Your value" -- in "Your unit" (else the row's), with
- * "Your provenance" (a kind's name; empty: From you, as you typed it) and "Your source". Rows left empty are not read.
+ * A filled data sheet to a material file (hubImport's): each row with "Your value" -- in "Your unit" (else the row's), with
+ * "Your source" when given. Rows left empty are not read.
  */
 function hubSheetToFile(text) {
   const { rows, sep } = hubParseCSV(text), head = (rows[0] || []).map(h => h.trim()), col = n => head.indexOf(n), skipped = [];
-  for (const n of ['Material id', 'Property id', 'Unit', 'Your value']) if (col(n) < 0) throw new Error(`not this app's measurement sheet (no "${n}" column)`);
-  const byLabel = Object.fromEntries(Object.entries(HUB_PROV).flatMap(([k, d]) => [[d.l.toLowerCase(), k], [k, k]]));
+  for (const n of ['Material id', 'Property id', 'Unit', 'Your value']) if (col(n) < 0) throw new Error(`not this app's material data sheet (no "${n}" column)`);
   const mats = new Map(); let n = 0;
   rows.slice(1).forEach((r, i) => {
     const g = name => (col(name) < 0 ? '' : String(r[col(name)] ?? '').trim()), raw = g('Your value');
     if (raw === '') return;
     const num = Number(sep === ';' ? raw.replace(',', '.') : raw), what = `line ${i + 2} (${g('Material') || g('Material id')} · ${g('Property') || g('Property id')})`;
     if (!Number.isFinite(num)) { skipped.push(`${what}: "${raw}" is not a number`); return; }
-    const pv = g('Your provenance').toLowerCase(), prov = pv === '' ? 'user' : byLabel[pv];
-    if (!prov) { skipped.push(`${what}: provenance "${g('Your provenance')}" is not one of ${HUB_PROV_SET.map(k => HUB_PROV[k].l).join(', ')}`); return; }
     const id = g('Material id');
     if (!mats.has(id)) mats.set(id, { id, props: {} });
-    mats.get(id).props[g('Property id')] = { value: num, unit: g('Your unit') || g('Unit'), provenance: prov, ...(g('Your source') ? { source: g('Your source') } : {}) };
+    mats.get(id).props[g('Property id')] = { value: num, unit: g('Your unit') || g('Unit'), ...(g('Your source') ? { source: g('Your source') } : {}) };
     n++;
   });
   return { file: { format: HUB_FILE, version: 1, materials: [...mats.values()] }, skipped, n };

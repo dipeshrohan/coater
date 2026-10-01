@@ -186,6 +186,10 @@ function applyMaterials(m) {
     MAT[card] = { ...MAT[card], [k]: n };
   }
   // (the inputs bar's material values' provenance, MH-5: as saved when it has its shape; a project from before has none)
+  // (each material's identity and metadata, its Overview: text fields as saved)
+  const mt = m && m.meta;
+  if (mt && typeof mt === 'object') MAT.meta = Object.fromEntries(Object.entries(mt).filter(([id, q]) => typeof id === 'string' && q && typeof q === 'object')
+    .map(([id, q]) => [id, Object.fromEntries(Object.entries(q).filter(([k, x]) => ['name', 'desc', 'grade', 'supplier', 'dataSrc', 'version', 'notes'].includes(k) && typeof x === 'string'))]));
   const pv = m && m.prov;
   if (pv && typeof pv === 'object') MAT.prov = Object.fromEntries(Object.entries(pv).filter(([k, q]) => /^in\.[A-Za-z0-9]+$/.test(k) && q && typeof q.kind === 'string' && (typeof HUB_PROV === 'undefined' || HUB_PROV[q.kind])).map(([k, q]) => [k, { kind: q.kind, src: String(q.src ?? '') }]));
 }

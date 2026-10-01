@@ -665,7 +665,7 @@ const TAB_Q = [
   'How does the film settle, and the ripple level, between the blade and the oven? (1D)',
   'How do the film and the contact line vary across the web? (1D at every position)',
   'From the wet film to the dry GO film: how thick and heavy is it, and how much water must the oven take out?',
-  'The project\'s materials and interfaces: every property the solvers read, its definition, unit, provenance and source.',
+  'The project\'s materials and interfaces: every property the solvers read, its definition method, value, unit, valid range and data source.',
   'The process stage by stage, from the mixer to the graphene film: where each stands and its answers.',
 ];
 const TAB_ICONS = [

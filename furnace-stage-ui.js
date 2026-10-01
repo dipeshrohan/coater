@@ -129,13 +129,13 @@ function furnProgWire(cv) {
 
 // ---- Setup: the stack in its holder, your limits; the piece going in ----
 function furnHolderHTML() {
-  const fu = OVEN.furn, as = f => fu[f] ? '' : ' <small>assumed</small>';
-  const field = (k, id) => { const f = FURN_FIELDS.find(q => q[0] === k), unk = k === 'dTload'; return `<label class="furn-f"><span>${f[1]}${unk ? '' : as(f[7])}</span><span class="prop-v"><input type="number" id="${id}" min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[k] ?? ''}"${unk ? ' placeholder="not known"' : ''} data-furnf="${k}"><span class="prop-u">${f[2]}</span></span></label>`; };
+  const fu = OVEN.furn;
+  const field = (k, id) => { const f = FURN_FIELDS.find(q => q[0] === k), unk = k === 'dTload'; return `<label class="furn-f"><span>${f[1]}</span><span class="prop-v"><input type="number" id="${id}" min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[k] ?? ''}"${unk ? ' placeholder="not known"' : ''} data-furnf="${k}"><span class="prop-u">${f[2]}</span></span></label>`; };
   return `<div class="furn-holder"><div class="furn-holder-pic">${furnPicHolder(1)}</div><div class="furn-fields">
     ${field('N', 'furnSN')}${field('paperT', 'furnSPaperT')}${field('margin', 'furnSMargin')}${field('plateW', 'furnSPlate')}
-    <div class="furn-f"><span>Above the stack${as('roomSet')}</span><div class="seg seg-sm" role="tablist" aria-label="Above the stack in the holder" id="furnSRoom">${Object.entries(FURN_ROOM).map(([k, t]) => `<button type="button" role="tab" data-furnroom="${k}" aria-selected="${k === fu.room}">${t}</button>`).join('')}</div></div>
+    <div class="furn-f"><span>Above the stack</span><div class="seg seg-sm" role="tablist" aria-label="Above the stack in the holder" id="furnSRoom">${Object.entries(FURN_ROOM).map(([k, t]) => `<button type="button" role="tab" data-furnroom="${k}" aria-selected="${k === fu.room}">${t}</button>`).join('')}</div></div>
     ${fu.room === 'gap' ? field('gap', 'furnSGap') : ''}
-    <div class="furn-f"><span>The top and bottom pieces touch${as('endsSet')}</span><div class="seg seg-sm" role="tablist" aria-label="What the top and bottom pieces touch" id="furnSEnds">${Object.entries(FURN_ENDS).map(([k, t]) => `<button type="button" role="tab" data-furnends="${k}" aria-selected="${k === fu.ends}">${t}</button>`).join('')}</div></div>
+    <div class="furn-f"><span>The top and bottom pieces touch</span><div class="seg seg-sm" role="tablist" aria-label="What the top and bottom pieces touch" id="furnSEnds">${Object.entries(FURN_ENDS).map(([k, t]) => `<button type="button" role="tab" data-furnends="${k}" aria-selected="${k === fu.ends}">${t}</button>`).join('')}</div></div>
     ${fu.ends === 'plates' ? field('plateT', 'furnSPlateT') : ''}
     ${field('dTload', 'furnSDTload')}
     <h5>Your limits</h5>${field('sdMax', 'furnSSd')}</div></div>`;
@@ -154,7 +154,7 @@ function furnSetupRender() {
   const r = FURN.prun || 0;
   document.querySelectorAll('#furnSec [data-prun]').forEach(b => b.setAttribute('aria-selected', String(+b.dataset.prun === r)));
   const p = furnProgram(r), top = Math.max(...p.map(q => q[1] - 273.15));
-  document.getElementById('furnSetupRunT').textContent = `${FURN_RUN_WHAT[r]}: ${(p[p.length - 1][0] / 3600).toFixed(1)} h, to ${top.toFixed(0)} °C${OVEN.furn.runsSet ? '' : ' (assumed: set yours)'}`;
+  document.getElementById('furnSetupRunT').textContent = `${FURN_RUN_WHAT[r]}: ${(p[p.length - 1][0] / 3600).toFixed(1)} h, to ${top.toFixed(0)} °C`;
   host.innerHTML = furnProgTableHTML(r);
   const cv = document.getElementById('furnProgCv');
   furnProgDraw(r); furnProgWire(cv);

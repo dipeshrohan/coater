@@ -31,15 +31,15 @@ const CFG = [
   //  rheo-params.js keeps it in step)
   { k: 'K', l: 'Consistency K', min: 0.01, max: 100, step: 0.01, u: 'Pa·sⁿ', d: 3, v: 10.5 - 5 / 2.7, h: 'τ = τy + K γ̇ⁿ (power law: τy = 0)' },
   { k: 'eta0', l: 'Zero-shear viscosity η0', min: 0.01, max: 10000, step: 0.01, u: 'Pa·s', d: 2, v: 10.5, h: 'Carreau–Yasuda, Cross: the plateau at low shear' },
-  { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian (assumed)' },
-  { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'assumed, not measured' },
-  { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'assumed, water-like' },
+  { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian' },
+  { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5 },
+  { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07 },
 
-  { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.01, u: 'kPa', d: 2, v: 0.49, h: 'not measured: set so the 2D gives the design wet film, 1.45 mm, at L1' },
-  { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed' },
-  { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed' },
-  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed; where the slurry\'s side meets the bare web (3D, open edges)' },
-  { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'assumed, measure on the blade' },
+  { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.01, u: 'kPa', d: 2, v: 0.49, h: 'set so the 2D gives the design wet film, 1.45 mm, at L1' },
+  { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10 },
+  { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35 },
+  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'where the slurry\'s side meets the bare web (3D, open edges)' },
+  { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8 },
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
   { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120 },
