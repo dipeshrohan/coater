@@ -53,7 +53,7 @@ function projectData() {
     app: PROJ_APP, format: PROJ_FORMAT, saved: new Date().toISOString(), name: PROJ.name,
     inputs: Object.fromEntries(CFG.map(c => [c.k, P[c.k]])),
     cfdSetup: { ...CFDG }, solver: { ...CFDS }, across: JSON.parse(JSON.stringify(ACR)),
-    materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
+    materials: { ...JSON.parse(JSON.stringify(MAT)), sets: JSON.parse(JSON.stringify(msSync())) }, oven: JSON.parse(JSON.stringify(OVEN)),
     locations: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes, cuts: cfdCuts, cases: readCases() || [],
     view: { module: tab, page: navNow(), FV },   // (page, WF-2: the tab's page -- on the Process view, its stage and part)
@@ -166,6 +166,8 @@ function applyMaterials(m) {
   if (um) MAT.furnMeas = { out: arr(um.out).filter(locOk).map(q => ({ loc: q.loc, h: fin(q.h), kept: fin(q.kept), kappa: fin(q.kappa) })).filter(q => [q.h, q.kept, q.kappa].some(Number.isFinite)),
     // (the first piece found stuck to its papers, from the top, GO-7c)
     stuckFrom: Number.isFinite(um.stuckFrom) && um.stuckFrom >= 1 && um.stuckFrom <= 10000 ? Math.round(um.stuckFrom) : null };
+  // (the materials' data sets: as saved, in step with the cards; a project from before them gets its own from its values)
+  MSETS = msDerive(MAT, m && m.sets ? msIn(m.sets) : null);
 }
 /** The furnace's inputs of a project (GO-5): its runs (steps or a file's cycle) and the stack; none: the defaults. */
 function applyFurn(f) {

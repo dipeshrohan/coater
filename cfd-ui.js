@@ -224,7 +224,8 @@ function ovenZonesTree(opts = {}) {
   const prop = (label, id, attrs, unit) => `<div class="prop"><label class="prop-l" for="${id}">${label}</label><span class="prop-v"><input type="number" id="${id}" ${attrs}><span class="prop-u">${unit}</span></span></div>`;
   const peel = opts.peel && typeof filmPeelTreeHTML === 'function' ? filmPeelTreeHTML(prop, opts.peel === true ? null : opts.peel) : '';
   if (opts.zones === false) return peel;
-  return `${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
+  const room = `<div class="ovz ovz-room"><div class="ovz-h"><span>The room before the oven <small>between the blade and the oven</small></span></div>${msSetupProps(['dry.Troom', 'dry.rhRoom'], prop)}</div>`;
+  return `${room}${OVEN.zones.map((z, i) => `<div class="ovz" data-ovz="${i}">
       <div class="ovz-h"><span>Zone ${i + 1}${i === 0 ? ' <small>at the oven\'s entry</small>' : ''}</span>${OVEN.zones.length > 1 ? `<button type="button" class="linkish" data-ovz-del="${i}" aria-label="Remove zone ${i + 1}">Remove</button>` : ''}</div>
       ${OVEN_ZONE_FIELDS.map(([k, l, u, lo, hi, step]) => prop(l, ovenZoneId(i, k), `min="${lo}" max="${hi}" step="${step}" value="${z[k]}" data-ovz="${i}" data-ovk="${k}"`, u)).join('')}
       ${ovenTopHTML(z, i, prop)}
@@ -250,6 +251,7 @@ function ovenJetNote(z) {
 }
 /** Wire the zones' inputs: after a value, `changed` (the page's own redraw); after a zone added or removed, `redraw` (the page and the bar). A new zone starts as the last one. */
 function wireOvenZones(changed, redraw) {
+  wireMsSetup(changed);   // (the rows on their stage now: the room, the roll's set, the creep time, the flakes' tracking)
   document.querySelectorAll('#setupExtra select[data-ovtop]').forEach(el => el.addEventListener('change', () => {
     OVEN.zones[+el.dataset.ovz].top = el.value in OVEN_TOPS ? el.value : 'none';
     redraw();
@@ -780,6 +782,8 @@ function viewCFD() {
       ${propSel('Newton tolerance', 'cfdTol', SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join(''))}
       <p class="prop-note">Grading: 1 = evenly spaced, higher crowds the elements toward the metering edge, the contact line, or the blade and free surface. The free film solved in 2D is at least 12 mm long; beyond it the 1D film model takes over. A location can set its own (its inputs button).</p>
       <p class="prop-note">Refinement zones: <b>${zonesText(CFDS.zones)}</b>. <button type="button" class="linkish" id="cfdZonesOpen">Set them on the Mesh step</button></p>
+      <div class="ovz-h ovz-sub"><span>Flake alignment <small>its tracking along the flow (its model: Materials)</small></span></div>
+      ${msSetupProps(['orient.nLines', 'orient.nFlakes'], prop)}
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="cfdSolverReset">${uiIco('restart')}Defaults</button><button type="button" class="btn btn-secondary btn-sm" id="cfdStudyOpen">${uiIco('grading')}Mesh study…</button></div>`)}
     ${tree('locs', 'Locations across the web', `
       <div class="loc-list" id="cfdLocs"></div>

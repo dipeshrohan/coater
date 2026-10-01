@@ -194,6 +194,7 @@ const UNDO_UNITS = (() => {
   u.push({ id: 'mat.furnMeas', get: () => MAT.furnMeas || { out: [] }, set: v => { MAT.furnMeas = v ? JSON.parse(JSON.stringify(v)) : { out: [] }; },
     label: (a, b) => { const na = ((a || {}).out || []).length, nb = ((b || {}).out || []).length; return nb > na ? 'Add a measured graphene film' : nb < na ? 'Remove a measured graphene film' : 'Graphene film measured'; } });
   u.push({ id: 'oven.furn', get: () => OVEN.furn || furnDefaults(), set: v => { OVEN.furn = v ? JSON.parse(JSON.stringify(v)) : furnDefaults(); }, label: furnUndoLabel });
+  u.push({ id: 'mat.sets', get: () => MSETS, set: v => { MSETS = v ? msIn(JSON.parse(JSON.stringify(v))) : msDerive(MAT); }, label: (a, b) => msUndoLabel(a, b) || 'Data set values' });
   u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });
@@ -253,6 +254,8 @@ function undoRestoreResults() {
 /** Name a step from the units it changed. */
 function undoLabel(ids, a, b) {
   const one = id => { try { return UNDO_BY_ID.get(id).label(undoParse(a[id]), undoParse(b[id])); } catch (e) { return id; } };
+  // (the materials' data sets: a set chosen, made, renamed or deleted names the step; a value's step is the row's)
+  if (ids.includes('mat.sets')) { const s = msUndoLabel(undoParse(a['mat.sets']), undoParse(b['mat.sets'])); if (s) return s; if (ids.length > 1) ids = ids.filter(id => id !== 'mat.sets'); }
   if (ids.length === 1) return one(ids[0]);
   if (ids.every(id => UNDO_BY_ID.get(id).input)) return `Change ${ids.length} inputs`;
   return `${one(ids[0])} (+${ids.length - 1} more)`;

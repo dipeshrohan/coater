@@ -290,11 +290,11 @@ async function repProcessAll() {
 /** Materials: the slurry card (each value, where it is from and its source), what follows from it, and the other two cards as they are. */
 async function repMaterials() {
   tab = 13; render(); await repFrame();
-  const c = MAT.slurry, flag = f => (MAT_FLAGS.find(q => q[0] === f) || [0, f])[1];
-  const card = MAT_SLURRY.map(([k, l, u, , , , d]) => [repEsc(l), repEsc(repUnit(repNum(c[k].v, d), u)), repEsc(flag(c[k].flag)), repEsc(c[k].src)]);
+  const c = MAT.slurry, flag = f => String(f).startsWith('set:') ? String(f).slice(4) : (MAT_FLAGS.find(q => q[0] === f) || [0, f])[1];
+  const card = MAT_SLURRY.map(([k, l, u, , , , d]) => [repEsc(l), repEsc(repUnit(repNum(c[k].v, d), u)), repEsc(msFromText('slurry', k)), repEsc(c[k].src)]);
   const derived = [...document.querySelectorAll('#matDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))]);
   const ro = rows => rows.map(([l, v, u, f, s]) => [repEsc(l), repEsc(repUnit(v, u)), f === 'calc' ? 'Worked out' : repEsc(flag(f)), repEsc(s)]);
-  const head = ['', 'Value', 'From', 'Source'];
+  const head = ['', 'Value', 'Data set (or from)', 'Reference or note'];
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   // the rheometer tests (GO-1): each one's plot and fit table, as the card shows them
   let tests = '';

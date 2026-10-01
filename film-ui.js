@@ -499,7 +499,7 @@ function filmUse(k, v, what) {
   if (!row || !Number.isFinite(v)) return;
   const [, l, , lo, hi] = row, vv = Math.min(hi, Math.max(lo, v));
   undoHint(`${l}: from ${what}`);
-  MAT = { ...MAT, film: { ...MAT.film, [k]: { v: vv, flag: 'measured', src: `from ${what}` } } };
+  msEdit('film', k, { v: vv, flag: 'measured', src: `from ${what}` });
   render();
 }
 function filmExportCSV() {
@@ -525,6 +525,7 @@ function filmPeelTreeHTML(prop, part = null) {
     ${row(0, 'ovzPeelLen')}
     <div class="ovz-pic ovz-roll">${filmPicRoll()}</div>
     ${row(1, 'ovzPeelCore')}
+    ${msSetupProps(['film.setFrac'], prop)}
     <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>` : ''}
     ${has('piece') ? `<div class="ovz-pic">${filmPicCut()}</div>
     ${row(2, 'ovzPieceL')}${row(3, 'ovzPieceW')}` : ''}
@@ -532,6 +533,7 @@ function filmPeelTreeHTML(prop, part = null) {
     ${row(4, 'ovzDryT')}${row(5, 'ovzTOven')}
     ${typeof filmPicStackRest === 'function' ? `<div class="ovz-pic">${filmPicStackRest()}</div>` : ''}
     ${row(6, 'ovzTRest')}
+    ${msSetupProps(['film.creepTau'], prop)}
     <div class="ovz-h ovz-sub"><span>The stack's heat <small>the multiphysics solver (MP-1)</small></span></div>
     ${row(7, 'ovzPlateT')}${row(8, 'ovzStackAir')}${row(9, 'ovzEpsPl')}
     <div class="prop"><span class="prop-l" id="ovzShelfL">What it stands on${pl.shelfSet ? '' : ' <small>assumed</small>'}</span><span class="prop-v"><span class="seg seg-sm" role="radiogroup" aria-labelledby="ovzShelfL" id="ovzShelf">${Object.entries(OVEN_SHELVES).map(([k, t]) => `<button type="button" role="radio" data-ovshelf="${k}" aria-checked="${k === pl.shelf}">${t}</button>`).join('')}</span></span></div>` : ''}
@@ -558,27 +560,15 @@ function wireFilmPeel(changed) {
 function filmCardHTML() {
   return `<section class="mat-card" aria-labelledby="matFilmH">
     <header><h3 id="matFilmH">${uiBadge('film')}The dry film on the fibre web</h3><button type="button" class="linkish" id="matFilmSee">See it on Peel and wind</button></header>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    ${matEditRows(MAT_FILM, MAT.film, 'mfl', 'matf')}
+    ${matGroupRows('film', MAT_FILM, 'mfl', 'matf')}
+    <div class="ms-worked"><b>Worked out</b><span>from the values above</span></div>
     <div id="matFilmDerived"></div>
     <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matFilmReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matFilmCount"></span></div>
   </section>`;
 }
 function filmWireCard() {
-  const key = k => MAT_FILM.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mfl]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfl, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.film[k] = { ...MAT.film[k], v }; });
-    el.value = MAT.film[k].v;
-    filmDerived();
-  }));
-  view.querySelectorAll('select[data-mfl]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfl; MAT.film[k] = { ...MAT.film[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    filmDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mfl]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfl; MAT.film[k] = { ...MAT.film[k], src: el.value.trim() }; }));
-  document.getElementById('matFilmReset').onclick = () => { undoHint('Film values back to their defaults'); MAT = { ...MAT, film: matDefaults().film }; render(); };
+  matWireRows('film', 'mfl', filmDerived);
+  document.getElementById('matFilmReset').onclick = () => msCardReset('film', 'Film values back to their defaults');
   document.getElementById('matFilmSee').onclick = () => navGo('peel', 'results');
   filmDerived();
 }
@@ -593,8 +583,8 @@ function filmDerived() {
   ];
   const der = document.getElementById('matFilmDerived');
   if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('');
-  const cnt = document.getElementById('matFilmCount'), n = fl => MAT_FILM.filter(q => f[q[0]].flag === fl).length;
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
+  const cnt = document.getElementById('matFilmCount');
+  if (cnt) cnt.textContent = msCountText('film', MAT_FILM);
 }
 /** The card read-only (the report). */
-const filmCardRows = () => MAT_FILM.map(([k, l, u, , , , dd]) => [l, (+MAT.film[k].v).toFixed(dd), u, MAT.film[k].flag, MAT.film[k].src]);
+const filmCardRows = () => MAT_FILM.map(([k, l, u, , , , dd]) => [l, (+MAT.film[k].v).toFixed(dd), u, 'set:' + msFromText('film', k), MAT.film[k].src]);

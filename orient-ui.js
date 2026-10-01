@@ -38,30 +38,17 @@ function orCardHTML() {
   return `<section class="mat-card" aria-labelledby="matOrH">
     <header><h3 id="matOrH">${uiBadge('fibre')}Flakes: how they line up</h3><button type="button" class="linkish" id="matOrSee">See them in Coating › 2D</button></header>
     <div class="mat-sub"><label class="mat-switch"><input type="checkbox" id="matOrOn"${o.on ? ' checked' : ''}><b>Alignment</b></label><span>${o.on ? 'on: computed with each 2D run, along its flow to the film and on the web to the oven' : 'off: the 2D computes no alignment'}</span></div>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    <div class="mat-row${o.on ? '' : ' mat-off'}"><label class="mat-l" for="matOrModel">Model</label><span class="mat-v"><select id="matOrModel" class="mat-msel"${o.on ? '' : ' disabled'}>${Object.entries(OR_MODELS).map(([k, l]) => `<option value="${k}"${k === o.model ? ' selected' : ''} title="${l}">${l.replace(/ \(.*/, '')}</option>`).join('')}</select></span>${matFlagChip('given')}<span class="mat-src-t" title="${OR_MODELS[o.model]}">${OR_MODELS[o.model]}: the default (you), for your ${MAT.slurry.phi.v} vol% of flakes about ${Math.round(1 / matFlakeRatio())} × wider than thick</span></div>
-    ${matEditRows(MAT_ORIENT, o, 'mo', 'mato', orRowOff)}
+    ${matGroupRows('orient', MAT_ORIENT, 'mo', 'mato', { off: orRowOff, lead: { slurry: `    <div class="mat-row${o.on ? '' : ' mat-off'}"><label class="mat-l" for="matOrModel">Model</label><span class="mat-v"><select id="matOrModel" class="mat-msel"${o.on ? '' : ' disabled'}>${Object.entries(OR_MODELS).map(([k, l]) => `<option value="${k}"${k === o.model ? ' selected' : ''} title="${l}">${l.replace(/ \(.*/, '')}</option>`).join('')}</select></span>${matFlagChip('given')}<span class="mat-src-t" title="${OR_MODELS[o.model]}">${OR_MODELS[o.model]}: the default (you), for your ${MAT.slurry.phi.v} vol% of flakes about ${Math.round(1 / matFlakeRatio())} × wider than thick</span></div>` } })}
+    <div class="ms-worked"><b>Worked out</b><span>from the values above</span></div>
     <div id="matOrDerived"></div>
     <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matOrReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matOrCount"></span></div>
   </section>`;
 }
 function orWire() {
-  const key = k => MAT_ORIENT.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mo]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mo, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.orient[k] = { ...MAT.orient[k], v }; });
-    el.value = MAT.orient[k].v;
-    orDerived();
-  }));
-  view.querySelectorAll('select[data-mo]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mo; MAT.orient[k] = { ...MAT.orient[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    orDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mo]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mo; MAT.orient[k] = { ...MAT.orient[k], src: el.value.trim() }; }));
+  matWireRows('orient', 'mo', orDerived);
   document.getElementById('matOrOn').addEventListener('change', e => { MAT.orient.on = e.target.checked; render(); });
   document.getElementById('matOrModel').addEventListener('change', e => { MAT.orient.model = e.target.value; render(); });
-  document.getElementById('matOrReset').onclick = () => { undoHint('Alignment values back to their defaults'); MAT = { ...MAT, orient: matDefaults().orient }; render(); };
+  document.getElementById('matOrReset').onclick = () => { const d = matDefaults().orient; MAT.orient.on = d.on; MAT.orient.model = d.model; msCardReset('orient', 'Alignment values back to their defaults'); };
   document.getElementById('matOrSee').onclick = () => { tab = 4; FV.step = 'results'; FV.dock = 'flakes'; render(); };
   orDerived();
 }
@@ -80,7 +67,7 @@ function orDerived() {
   if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${orEsc(s)}">${s}</span></div>`).join('')
     + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
   const cnt = document.getElementById('matOrCount'), n = f => used.filter(q => o[q[0]].flag === f).length;
-  if (cnt) cnt.textContent = o.on ? `of the ${used.length} in use: ${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured` : 'the alignment is off';
+  if (cnt) cnt.textContent = o.on ? msCountText('orient', used) : 'the alignment is off';
 }
 /** The card read-only (the report): the switch, the model, its values in use, the flakes' shape. */
 function orCardRows() {
@@ -88,7 +75,7 @@ function orCardRows() {
   return [
     ['Alignment', o.on ? 'on' : 'off', '', 'given', o.on ? 'computed with each 2D run' : 'the 2D computes none'],
     ['Model', OR_MODELS[o.model], '', 'given', 'you'],
-    ...MAT_ORIENT.filter(q => !orRowOff(q)).map(([k, l, u, , , , d]) => [l, (+o[k].v).toFixed(d), u, o[k].flag, o[k].src]),
+    ...MAT_ORIENT.filter(q => !orRowOff(q)).map(([k, l, u, , , , d]) => [l, (+o[k].v).toFixed(d), u, 'set:' + msFromText('orient', k), o[k].src]),
     ['Flakes, thickness / width', r.toExponential(2), '', 'calc', 'from the slurry card'],
     ...(o.model === 'dh' ? [['Order at rest, S', orRestS(o.U.v).toFixed(3), '', 'calc', 'Maier–Saupe, from U']] : []),
   ];

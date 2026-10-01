@@ -605,7 +605,7 @@ function furnUse(k, v, what) {
   if (!row || !Number.isFinite(v)) return;
   const [, l, , lo, hi] = row, vv = Math.min(hi, Math.max(lo, v));
   undoHint(`${l}: from ${what}`);
-  MAT = { ...MAT, furn: { ...MAT.furn, [k]: { v: vv, flag: 'measured', src: `from ${what}` } } };
+  msEdit('furn', k, { v: vv, flag: 'measured', src: `from ${what}` });
   render();
 }
 /** A fit in the furnace's worker: the puffed film's way out from a measured thickness, or the open layers' gas way from the first run. */
@@ -728,27 +728,15 @@ function wireFurnTree(changed) {
 function furnCardHTML() {
   return `<section class="mat-card" aria-labelledby="matFurnH">
     <header><h3 id="matFurnH">${uiBadge('oven')}The furnace and the graphene film</h3><button type="button" class="linkish" id="matFurnSee">See it on Furnace</button></header>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    ${Object.entries(MAT_FURN_GROUPS).map(([g, t]) => `<div class="mat-sub"><b>${t}</b></div>${matEditRows(MAT_FURN.filter(q => q[10] === g), MAT.furn, 'mfu', 'matu')}`).join('')}
+    ${matGroupRows('furn', MAT_FURN, 'mfu', 'matu', { topics: MS_FURN_TOPICS })}
+    <div class="ms-worked"><b>Worked out</b><span>from the values above</span></div>
     <div id="matFurnDerived"></div>
     <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matFurnReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matFurnCount"></span></div>
   </section>`;
 }
 function furnWireCard() {
-  const key = k => MAT_FURN.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mfu]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfu, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.furn[k] = { ...MAT.furn[k], v }; });
-    el.value = MAT.furn[k].v;
-    furnDerived();
-  }));
-  view.querySelectorAll('select[data-mfu]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfu; MAT.furn[k] = { ...MAT.furn[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    furnDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mfu]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfu; MAT.furn[k] = { ...MAT.furn[k], src: el.value.trim() }; }));
-  document.getElementById('matFurnReset').onclick = () => { undoHint('Furnace values back to their defaults'); MAT = { ...MAT, furn: matDefaults().furn }; render(); };
+  matWireRows('furn', 'mfu', furnDerived);
+  document.getElementById('matFurnReset').onclick = () => msCardReset('furn', 'Furnace values back to their defaults');
   document.getElementById('matFurnSee').onclick = () => navGo('furn', 'results');
   furnDerived();
 }
@@ -771,4 +759,4 @@ function furnDerived() {
   if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
 }
 /** The card read-only (the report). */
-const furnCardRows = () => MAT_FURN.map(([k, l, u, , , , dd]) => [l, (+MAT.furn[k].v).toFixed(dd), u, MAT.furn[k].flag, MAT.furn[k].src]);
+const furnCardRows = () => MAT_FURN.map(([k, l, u, , , , dd]) => [l, (+MAT.furn[k].v).toFixed(dd), u, 'set:' + msFromText('furn', k), MAT.furn[k].src]);

@@ -373,6 +373,124 @@ function matEditRows(rows, vals, attr, pre, off = () => false) {
       <input type="text" id="${pre}s_${k}" data-${attr}="${k}" class="mat-src" value="${String(v.src).replace(/"/g, '&quot;')}" aria-label="${l}: source">
     </div>`; }).join('');
 }
+// ---- the materials' data sets on the cards (matsets.js): rows grouped by material, one set per material for the project ----
+const msEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const msMat = m => MS_MATERIALS.find(q => q.id === m);
+/** The cards a material's rows are on (their titles), for its head's "also on". */
+const MS_CARD_T = { slurry: 'Slurry', rheo: 'How it flows', orient: 'Flakes', dry: 'Drying', film: 'Dry film', furn: 'Furnace' };
+/** A material's head on a card: its name, its data set (one for the whole project) and the set's actions, how its rows here stand. */
+function msHeadHTML(m, card) {
+  const S = MSETS, M = msMat(m), ids = msRowsOf(m).filter(r => r.card === card).map(r => r.id), sm = msSummary(S, m, ids);
+  const sets = [['lit', 'Generic (literature)'], ...Object.values(S.own).filter(o => o.mat === m).map(o => [o.id, o.name])];
+  const also = [...new Set(msRowsOf(m).map(r => r.card))].filter(c => c !== card).map(c => MS_CARD_T[c]);
+  const own = !!S.own[S.sel[m]];
+  return `<div class="ms-head" data-msm="${m}" data-mscard="${card}">
+    <div class="ms-name"><b>${msEsc(M.t)}</b><small>${msEsc(M.pair ? 'contact' : M.d)}</small></div>
+    <label class="ms-set"><span>Data set</span><select data-msset="${m}" aria-label="${msEsc(M.t)}: its data set (the same on every card)">${sets.map(([id, t]) => `<option value="${id}"${id === S.sel[m] ? ' selected' : ''}>${msEsc(t)}</option>`).join('')}</select></label>
+    <details class="vp-pop vp-pop-r ms-menu"><summary class="ms-more" title="${msEsc(M.t)}: data set actions" aria-label="${msEsc(M.t)}: data set actions">${uiIco('more')}</summary>
+      <div class="pop-body"><button type="button" class="menu-item" data-msact="new" data-msm="${m}">New data set…</button><button type="button" class="menu-item" data-msact="rename" data-msm="${m}"${own ? '' : ' disabled'}>Rename…</button><button type="button" class="menu-item" data-msact="delete" data-msm="${m}"${own ? '' : ' disabled'}>Delete</button></div></details>
+    <span class="ms-sum">${own ? `${sm.yours} of ${sm.n} here from “${msEsc(sm.set)}”, the rest generic` : `${sm.n} here, literature values`}${also.length ? ` · also on ${also.join(', ')}` : ''}</span>
+  </div>`;
+}
+/** A row's set chip: the set its value comes from (yours: given or fitted; else the generic one). */
+function msChipHTML(card, k) {
+  const v = MAT[card][k], m = MS_ROWS[card][k], own = MSETS.own[MSETS.sel[m]], mine = !!(own && own.vals[msRowId(card, k)]);
+  return mine ? `<span class="mat-flag ms-chip ${v.flag === 'measured' ? 'f-measured' : 'f-given'}" title="${v.flag === 'measured' ? 'measured or fitted' : 'your value'}: ${msEsc(own.name)}">${msEsc(own.name)}</span>`
+    : '<span class="mat-flag ms-chip f-lit" title="the app\'s literature value">Generic</span>';
+}
+/** A row's last cell: your note (your set: editable), else the generic set's reference. */
+function msNoteHTML(card, k, pre, l) {
+  const v = MAT[card][k], m = MS_ROWS[card][k], own = MSETS.own[MSETS.sel[m]], mine = !!(own && own.vals[msRowId(card, k)]);
+  return mine ? `<input type="text" id="${pre}s_${k}" data-msnote="${card}.${k}" class="mat-src" value="${msEsc(v.src)}" aria-label="${msEsc(l)}: your note (where it is from)">`
+    : `<span class="mat-src-t" title="${msEsc(v.src)}">${msEsc(v.src)}</span>`;
+}
+/** One row: its value, the set it is from, and its reference (generic) or your note (your set, editable). */
+function msRowHTML(card, q, attr, pre, off = () => false) {
+  const [k, l, u, lo, hi, step] = q, v = MAT[card][k], o = off(q);
+  return `<div class="mat-row${o ? ' mat-off' : ''}" data-${attr}="${k}" data-pre="${pre}"${o ? ` title="${msEsc(o)}"` : ''}>
+    <label class="mat-l" for="${pre}_${k}">${l}${o ? `<small class="mat-note">${o}</small>` : ''}</label>
+    <span class="mat-v"><input type="number" id="${pre}_${k}" data-${attr}="${k}" min="${lo}" max="${hi}" step="${step}" value="${v.v}"><span class="prop-u">${u}</span></span>
+    ${msChipHTML(card, k)}
+    ${msNoteHTML(card, k, pre, l)}
+  </div>`;
+}
+/**
+ * A card's rows grouped by material, each under its head: the materials in the order they first appear, then the
+ * contacts under "Contacts"; inside a material, topics (row[10] → title) as subheads when it has rows in two or more;
+ * lead: a material's extra first rows (a model's choice). The stage's setup rows are not here (they are on their stage).
+ */
+function matGroupRows(card, rows, attr, pre, { off, topics, lead = {} } = {}) {
+  const mats = [];
+  for (const q of rows) { const m = MS_ROWS[card][q[0]]; if (m !== MS_SETUP && !mats.includes(m)) mats.push(m); }
+  const order = [...mats.filter(m => !msMat(m).pair), ...mats.filter(m => msMat(m).pair)];
+  let html = '', contacts = false;
+  for (const m of order) {
+    if (msMat(m).pair && !contacts) { contacts = true; html += '<div class="ms-contacts"><b>Contacts</b><span>what two materials do where they touch</span></div>'; }
+    const mine = rows.filter(q => MS_ROWS[card][q[0]] === m), tops = topics ? Object.keys(topics).filter(g => mine.some(q => q[10] === g)) : [];
+    let body = lead[m] || '';
+    if (tops.length > 1) for (const g of tops) body += `<div class="mat-sub ms-topic"><b>${topics[g]}</b></div>${mine.filter(q => q[10] === g).map(q => msRowHTML(card, q, attr, pre, off)).join('')}`;
+    else body += mine.map(q => msRowHTML(card, q, attr, pre, off)).join('');
+    html += `<section class="ms-group" data-msg="${m}" aria-label="${msEsc(msMat(m).t)}">${msHeadHTML(m, card)}<div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>Data set</span><span>Reference or your note</span></div>${body}</section>`;
+  }
+  return html;
+}
+/**
+ * A card's rows wired to the data sets: a number or a note goes to its material's chosen set (the generic one is never
+ * changed: an edit starts this project's own); the material's heads and the row's set and note show it, in place (the
+ * focus stays where it is). after(): the card's own updates (its derived rows, counts).
+ */
+function matWireRows(card, attr, after = () => {}) {
+  for (const q of msCards()[card]) {
+    const k = q[0], row = view.querySelector(`.mat-row[data-${attr}="${k}"]`);
+    if (!row) continue;
+    const num = row.querySelector('input[type=number]'), [, l, u, lo, hi] = q;
+    num.addEventListener('change', () => {
+      guardNumber(num, { label: l, lo, hi, unit: u }, v => { msEdit(card, k, { v }); });
+      num.value = MAT[card][k].v;
+      msRowRefresh(card, k, row, l, after); after();
+    });
+    msWireNote(card, k, row, after);
+  }
+  matWireHeads();
+}
+function msWireNote(card, k, row, after) {
+  const note = row.querySelector('input.mat-src');
+  if (note) note.addEventListener('change', () => { msEdit(card, k, { src: note.value.trim() }); after(); });
+}
+/** After an edit: the row's set and note, and every head of its material (on every card), redrawn in place. */
+function msRowRefresh(card, k, row, l, after) {
+  const m = MS_ROWS[card][k], cells = row.children;
+  cells[2].outerHTML = msChipHTML(card, k);
+  cells[3].outerHTML = msNoteHTML(card, k, row.dataset.pre, l);
+  msWireNote(card, k, row, after);
+  view.querySelectorAll(`.ms-head[data-msm="${m}"]`).forEach(h => { h.outerHTML = msHeadHTML(m, h.dataset.mscard); });
+  matWireHeads();
+}
+/** The heads' set choosers and actions (every card: a set is the project's, so a choice redraws the page). */
+function matWireHeads() {
+  view.querySelectorAll('select[data-msset]').forEach(el => { if (el.dataset.wired) return; el.dataset.wired = '1'; el.addEventListener('change', () => { msUse(msChoose(msSync(), el.dataset.msset, el.value)); render(); }); });
+  view.querySelectorAll('[data-msact]').forEach(b => { if (b.dataset.wired) return; b.dataset.wired = '1'; b.addEventListener('click', () => msAction(b.dataset.msact, b.dataset.msm)); });
+}
+/** A data set's action: a new one (from the values now chosen), rename the chosen one, delete it. */
+async function msAction(act, m) {
+  const S = msSync(), M = msMat(m), cur = S.own[S.sel[m]];
+  if (act === 'new') { const nm = await msAskName(`New data set for ${M.t}`, cur ? `${cur.name} (copy)` : `${M.t}: my data`, 'It starts from the values chosen now; the generic set stays as it is.'); if (nm) { msUse(msNew(S, m, nm)); render(); } }
+  else if (act === 'rename' && cur) { const nm = await msAskName(`Rename “${cur.name}”`, cur.name, `${M.t}'s data set, the same on every card.`); if (nm) { MSETS = msRename(S, cur.id, nm); render(); } }
+  else if (act === 'delete' && cur) { msUse(msDelete(S, cur.id)); render(); }
+}
+function msAskName(title, cur, note) {
+  return new Promise(res => {
+    const d = projDialog(`<form method="dialog" class="img-form"><div class="img-head"><h2>${msEsc(title)}</h2></div>
+      <label class="fv-ctl">Name <input type="text" id="msNameIn" maxlength="80" value="${msEsc(cur)}"></label><p class="fv-note">${msEsc(note)}</p>
+      <div class="img-actions"><button type="button" class="btn btn-secondary btn-sm" data-a="cancel">Cancel</button><button type="submit" class="btn btn-primary btn-sm">OK</button></div></form>`);
+    const inp = d.querySelector('#msNameIn'); inp.select();
+    d.querySelector('[data-a="cancel"]').onclick = () => { d.close(); res(null); };
+    d.querySelector('form').onsubmit = e => { e.preventDefault(); const v = inp.value.trim(); d.close(); res(v || null); };
+    d.addEventListener('cancel', () => res(null), { once: true });
+  });
+}
+/** A card back to the app's defaults, through the data sets (the other cards keep theirs). */
+function msCardReset(card, label) { undoHint(label); msUse(msCardDefaults(msSync(), card)); render(); }
 /** The fibre web card: the fibre's test report and the 2D setup's fibre values, as they are. */
 function matFibreRows() {
   const fib = FIBRES[CFDG.fibre], st = fibreStructure(), rep = k => fib.set[k] === CFDG[k] ? 'measured' : 'given';
@@ -399,20 +517,21 @@ function viewMaterials() {
     top: `<div class="mat-cards">
       <section class="mat-card" aria-labelledby="matSlurryH">
         <header><h3 id="matSlurryH">${uiBadge('drop')}Slurry: GO in water</h3><span class="mat-count" id="matCount"></span></header>
-        <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-        ${matEditRows(MAT_SLURRY, c, 'mk', 'mat')}
+        ${matGroupRows('slurry', MAT_SLURRY, 'mk', 'mat')}
+        <div class="ms-worked"><b>Worked out</b><span>from the values above</span></div>
         <div class="mat-derived" id="matDerived"></div>
         <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matReset">${uiIco('restart')}Defaults</button></div>
       </section>
       <section class="mat-card" aria-labelledby="matRheoH">
         <header><h3 id="matRheoH">${uiBadge('model')}Slurry: how it flows</h3><button type="button" class="linkish" id="matRheoEdit">Edit in the inputs</button></header>
-        <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
+        <section class="ms-group" data-msg="slurry" aria-label="The slurry">${msHeadHTML('slurry', 'rheo')}</section>
+        <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Reference or your note</span></div>
         <div class="mat-row"><label class="mat-l" for="matModel">Rheology model</label><span class="mat-v"><select id="matModel" class="mat-msel">${Object.entries(RHEO_MODELS).map(([k, m]) => `<option value="${k}"${k === CFDG.model ? ' selected' : ''}>${m.l}</option>`).join('')}</select></span>${matFlagChip('given')}<span class="mat-src-t" title="${RHEO_MODELS[CFDG.model].law}">${base[0][4]}</span></div>
         ${ro(base.slice(1))}
         <div class="mat-sub"><b>Carreau–Yasuda and Cross</b><span>the law's shape beyond the viscosity and n${CFDG.model === 'carreau' || CFDG.model === 'cross' ? '' : ` · not used by ${RHEO_MODELS[CFDG.model].l}`}</span></div>
-        ${matEditRows(MAT_RHEO.filter(q => q[10] === 'law'), r, 'mr', 'matr', off)}
+        ${MAT_RHEO.filter(q => q[10] === 'law').map(q => msRowHTML('rheo', q, 'mr', 'matr', off)).join('')}
         <div class="mat-sub"><label class="mat-switch"><input type="checkbox" id="matStructOn"${r.structOn ? ' checked' : ''}><b>Structure (thixotropy)</b></label><span id="matStructNote">${r.structOn ? 'on: it breaks down under shear and rebuilds at rest; the 2D carries it along its flow, the 1D along the blade, and it rebuilds on the web' : 'off: every result from the steady flow curve'}</span></div>
-        ${matEditRows(MAT_RHEO.filter(q => q[10] === 'struct'), r, 'mr', 'matr', off)}
+        ${MAT_RHEO.filter(q => q[10] === 'struct').map(q => msRowHTML('rheo', q, 'mr', 'matr', off)).join('')}
         <div id="matRheoDerived"></div>
         <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matRheoReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matRheoCount"></span></div>
       </section>
@@ -428,38 +547,14 @@ function viewMaterials() {
     </div>`,
     panes: [],
   });
-  // the slurry card
-  const guardKey = k => MAT_SLURRY.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mk]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mk, [, l, u, lo, hi] = guardKey(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.slurry[k] = { ...MAT.slurry[k], v }; });
-    el.value = MAT.slurry[k].v;
-    matDerived();
-  }));
-  view.querySelectorAll('select[data-mk]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mk; MAT.slurry[k] = { ...MAT.slurry[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    matDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mk]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mk; MAT.slurry[k] = { ...MAT.slurry[k], src: el.value.trim() }; }));
-  document.getElementById('matReset').onclick = () => { undoHint('Slurry card back to its defaults'); MAT = { ...MAT, slurry: matDefaults().slurry }; render(); };
+  // the slurry card: its rows through the materials' data sets
+  matWireRows('slurry', 'mk', matDerived);
+  document.getElementById('matReset').onclick = () => msCardReset('slurry', 'Slurry card back to its defaults');
   // the rheology card: the model (as Coating › 2D's), the laws' extras and the structure
   document.getElementById('matModel').addEventListener('change', e => { CFDG.model = e.target.value; render(); });
-  const rKey = k => MAT_RHEO.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mr, [, l, u, lo, hi] = rKey(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.rheo[k] = { ...MAT.rheo[k], v }; });
-    el.value = MAT.rheo[k].v;
-    matRheoDerived(); matDerived();
-  }));
-  view.querySelectorAll('select[data-mr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mr; MAT.rheo[k] = { ...MAT.rheo[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    matRheoDerived(); matDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mr; MAT.rheo[k] = { ...MAT.rheo[k], src: el.value.trim() }; }));
+  matWireRows('rheo', 'mr', () => { matRheoDerived(); matDerived(); });
   document.getElementById('matStructOn').addEventListener('change', e => { MAT.rheo.structOn = e.target.checked; render(); });
-  document.getElementById('matRheoReset').onclick = () => { undoHint('Rheology values back to their defaults'); MAT = { ...MAT, rheo: matDefaults().rheo }; render(); };
+  document.getElementById('matRheoReset').onclick = () => { const d = matDefaults().rheo; MAT.rheo.structOn = d.structOn; MAT.rheo.side = d.side; msCardReset('rheo', 'Rheology values back to their defaults'); };
   document.getElementById('matRheoEdit').onclick = () => { setPanelHidden('model', false); const d = [...document.querySelectorAll('#params > details.grp')].find(x => /Slurry/.test((x.querySelector('summary') || {}).textContent || '')); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); } };
   document.getElementById('matFibreEdit').onclick = () => { FV.tree.fibre = true; tab = 4; render(); };
   matDerived();
@@ -498,9 +593,9 @@ function matDerived() {
   if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
   const st = document.getElementById('st');
   if (st) st.innerHTML = pill(`The slurry: ${c.phi.v} vol% GO (${(wm * 100).toFixed(1)} % by mass) in water, ${rho.toFixed(0)} kg/m³`, '')
-    + pill(`${n('assumed')} of ${keys.length} slurry values assumed: measure them to firm up the answers`, n('assumed') ? 'warn' : 'ok')
+    + pill(n('assumed') ? `${n('assumed')} of ${keys.length} slurry values from the generic (literature) data: measure them to firm up the answers` : `Every slurry value from your data`, n('assumed') ? 'warn' : 'ok')
     + probs.map(t => pill(t, 'bad')).join('')
-    + (MAT.rheo.structOn ? pill(`Structure (thixotropy) on: ${MAT_RHEO.filter(q => q[10] === 'struct' && MAT.rheo[q[0]].flag === 'assumed').length} of its 4 values assumed`, MAT_RHEO.some(q => q[10] === 'struct' && MAT.rheo[q[0]].flag === 'assumed') ? 'warn' : 'ok') : pill('Structure (thixotropy) off: the steady flow curve everywhere', ''));
+    + (MAT.rheo.structOn ? pill(`Structure (thixotropy) on: ${MAT_RHEO.filter(q => q[10] === 'struct' && MAT.rheo[q[0]].flag === 'assumed').length} of its 4 values from the generic data`, MAT_RHEO.some(q => q[10] === 'struct' && MAT.rheo[q[0]].flag === 'assumed') ? 'warn' : 'ok') : pill('Structure (thixotropy) off: the steady flow curve everywhere', ''));
   const ss = document.getElementById('ss');
   if (ss) ss.innerHTML = [['Slurry density', `${rho.toFixed(0)} kg/m³`, 'density'], ['Solids by mass', `${(wm * 100).toFixed(1)} %`, 'weight'], ['Dry film density', `${dryRho.toFixed(0)} kg/m³`, 'density'], ['Particle size', `${c.dMin.v}–${c.dMax.v} µm`, 'range']]
     .map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${uiBadge(a[2])}${a[0]}</span><strong>${a[1]}</strong></div>`).join('');

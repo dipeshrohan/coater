@@ -81,7 +81,8 @@ const HELP = {
   'mat.co': { t: 'C/O ratio', d: 'Carbon to oxygen ratio of the GO. Assumed: about 2.', r: 'Range 1 to 20', u: 'The card (reduction in a later phase)' },
   'mat.phiDry': { t: 'Dry film packing', d: 'Solids fraction of the dry film: the stacked flakes and the pores between them. Assumed: 0.85.', r: 'Range 0.3 to 1', e: 'Higher: a thinner, denser dry film for the same wet film.', u: 'Coating › Results › Wet and dry film (the dry film\'s thickness, its density)' },
   'mat.flag': { t: 'Where the value is from', d: 'From you (you gave it), Assumed (a typical value until measured) or Measured. The counts at the top of the card and the pills follow it.', u: 'Materials' },
-  'mat.src': { t: 'Source', d: 'Where the value comes from, in words: a datasheet, a test, a paper, you.', u: 'Materials, the report' },
+  'mat.set': { t: 'Data set', d: 'Where this material\'s values come from: Generic (literature) — the app\'s values, each with its reference — or one of your sets (a datasheet, a batch you measured). One choice for the project: every card that shows the material follows it. Changing a value on the generic set starts your own ("This project"); the generic set itself never changes. ⋯ makes a new set from the values chosen now, renames or deletes yours.', u: 'Materials, every card with this material; projects; the report' },
+  'mat.src': { t: 'Reference or your note', d: 'A value of yours: your note on where it comes from (a datasheet and its grade, a test, a paper). A generic value: its literature reference.', u: 'Materials, the report' },
   'mat.reset': { t: 'Defaults', d: 'The slurry card back to its first values (with Undo to go back).', u: 'Materials' },
   // (how it flows, GO-1: the laws' extras and the structure, on the rheology card)
   'matr.etaInf': { t: 'Viscosity at high shear, η∞', d: 'The Carreau–Yasuda and Cross laws\' plateau at high shear rates. Assumed until fitted to a flow curve.', r: 'Range 0 to 5 Pa·s (the laws use at most half the viscosity at 2.7 1/s)', u: 'The flow models with Carreau–Yasuda or Cross' },
@@ -553,6 +554,10 @@ function applyHelp() {
   }
   // (the slurry's card: each value by its key, its flag and its source)
   document.querySelectorAll('input[type=number][data-mk]').forEach(el => { const key = 'mat.' + el.dataset.mk; set(el, key); set(el.closest('.mat-row') && el.closest('.mat-row').querySelector('.mat-l'), key); });
+  document.querySelectorAll('select[data-msset]').forEach(el => set(el, 'mat.set'));
+  document.querySelectorAll('input.mat-src[data-msnote]').forEach(el => set(el, 'mat.src'));
+  // (the rows on their stage now: the room, the roll's set, the creep time, the flakes' tracking -- their help as on the cards)
+  document.querySelectorAll('input[data-mssetup]').forEach(el => { const [c, k] = el.dataset.mssetup.split('.'), key = ({ dry: 'matd.', film: 'matf.', orient: 'mato.' })[c] + k; set(el, key); set(el.closest('.prop') && el.closest('.prop').querySelector('.prop-l'), key); });
   document.querySelectorAll('select[data-mk]').forEach(el => set(el, 'mat.flag'));
   document.querySelectorAll('input.mat-src[data-mk]').forEach(el => set(el, 'mat.src'));
   // (the rheology card's own values, GO-1)

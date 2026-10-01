@@ -487,27 +487,15 @@ function dryExportCSV() {
 function dryCardHTML() {
   return `<section class="mat-card" aria-labelledby="matDryH">
     <header><h3 id="matDryH">${uiBadge('oven')}Drying: the film in the oven</h3><button type="button" class="linkish" id="matDrySee">See it on Drying</button></header>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    ${matEditRows(MAT_DRY, MAT.dry, 'mdr', 'matd')}
+    ${matGroupRows('dry', MAT_DRY, 'mdr', 'matd')}
+    <div class="ms-worked"><b>Worked out</b><span>from the values above</span></div>
     <div id="matDryDerived"></div>
     <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matDryReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matDryCount"></span></div>
   </section>`;
 }
 function dryWireCard() {
-  const key = k => MAT_DRY.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mdr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mdr, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.dry[k] = { ...MAT.dry[k], v }; });
-    el.value = MAT.dry[k].v;
-    dryDerived();
-  }));
-  view.querySelectorAll('select[data-mdr]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mdr; MAT.dry[k] = { ...MAT.dry[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    dryDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mdr]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mdr; MAT.dry[k] = { ...MAT.dry[k], src: el.value.trim() }; }));
-  document.getElementById('matDryReset').onclick = () => { undoHint('Drying values back to their defaults'); MAT = { ...MAT, dry: matDefaults().dry }; render(); };
+  matWireRows('dry', 'mdr', dryDerived);
+  document.getElementById('matDryReset').onclick = () => msCardReset('dry', 'Drying values back to their defaults');
   document.getElementById('matDrySee').onclick = () => navGo('dry', 'results');
   dryDerived();
 }
@@ -527,8 +515,8 @@ function dryDerived() {
   const der = document.getElementById('matDryDerived');
   if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('')
     + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
-  const cnt = document.getElementById('matDryCount'), n = f => MAT_DRY.filter(q => d[q[0]].flag === f).length;
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
+  const cnt = document.getElementById('matDryCount');
+  if (cnt) cnt.textContent = msCountText('dry', MAT_DRY);
 }
 /** The card read-only (the report). */
-const dryCardRows = () => MAT_DRY.map(([k, l, u, , , , dd]) => [l, (+MAT.dry[k].v).toFixed(dd), u, MAT.dry[k].flag, MAT.dry[k].src]);
+const dryCardRows = () => MAT_DRY.map(([k, l, u, , , , dd]) => [l, (+MAT.dry[k].v).toFixed(dd), u, 'set:' + msFromText('dry', k), MAT.dry[k].src]);
