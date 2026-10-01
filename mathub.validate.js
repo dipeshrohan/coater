@@ -5,8 +5,9 @@
  *     to a card value; every record's property ids are unique; each solver key a property names is a solver.
  *  2. Built-in laws: each equals the solver's own function, at temperatures across its range (water: drying.js
  *     drMuWater, drPsat, drLatent; air: drying.js drAir; argon: furnace-mp.js fmpArgon; graphite: fmpCg).
- *  3. Built-in constants: equal to the solvers' (aluminium's in stack-mp.js, water's c_p in drying.js, stack-mp.js and
- *     furnace-mp.js, the plates' E in furnace.js, argon's c_p and Pr, the web's ν₁₃ and the gel's ν in film.js).
+ *  3. Constants: the built-in ones equal to the solvers' (water's c_p in drying.js, stack-mp.js and furnace-mp.js, air's,
+ *     argon's c_p and Pr); the material constants card's first values the solvers' fallbacks (aluminium's in stack-mp.js,
+ *     the plates' E in furnace.js, the web's ν₁₃ and the gel's ν in film.js), and the solvers given the card's.
  *  4. Stiffness: the hub's transversely isotropic C (matlib) gives Peel and wind's plane-strain block (film.js
  *     fmTransIso: C11, C13, C33, C55) for the film card's values and for the web's; positive definite.
  *  5. Tensors: the conduction and vapour-permeability tensors in the material frame are the cards' two values on the
@@ -37,7 +38,7 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   for (const r of all) for (const p of props(r)) if (p.b.t === 'card') { const k = `${p.b.card}.${p.b.k}`; seen.set(k, [...(seen.get(k) || []), `${r.id}.${p.id}`]); }
   const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`));
   const missing = cards.filter(k => !seen.has(k)), twice = [...seen].filter(([, v]) => v.length > 1), extra = [...seen.keys()].filter(k => !cards.includes(k));
-  check(`bindings: the ${cards.length} card values each a property of exactly one record`, cards.length === 99 && !missing.length && !twice.length && !extra.length,
+  check(`bindings: the ${cards.length} card values (the six stage cards' 99 and the material constants' 6) each a property of exactly one record`, cards.length === 105 && !missing.length && !twice.length && !extra.length,
     `missing ${missing.join(', ') || 'none'}; twice ${twice.map(([k, v]) => `${k} (${v.join(', ')})`).join('; ') || 'none'}; unknown ${extra.join(', ') || 'none'}`);
   const dup = all.filter(r => new Set(props(r).map(p => p.id)).size !== props(r).length).map(r => r.id);
   check('  property ids unique within each record; record ids unique', !dup.length && new Set(all.map(r => r.id)).size === all.length, dup.join(', '));
@@ -71,15 +72,18 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
 // 3. built-in constants = the solvers'
 {
   const C = H.HUB_CONST;
-  check('constants: aluminium k, ρ, c = stack-mp.js SMP_AL', C.alK.v === SM.SMP_AL.k && C.alRho.v === SM.SMP_AL.rho && C.alC.v === SM.SMP_AL.c, JSON.stringify(SM.SMP_AL));
+  const lib = vm.runInContext('matDefaults().lib', ctx), lv = k => lib[k].v;
+  check('constants (MH-2): the material constants card\'s first values the solvers\' own -- aluminium k, ρ, c = stack-mp.js SMP_AL', lv('alK') === SM.SMP_AL.k && lv('alRho') === SM.SMP_AL.rho && lv('alC') === SM.SMP_AL.c, JSON.stringify(SM.SMP_AL));
   const cw = [DRc.DR_CL, +/const SMP_CW = ([\d.]+)/.exec(smpSrc)[1], +/FMP_CW = ([\d.]+)/.exec(fmpSrc)[1]];
   check('  water\'s c_p = drying.js DR_CL = stack-mp.js SMP_CW = furnace-mp.js FMP_CW', cw.every(v => v === C.waterCp.v), cw.join(', '));
-  check('  the holder plates\' E = furnace.js FU_EPL', C.plE.v * 1e9 === FUc.FU_EPL, `${FUc.FU_EPL}`);
+  check('  the holder plates\' E = furnace.js FU_EPL (its fallback)', lv('plE') * 1e9 === FUc.FU_EPL && /PL\.E \|\| FU_EPL/.test(fs.readFileSync('furnace.js', 'utf8')), `${FUc.FU_EPL}`);
   const ar = FM.fmpArgon(300);
   check('  argon c_p and Pr = fmpArgon\'s', C.arCp.v === ar.cp && C.arPr.v === ar.Pr);
   check('  air c_p = drAir\'s', C.airCp.v === DRc.drAir(20, 101325).cp);
-  const web = /fmTransIso\(W\.Ew, W\.Ew \* W\.soft, W\.nuw, ([\d.]+), W\.Ew \* W\.soft \/ 2\)/.exec(filmSrc), gel = /fmIso\(o\.gel\.Eg, ([\d.]+)\)/.exec(filmSrc);
-  check('  the web\'s ν₁₃ and G₁₃ = E₁ soft / 2, the gel\'s ν: film.js\'s own (its source)', web && +web[1] === C.webNupt.v && gel && +gel[1] === C.gelNu.v, `${web && web[1]}, ${gel && gel[1]}`);
+  const web = /fmTransIso\(W\.Ew, W\.Ew \* W\.soft, W\.nuw, W\.nupt \?\? ([\d.]+), W\.Ew \* W\.soft \/ 2\)/.exec(filmSrc), gel = /fmIso\(o\.gel\.Eg, o\.gel\.nu \?\? ([\d.]+)\)/.exec(filmSrc);
+  check('  the web\'s ν₁₃ (G₁₃ = E₁ soft / 2) and the gel\'s ν: film.js\'s fallbacks', web && +web[1] === lv('webNupt') && gel && +gel[1] === lv('gelNu'), `${web && web[1]}, ${gel && gel[1]}`);
+  const ui = ['stack-mp-ui.js', 'furnace-ui.js', 'film-ui.js'].map(f => fs.readFileSync(f, 'utf8')).join('\n');
+  check('  and the solvers given the card\'s: the plate\'s aluminium (MP-1), the holder plates\' E (the furnace), the web\'s ν₁₃ and the gel\'s ν (Peel and wind)', /al: \{ k: MAT\.lib\.alK\.v, rho: MAT\.lib\.alRho\.v, c: MAT\.lib\.alC\.v \}/.test(ui) && /E: MAT\.lib\.plE\.v \* 1e9/.test(ui) && /nupt: MAT\.lib\.webNupt\.v/.test(ui) && /nu: MAT\.lib\.gelNu\.v/.test(ui));
 }
 
 // 4. stiffness = Peel and wind's plane-strain block
@@ -90,7 +94,7 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   const C = H.hubStiff('go'), ref = FL.fmTransIso(v('Ep') * 1e9, v('Et') * 1e9, v('nup'), v('nupt'), v('Gpt') * 1e9);
   const e = Math.max(rel(C[0][0], ref.C11), rel(C[0][2], ref.C13), rel(C[2][2], ref.C33), rel(C[4][4], ref.C55));
   check('stiffness: the dried film\'s C (matlib, transversely isotropic about its normal) gives film.js\'s C11, C13, C33, C55', e < 1e-12, `max rel ${fmt(e)}; C11 ${fmt(C[0][0])} Pa`);
-  const W = H.hubStiff('web'), rw = FL.fmTransIso(v('Ew') * 1e9, v('Ew') * v('soft') * 1e9, v('nuw'), 0.1, v('Ew') * v('soft') * 1e9 / 2);
+  const W = H.hubStiff('web'), rw = FL.fmTransIso(v('Ew') * 1e9, v('Ew') * v('soft') * 1e9, v('nuw'), vm.runInContext('MAT.lib.webNupt.v', ctx), v('Ew') * v('soft') * 1e9 / 2);
   const ew = Math.max(rel(W[0][0], rw.C11), rel(W[0][2], rw.C13), rel(W[2][2], rw.C33), rel(W[4][4], rw.C55));
   check('  the web\'s the same (its ν₁₃ and G₁₃ the solver\'s)', ew < 1e-12, fmt(ew));
   check('  both positive definite (Cholesky)', !L.mlCCheck(C).length && !L.mlCCheck(W).length);

@@ -149,6 +149,19 @@ const MAT_FURN = [
   ['rhoPl', '… their density', 'g/cm³', 1, 2.3, 0.01, 2, 1.8, 'assumed', 'isostatic graphite 1.75–1.9', 'heat'],
   ['epsF', 'The holder\'s faces to the hot zone: emissivity', '', 0.05, 1, 0.01, 2, 0.8, 'assumed', 'graphite 0.7–0.9; the hot zone at the program\'s temperature', 'heat'],
 ];
+/**
+ * The material constants the solvers had fixed in their code (MH-2), the same shape: the pre heat's aluminium plate,
+ * the holder's isostatic graphite plates' stiffness, the fibre web's and the wet film's Poisson's ratios. Their first
+ * values are the solvers' own (stack-mp.js SMP_AL, furnace.js FU_EPL, film.js), so a project solves as before.
+ */
+const MAT_LIB = [
+  ['alK', 'Aluminium plate: thermal conductivity', 'W/(m·K)', 20, 400, 1, 0, 200, 'assumed', 'aluminium alloys 150–235 W/(m·K) (pure 237); your plate\'s alloy gives it'],
+  ['alRho', 'Aluminium plate: density', 'kg/m³', 2500, 2900, 5, 0, 2700, 'assumed', 'aluminium and its alloys 2640–2810 kg/m³'],
+  ['alC', 'Aluminium plate: specific heat capacity', 'J/(kg·K)', 800, 1100, 5, 0, 900, 'assumed', 'aluminium 897 J/(kg·K) at 25 °C, rising about 10 % to 200 °C'],
+  ['plE', 'Isostatic graphite plates: Young\'s modulus', 'GPa', 1, 40, 0.5, 1, 10, 'assumed', 'isostatic graphites 8–14 GPa; the plates\' datasheet gives it'],
+  ['webNupt', 'Fibre web: Poisson\'s ratio, plane to thickness', '', 0, 0.49, 0.01, 2, 0.1, 'assumed', 'a fabric\'s thickness change under an in-plane stress: small'],
+  ['gelNu', 'Wet GO film: Poisson\'s ratio', '', 0, 0.499, 0.005, 3, 0.45, 'assumed', 'a water-filled gel: nearly incompressible'],
+];
 const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
@@ -163,7 +176,7 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // its own in its entry, as prov beside its flag)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {} });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB) });
 let MAT = matDefaults();
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;

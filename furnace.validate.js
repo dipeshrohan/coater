@@ -362,5 +362,11 @@ let endsDef = null;
 }
 
 console.log(`the defaults: run 1 the gas at ${(r.runs[0].peak.idx * 100).toFixed(1)} % of its hold; run 2 puffs from ${(r.runs[1].puffAt.T - 273.15).toFixed(0)} °C; ${(r.hMean * 1e6).toFixed(1)} µm (${(r.hMean / 90e-6).toFixed(3)}×), ${r.rho.toFixed(0)} kg/m³, ${(r.kept * 100).toFixed(1)} % kept, g ${r.g.toFixed(3)}, La ${r.La.toFixed(0)} nm, ${r.kappa.toFixed(0)} W/(m K)`);
+// the holder plates' stiffness through the inputs (MH-2): given as FU_EPL, the run bit for bit as without
+{
+  const strip = r => JSON.stringify(r, (k, v) => (k === 'ms' ? undefined : v));
+  const o = base({ ends: 'plates', plate: { ...PLATE }, room: 'plates', plateP: 500 }), a = F.fuRun(o), b = F.fuRun({ ...o, plate: { ...PLATE, E: FU_EPL } }), c = F.fuRun({ ...o, plate: { ...PLATE, E: 1e9 } });
+  check('the plates\' E as an input (MH-2): given as 10 GPa, the run bit for bit as without; 1 GPa, another', strip(a) === strip(b) && strip(c) !== strip(a), `${strip(a).length} chars`);
+}
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;

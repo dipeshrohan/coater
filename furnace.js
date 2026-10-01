@@ -436,7 +436,7 @@ function fuRun(o) {
   // (the ends against the plates, GO-7e: N − 1 papers, pressed in series with the two plates' own give -- only that
   //  when the stack is one piece)
   const onPl = o.ends === 'plates', PL = o.plate || {};
-  const kP = !(o.room === 'plates' || o.room === 'gap') ? 0 : onPl ? N / ((N - 1) * o.paper.t / o.paper.Ez + 2 * (PL.t || 0) / FU_EPL)
+  const kP = !(o.room === 'plates' || o.room === 'gap') ? 0 : onPl ? N / ((N - 1) * o.paper.t / o.paper.Ez + 2 * (PL.t || 0) / (PL.E || FU_EPL))
     : o.paper.Ez * N / ((N + 1) * o.paper.t), g0 = o.room === 'gap' ? (o.gap || 0) / N : 0;
   const pos = (o.positions && o.positions.length ? o.positions : [{ m: 0, w: 1 }]).map(q => ({ m: Math.max(0, Math.min(N - 1, Math.round(q.m || 0))), w: q.w == null ? 1 : q.w }));
   // (each piece's faces: 'paper' or 'plate' -- above it the plate when it is the top piece, below it the base plate when

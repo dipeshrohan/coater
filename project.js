@@ -168,6 +168,9 @@ function applyMaterials(m) {
   if (um) MAT.furnMeas = { out: arr(um.out).filter(locOk).map(q => ({ loc: q.loc, h: fin(q.h), kept: fin(q.kept), kappa: fin(q.kappa) })).filter(q => [q.h, q.kept, q.kappa].some(Number.isFinite)),
     // (the first piece found stuck to its papers, from the top, GO-7c)
     stuckFrom: Number.isFinite(um.stuckFrom) && um.stuckFrom >= 1 && um.stuckFrom <= 10000 ? Math.round(um.stuckFrom) : null };
+  // (the material constants' card, MH-2: a project from before has none -- the solvers' own values, as it was solved)
+  const lc = m && m.lib;
+  if (lc) for (const k of Object.keys(MAT.lib)) if (lc[k] && Number.isFinite(lc[k].v)) MAT.lib[k] = { ...MAT.lib[k], ...lc[k] };
   // (the inputs bar's material values' provenance, MH-5: as saved when it has its shape; a project from before has none)
   const pv = m && m.prov;
   if (pv && typeof pv === 'object') MAT.prov = Object.fromEntries(Object.entries(pv).filter(([k, q]) => /^in\.[A-Za-z0-9]+$/.test(k) && q && typeof q.kind === 'string' && (typeof HUB_PROV === 'undefined' || HUB_PROV[q.kind])).map(([k, q]) => [k, { kind: q.kind, src: String(q.src ?? '') }]));

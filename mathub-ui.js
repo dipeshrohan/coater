@@ -54,7 +54,7 @@ function viewMaterials() {
         <button type="button" class="btn btn-secondary btn-sm" id="hubImport">${uiIco('upload')}Import…</button>
         <button type="button" class="btn btn-secondary btn-sm" id="hubExport">${uiIco('download')}Export</button>
         <details class="hub-menu" id="hubDefaults"><summary class="btn btn-secondary btn-sm">${uiIco('restart')}Defaults</summary>
-          <div class="hub-menu-pop" role="menu">${[['matReset', 'slurry'], ['matRheoReset', 'rheo'], ['matOrReset', 'orient'], ['matDryReset', 'dry'], ['matFilmReset', 'film'], ['matFurnReset', 'furn']].map(([id, c]) => `<button type="button" role="menuitem" id="${id}" data-hubreset="${c}">The ${HUB_CARD_T[c]}<small>its ${HUB_CARDS[c].length} values back to their first values</small></button>`).join('')}</div></details>
+          <div class="hub-menu-pop" role="menu">${[['matReset', 'slurry'], ['matRheoReset', 'rheo'], ['matOrReset', 'orient'], ['matDryReset', 'dry'], ['matFilmReset', 'film'], ['matFurnReset', 'furn'], ['matLibReset', 'lib']].map(([id, c]) => `<button type="button" role="menuitem" id="${id}" data-hubreset="${c}">The ${HUB_CARD_T[c]}<small>its ${HUB_CARDS[c].length} values back to their first values</small></button>`).join('')}</div></details>
       </span>`,
     top: '<div id="hubRoot" class="hub-root"></div>',
     panes: [],
@@ -188,7 +188,7 @@ function hubDetailHTML(r, p, v) {
   const b = p.b, used = p.phys.filter(k => hubPhys(k));
   const usedHTML = used.length ? `<div class="hub-d-used"><span class="hub-d-l">Read by</span>${used.map(k => `<button type="button" class="chip hub-ph" data-hubgo="${k}">${hubPhys(k).l}</button>`).join('')}</div>` : '<div class="hub-d-used"><span class="hub-d-l">Read by</span><span class="hub-muted">no solver</span></div>';
   const kv = rows => `<dl class="hub-kv">${rows.filter(Boolean).map(([k, x]) => `<div><dt>${k}</dt><dd>${x}</dd></div>`).join('')}</dl>`;
-  const helpKey = b.t === 'card' ? `${{ slurry: 'mat', rheo: 'matr', orient: 'mato', dry: 'matd', film: 'matf', furn: 'matu' }[b.card]}.${b.k}` : b.t === 'inp' ? `in.${b.k}` : b.t === 'peel' ? `oven.${b.k}` : null;
+  const helpKey = b.t === 'card' ? `${{ slurry: 'mat', rheo: 'matr', orient: 'mato', dry: 'matd', film: 'matf', furn: 'matu', lib: 'matl' }[b.card]}.${b.k}` : b.t === 'inp' ? `in.${b.k}` : b.t === 'peel' ? `oven.${b.k}` : null;
   const help = helpKey && typeof helpOf === 'function' ? helpOf(helpKey) : null;
   const si = hubSI(p, v);
   if (['card', 'inp', 'cfdg', 'peel'].includes(b.t)) {
@@ -480,8 +480,8 @@ function hubCompareHTML() {
     ['Graphene film', { cp: lawOr('gCp'), k1: fu.kG.v * 0.93 * fu.La1.v / (fu.La1.v + fu.ell.v) }],
     ['Fibre web', { rho: CFDG.rhoF, cp: d.cpWeb.v, E1: fl.Ew.v, E3: fl.Ew.v * fl.soft.v }],
     ['Graphite paper', { rho: fu.rhoP.v * 1000, cp: lawOr('gCp'), k1: fu.kPin.v, k3: fu.kPthr.v, E3: fu.Ez.v / 1000 }],
-    ['Isostatic graphite', { rho: fu.rhoPl.v * 1000, cp: lawOr('gCp'), k1: fu.kPl.v, k3: fu.kPl.v, E1: HUB_CONST.plE.v, E3: HUB_CONST.plE.v, eps: fu.epsF.v }],
-    ['Aluminium', { rho: HUB_CONST.alRho.v, cp: HUB_CONST.alC.v, k1: HUB_CONST.alK.v, k3: HUB_CONST.alK.v, eps: OVEN.peel.epsPl }],
+    ['Isostatic graphite', { rho: fu.rhoPl.v * 1000, cp: lawOr('gCp'), k1: fu.kPl.v, k3: fu.kPl.v, E1: MAT.lib.plE.v, E3: MAT.lib.plE.v, eps: fu.epsF.v }],
+    ['Aluminium', { rho: MAT.lib.alRho.v, cp: MAT.lib.alC.v, k1: MAT.lib.alK.v, k3: MAT.lib.alK.v, eps: OVEN.peel.epsPl }],
   ];
   const rows = [['rho', 'Density', 'kg/m³', -4], ['cp', 'Specific heat capacity', 'J/(kg·K)', -4], ['k1', 'Thermal conductivity, in the plane', 'W/(m·K)', -3], ['k3', 'Thermal conductivity, through the thickness', 'W/(m·K)', -3], ['k', 'Thermal conductivity (gas)', 'W/(m·K)', -3],
     ['mu', 'Viscosity', 'Pa·s', -3], ['E1', 'Young\'s modulus, in the plane', 'GPa', -3], ['E3', 'Young\'s modulus, through the thickness', 'GPa', -3], ['eps', 'Emissivity', '', 2]];

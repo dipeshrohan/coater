@@ -421,8 +421,9 @@ function fmLayout(hh, i, hs, o) {
     return -1;
   };
   const soft = X => 1 / (1 + X / F.Xh);
-  const webC = fmTransIso(W.Ew, W.Ew * W.soft, W.nuw, 0.1, W.Ew * W.soft / 2);
-  const gelC = fmIso(o.gel.Eg, 0.45);
+  // (the web's Poisson's ratio from its plane to its thickness and the gel's: the Materials' constants, MH-2; 0.1 and 0.45 when not given)
+  const webC = fmTransIso(W.Ew, W.Ew * W.soft, W.nuw, W.nupt ?? 0.1, W.Ew * W.soft / 2);
+  const gelC = fmIso(o.gel.Eg, o.gel.nu ?? 0.45);
   const cellC = new Map();
   const mat = zv => { const k = at(zv); if (k === -2) return webC; if (k === -1) return gelC;
     if (!cellC.has(k)) { const f = soft(S.X[k]); cellC.set(k, fmTransIso(F.Ep * f, F.Et * f, F.nup, F.nupt, F.Gpt * f)); } return cellC.get(k); };

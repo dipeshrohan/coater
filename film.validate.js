@@ -171,6 +171,10 @@ const rel = (a, b) => Math.abs(a - b) / Math.abs(b);
     { const c = b => F.fmCurlOnly(dr, { ...o, film: { ...o.film, beta: b } }), k0 = c(0), k1 = c(1), kb = c(o.film.beta);
       const e = Math.max(Math.abs(kb.atPeel - (k0.atPeel + o.film.beta * (k1.atPeel - k0.atPeel))) / Math.abs(kb.atPeel), Math.abs(kb.settled - (k0.settled + o.film.beta * (k1.settled - k0.settled))) / Math.max(Math.abs(kb.settled), 1e-9));
       check(`the curl is linear in β: from β = 0 and 1, exactly (${tag})`, e < 1e-9, `${e.toExponential(1)}; κ at the peel ${kb.atPeel.toFixed(4)} 1/m`); }
+    // the web's ν₁₃ and the gel's ν as inputs (MH-2): given as 0.1 and 0.45, the run bit for bit as without; others, another
+    if (!over.where) { const strip = q => JSON.stringify(q, (k, v) => (k === 'ms' ? undefined : v)), base0 = F.fmRun(dr, o);
+      const same = F.fmRun(dr, { ...o, web: { ...o.web, nupt: 0.1 }, gel: { ...o.gel, nu: 0.45 } }), other = F.fmRun(dr, { ...o, web: { ...o.web, nupt: 0.3 }, gel: { ...o.gel, nu: 0.3 } });
+      check('the web\'s ν₁₃ and the gel\'s ν as inputs (MH-2): given as 0.1 and 0.45, the film bit for bit as without; 0.3, another', strip(same) === strip(base0) && strip(other) !== strip(base0), `${strip(base0).length} chars`); }
     // the app's crack mesh against a finer one at the worst place
     const r = F.fmRun(dr, o);
     // (GO-4f: the plate by water for the stack -- linear between its rows to 1e-3 of the plate there; its rows at the cut
