@@ -178,12 +178,12 @@ function msSetupProps(ids, prop) {
   return ids.map(id => { const [card, k] = id.split('.'), q = msCards()[card].find(r => r[0] === k);
     return prop(q[1], `msu_${card}_${k}`, `min="${q[3]}" max="${q[4]}" step="${q[5]}" value="${MAT[card][k].v}" data-mssetup="${id}"`, q[2]); }).join('');
 }
-/** Their inputs wired: the value into its card row, as it always was; changed(): the page's redraw. */
+/** Their inputs wired: the value into its card row, as it always was (typed: yours, as the stage's other inputs); changed(): the page's redraw. */
 function wireMsSetup(changed) {
   document.querySelectorAll('input[data-mssetup]').forEach(el => {
     if (el.dataset.wired) return; el.dataset.wired = '1';
     const [card, k] = el.dataset.mssetup.split('.'), q = msCards()[card].find(r => r[0] === k);
-    el.addEventListener('change', () => { guardNumber(el, { label: q[1], lo: q[3], hi: q[4], unit: q[2] }, v => { MAT[card][k] = { ...MAT[card][k], v }; }); el.value = MAT[card][k].v; changed(); });
+    el.addEventListener('change', () => { guardNumber(el, { label: q[1], lo: q[3], hi: q[4], unit: q[2] }, v => { MAT[card][k] = { ...MAT[card][k], v, flag: 'given', src: 'you' }; }); el.value = MAT[card][k].v; changed(); });
   });
 }
 /** Where a card row's value is from, in words (the report, the read-only rows): its data set, or the setup's flag. */

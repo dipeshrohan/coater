@@ -573,7 +573,7 @@ function matRheoDerived() {
   const der = document.getElementById('matRheoDerived');
   if (der) der.innerHTML = probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
   const cnt = document.getElementById('matRheoCount');
-  if (cnt) cnt.textContent = used.length ? `of the ${used.length} in use: ${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured` : 'none of these in use';
+  if (cnt) cnt.textContent = used.length ? `of the ${used.length} in use: ${msCountText('rheo', used)}` : 'none of these in use';
 }
 /** What follows from the slurry card (its density, the dry film's), the counts, the pills and the tiles: redrawn in place, so the card keeps its focus. */
 function matDerived() {
@@ -590,7 +590,7 @@ function matDerived() {
   ].map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t">${s}</span></div>`).join('')
     + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
   const cnt = document.getElementById('matCount');
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
+  if (cnt) cnt.textContent = msCountText('slurry', MAT_SLURRY);
   const st = document.getElementById('st');
   if (st) st.innerHTML = pill(`The slurry: ${c.phi.v} vol% GO (${(wm * 100).toFixed(1)} % by mass) in water, ${rho.toFixed(0)} kg/m³`, '')
     + pill(n('assumed') ? `${n('assumed')} of ${keys.length} slurry values from the generic (literature) data: measure them to firm up the answers` : `Every slurry value from your data`, n('assumed') ? 'warn' : 'ok')
