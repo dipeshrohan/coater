@@ -27,6 +27,7 @@ const MS_SETUP = 'setup';
 /** Every card row's material: card → key → material id (or MS_SETUP). */
 const MS_ROWS = {
   slurry: { phi: 'slurry', rhoS: 'go', rhoL: 'water', dMean: 'go', dMin: 'go', dMax: 'go', tFlake: 'go', co: 'go', phiDry: 'go' },
+  flow: { mu: 'slurry', n: 'slurry', ty: 'slurry', g: 'slurry' },
   rheo: { etaInf: 'slurry', lamT: 'slurry', aCY: 'slurry', tb: 'slurry', gdc: 'slurry', cy: 'slurry', ce: 'slurry' },
   orient: { U: 'slurry', Dr: 'slurry', Ci: 'slurry', nLines: MS_SETUP, nFlakes: MS_SETUP },
   dry: { mul: 'slurry', skinK: 'go', kS: 'go', kIn: 'go', cS: 'go', emis: 'go', irAbs: 'go', gabXm: 'go', gabC: 'go', gabK: 'go', cpWeb: 'pet', Troom: MS_SETUP, rhRoom: MS_SETUP },
@@ -38,7 +39,7 @@ const MS_ROWS = {
     Bpl: 'iso', muPl: 'goIso', TstPl: 'goIso', tauPl: 'goIso', Hr: 'go', kPin: 'paper', kPthr: 'paper', Rc: 'goPaper', kPl: 'iso', rhoPl: 'iso', epsF: 'iso' },
 };
 /** The cards' row tables (materials.js), by card. */
-const msCards = () => ({ slurry: MAT_SLURRY, rheo: MAT_RHEO, orient: MAT_ORIENT, dry: MAT_DRY, film: MAT_FILM, furn: MAT_FURN });
+const msCards = () => ({ slurry: MAT_SLURRY, flow: MAT_FLOW, rheo: MAT_RHEO, orient: MAT_ORIENT, dry: MAT_DRY, film: MAT_FILM, furn: MAT_FURN });
 /** A row's id across the cards: 'card.key'. */
 const msRowId = (card, k) => `${card}.${k}`;
 /** The rows of material m: [{ card, k, id }] in the cards' order. */
@@ -50,14 +51,14 @@ function msRowsOf(m) {
 // (the defaults the user gave, in the generic set: a typical value with what it stands for)
 const MS_LIT_SRC = { 'slurry.phi': 'a typical coating slurry\'s solids', 'slurry.dMean': 'GO flakes about 1–10 µm across', 'slurry.dMin': 'GO flakes about 1–10 µm across', 'slurry.dMax': 'GO flakes about 1–10 µm across' };
 const MS_LIT = 'lit';
-/** The built-in set of material m: "Generic (literature)", every row of m at the app's default, assumed, with its reference. */
+/** The app's card of material m (named after it): every row of m at the app's default, with its reference. */
 function msGeneric(m) {
   const vals = {};
   for (const { card, k, id } of msRowsOf(m)) {
     const q = msCards()[card].find(r => r[0] === k);
     vals[id] = { v: q[7], flag: 'assumed', src: MS_LIT_SRC[id] || q[9] };
   }
-  return { id: MS_LIT, mat: m, name: 'Generic (literature)', builtin: true, vals };
+  return { id: MS_LIT, mat: m, name: MS_MATERIALS.find(q => q.id === m).t, builtin: true, vals };
 }
 /** The project's sets as saved: { sel: { material: set id }, own: { id: { id, mat, name, note, vals (only what it changes) } } }. */
 const msEmpty = () => ({ sel: Object.fromEntries(MS_MATERIALS.map(m => [m.id, MS_LIT])), own: {} });
@@ -87,7 +88,7 @@ function msDerive(MATc, keep) {
     if (cur) { cur.vals = vals; continue; }
     const told = Object.entries(vals).every(([id, v]) => { const [card, k] = id.split('.'), d = D[card][k]; return d.flag === 'given' && msSame(v, d); });
     const id = S.own[`p-${m}`] ? msNewId(S, m) : `p-${m}`;
-    S.own[id] = { id, mat: m, name: told ? 'As you told us' : 'This project', note: told ? 'the values you gave when the app was set up' : 'this project\'s values', vals };
+    S.own[id] = { id, mat: m, name: told ? 'As you told us' : `${MS_MATERIALS.find(q => q.id === m).t} (this project)`, note: told ? 'the values you gave when the app was set up' : 'this project\'s values', ...(told ? {} : { auto: true }), vals };
     S.sel[m] = id;
   }
   return S;
@@ -130,7 +131,7 @@ function msWrite(S, card, k, patch) {
   if (!m || m === MS_SETUP) return S;
   const T = msClone(S), id = msRowId(card, k), g = msGeneric(m).vals[id];
   let own = T.own[T.sel[m]];
-  if (!own) { const nid = T.own[`p-${m}`] ? msNewId(T, m) : `p-${m}`; own = T.own[nid] = { id: nid, mat: m, name: 'This project', note: 'values changed in this project', vals: {} }; T.sel[m] = nid; }
+  if (!own) { const nid = T.own[`p-${m}`] ? msNewId(T, m) : `p-${m}`; own = T.own[nid] = { id: nid, mat: m, name: `${MS_MATERIALS.find(q => q.id === m).t} (this project)`, note: 'values changed in this project', auto: true, vals: {} }; T.sel[m] = nid; }
   const cur = own.vals[id] || g, changed = 'v' in patch && patch.v !== cur.v;
   const nv = { v: changed ? patch.v : cur.v, flag: patch.flag || (changed ? 'given' : cur.flag), src: 'src' in patch ? patch.src : changed && !own.vals[id] ? 'you' : cur.src };
   if (msSame(nv, g)) delete own.vals[id]; else own.vals[id] = nv;
@@ -168,9 +169,28 @@ function msSummary(S, m, ids) {
 /** The project's sets (in step with the cards: msSync). */
 let MSETS = typeof window !== 'undefined' && typeof MAT !== 'undefined' ? msDerive(MAT) : null;
 /** The sets in step with the cards (anything written to the cards directly), returned. */
-function msSync() { return (MSETS = msDerive(MAT, MSETS)); }
-/** New sets for the project: the cards' values from them. */
-function msUse(T) { MSETS = T; msApply(MSETS, MAT); }
+function msSync() { msFlowFromP(); return (MSETS = msDerive(MAT, MSETS)); }
+/** New sets for the project: the cards' values from them (the slurry's flow rows into the inputs bar's sliders too). */
+function msUse(T) { MSETS = T; msApply(MSETS, MAT); msFlowToP(); }
+/**
+ * The slurry's flow rows in step with the inputs bar (P, what the solvers read): a slider moved since is the card's
+ * value now -- a rheometer fit's while it keeps the fitted value (measured), the app's card's at its default, else yours.
+ */
+function msFlowFromP() {
+  if (!MAT.flow) MAT.flow = matDefaults().flow;
+  for (const q of MAT_FLOW) {
+    const k = q[0], v = P[k], cur = MAT.flow[k];
+    if (!Number.isFinite(v) || (cur && cur.v === v)) continue;
+    const fit = (MAT.rheo.side || {})[k];
+    MAT.flow[k] = fit && fit.v === v ? { v, flag: 'measured', src: fit.src } : v === q[7] ? { v, flag: q[8], src: q[9] } : { v, flag: 'given', src: 'you' };
+  }
+}
+/** The flow rows' values into the inputs bar (as its sliders take them: their range and step), then back (msFlowFromP). */
+function msFlowToP() {
+  if (!MAT.flow || typeof setInput !== 'function') return;
+  for (const q of MAT_FLOW) if (MAT.flow[q[0]] && P[q[0]] !== MAT.flow[q[0]].v) setInput(q[0], MAT.flow[q[0]].v);
+  for (const q of MAT_FLOW) if (MAT.flow[q[0]] && P[q[0]] !== MAT.flow[q[0]].v) MAT.flow[q[0]] = { ...MAT.flow[q[0]], v: P[q[0]] };
+}
 /** A row edited on a card (its number, its note, or a fit's value): through its material's chosen set. */
 function msEdit(card, k, patch) { msUse(msWrite(msSync(), card, k, patch)); }
 /** The stage's setup rows (not a material's; on their stage's inputs now): prop rows with their inputs (prop: the bar's row builder). */
@@ -186,33 +206,27 @@ function wireMsSetup(changed) {
     el.addEventListener('change', () => { guardNumber(el, { label: q[1], lo: q[3], hi: q[4], unit: q[2] }, v => { MAT[card][k] = { ...MAT[card][k], v, flag: 'given', src: 'you' }; }); el.value = MAT[card][k].v; changed(); });
   });
 }
-/** Where a card row's value is from, in words (the report, the read-only rows): its data set, or the setup's flag. */
+/** A card row's material card, by name (the report): its material's chosen card; a stage input: none. */
 function msFromText(card, k) {
   const m = MS_ROWS[card] && MS_ROWS[card][k];
-  if (!m || m === MS_SETUP) return (MAT_FLAGS.find(q => q[0] === MAT[card][k].flag) || [0, MAT[card][k].flag])[1];
+  if (!m || m === MS_SETUP) return '';
   const own = MSETS.own[MSETS.sel[m]];
-  return own && own.vals[msRowId(card, k)] ? own.name : 'Generic (literature)';
-}
-/** A card's count line: of its material rows, how many are yours (an own set's) and how many the generic data's. */
-function msCountText(card, rows) {
-  const ids = rows.filter(q => MS_ROWS[card][q[0]] !== MS_SETUP).map(q => msRowId(card, q[0]));
-  const yours = ids.filter(id => { const [c, k] = id.split('.'), own = MSETS.own[MSETS.sel[MS_ROWS[c][k]]]; return own && own.vals[id]; }).length;
-  return `${yours} of ${ids.length} values from your data sets · ${ids.length - yours} from the generic (literature) data`;
+  return own ? own.name : MS_MATERIALS.find(q => q.id === m).t;
 }
 /** The furnace card's topics inside a material (shown when a material has rows in two or more). */
 const MS_FURN_TOPICS = { chem: 'Chemistry as it heats', graph: 'Its layers ordering into graphite', gas: 'Gas and puffing', paper: 'Density, gas, stiffness', plane: 'Along the piece', plate: 'Gas through it', heat: 'Heat' };
 /** What changed between two sets, as an undo step's name (a set chosen, made, renamed, deleted), or null (values only). */
 function msUndoLabel(a, b) {
   if (!a || !b) return null;
-  const nm = (S, id) => (S.own[id] ? S.own[id].name : 'Generic (literature)'), mt = id => (MS_MATERIALS.find(m => m.id === id) || { t: id }).t;
+  const mt = id => (MS_MATERIALS.find(m => m.id === id) || { t: id }).t, nm = (S, id, m) => (S.own[id] ? S.own[id].name : mt(m));
   const add = Object.keys(b.own).find(id => !a.own[id]), del = Object.keys(a.own).find(id => !b.own[id]);
   // (a set an edit started -- "This project" -- is named by the value it holds, the row's step)
-  if (add) return b.own[add].name === 'This project' ? null : `${mt(b.own[add].mat)}: new data set “${b.own[add].name}”`;
-  if (del) return `${mt(a.own[del].mat)}: data set “${a.own[del].name}” deleted`;
+  if (add) return b.own[add].auto ? null : `${mt(b.own[add].mat)}: new card “${b.own[add].name}”`;
+  if (del) return `${mt(a.own[del].mat)}: card “${a.own[del].name}” deleted`;
   const ren = Object.keys(b.own).find(id => a.own[id] && a.own[id].name !== b.own[id].name);
-  if (ren) return `${mt(b.own[ren].mat)}: data set renamed “${b.own[ren].name}”`;
+  if (ren) return `${mt(b.own[ren].mat)}: card renamed “${b.own[ren].name}”`;
   const ch = Object.keys(b.sel).find(m => a.sel[m] !== b.sel[m]);
-  return ch ? `${mt(ch)}: data set “${nm(b, b.sel[ch])}”` : null;
+  return ch ? `${mt(ch)}: card “${nm(b, b.sel[ch], ch)}”` : null;
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { MS_MATERIALS, MS_ROWS, MS_SETUP, MS_LIT, msRowsOf, msRowId, msGeneric, msEmpty, msSet, msValue, msDerive, msApply, msIn, msClone, msWrite, msChoose, msNew, msRename, msDelete, msCardDefaults, msSummary };

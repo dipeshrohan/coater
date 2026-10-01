@@ -66,7 +66,7 @@ function furnUndoLabel(a, b) {
 function matUndoLabel(k, a, b, rows = MAT_SLURRY) {
   const [, l, u, , , , d] = rows.find(q => q[0] === k);
   if (a && b && a.v !== b.v) return undoChange(l, a.v, b.v, v => undoNum(v, d), u);
-  if (a && b && a.flag !== b.flag) return `${l}: ${(MAT_FLAGS.find(f => f[0] === b.flag) || [0, b.flag])[1].toLowerCase()}`;
+  if (a && b && a.flag !== b.flag) return `${l}: ${b.flag === 'measured' ? 'measured' : 'its card'}`;
   return `${l}: source`;
 }
 const scalarName = v => v === 'none' ? 'none' : (SCALARS[v] || {}).label || v;
@@ -166,6 +166,7 @@ const UNDO_UNITS = (() => {
   // (the oven's zones, one unit; the slurry's card, a unit per value)
   u.push({ id: 'oven', get: () => OVEN.zones, set: v => { OVEN.zones = JSON.parse(JSON.stringify(v || ovenDefaults().zones)); }, label: ovenUndoLabel });
   for (const [k] of MAT_SLURRY) u.push({ id: 'mat.' + k, get: () => MAT.slurry[k], set: v => { MAT.slurry[k] = v ? { ...v } : matDefaults().slurry[k]; }, label: (a, b) => matUndoLabel(k, a, b) });
+  for (const [k] of MAT_FLOW) u.push({ id: 'matsf.' + k, get: () => { msFlowFromP(); return MAT.flow[k]; }, set: v => { MAT.flow[k] = v ? { ...v } : matDefaults().flow[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_FLOW) });
   for (const [k] of MAT_RHEO) u.push({ id: 'matr.' + k, get: () => MAT.rheo[k], set: v => { MAT.rheo[k] = v ? { ...v } : matDefaults().rheo[k]; }, label: (a, b) => matUndoLabel(k, a, b, MAT_RHEO) });
   u.push({ id: 'matr.structOn', get: () => MAT.rheo.structOn, set: v => { MAT.rheo.structOn = v !== false; }, label: (a, b) => `Structure (thixotropy) model ${b ? 'on' : 'off'}` });
   u.push({ id: 'matr.side', get: () => MAT.rheo.side || {}, set: v => { MAT.rheo.side = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: () => 'Inputs from a rheometer fit' });
@@ -194,7 +195,7 @@ const UNDO_UNITS = (() => {
   u.push({ id: 'mat.furnMeas', get: () => MAT.furnMeas || { out: [] }, set: v => { MAT.furnMeas = v ? JSON.parse(JSON.stringify(v)) : { out: [] }; },
     label: (a, b) => { const na = ((a || {}).out || []).length, nb = ((b || {}).out || []).length; return nb > na ? 'Add a measured graphene film' : nb < na ? 'Remove a measured graphene film' : 'Graphene film measured'; } });
   u.push({ id: 'oven.furn', get: () => OVEN.furn || furnDefaults(), set: v => { OVEN.furn = v ? JSON.parse(JSON.stringify(v)) : furnDefaults(); }, label: furnUndoLabel });
-  u.push({ id: 'mat.sets', get: () => MSETS, set: v => { MSETS = v ? msIn(JSON.parse(JSON.stringify(v))) : msDerive(MAT); }, label: (a, b) => msUndoLabel(a, b) || 'Data set values' });
+  u.push({ id: 'mat.sets', get: () => msSync(), set: v => { MSETS = v ? msIn(JSON.parse(JSON.stringify(v))) : msDerive(MAT); }, label: (a, b) => msUndoLabel(a, b) || 'Material card values' });
   u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });
   // (the blade across the web: a unit per setting)
   for (const k of Object.keys(ACR_DEFAULTS)) u.push({ id: 'acr.' + k, get: () => ACR[k], set: v => { ACR[k] = v === undefined ? JSON.parse(JSON.stringify(ACR_DEFAULTS[k])) : JSON.parse(JSON.stringify(v)); }, label: (a, b) => acrossUndoLabel(k, a, b) });

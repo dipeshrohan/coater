@@ -159,9 +159,9 @@ function filmSectionHTML() {
       <div class="seg" role="tablist" aria-label="Which film" id="filmSel">${seg.map(([k, t]) => `<button type="button" role="tab" data-film="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="filmPeelBtn" data-chain="peel" title="${{ film: 'After the oven: the stretch to the peel and the winder\'s core', piece: 'The pieces\' size', stack: 'The pre heat treatment: its temperature and times' }[FILM.view || 'film']}, in the inputs bar">${uiIco('oven')}${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[FILM.view || 'film']}</button><button type="button" class="btn btn-secondary btn-sm" id="filmCsv">Export CSV</button></header>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>After the oven</h4></div>
-      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr data-fview="${filmPartOf(k)}"><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td><td class="fv-why">${OVEN.peel[flag] ? 'from you' : 'assumed'}</td></tr>`).join('')}
-        <tr data-fview="stack"><th>What it stands on</th><td>${OVEN_SHELVES[OVEN.peel.shelf]}</td><td class="fv-why">${OVEN.peel.shelfSet ? 'from you' : 'assumed'}</td></tr>
-        ${[['setFrac', 'film', 2], ['creepTau', 'stack', 0]].map(([k, part, dg]) => { const q = MAT_FILM.find(r => r[0] === k), v = MAT.film[k]; return `<tr data-fview="${part}"><th>${q[1]}</th><td>${(+v.v).toFixed(dg)} ${q[2]}</td><td class="fv-why">${v.flag === 'assumed' ? 'assumed' : 'from you'}</td></tr>`; }).join('')}</tbody></table>
+      <table class="proc-kv"><tbody>${OVEN_PEEL_FIELDS.map(([k, l, u, , , , dg, flag]) => `<tr data-fview="${filmPartOf(k)}"><th>${l}</th><td>${(+OVEN.peel[k]).toFixed(dg)} ${u}</td></tr>`).join('')}
+        <tr data-fview="stack"><th>What it stands on</th><td>${OVEN_SHELVES[OVEN.peel.shelf]}</td></tr>
+        ${[['setFrac', 'film', 2], ['creepTau', 'stack', 0]].map(([k, part, dg]) => { const q = MAT_FILM.find(r => r[0] === k), v = MAT.film[k]; return `<tr data-fview="${part}"><th>${q[1]}</th><td>${(+v.v).toFixed(dg)} ${q[2]}</td></tr>`; }).join('')}</tbody></table>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="peel">${uiIco('oven')}Change them (inputs bar)</button></div></div>
     <div class="dry-ways" data-pstep="setup" data-fview="film">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">As the drying: where the water leaves decides when each layer of the film sets and how wet it is, so both are followed to the peel.</p></div>
@@ -239,10 +239,6 @@ function filmWarnings(rt, rb) {
   const w = [];
   const wet = [[rt, 'top only'], [rb, 'top and bottom']].filter(([r]) => r.wetAtPeel);
   if (wet.length) w.push(pill(`Not dry at the peel (${wet.map(([r, n]) => `${n}: ${r.atPeel.waterPct.toFixed(0)} % water`).join(', ')}): its middle is still wet paste, so it cannot come off as a film. What is shown is the dry part's`, 'bad'));
-  if (!OVEN.peel.lenSet) w.push(pill(`The stretch from the oven to the peel is assumed (${OVEN.peel.len} m): set it under After the oven`, 'warn'));
-  if (!OVEN.peel.coreSet) w.push(pill(`The winder's core is assumed (${OVEN.peel.core} mm): set it under After the oven`, 'warn'));
-  const nA = MAT_FILM.filter(q => MAT.film[q[0]].flag === 'assumed').length;
-  if (nA) w.push(pill(`${nA} of the Film card's ${MAT_FILM.length} values are assumed (Materials): measure the curl, cracks and peel force to firm them up`, 'warn'));
   return w.length ? `<div class="dry-warn">${w.join('')}</div>` : '';
 }
 /** The checks, each with the picture it was asked with: its verdict for both ways. */
@@ -396,7 +392,7 @@ function filmMeasRows(key) {
 }
 function filmNoteText() {
   const f = MAT.film;
-  return `Each film is followed from the blade through the room, the oven (as the drying above) and the room after it (${OVEN.peel.len} m${OVEN.peel.lenSet ? '' : ', assumed'}) to where it is peeled. A layer of the film sets when a skin's front passes it, carrying stress from then on: it shrinks as it dries (β ${f.beta.v} per kg of water per kg of GO) and the web expands with the heat; a skin over wet film floats (the paste under it cannot hold it) and joins the film on the web when the fronts meet. Cracks: a 2D model of the layers (finite elements) at the places along the line where they are likeliest, against the film's fracture energy (${f.GcF.v} J/m²). The peel: the force per width where the energy a steady peel frees reaches the film's hold on the web (${f.Gi.v} J/m²), at every angle. Curl: the free film's layers' lengths; the roll: bent round the ${OVEN.peel.core} mm core${OVEN.peel.coreSet ? '' : ' (assumed)'}, its top out. All assumed until measured: enter your curl, cracks and peel force below. Solved in ${(FILM.ms / 1000).toFixed(1)} s.`;
+  return `Each film is followed from the blade through the room, the oven (as the drying above) and the room after it (${OVEN.peel.len} m) to where it is peeled. A layer of the film sets when a skin's front passes it, carrying stress from then on: it shrinks as it dries (β ${f.beta.v} per kg of water per kg of GO) and the web expands with the heat; a skin over wet film floats (the paste under it cannot hold it) and joins the film on the web when the fronts meet. Cracks: a 2D model of the layers (finite elements) at the places along the line where they are likeliest, against the film's fracture energy (${f.GcF.v} J/m²). The peel: the force per width where the energy a steady peel frees reaches the film's hold on the web (${f.Gi.v} J/m²), at every angle. Curl: the free film's layers' lengths; the roll: bent round the ${OVEN.peel.core} mm core, its top out. Your measured curl, cracks and peel force go below. Solved in ${(FILM.ms / 1000).toFixed(1)} s.`;
 }
 
 // ---- measured (Q58): curl, cracks, peel force -- beside the computed, read back ----
@@ -520,7 +516,7 @@ function filmExportCSV() {
  *  wind (the stretch to the peel, the winder's core), 5 Cutting (the pieces' size), 6 Pre heat treatment (its oven, times). */
 function filmPeelTreeHTML(prop, part = null) {
   const pl = OVEN.peel, has = v => !part || part === v;
-  const row = (i, id) => { const f = OVEN_PEEL_FIELDS[i]; return prop(`${f[1]}${pl[f[7]] ? '' : ' <small>assumed</small>'}`, id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); };
+  const row = (i, id) => { const f = OVEN_PEEL_FIELDS[i]; return prop(f[1], id, `min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${pl[f[0]]}" data-ovpeel="${f[0]}"`, f[2]); };
   return `<div class="ovz ovz-peel" id="ovzPeel"><div class="ovz-h"><span>${!part ? 'After the oven <small>to the peel and the winder</small>' : part === 'film' ? 'After the oven <small>to the peel and the winder</small>' : part === 'piece' ? 'Cut from the roll <small>the pieces</small>' : 'The pre heat treatment <small>the pieces pressed in a stack</small>'}</span></div>
     ${has('film') ? `<div class="ovz-pic">${filmPicPlace()}</div>
     ${row(0, 'ovzPeelLen')}
@@ -537,7 +533,7 @@ function filmPeelTreeHTML(prop, part = null) {
     ${msSetupProps(['film.creepTau'], prop)}
     <div class="ovz-h ovz-sub"><span>The stack's heat <small>the multiphysics solver (MP-1)</small></span></div>
     ${row(7, 'ovzPlateT')}${row(8, 'ovzStackAir')}${row(9, 'ovzEpsPl')}
-    <div class="prop"><span class="prop-l" id="ovzShelfL">What it stands on${pl.shelfSet ? '' : ' <small>assumed</small>'}</span><span class="prop-v"><span class="seg seg-sm" role="radiogroup" aria-labelledby="ovzShelfL" id="ovzShelf">${Object.entries(OVEN_SHELVES).map(([k, t]) => `<button type="button" role="radio" data-ovshelf="${k}" aria-checked="${k === pl.shelf}">${t}</button>`).join('')}</span></span></div>` : ''}
+    <div class="prop"><span class="prop-l" id="ovzShelfL">What it stands on</span><span class="prop-v"><span class="seg seg-sm" role="radiogroup" aria-labelledby="ovzShelfL" id="ovzShelf">${Object.entries(OVEN_SHELVES).map(([k, t]) => `<button type="button" role="radio" data-ovshelf="${k}" aria-checked="${k === pl.shelf}">${t}</button>`).join('')}</span></span></div>` : ''}
     ${has('piece') || has('stack') ? '<p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film\'s section).</p>' : ''}</div>`;
 }
 function wireFilmPeel(changed) {
@@ -583,9 +579,9 @@ function filmDerived() {
     ['Swelling from dry to the pores\' water', (f.beta.v * Xcap * 100).toFixed(2), '%', 'along the film: its water from none to the most the dry film\'s pores hold'],
   ];
   const der = document.getElementById('matFilmDerived');
-  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('');
+  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span><span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('');
   const cnt = document.getElementById('matFilmCount');
-  if (cnt) cnt.textContent = msCountText('film', MAT_FILM);
+  if (cnt) cnt.textContent = '';
 }
 /** The card read-only (the report). */
 const filmCardRows = () => MAT_FILM.map(([k, l, u, , , , dd]) => [l, (+MAT.film[k].v).toFixed(dd), u, 'set:' + msFromText('film', k), MAT.film[k].src]);

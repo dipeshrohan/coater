@@ -660,7 +660,7 @@ const TAB_Q = [
   'How does the film settle, and the ripple level, between the blade and the oven? (1D)',
   'How do the film and the contact line vary across the web? (1D at every position)',
   'From the wet film to the dry GO film: how thick and heavy is it, and how much water must the oven take out?',
-  'What is the slurry made of, and what is it coated onto? Each value with its unit, its data set and its reference: one data set per material, the same on every card.',
+  'What is the slurry made of, and what is it coated onto? Each value with its unit and its reference: one material card per material, the same on every stage card.',
   'The process stage by stage, from the mixer to the graphene film: where each stands and its answers.',
 ];
 const TAB_ICONS = [

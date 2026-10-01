@@ -132,7 +132,7 @@ function procOvenTable() {
   return `<div class="proc-zones-wrap"><table class="proc-kv proc-grid proc-zones"><thead><tr><th>Zone</th>${th.map(f => `<th>${f[1]} <small>${f[2]}</small></th>`).join('')}<th>Above the film</th></tr></thead><tbody>
     ${z.map((q, i) => `<tr><th>${i + 1}</th>${th.map(f => cell(q, i, f)).join('')}${top(q, i)}</tr>`).join('')}</tbody></table></div>`;
 }
-function procOvenLine() { const o = ovenTime(lineSpeed()); return `${OVEN.zones.length} zones, ${+o.len.toFixed(2)} m: the film ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} in it at ${P.U} m/min (assumed values)`; }
+function procOvenLine() { const o = ovenTime(lineSpeed()); return `${OVEN.zones.length} zones, ${+o.len.toFixed(2)} m: the film ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} in it at ${P.U} m/min`; }
 /** The section's frame (filled by dryRender after the page is drawn). */
 function drySectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
@@ -141,7 +141,7 @@ function drySectionHTML() {
     <header class="dry-head"><h3 id="dryH">${uiBadge('oven')}4 · Drying in the oven</h3>
       <div class="seg" role="tablist" aria-label="Which film" id="drySel">${seg.map(([k, t]) => `<button type="button" role="tab" data-dry="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" id="dryZones" data-chain="oven" title="The oven's zones, in the inputs bar">${uiIco('oven')}Oven zones</button><button type="button" class="btn btn-secondary btn-sm" id="dryCsv">Export CSV</button></header>
-    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The oven</h4><span class="fv-why">${procOvenLine()}</span></div>${procOvenTable()}<table class="proc-kv dry-room"><tbody><tr><th>The room before the oven</th><td>${MAT.dry.Troom.v} °C, ${MAT.dry.rhRoom.v} % humidity</td><td class="fv-why">${MAT.dry.Troom.flag === 'assumed' && MAT.dry.rhRoom.flag === 'assumed' ? 'assumed' : 'from you'}</td></tr></tbody></table>
+    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The oven</h4><span class="fv-why">${procOvenLine()}</span></div>${procOvenTable()}<table class="proc-kv dry-room"><tbody><tr><th>The room before the oven</th><td>${MAT.dry.Troom.v} °C, ${MAT.dry.rhRoom.v} % humidity</td></tr></tbody></table>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" data-chain="oven">${uiIco('oven')}More: add a zone, jets, IR (inputs bar)</button></div></div>
     <div class="dry-ways" id="dryWays" data-pstep="setup">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">Where the water leaves is not known, so both are computed. From the top only: the fibre under the film only brings the hot air's heat. From the top and the bottom: vapour also goes into the air blown up through the fibre, which carries it away.</p></div>
@@ -390,7 +390,7 @@ function dryTable() {
 }
 function dryNoteText(r) {
   const d = MAT.dry, len = ovenTime(lineSpeed()).len;
-  return `Each film is a strip of the wet film on its web, followed from the blade through the room (${P.oven} m, ${d.Troom.v} °C, ${d.rhRoom.v} % humidity) and the oven (${+len.toFixed(2)} m, ${OVEN.zones.length} zones) at the line's speed; through its thickness the water moves against the flakes (their collective diffusion, Routh–Russel) and leaves at the surface; where the solids reach the dry film's packing (${MAT.slurry.phiDry.v}) a skin forms and the water then leaves as vapour through it; the heat comes from the air blown up through the fibre, the air or IR above (each zone's), the walls' radiation, and goes into evaporating the water. The dry GO keeps ${(r.Xb * 100).toFixed(1)} % water at the last zone's humidity (its isotherm, the Drying card). All of it assumed until measured: compare with your oven temperatures and the film at the exit below. Solved in ${(DRY.ms / 1000).toFixed(1)} s.`;
+  return `Each film is a strip of the wet film on its web, followed from the blade through the room (${P.oven} m, ${d.Troom.v} °C, ${d.rhRoom.v} % humidity) and the oven (${+len.toFixed(2)} m, ${OVEN.zones.length} zones) at the line's speed; through its thickness the water moves against the flakes (their collective diffusion, Routh–Russel) and leaves at the surface; where the solids reach the dry film's packing (${MAT.slurry.phiDry.v}) a skin forms and the water then leaves as vapour through it; the heat comes from the air blown up through the fibre, the air or IR above (each zone's), the walls' radiation, and goes into evaporating the water. The dry GO keeps ${(r.Xb * 100).toFixed(1)} % water at the last zone's humidity (its isotherm, the Drying card). Compare with your oven temperatures and the film at the exit below. Solved in ${(DRY.ms / 1000).toFixed(1)} s.`;
 }
 
 // ---- measured drying (Q54): temperatures in the oven, values at its exit ----
@@ -513,10 +513,10 @@ function dryDerived() {
   if (swell) probs.push(`At ${last.rh} % humidity the isotherm puts more water in the dry GO than its packing's pores hold: it swells; the water left will be at least what is shown.`);
   if (d.mul.v > 1e5) probs.push('A collective diffusion over 10⁵ × the hard-sphere law is near what the solver resolves in double precision (10⁶ at most).');
   const der = document.getElementById('matDryDerived');
-  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('')
+  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span><span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('')
     + probs.map(t => `<p class="mat-warn warn-text">${t}</p>`).join('');
   const cnt = document.getElementById('matDryCount');
-  if (cnt) cnt.textContent = msCountText('dry', MAT_DRY);
+  if (cnt) cnt.textContent = '';
 }
 /** The card read-only (the report). */
 const dryCardRows = () => MAT_DRY.map(([k, l, u, , , , dd]) => [l, (+MAT.dry[k].v).toFixed(dd), u, 'set:' + msFromText('dry', k), MAT.dry[k].src]);

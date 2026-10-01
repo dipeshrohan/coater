@@ -150,6 +150,14 @@ const MAT_FURN = [
   ['epsF', 'The holder\'s faces to the hot zone: emissivity', '', 0.05, 1, 0.01, 2, 0.8, 'assumed', 'graphite 0.7–0.9; the hot zone at the program\'s temperature', 'heat'],
 ];
 const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)' };
+// (flow: the slurry's flow inputs -- the inputs bar's sliders, P -- as rows of its card; P is what the solvers read and the
+// two are kept in step (matsets.js): the same ranges and defaults as CFG's)
+const MAT_FLOW = [
+  ['mu', 'Apparent viscosity at 2.7 1/s', 'Pa·s', 2, 30, 0.5, 1, 10.5, 'given', 'you (measured)'],
+  ['n', 'Shear-thinning index n', '', 0.3, 1, 0.05, 2, 1, 'assumed', '1: Newtonian'],
+  ['ty', 'Yield stress', 'Pa', 0, 40, 0.5, 1, 5, 'assumed', 'below it the slurry does not flow'],
+  ['g', 'Surface tension', 'N/m', 0.03, 0.08, 0.005, 3, 0.07, 'assumed', 'water: 0.072'],
+];
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
@@ -159,7 +167,7 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // dry: the drying card; dryMeas: the drying measured -- temperatures in the oven and values at its exit, drying-ui.js;
 // film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js;
 // furn: the furnace's card; furnMeas: the graphene film measured -- its thickness, weight and heat conduction, furnace-ui.js)
-const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
+const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), flow: matCard(MAT_FLOW), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
   film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] } });
 let MAT = matDefaults();
@@ -266,4 +274,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_FLOW, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

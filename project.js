@@ -128,6 +128,9 @@ function applyMaterials(m) {
     const s = m && m[part];
     if (s) for (const k of Object.keys(MAT[part])) if (s[k] && Number.isFinite(s[k].v)) MAT[part][k] = { ...MAT[part][k], ...s[k] };
   }
+  // (the slurry's flow rows, M-2: the values are the inputs bar's; a note as saved while its value is the same)
+  const fl = m && m.flow;
+  if (fl) for (const k of Object.keys(MAT.flow)) if (fl[k] && fl[k].v === P[k] && typeof fl[k].src === 'string') MAT.flow[k] = { v: P[k], flag: ['given', 'assumed', 'measured'].includes(fl[k].flag) ? fl[k].flag : 'given', src: fl[k].src };
   if (m && m.rheo && typeof m.rheo.structOn === 'boolean') MAT.rheo.structOn = m.rheo.structOn;   // (a project from before GO-1: the structure model's default)
   // (the sidebar inputs a rheometer fit set, and the rheometer tests: kept as they are when they have their shape)
   if (m && m.rheo && m.rheo.side && typeof m.rheo.side === 'object') MAT.rheo.side = Object.fromEntries(Object.entries(m.rheo.side).filter(([k, q]) => ['mu', 'n', 'ty'].includes(k) && q && Number.isFinite(q.v)).map(([k, q]) => [k, { v: q.v, src: String(q.src || '') }]));
@@ -167,6 +170,7 @@ function applyMaterials(m) {
     // (the first piece found stuck to its papers, from the top, GO-7c)
     stuckFrom: Number.isFinite(um.stuckFrom) && um.stuckFrom >= 1 && um.stuckFrom <= 10000 ? Math.round(um.stuckFrom) : null };
   // (the materials' data sets: as saved, in step with the cards; a project from before them gets its own from its values)
+  msFlowFromP();
   MSETS = msDerive(MAT, m && m.sets ? msIn(m.sets) : null);
 }
 /** The furnace's inputs of a project (GO-5): its runs (steps or a file's cycle) and the stack; none: the defaults. */

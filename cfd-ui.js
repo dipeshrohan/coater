@@ -47,12 +47,12 @@ const FIBRES = {
   thin: {
     l: 'Thin PET (130)', tf: 0.20, tUse: 130, tMom: null,
     set: { gsm: 138, rhoF: 1380, dFrom: 'yarn', den: 150, nf: 48, airPerm: 25, airDP: 0, kozeny: 5, airFrac: 0.5 },
-    note: 'report 2018-01-29: polyester filament, 150D×2 plain weave, 0.20 mm, 138 g/m², 25.9 / 22 threads/cm, air permeability 20–30 ×10⁻³ m³/m²·s (test pressure not stated), below 130 °C continuous. Filaments per yarn (48; not in the report), PET density and the top-surface air fraction (= porosity) assumed.',
+    note: 'report 2018-01-29: polyester filament, 150D×2 plain weave, 0.20 mm, 138 g/m², 25.9 / 22 threads/cm, air permeability 20–30 ×10⁻³ m³/m²·s (test pressure not stated), below 130 °C continuous. Filaments per yarn (48; not in the report), PET density and the top-surface air fraction (= porosity) not in the report.',
   },
   thick: {
     l: 'Thick PP (RX001)', tf: 0.90, tUse: 90, tMom: 110,
     set: { gsm: 600, rhoF: 905, dFrom: 'air', den: 0, nf: 0, airPerm: 125, airDP: 127, kozeny: 5, airFrac: 0.26 },
-    note: 'report 2026-03-20: polypropylene, heat set, 0.90 mm, 600 g/m², 55 / 19.5 threads/cm, air flow 1 L/s through 80 cm² at 127 Pa (= 125 ×10⁻³ m³/m²·s), 90 °C continuous, 110 °C momentary. Filament size not in the report: inferred from the air permeability. PP density (905, literature 900–910) and the top-surface air fraction (= porosity) assumed.',
+    note: 'report 2026-03-20: polypropylene, heat set, 0.90 mm, 600 g/m², 55 / 19.5 threads/cm, air flow 1 L/s through 80 cm² at 127 Pa (= 125 ×10⁻³ m³/m²·s), 90 °C continuous, 110 °C momentary. Filament size not in the report: inferred from the air permeability. PP density (905, literature 900–910) and the top-surface air fraction (= porosity) not in the report.',
   },
 };
 // Shaped blades (cfd-blade.js; the land is the sidebar's land length L where a shape has one):
@@ -273,7 +273,7 @@ function wireOvenZones(changed, redraw) {
 /** The oven under the zones: its length and the time the film spends in it at the web speed. */
 function ovenNote() {
   const o = ovenTime(P.U / 60), n = OVEN.zones.length;
-  return `Assumed values. The oven: ${n} zone${n === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m; the film is in it for ${Number.isFinite(o.t) ? `${fmtNum(o.t / 60)} min` : '—'} at the web speed.`;
+  return `The oven: ${n} zone${n === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m; the film is in it for ${Number.isFinite(o.t) ? `${fmtNum(o.t / 60)} min` : '—'} at the web speed.`;
 }
 /** The oven zones whose air is above a temperature limit, as a warning after it ('' when none is). */
 function ovenHotText(limit) {
@@ -920,7 +920,7 @@ function viewCFD() {
           ${panel('msgs', `${msgsBar()}
             <div class="msg-log" id="cfdMsgs" role="log"></div>`)}
           ${panel('history', '<div class="history-host"></div>')}
-          ${panel('method', `<p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything shown is post-processed from the stored solutions: display settings never re-run the solver.</p><p class="cap"><b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not assumed: it is whatever the bead pressure, the web and the meniscus together give.
+          ${panel('method', `<p class="cap cfd-lede"><b>2D Navier&ndash;Stokes flow under the blade, over its exit face and into the free film</b> at four positions across the web, with the meniscus and its contact line solved together with the flow: velocity, pressure, shear and viscosity fields. Everything shown is post-processed from the stored solutions: display settings never re-run the solver.</p><p class="cap"><b>Solver.</b> Steady 2D incompressible Navier&ndash;Stokes by finite elements (Taylor&ndash;Hood: quadratic velocity, linear pressure), with the viscosity varying in space exactly as the chosen rheology model says (Newtonian, power law, or Herschel&ndash;Bulkley as in the other tabs; the viscosity input is the value at 2.7 1/s in all three). Velocity, pressure, the free surface's position and the contact line's position are unknowns of one system, solved by Newton's method, starting from a Newtonian fluid and stepping to the real rheology. The free surface obeys the kinematic condition (no flow through it) and the stress balance with surface tension; gravity acts throughout. The flow rate is not prescribed: it is whatever the bead pressure, the web and the meniscus together give.
       <b>Meniscus.</b> The contact line either stays pinned at the metering edge or climbs the exit face. It climbs when a pinned surface would leave the edge flatter than the contact angle allows (Gibbs' condition); on the face the surface leaves it at the contact angle.
       <b>Validated</b> (cfd-fem.validate.js) against exact solutions: flat-gap flow (Couette&ndash;Poiseuille, and a yield-stress fluid); the Ghia, Ghia &amp; Shin (1982) lid-driven cavity; the static meniscus on a vertical or tilted face (the Young&ndash;Laplace climb height, to 0.03%); plus mass conservation and grid convergence of the coating flow, and the round entry against the earlier stream-function solver.
       <b>Fibre.</b> The fibre's pores are dry: the slurry rests on the top filaments and nothing crosses the web surface. Over the air between those filaments the slurry slips (du/dy = (u &minus; U)/b at the surface, slip length b from the filament spacing, Philip 1972). Porosity, filament diameter and permeability (Kozeny&ndash;Carman) follow from the fibre's test-report data. Drying air: blown up into the fibre from a plenum; with the wet film sealing its top, the air can only leave along the fibre, and the pressure the set speed needs for that follows (Darcy, the air compressing).

@@ -4,7 +4,7 @@
  *     pair is two materials.
  *  2. The generic sets: every row of a material at its default, with a reference.
  *  3. The defaults: their sets give back every card value as it is (v, flag, source); the values the user gave make
- *     "As you told us" (GO: its particle sizes; the slurry: its solids), every other material the generic set.
+ *     "As you told us" (GO: its particle sizes; the slurry: its solids and its measured viscosity), every other material the app's card.
  *  4. Edited cards: any values, flags and sources changed, their sets give them back exactly; a setup row is never
  *     touched; an own set not chosen is kept; the sets as saved (JSON) read back the same.
  *  5. Projects saved before data sets: every one found opens with every card value as it was.
@@ -16,7 +16,7 @@ const S = require('./matsets.js');
 
 let fails = 0;
 const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); };
-const cards = { slurry: M.MAT_SLURRY, rheo: M.MAT_RHEO, orient: M.MAT_ORIENT, dry: M.MAT_DRY, film: M.MAT_FILM, furn: M.MAT_FURN };
+const cards = { slurry: M.MAT_SLURRY, flow: M.MAT_FLOW, rheo: M.MAT_RHEO, orient: M.MAT_ORIENT, dry: M.MAT_DRY, film: M.MAT_FILM, furn: M.MAT_FURN };
 const clone = o => JSON.parse(JSON.stringify(o));
 /** Every card row of a against b: the rows that differ (v, flag or src). */
 const diffs = (a, b) => { const out = []; for (const [card, rows] of Object.entries(cards)) for (const q of rows) { const x = a[card][q[0]], y = b[card][q[0]]; if (x.v !== y.v || x.flag !== y.flag || x.src !== y.src) out.push(`${card}.${q[0]}`); } return out; };
@@ -46,7 +46,7 @@ const diffs = (a, b) => { const out = []; for (const [card, rows] of Object.entr
   const d = M.matDefaults(), sets = S.msDerive(d), back = S.msApply(sets, M.matDefaults());
   check('the defaults: their sets give every card value back (v, flag, source)', diffs(back, d).length === 0, diffs(back, d).join(' '));
   const own = Object.values(sets.own).map(s => `${s.mat}: ${s.name} (${Object.keys(s.vals).join(', ')})`);
-  check('  what you gave is "As you told us": GO\'s particle sizes, the slurry\'s solids; the rest generic', JSON.stringify(own) === JSON.stringify(['go: As you told us (slurry.dMean, slurry.dMin, slurry.dMax)', 'slurry: As you told us (slurry.phi)'])
+  check('  what you gave is "As you told us": GO\'s particle sizes, the slurry\'s solids and viscosity; the rest the app\'s card', JSON.stringify(own) === JSON.stringify(['go: As you told us (slurry.dMean, slurry.dMin, slurry.dMax)', 'slurry: As you told us (slurry.phi, flow.mu)'])
     && S.MS_MATERIALS.filter(m => !['go', 'slurry'].includes(m.id)).every(m => sets.sel[m.id] === S.MS_LIT), own.join('; '));
 }
 // 4. edited cards
@@ -102,8 +102,8 @@ const diffs = (a, b) => { const out = []; for (const [card, rows] of Object.entr
   const gBefore = JSON.stringify(S.msGeneric('iso'));
   T = S.msWrite(T, 'furn', 'kPl', { v: 120 });
   let C = S.msApply(T, M.matDefaults());
-  check('writing while the generic set is chosen starts "This project" over it, chosen; the generic set unchanged',
-    T.sel.iso === 'p-iso' && T.own['p-iso'].name === 'This project' && C.furn.kPl.v === 120 && C.furn.kPl.flag === 'given' && C.furn.kPl.src === 'you' && C.furn.rhoPl.v === D.furn.rhoPl.v && JSON.stringify(S.msGeneric('iso')) === gBefore);
+  check('writing while the app\'s card is chosen starts "Isostatic graphite (this project)" over it, chosen; the app\'s card unchanged',
+    T.sel.iso === 'p-iso' && T.own['p-iso'].name === 'Isostatic graphite (this project)' && C.furn.kPl.v === 120 && C.furn.kPl.flag === 'given' && C.furn.kPl.src === 'you' && C.furn.rhoPl.v === D.furn.rhoPl.v && JSON.stringify(S.msGeneric('iso')) === gBefore);
   T = S.msWrite(T, 'furn', 'kPl', { src: 'supplier datasheet, grade X' }); C = S.msApply(T, M.matDefaults());
   check('  its note written to the same set', C.furn.kPl.src === 'supplier datasheet, grade X' && C.furn.kPl.v === 120);
   T = S.msWrite(T, 'furn', 'Dgal', { v: 88.7, flag: 'measured', src: 'from your first run not puffing' }); C = S.msApply(T, M.matDefaults());
@@ -127,6 +127,16 @@ const diffs = (a, b) => { const out = []; for (const [card, rows] of Object.entr
   check('Defaults on the Furnace card: its rows as the app\'s defaults; the Drying and Slurry cards\' edits kept', furnBack && cY.dry.kS.v === 0.31 && cY.slurry.dMean.v === 7);
   const Z = S.msCardDefaults(Y, 'slurry'), cZ = S.msApply(Z, M.matDefaults());
   check('  Defaults on the Slurry card: what you told us back (given)', M.MAT_SLURRY.every(q => cZ.slurry[q[0]].v === D.slurry[q[0]].v && cZ.slurry[q[0]].flag === D.slurry[q[0]].flag && cZ.slurry[q[0]].src === D.slurry[q[0]].src), cZ.slurry.dMean.flag);
+}
+
+// 7. the slurry's flow rows: the inputs bar's own (CFG: label, unit, range, step, decimals and default all the same)
+{
+  const src = fs.readFileSync(path.join(__dirname, 'physics.js'), 'utf8');
+  const bad = M.MAT_FLOW.filter(([k, l, u, lo, hi, step, d, v]) => {
+    const m = src.match(new RegExp(`\\{[^{}]*k: '${k}', l: '([^']*)', min: ([^,]+), max: ([^,]+), step: ([^,]+), u: '([^']*)', d: ([^,]+), v: ([^,}\\s]+)`));
+    return !m || m[1] !== l || +m[2] !== lo || +m[3] !== hi || +m[4] !== step || m[5] !== u || +m[6] !== d || +m[7] !== v;
+  }).map(q => q[0]);
+  check('the slurry\'s flow rows are the inputs bar\'s (label, unit, range, step, default)', bad.length === 0, bad.join(', '));
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

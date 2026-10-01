@@ -198,8 +198,8 @@ async function repProcessAll() {
     + (fStats.length ? repRows(fStats, ['', 'Top only · top and bottom']) : '')
     + (ft ? repTable(ft, { max: 12 }) : '')
     + (fmRows.length ? '<h4>Measured film</h4>' + repRows(fmRows, ['Measured', 'What', '']) + (fImp.length ? `<ul class="checks">${fImp.join('')}</ul>` : '') : '')
-    + '<h4>After the oven</h4>' + repRows([...OVEN_PEEL_FIELDS.map(([k, l, u, , , , d, flag]) => [repEsc(l), repEsc(repUnit(repNum(pl[k], d), u)), pl[flag] ? 'From you' : 'Assumed']),
-      ['The stack stands on', repEsc(OVEN_SHELVES[pl.shelf] || ''), pl.shelfSet ? 'From you' : 'Assumed']], ['', 'Value', 'From'])
+    + '<h4>After the oven</h4>' + repRows([...OVEN_PEEL_FIELDS.map(([k, l, u, , , , d, flag]) => [repEsc(l), repEsc(repUnit(repNum(pl[k], d), u)),]),
+      ['The stack stands on', repEsc(OVEN_SHELVES[pl.shelf] || '')]], ['', 'Value'])
     + (fNote && cleanText(fNote) ? `<p class="lede">${repEsc(cleanText(fNote))}</p>` : '');
   // a piece in 3D (GO-4d): its state line, the two shapes in words, the measured size and what it implies (the drawings go with the plots)
   const sSt = document.getElementById('sheetState'), sL = ['sh1Lg', 'sh2Lg'].map(id => document.getElementById(id)).filter(Boolean);
@@ -253,16 +253,16 @@ async function repProcessAll() {
     // (where in the stack yours stick, GO-7c)
     if (Number.isFinite((MAT.furnMeas || {}).stuckFrom)) uRows.push(['The stack', repEsc(`stuck to their papers from the ${furnOrd(MAT.furnMeas.stuckFrom)} piece down; the pieces above it free`)]);
     const uImp = [...document.querySelectorAll('#furnMeas .film-imp li')].filter(li => !li.classList.contains('fv-why')).map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*(Use|Fit the [^.]*?(to it|to my first run))\s*/g, ' ').trim())}</li>`);
-    const fu = OVEN.furn, runRows = [0, 1].map(r => { const R = fu.runs[r], pts = furnProgram(r); return [FURN_RUNS[r], repEsc(R.file ? `your file ${R.file.name} (${pts.length} points)` : `${R.steps.map(q => `${q.rate} °C/min to ${q.to} °C${q.hold ? `, ${q.hold} min` : ''}`).join('; ')}; cools at ${R.cool} °C/min`), `${(pts[pts.length - 1][0] / 3600).toFixed(1)} h`, fu.runsSet ? 'From you' : 'Assumed']; });
-    const stackRows = [...FURN_FIELDS.filter(f => (f[0] !== 'gap' || fu.room === 'gap') && (f[0] !== 'plateT' || fu.ends !== 'papers')).map(([k, l, u, , , , d, flag]) => [repEsc(l), fu[k] == null ? 'not known' : repEsc(repUnit(repNum(fu[k], d), u)), '', fu[k] == null ? 'Not known' : fu[flag] ? 'From you' : 'Assumed']), ['Above the stack', repEsc(FURN_ROOM[fu.room]), '', fu.roomSet ? 'From you' : 'Assumed'],
-      ['The top and bottom pieces touch', repEsc(FURN_ENDS[fu.ends === 'papers' ? 'papers' : 'plates']), '', fu.endsSet ? 'From you' : 'Assumed']];
+    const fu = OVEN.furn, runRows = [0, 1].map(r => { const R = fu.runs[r], pts = furnProgram(r); return [FURN_RUNS[r], repEsc(R.file ? `your file ${R.file.name} (${pts.length} points)` : `${R.steps.map(q => `${q.rate} °C/min to ${q.to} °C${q.hold ? `, ${q.hold} min` : ''}`).join('; ')}; cools at ${R.cool} °C/min`), `${(pts[pts.length - 1][0] / 3600).toFixed(1)} h`]; });
+    const stackRows = [...FURN_FIELDS.filter(f => (f[0] !== 'gap' || fu.room === 'gap') && (f[0] !== 'plateT' || fu.ends !== 'papers')).map(([k, l, u, , , , d, flag]) => [repEsc(l), fu[k] == null ? 'not known' : repEsc(repUnit(repNum(fu[k], d), u)), '']), ['Above the stack', repEsc(FURN_ROOM[fu.room]), ''],
+      ['The top and bottom pieces touch', repEsc(FURN_ENDS[fu.ends === 'papers' ? 'papers' : 'plates']), '']];
     furn = '<h3>The furnace and the graphene film</h3>' + (uPills.length ? `<ul class="checks">${uPills.join('')}</ul>` : '')
       + (uLine ? `<p class="lede">${repEsc(cleanText(uLine))}</p>` : '')
       + (uChecks.length ? repRows(uChecks, [repEsc(dryFilmName(DRY.sel)), 'In the furnace']) : '<p class="lede">The furnace could not be solved for these inputs.</p>')
       + (uPieces.length ? '<h4>The stack\'s pieces</h4>' + repRows(uPieces, ['', 'Weight on it', 'Thickness', 'Its spread', 'Pull', 'Squeeze', 'Sticks from']) + (uBatch ? `<p class="lede">${repEsc(uBatch)}</p>` : '') : '')
       + (uStats.length ? repRows(uStats, [uShown ? `The graphene film, ${repEsc(uShown)}` : 'The graphene film', 'Value', '']) : '')
       + (uRows.length ? '<h4>Measured graphene film</h4>' + repRows(uRows, ['Measured', '']) : '') + (uImp.length ? `<ul class="checks">${uImp.join('')}</ul>` : '')
-      + '<h4>The furnace as set</h4>' + repRows([...runRows, ...stackRows], ['', 'Value', '', 'From'])
+      + '<h4>The furnace as set</h4>' + repRows([...runRows, ...stackRows], ['', 'Value', ''])
       + (uNote && cleanText(uNote) ? `<p class="lede">${repEsc(cleanText(uNote))}</p>` : '');
   }
   // the furnace's multiphysics (MP-2): each dimension solved for the inputs as they are, its answers side by side
@@ -285,7 +285,7 @@ async function repProcessAll() {
     + drying
     + film + piece + furn
     + (t ? '<h3>The mass balance at each location</h3>' + repTable(t) + (note ? `<p class="lede">${repEsc(cleanText(note))}</p>` : '') : '')
-    + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1])), 'Above the film']) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min. Assumed values.`)}</p>`;
+    + `<h3>The oven</h3>` + repRows(zones, ['', ...OVEN_ZONE_FIELDS.map(f => repEsc(f[1])), 'Above the film']) + `<p class="lede">${repEsc(`${+o.len.toFixed(2)} m in all; the film is in it for ${Number.isFinite(o.t) ? (o.t / 60).toFixed(1) + ' min' : '—'} at ${P.U} m/min.`)}</p>`;
 }
 /** Materials: the slurry card (each value, where it is from and its source), what follows from it, and the other two cards as they are. */
 async function repMaterials() {
@@ -294,7 +294,7 @@ async function repMaterials() {
   const card = MAT_SLURRY.map(([k, l, u, , , , d]) => [repEsc(l), repEsc(repUnit(repNum(c[k].v, d), u)), repEsc(msFromText('slurry', k)), repEsc(c[k].src)]);
   const derived = [...document.querySelectorAll('#matDerived .mat-row')].map(r => [repEsc(cleanText(r.querySelector('.mat-l'))), repEsc(repUnit(cleanText(r.querySelector('.mat-v b')), cleanText(r.querySelector('.mat-v .prop-u')))), 'Worked out', repEsc(cleanText(r.querySelector('.mat-src-t')))]);
   const ro = rows => rows.map(([l, v, u, f, s]) => [repEsc(l), repEsc(repUnit(v, u)), f === 'calc' ? 'Worked out' : repEsc(flag(f)), repEsc(s)]);
-  const head = ['', 'Value', 'Data set (or from)', 'Reference or note'];
+  const head = ['', 'Value', 'Card (or from)', 'Reference or note'];
   const pills = [...document.querySelectorAll('#st .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   // the rheometer tests (GO-1): each one's plot and fit table, as the card shows them
   let tests = '';

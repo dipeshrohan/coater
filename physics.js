@@ -26,15 +26,15 @@ const CFG = [
   { k: 'oven', l: 'Distance to oven', min: 0.1, max: 2, step: 0.05, u: 'm', d: 2, v: 0.5 },
 
   { g: 'Slurry', k: 'mu', l: 'Apparent viscosity at 2.7 1/s', min: 2, max: 30, step: 0.5, u: 'Pa·s', d: 1, v: 10.5 },
-  { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian (assumed)' },
-  { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'assumed, not measured' },
-  { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'assumed, water-like' },
+  { k: 'n', l: 'Shear-thinning index n', min: 0.3, max: 1, step: 0.05, u: '', d: 2, v: 1, h: '1 = Newtonian' },
+  { k: 'ty', l: 'Yield stress', min: 0, max: 40, step: 0.5, u: 'Pa', d: 1, v: 5, h: 'the stress below which it does not flow' },
+  { k: 'g', l: 'Surface tension', min: 0.03, max: 0.08, step: 0.005, u: 'N/m', d: 3, v: 0.07, h: 'water: 0.072' },
 
   { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.01, u: 'kPa', d: 2, v: 0.49, h: 'not measured: set so the 2D gives the design wet film, 1.45 mm, at L1' },
-  { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed' },
-  { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed' },
-  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'assumed; where the slurry\'s side meets the bare web (3D, open edges)' },
-  { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'assumed, measure on the blade' },
+  { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10, h: 'measure on the blade' },
+  { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'slurry on the blade, at rest' },
+  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'where the slurry\'s side meets the bare web (3D, open edges)' },
+  { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8, h: 'measure on the blade' },
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
   { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120 },
