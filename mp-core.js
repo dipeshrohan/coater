@@ -27,6 +27,8 @@
  */
 
 const MP_SIGMA = 5.670374419e-8;   // Stefan–Boltzmann, W/(m² K⁴)
+/** The Voigt index of a tensor's component i, j (xx yy zz yz xz xy). */
+const MP_VO = [[0, 5, 4], [5, 1, 3], [4, 3, 2]];
 
 // ---- Gauss–Legendre on [-1, 1] ----
 const MP_GAUSS = {
@@ -343,7 +345,8 @@ const mpVal = (f, ...args) => (typeof f === 'function' ? f(...args) : f);
  * C ∂u/∂t + C v·∇u = ∇·(K ∇u) + Q on the mesh M, one step at a time (mpTransport) or through to the output times
  * (mpScalar).
  * o: {
- *   C (m, u, x, f) → capacity (per volume; default 1), K (m, u, x, f) → a number or [Kx, Ky, Kz], Q (m, u, x, t, f) →
+ *   C (m, u, x, f) → capacity (per volume; default 1), K (m, u, x, f) → a number, [Kx, Ky, Kz] (its principal axes the
+ *   mesh's) or a full symmetric tensor [Kxx, Kyy, Kzz, Kyz, Kxz, Kxy] (Voigt, the mesh's axes: matlib.js), Q (m, u, x, t, f) →
  *   source (f: the fields at the point, below), vel (m, x) → [vx, vy, vz] (advection, SUPG), capFlow (m) → the
  *   capacity the flow carries (default C),
  *   S (m, u, x, f) → the amount stored per volume, when it is not C u (an isotherm's water; C must then be its slope
@@ -452,7 +455,9 @@ function mpTransport(M, o) {
         for (let a = 0; a < npe; a++) {
           const wa = q.N[a] + (v ? tau * vgrad[a] : 0);
           for (let b = 0; b < npe; b++) {
-            let s = 0; for (let j = 0; j < dim; j++) s += k[j] * dNdx[a * dim + j] * dNdx[b * dim + j];
+            let s = 0;
+            if (k.length === 6) { for (let i = 0; i < dim; i++) for (let j = 0; j < dim; j++) s += dNdx[a * dim + i] * k[MP_VO[i][j]] * dNdx[b * dim + j]; }   // (a full tensor)
+            else for (let j = 0; j < dim; j++) s += k[j] * dNdx[a * dim + j] * dNdx[b * dim + j];
             let kab = s * W;
             if (v) kab += wa * Cf * vgrad[b] * W;
             if (dt) {
@@ -631,7 +636,7 @@ function mpScalar(M, o) {
  *   ∂S/∂t = ∇·(K_v ∇p)                        (the vapour moves down its pressure)
  * Implicit Euler; each step Newton on the storage (∂S/∂p, ∂S/∂T) and Picard on the faces' coefficients; the storage
  * at the nodes (lumped: each node its share of its elements). Where no element holds water (wet (m) false) p is held.
- * o: { kT (m, T, x) → k or [kx, ky, kz], CT (m, T, x) → ρ c_p (J/(m³ K)), Kv (m, T, x) → K_v or [..] (kg/(m s Pa)),
+ * o: { kT (m, T, x) → k, [kx, ky, kz] or a full tensor [kxx, kyy, kzz, kyz, kxz, kxy] (Voigt), CT (m, T, x) → ρ c_p (J/(m³ K)), Kv (m, T, x) → K_v or [..] (kg/(m s Pa)),
  *   S (m, p, T, x) → kg/m³, dS (m, p, T, x) → [∂S/∂p, ∂S/∂T] (default: finite differences), L (T) → J/kg, Q (m, T, x, t),
  *   wet (m) → whether material m holds water (default all),
  *   bcT: mpTransport's faces for the heat, bcV: [{ face, type: 'value', u (x, t), where (x) → bool } | { face, type:
@@ -712,7 +717,10 @@ function mpHeatMoisture(M, o) {
             for (let b = 0; b < npe; b++) {
               const ib = M.conn[base + b];
               let st = 0, sv = 0;
-              for (let j = 0; j < dim; j++) { const g = dNdx[a * dim + j] * dNdx[b * dim + j]; st += kt[j] * g; if (kv) sv += kv[j] * g; }
+              if (kt.length === 6 || (kv && kv.length === 6)) {   // (a full tensor: ∇Na · K ∇Nb)
+                const kf = kt.length === 6 ? kt : [kt[0], kt[1], kt[2], 0, 0, 0], vf = kv ? (kv.length === 6 ? kv : [kv[0], kv[1], kv[2], 0, 0, 0]) : null;
+                for (let i = 0; i < dim; i++) for (let j = 0; j < dim; j++) { const g = dNdx[a * dim + i] * dNdx[b * dim + j], c = MP_VO[i][j]; st += kf[c] * g; if (vf) sv += vf[c] * g; }
+              } else for (let j = 0; j < dim; j++) { const g = dNdx[a * dim + j] * dNdx[b * dim + j]; st += kt[j] * g; if (kv) sv += kv[j] * g; }
               mpAdd(B, 2 * ia, 2 * ib, st * W);
               if (kv) mpAdd(B, 2 * ia + 1, 2 * ib + 1, sv * W);
             }
@@ -850,9 +858,12 @@ function mpAt(M, u, x) {
 /**
  * The 3D stiffness (6 × 6, Voigt xx yy zz yz xz xy, engineering shear) of an isotropic solid ({ E, nu }) or a
  * transversely isotropic one ({ Ep, nup, Et, nupt, Gpt, axis }: isotropic in the plane normal to `axis` (0, 1, 2;
- * default the last of the mesh's), ν_pt: the strain along the axis from a stress in the plane, ε_t = −ν_pt σ_p / E_p).
+ * default the last of the mesh's), ν_pt: the strain along the axis from a stress in the plane, ε_t = −ν_pt σ_p / E_p),
+ * or any one given whole ({ C }: 6 × 6 in the mesh's axes -- an orthotropic or anisotropic solid turned from its own
+ * frame, matlib.js's mlCEval).
  */
 function mpStiffness(m, axis = 2) {
+  if (m.C) return m.C.map(r => Float64Array.from(r));
   const S = Array.from({ length: 6 }, () => new Float64Array(6));
   if (m.E !== undefined) {
     const E = m.E, nu = m.nu, G = E / (2 * (1 + nu));
@@ -883,16 +894,28 @@ function mpInv6(S) {
 }
 
 /**
- * The stiffness and the strain's map for the mesh's dimension. 3D: the 6 × 6. 2D ('strain': εzz = 0; 'stress':
- * σzz = 0, condensed) on [xx, yy, xy]. Returns { D (nv × nv), sel (the Voigt rows kept), cz (the condensation's
- * −C_zz⁻¹ C_z,sel, for εzz in plane stress) }.
+ * The stiffness and the strain's map for the mesh's dimension. 3D: the 6 × 6. 2D ('strain': εzz = εyz = εxz = 0;
+ * 'stress': σzz = σyz = σxz = 0, condensed) on [xx, yy, xy]. Returns { D (nv × nv), sel (the Voigt rows kept), cz (the
+ * condensation's −C_zz⁻¹ C_z,sel, for εzz in plane stress), coupled (the in-plane block coupled to the out-of-plane
+ * shears: a solid turned off the mesh's axes), Z (coupled, plane stress: the out-of-plane elastic strains [zz, yz, xz]
+ * from the in-plane ones, −C_oo⁻¹ C_o,sel) }.
  */
 function mpReduce(C, dim, plane) {
   if (dim === 3) return { D: C, sel: [0, 1, 2, 3, 4, 5], cz: null };
-  const sel = [0, 1, 5];
-  if (plane === 'strain') return { D: sel.map(i => sel.map(j => C[i][j])), sel, cz: null };
-  const D = sel.map(i => sel.map(j => C[i][j] - C[i][2] * C[2][j] / C[2][2]));
-  return { D, sel, cz: sel.map(j => -C[2][j] / C[2][2]) };
+  const sel = [0, 1, 5], o = [2, 3, 4];
+  const coupled = sel.some(i => C[i][3] !== 0 || C[i][4] !== 0) || C[2][3] !== 0 || C[2][4] !== 0;
+  if (plane === 'strain') return { D: sel.map(i => sel.map(j => C[i][j])), sel, cz: null, coupled };
+  if (!coupled) {
+    const D = sel.map(i => sel.map(j => C[i][j] - C[i][2] * C[2][j] / C[2][2]));
+    return { D, sel, cz: sel.map(j => -C[2][j] / C[2][2]) };
+  }
+  // (coupled: all three out-of-plane stresses condensed, D = C_ss − C_so C_oo⁻¹ C_os)
+  const A = o.map(i => o.map(j => C[i][j])), [[a, b, c], [d, e, f], [g, h, k]] = A;
+  const De = a * (e * k - f * h) - b * (d * k - f * g) + c * (d * h - e * g);
+  const inv = [[(e * k - f * h) / De, (c * h - b * k) / De, (b * f - c * e) / De], [(f * g - d * k) / De, (a * k - c * g) / De, (c * d - a * f) / De], [(d * h - e * g) / De, (b * g - a * h) / De, (a * e - b * d) / De]];
+  const Z = o.map((_, p) => sel.map(j => -o.reduce((sm, oq, q) => sm + inv[p][q] * C[oq][j], 0)));
+  const D = sel.map(i => sel.map(j => C[i][j] + o.reduce((sm, op, p) => sm + C[i][op] * Z[p][sel.indexOf(j)], 0)));
+  return { D, sel, cz: Z[0], coupled, Z };
 }
 
 /**
@@ -947,13 +970,15 @@ function mpElastic(M, o) {
       for (let r = 0; r < ne; r++) for (let c = 0; c < ne; c++) { let s = 0; for (let k = 0; k < nv; k++) s += Bm[k * ne + r] * DB[k * ne + c]; ke[r * ne + c] += s * W; }
       if (o.eig) {
         const e6 = o.eig(m, x, atGp(e, q), e, qi), es = sel.map(i => e6[i]);
-        // plane strain: the eigenstrain along z still pushes in the plane (σ = C (ε − ε*), εzz = 0)
-        const extra = dim === 2 && (o.plane || 'strain') === 'strain' ? Cm[m] : null;
+        // plane strain: the eigenstrain along z still pushes in the plane (σ = C (ε − ε*), εzz = 0) -- and, a solid
+        // turned off the axes, so do its out-of-plane shears'
+        const extra = dim === 2 && (o.plane || 'strain') === 'strain' ? Cm[m] : null, xs = extra && red[m].coupled;
         for (let r = 0; r < ne; r++) {
           let s = 0;
           for (let i = 0; i < nv; i++) {
             let si = 0; for (let k = 0; k < nv; k++) si += D[i][k] * es[k];
             if (extra) si += extra[sel[i]][2] * e6[2];
+            if (xs) si += extra[sel[i]][3] * e6[3] + extra[sel[i]][4] * e6[4];
             s += Bm[i * ne + r] * si;
           }
           fe[r] += s * W;
@@ -990,7 +1015,7 @@ function mpElastic(M, o) {
   // strain and stress at the Gauss points, averaged to the nodes
   const strain = new Float64Array(N * 6), stress = new Float64Array(N * 6), cnt = new Float64Array(N), gp = [];
   for (let e = 0; e < M.E; e++) {
-    const m = M.mat[e], { sel, cz } = red[m], C = Cm[m];
+    const m = M.mat[e], { sel, cz, Z, coupled } = red[m], C = Cm[m];
     const em = new Float64Array(6), sm = new Float64Array(6);
     for (let qi = 0; qi < rule.length; qi++) { const q = rule[qi];
       const { x } = mpJac(M, e, q, dNdx);
@@ -998,10 +1023,11 @@ function mpElastic(M, o) {
       const ev = new Float64Array(6);
       for (let i = 0; i < nv; i++) { let s = 0; for (let a = 0; a < npe; a++) for (let d = 0; d < dim; d++) s += Bm[i * ne + a * dim + d] * u[M.conn[e * npe + a] * dim + d]; ev[sel[i]] = s; }
       const e6 = o.eig ? o.eig(m, x, atGp(e, q), e, qi) : [0, 0, 0, 0, 0, 0];
-      if (dim === 2 && cz) { let s = e6[2]; for (let k = 0; k < 3; k++) s += cz[k] * (ev[sel[k]] - e6[sel[k]]); ev[2] = s; }   // plane stress: εzz
+      if (dim === 2 && Z) for (let p = 0; p < 3; p++) { let s = e6[2 + p]; for (let k = 0; k < 3; k++) s += Z[p][k] * (ev[sel[k]] - e6[sel[k]]); ev[2 + p] = s; }   // plane stress, coupled: εzz, εyz, εxz
+      else if (dim === 2 && cz) { let s = e6[2]; for (let k = 0; k < 3; k++) s += cz[k] * (ev[sel[k]] - e6[sel[k]]); ev[2] = s; }   // plane stress: εzz
       const el = ev.map((v, i) => v - e6[i]), sv = new Float64Array(6), sc = o.scale ? o.scale(m, x, atGp(e, q), e, qi) : 1;
       for (let i = 0; i < 6; i++) { let s = 0; for (let k = 0; k < 6; k++) s += C[i][k] * el[k]; sv[i] = s * sc; }
-      if (dim === 2) { sv[3] = sv[4] = 0; if (cz) sv[2] = 0; }
+      if (dim === 2) { if (!coupled || cz) sv[3] = sv[4] = 0; if (cz) sv[2] = 0; }   // (plane strain, coupled: σyz, σxz are the solid's)
       gp.push({ e, qi, x, stress: sv, strain: ev, elastic: el });
       for (let i = 0; i < 6; i++) { em[i] += ev[i] / rule.length; sm[i] += sv[i] / rule.length; }
     }

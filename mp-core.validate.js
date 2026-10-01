@@ -410,5 +410,74 @@ const fmt = x => x.toExponential(2);
     `balance ${fmt(worst)}; ${(100 * (1 - left[0])).toFixed(1)} % reacted, ${Tend.toFixed(2)} °C`);
 }
 
+// 24. a full conduction tensor (MH-4: off its principal axes, matlib.js's tensors): a manufactured solution
+//     u = Π sin(π x_i), its source Q = −∇·(K ∇u) = π² (tr K) u − 2π² Σ_{i<j} K_ij Π (cos on i, j; sin on the rest)
+{
+  const L = require('./matlib.js'), pi = Math.PI;
+  const K2 = L.mlT2Eval({ form: 'ortho', k1: 5, k2: 1, k3: 0.2, frame: { euler: [30, 0, 0] } }), K3 = L.mlT2Eval({ form: 'ortho', k1: 5, k2: 1, k3: 0.2, frame: { euler: [37, 64, -21] } });
+  const ex2 = x => Math.sin(pi * x[0]) * Math.sin(pi * x[1]);
+  const Q2 = K => (m, u, x) => pi * pi * ((K[0] + K[1]) * ex2(x) - 2 * K[5] * Math.cos(pi * x[0]) * Math.cos(pi * x[1]));
+  const run2 = (n, K, Kof = K) => {
+    const M = C.mpMesh({ dim: 2, p: 2, axes: [{ L: 1, n }, { L: 1, n }] });
+    const r = C.mpScalar(M, { K: Kof, Q: Q2(K), steady: true, bc: ['x0', 'x1', 'y0', 'y1'].map(face => ({ face, type: 'value', u: 0 })) });
+    return { e: maxErr(M, r.u, ex2), u: r.u };
+  };
+  const a = run2(4, K2), b = run2(8, K2), wrong = run2(8, K2, [K2[0], K2[1], K2[2]]);
+  check('a full conduction tensor, 2D (orthotropic turned 30°): quadratic elements converge ≥ 8× per halving; its off-diagonal left out, they do not',
+    a.e / b.e > 7.5 && b.e < 1e-4 && wrong.e > 100 * b.e, `${fmt(a.e)} → ${fmt(b.e)}; without K_xy ${fmt(wrong.e)}`);
+  const ex3 = x => Math.sin(pi * x[0]) * Math.sin(pi * x[1]) * Math.sin(pi * x[2]);
+  const Q3 = (m, u, x) => {
+    const [sx, sy, sz] = x.map(v => Math.sin(pi * v)), [cx, cy, cz] = x.map(v => Math.cos(pi * v));
+    return pi * pi * ((K3[0] + K3[1] + K3[2]) * sx * sy * sz - 2 * (K3[5] * cx * cy * sz + K3[4] * cx * sy * cz + K3[3] * sx * cy * cz));
+  };
+  const run3 = n => { const M = C.mpMesh({ dim: 3, p: 2, axes: [{ L: 1, n }, { L: 1, n }, { L: 1, n }] }); const r = C.mpScalar(M, { K: K3, Q: Q3, steady: true, bc: ['x0', 'x1', 'y0', 'y1', 'z0', 'z1'].map(face => ({ face, type: 'value', u: 0 })) }); return maxErr(M, r.u, ex3); };
+  const t0 = Date.now(), e4 = run3(4), e8 = run3(8);
+  check('  3D, a general frame (all three off-diagonals): ≥ 7× per halving', e4 / e8 > 7 && e8 < 1e-3, `${fmt(e4)} → ${fmt(e8)}; ${Date.now() - t0} ms`);
+  const d = run2(8, K2, [3, 2, 1]), f6 = run2(8, K2, [3, 2, 1, 0, 0, 0]);
+  check('  a diagonal tensor given in full (off-diagonals 0) gives the diagonal path\'s result bit for bit', d.u.every((v, i) => v === f6.u[i]));
+  // heat with water (mpHeatMoisture), dry: its heat alone, driven to steady by the same source
+  const M = C.mpMesh({ dim: 2, p: 2, axes: [{ L: 1, n: 8 }, { L: 1, n: 8 }] }), Qh = Q2(K2);
+  const H = C.mpHeatMoisture(M, { kT: () => K2, CT: () => 1, Kv: () => 1, S: () => 0, dS: () => [0, 0], L: () => 0, Q: (m, T, x) => Qh(m, T, x), wet: () => false,
+    bcT: ['x0', 'x1', 'y0', 'y1'].map(face => ({ face, type: 'value', u: 0 })), bcV: [], T0: 0, p0: 0 });
+  let t = 0, dt = 0.01; for (let k = 0; k < 60; k++) { H.step(t + dt, dt); t += dt; dt *= 1.25; }
+  const eh = maxErr(M, H.T, ex2);
+  check('  heat with water (mpHeatMoisture), dry, the same full tensor: its steady state is the exact solution', eh < 2 * b.e + 1e-6, `${fmt(eh)} (the scalar solver ${fmt(b.e)}); t = ${t.toFixed(0)}`);
+}
+
+// 25. a stiffness turned off the mesh's axes (MH-4: an orthotropic solid in a general frame, its expansion a full
+//     tensor): a homogeneous block strained evenly (its faces moved by a constant gradient) carries exactly σ = C ε;
+//     held all round and heated, σ = −C α ΔT. 3D, 2D plane strain (εzz = εyz = εxz = 0: σyz, σxz the solid's) and plane
+//     stress (σzz = σyz = σxz = 0: the out-of-plane strains from the condensation).
+{
+  const L = require('./matlib.js');
+  const Cg = L.mlCEval({ form: 'ortho', E1: 30e9, E2: 8e9, E3: 2e9, nu12: 0.25, nu13: 0.1, nu23: 0.3, G12: 5e9, G13: 1e9, G23: 0.8e9, frame: { euler: [25, 50, 75] } });
+  const al = L.mlStrainV(L.mlT2Eval({ form: 'ortho', k1: -2e-6, k2: 5e-6, k3: 30e-6, frame: { euler: [25, 50, 75] } })), dT = 80;
+  const Cv = (Cm, e) => Cm.map(r => r.reduce((sm, x, j) => sm + x * e[j], 0));
+  const worst = (gp, want, scale) => Math.max(...gp.map(g => Math.max(...g.stress.map((x, i) => Math.abs(x - want[i]))))) / scale;
+  // the gradient: u_i = G_ij x_j; ε (Voigt, engineering) from its symmetric part
+  const G = [[1e-3, 2e-4, -3e-4], [5e-4, -6e-4, 1e-4], [-2e-4, 3e-4, 4e-4]];
+  const eps = [G[0][0], G[1][1], G[2][2], G[1][2] + G[2][1], G[0][2] + G[2][0], G[0][1] + G[1][0]];
+  const M3 = C.mpMesh({ dim: 3, p: 1, axes: [{ L: 1, n: 2 }, { L: 1, n: 2 }, { L: 1, n: 2 }] });
+  const all3 = ['x0', 'x1', 'y0', 'y1', 'z0', 'z1'].map(face => ({ face, fix: [0, 1, 2], value: x => G.map(r => r[0] * x[0] + r[1] * x[1] + r[2] * x[2]) }));
+  const r3 = C.mpElastic(M3, { mats: [{ C: Cg }], bc: all3 }), s3 = Cv(Cg, eps), sc = Math.max(...s3.map(Math.abs));
+  check('a solid turned off the axes, 3D: an even strain carries σ = C ε exactly (all six components)', worst(r3.gp, s3, sc) < 1e-10, fmt(worst(r3.gp, s3, sc)));
+  const h3 = C.mpElastic(M3, { mats: [{ C: Cg }], eig: () => al.map(a => a * dT), bc: ['x0', 'x1', 'y0', 'y1', 'z0', 'z1'].map(face => ({ face, fix: [0, 1, 2] })) });
+  const sh = Cv(Cg, al.map(a => -a * dT));
+  check('  held all round and heated, its expansion a full tensor: σ = −C α ΔT', worst(h3.gp, sh, Math.max(...sh.map(Math.abs))) < 1e-10, fmt(worst(h3.gp, sh, Math.max(...sh.map(Math.abs)))));
+  const G2 = [[1e-3, 2e-4], [5e-4, -6e-4]], e2 = [G2[0][0], G2[1][1], 0, 0, 0, G2[0][1] + G2[1][0]];
+  const M2 = C.mpMesh({ dim: 2, p: 1, axes: [{ L: 1, n: 3 }, { L: 1, n: 3 }] }), all2 = ['x0', 'x1', 'y0', 'y1'].map(face => ({ face, fix: [0, 1], value: x => G2.map(r => r[0] * x[0] + r[1] * x[1]) }));
+  const pe = C.mpElastic(M2, { mats: [{ C: Cg }], plane: 'strain', bc: all2 }), spe = Cv(Cg, e2);
+  check('  2D plane strain: σ = C ε with εzz = εyz = εxz = 0, its out-of-plane stresses σzz, σyz, σxz included', worst(pe.gp, spe, sc) < 1e-10 && Math.abs(spe[3]) > 1e-3 * sc, fmt(worst(pe.gp, spe, sc)));
+  const hpe = C.mpElastic(M2, { mats: [{ C: Cg }], plane: 'strain', eig: () => al.map(a => a * dT), bc: ['x0', 'x1', 'y0', 'y1'].map(face => ({ face, fix: [0, 1] })) });
+  check('  2D plane strain, held and heated: σ = −C α ΔT (its shear expansions out of the plane included)', worst(hpe.gp, sh, Math.max(...sh.map(Math.abs))) < 1e-10, fmt(worst(hpe.gp, sh, Math.max(...sh.map(Math.abs)))));
+  const ps = C.mpElastic(M2, { mats: [{ C: Cg }], plane: 'stress', bc: all2 }), D = L.mlCReduce(Cg, [0, 1], 'stress');
+  const sIn = Cv(D, [e2[0], e2[1], e2[5]]), want = [sIn[0], sIn[1], 0, 0, 0, sIn[2]];
+  const eo = ps.gp[0].strain, full = [e2[0], e2[1], eo[2], eo[3], eo[4], e2[5]], back = Cv(Cg, full);
+  check('  2D plane stress: σ = D ε (D condensed by matlib), and the out-of-plane strains give σzz = σyz = σxz = 0 back',
+    worst(ps.gp, want, sc) < 1e-10 && Math.max(Math.abs(back[2]), Math.abs(back[3]), Math.abs(back[4])) < 1e-9 * sc, `${fmt(worst(ps.gp, want, sc))}; ${fmt(Math.max(Math.abs(back[2]), Math.abs(back[3]), Math.abs(back[4])) / sc)}`);
+  const iso = C.mpElastic(M2, { mats: [{ E: 200e9, nu: 0.3 }], plane: 'stress', bc: all2 }), isoC = C.mpElastic(M2, { mats: [{ C: C.mpStiffness({ E: 200e9, nu: 0.3 }) }], plane: 'stress', bc: all2 });
+  check('  an isotropic solid given whole ({ C }) gives what { E, ν } gives, bit for bit', iso.u.every((v, i) => v === isoC.u[i]));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;
