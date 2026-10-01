@@ -161,6 +161,7 @@ function drySectionHTML() {
     <div id="dryTable" data-pstep="results"></div>
     <div id="dryMeas" data-pstep="results"></div>
     <p class="fv-note" id="dryNote" data-pstep="solve"></p>
+    ${PROC_ALL && typeof dmpHTML === 'function' ? dmpHTML() : ''}
   </section>`;
 }
 function dryStatusPaint() {
@@ -197,6 +198,8 @@ function dryRender() {
   dryTable();
   dryMeasured(rt, rb);
   document.getElementById('dryNote').innerHTML = dryNoteText(rt);
+  // (the report: the drying's multiphysics, MP-5, as solved)
+  if (typeof dmpRender === 'function' && PROC_ALL && dmpCurrent(DMS.dim)) dmpRender();
 }
 function dryClear() {
   ['dryStats', 'dryTable', 'dryNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });

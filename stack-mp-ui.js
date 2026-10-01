@@ -27,10 +27,20 @@ function mpStackInputs(dim) {
   return { dim, Lx: q.Lx, Ly: q.Ly, N: MP_N, h: P.h, plateT: pl.plateT / 1000, X0: P.Xcut, Troom: P.Troom, rhRoom: P.rhRoom,
     XdryTo: P.Xdry + 0.1 * (P.Xcut - P.Xdry), stages, air: { fan: pl.stackAirU }, shelf: pl.shelf, epsPlate: pl.epsPl, epsGO: d.emis.v, al: { k: MAT.lib.alK.v, rho: MAT.lib.alRho.v, c: MAT.lib.alC.v, ...hubDefsOf({ kT: MAT.lib.alK, cT: MAT.lib.alC }) },
     go: { kIn: d.kIn.v, kThr: d.kS.v, c: d.cS.v, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS, cT: d.cS }), rhoS: P.rhoG, gab: P.gab, Xcap: P.Xcap, K: S.K, Kthr: d.skinK.v * 1e-12, alpha: MAT.film.alphaF.v * 1e-6, nu: P.nu, tab: P.tab, tau: S.tau },
-    mesh: dim === 3 ? { nx: 8, ny: 8, grade: 12 } : { nx: 16, grade: 16 }, steps: dim === 3 ? 30 : 60, follow: MP_FOLLOW,
+    ...mpStackMesh(dim), follow: MP_FOLLOW,
     ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}),
     snapTimes: [...snapMin.map(m => m * 60), tOven, ...(tRest > 0 ? [tOven + tRest] : [])] };
 }
+/** The stack's mesh and time steps for a dimension (MP-W: the Mesh step's settings, editable; at their defaults the solve
+ *  is as before MP-W, to the last bit): the elements from the middle to the edge (and across, 3D), their grading, the
+ *  plate's elements, the pieces an element holds through the stack, the time steps a stage. */
+function mpStackMesh(dim) {
+  const m = typeof swbSettings === 'function' ? swbSettings(SWB_ADAPT['film:stack'], dim) : MP_MESH_DEF[dim];
+  const mesh = dim === 1 ? { nPlate: m.nPlate, per: m.per } : dim === 2 ? { nx: m.nx, grade: m.grade, nPlate: m.nPlate, per: m.per } : { nx: m.nx, ny: m.ny, grade: m.grade, nPlate: m.nPlate, per: m.per };
+  return { mesh, steps: m.steps };
+}
+/** The defaults: the solves' as they were before MP-W. */
+const MP_MESH_DEF = { 1: { nPlate: 4, per: 1, steps: 60 }, 2: { nx: 16, grade: 16, nPlate: 4, per: 1, steps: 60 }, 3: { nx: 8, ny: 8, grade: 12, nPlate: 4, per: 1, steps: 30 } };
 const mpKeyNow = dim => { const o = mpStackInputs(dim); return o ? JSON.stringify({ o, way: SHEET.way, film: DRY.sel }) : null; };
 const mpCurrent = dim => !!MPS.res[dim] && MPS.key[dim] === mpKeyNow(dim);
 
@@ -43,18 +53,18 @@ function mpStackRequest(dim) {
   MPS.busy = true; MPS.bdim = dim; MPS.pending = key; MPS.prog = null; MPS.again = null;
   const id = ++MPS.id;
   if (!MPS.worker) MPS.worker = makeWorker('cfd-mp-worker.js');
-  const done = () => { MPS.busy = false; MPS.pending = null; MPS.bdim = null; if (MPS.again) { const a = MPS.again; MPS.again = null; mpStackRequest(a); } mpStackRender(); };
+  const done = () => { MPS.busy = false; MPS.pending = null; MPS.bdim = null; if (MPS.again) { const a = MPS.again; MPS.again = null; mpStackRequest(a); } if (typeof swbRefresh === 'function' && swbRefresh('film:stack')) return; mpStackRender(); };
   MPS.worker.onmessage = e => {
     const m = e.data;
     if (m.id !== id) return;
-    if (m.progress) { MPS.prog = m.progress; mpStackStatus(); return; }
+    if (m.progress) { MPS.prog = m.progress; if (typeof swbOn === 'function' && swbOn('film:stack')) swbProgress(); else mpStackStatus(); return; }
     MPS.key[dim] = key;
     if (m.ok) { MPS.res[dim] = m.res; MPS.error[dim] = null; } else { MPS.res[dim] = null; MPS.error[dim] = m.error; }
     done();
   };
   MPS.worker.onerror = ev => { MPS.key[dim] = key; MPS.res[dim] = null; MPS.error[dim] = ev.message || 'the multiphysics worker failed'; MPS.worker = null; done(); };
   MPS.worker.postMessage({ id, kind: 'stack', o });
-  mpStackStatus();
+  if (!(typeof swbOn === 'function' && swbOn('film:stack'))) mpStackStatus();
 }
 /** Stop the multiphysics solve (New, Open): its worker ended, what was asked next dropped. */
 function mpStackStop() {
@@ -72,10 +82,10 @@ async function mpStackWait(dim = MPS.dim) {
 }
 
 // ---- the page ----
-function mpStackHTML() {
+function mpStackHTML(bench = false) {
   const pane = (id, icon, title, aria, extra = '') => `<figure class="pane mp-pane"><figcaption>${uiBadge(icon)}${title}${extra}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
-  return `<section class="mp-sec" id="mpSec" aria-labelledby="mpH">
-    <header class="mp-bar">
+  return `<section class="mp-sec${bench ? ' mp-bench' : ''}" id="mpSec" ${bench ? 'aria-label="The stack\'s multiphysics: its answers"' : 'aria-labelledby="mpH"'}>
+    ${bench ? '' : `<header class="mp-bar">
       <h4 id="mpH">${uiBadge('mesh')}Multiphysics solver <small>heat · water · stress, solved together</small></h4>
       <div class="seg" role="tablist" aria-label="The solver's dimension" id="mpDim">${Object.entries(MP_DIMS).map(([k, t]) => `<button type="button" role="tab" data-mpdim="${k}" aria-selected="${+k === MPS.dim}">${t}</button>`).join('')}</div>
       <span class="vp-spacer"></span>
@@ -84,7 +94,7 @@ function mpStackHTML() {
       <button type="button" class="btn btn-secondary btn-sm" id="mpCsv">Export CSV</button>
     </header>
     <div class="mp-prog" id="mpProg" hidden><span class="mp-prog-bar"><i id="mpProgFill"></i></span><span id="mpProgT"></span></div>
-    <div class="mp-model" id="mpModel"></div>
+    <div class="mp-model" id="mpModel"></div>`}
     <div class="stats mp-stats" id="mpStats"></div>
     <div class="dry-grid mp-grid mp-grid2">
       ${pane('mp1', 'temp', 'Temperatures', 'The temperatures of the plate and the followed pieces against time, with the oven\'s air')}
@@ -95,6 +105,7 @@ function mpStackHTML() {
         <span class="seg seg-sm" role="tablist" aria-label="The field shown" id="mpField"></span>
         <span class="seg seg-sm" role="tablist" aria-label="When" id="mpSnap"></span></figcaption>
       <canvas id="mp3" role="img" aria-label="The field chosen at the time chosen"></canvas><div class="pane-legend" id="mp3Lg"></div></figure>
+    ${bench && MPS.dim === 3 ? `<figure class="pane mp-field"><figcaption>${uiBadge(9)}<span id="mpIsoT">The quarter in 3D</span></figcaption><canvas id="mpIso" role="img" aria-label="The quarter of the stack in 3D: the field chosen on its outer faces at the time chosen"></canvas><div class="pane-legend" id="mpIsoLg"></div></figure>` : ''}
     <div class="mp-compare" id="mpCompare"></div>
   </section>`;
 }
@@ -156,16 +167,16 @@ function mpStackRender() {
   if (!sec.dataset.wired) mpStackWire(sec);
   sec.querySelectorAll('[data-mpdim]').forEach(b => b.setAttribute('aria-selected', String(+b.dataset.mpdim === MPS.dim)));
   const dim = MPS.dim, o = mpStackInputs(dim), model = document.getElementById('mpModel');
-  if (!o) { model.innerHTML = `<p class="fv-why">After the film and the pressed stack are solved.</p>`; mpStackClear(); mpStackStatus(); return; }
+  if (!o) { if (model) model.innerHTML = `<p class="fv-why">After the film and the pressed stack are solved.</p>`; mpStackClear(); mpStackStatus(); return; }
   // (1D and 2D solve by themselves when shown; 3D on Solve)
   if (!mpCurrent(dim) && dim < 3 && !(MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim))) mpStackRequest(dim);
   mpStackStatus();
   const r = mpCurrent(dim) ? MPS.res[dim] : null;
-  model.innerHTML = mpStackModelHTML(o, r);
+  if (model) model.innerHTML = mpStackModelHTML(o, r);
   if (!r) {
     mpStackClear();
     const err = MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim);
-    document.getElementById('mpStats').innerHTML = err ? `<p class="dry-msg">${pill(`The ${MP_DIMS[dim]} could not be solved: ${dryEsc(MPS.error[dim])}`, 'bad')}</p>` : dim === 3 && !(MPS.busy && MPS.bdim === 3) ? `<p class="fv-why mp-empty">The 3D solves the quarter stack in about a minute: press Solve.</p>` : '';
+    document.getElementById('mpStats').innerHTML = err ? `<p class="dry-msg">${pill(`The ${MP_DIMS[dim]} could not be solved: ${dryEsc(MPS.error[dim])}`, 'bad')}</p>` : dim === 3 && !(MPS.busy && MPS.bdim === 3) ? `<p class="fv-why mp-empty">The 3D solves the quarter stack in about a minute: press Solve.</p>` : MPS.busy && MPS.bdim === dim ? `<p class="fv-why mp-empty">Solving the ${MP_DIMS[dim]}: its answers here when it is done.</p>` : '';
     return;
   }
   mpStackTiles(o, r); mpStackCharts(o, r); mpStackField(); mpStackCompare(o, r);
@@ -224,6 +235,7 @@ function mpStackField() {
   const tOvMin = OVEN.peel.tOven * 60;
   document.getElementById('mpSnap').innerHTML = snaps.map((s, i) => `<button type="button" role="tab" data-mpsnap="${i}" aria-selected="${i === MPS.snap}" title="${s.stage ? `under the plate in the room, ${mpMin(s.t - tOvMin)} after the oven` : 'in the oven'}">${s.stage ? `out +${mpMin(s.t - tOvMin)}` : mpMin(s.t)}</button>`).join('');
   const sn = snaps[MPS.snap], mid = MP_N / 2;
+  if (dim === 3) mpStackIso(r, sn);
   const title = document.getElementById('mpFieldT');
   const bar = (lut, sc, unit, fmtv) => `<div class="mp-cbar"><span class="mp-cbar-scale" style="background:linear-gradient(90deg,${[0, 0.25, 0.5, 0.75, 1].map(t => lutColor(lut, t)).join(',')})"></span><span class="mp-cbar-t"><span>${fmtv(sc.min)}</span><span>${unit}</span><span>${fmtv(sc.max)}</span></span></div>`;
   const when = sn.stage ? `under the plate in the room, ${mpMin(sn.t - OVEN.peel.tOven * 60)} after the oven` : `in the oven, ${mpMin(sn.t)}`;
@@ -306,6 +318,23 @@ function mpStackField() {
   title.textContent = 'The largest principal pull in the pieces (a quarter each)';
   lg.innerHTML = bar(lut, sc, 'MPa (− compression, + tension)', v => v.toFixed(v >= 10 ? 0 : 1)) + `<p class="fv-why">${when}. Held flat by the plate, free in their planes. The film's strength is ${MAT.film.sigF.v} MPa.</p>`;
 }
+/** The quarter in 3D (MP-W): the temperature (or, the water chosen, the pieces' water) on its outer faces at the moment chosen. */
+function mpStackIso(r, sn) {
+  const cv = document.getElementById('mpIso'), lg = document.getElementById('mpIsoLg'), A = SWB_ADAPT['film:stack'];
+  if (!cv || !sn.T3 || !A) return;
+  const o = mpStackInputs(3), isX = MPS.field === 'X', vals = isX ? sn.X3 : sn.T3;
+  const { M } = swbMesh(A, 3, o), Hs = r.mesh.Hs, zs = M.coord[2];
+  // (the water only in the pieces: the plate's nodes hold none -- the faces there drawn plain)
+  const inPieces = id => zs[Math.floor(id / M.stride[2]) % M.nn[2]] <= Hs * (1 + 1e-9);
+  const f = id => (isX ? (inPieces(id) ? vals[id] * 100 : NaN) : vals[id]);
+  const all = []; for (let k = 0; k < vals.length; k++) { const v = f(k); if (Number.isFinite(v)) all.push(v); }
+  const sc = { min: Math.min(...all), max: Math.max(...all), levels: 0 }; if (sc.max - sc.min < 1e-3) { sc.min -= 0.5; sc.max += 0.5; }
+  const lut = isX ? getLut('seq') : mpHeatLut();
+  swbDrawIso(cv, A, o, 'results', { f, sc, lut });
+  const when = sn.stage ? `under the plate in the room, ${mpMin(sn.t - OVEN.peel.tOven * 60)} after the oven` : `in the oven, ${mpMin(sn.t)}`;
+  document.getElementById('mpIsoT').textContent = `The quarter in 3D: ${isX ? 'the pieces\' water' : 'temperature'} on its faces`;
+  lg.innerHTML = `<div class="mp-cbar"><span class="mp-cbar-scale" style="background:linear-gradient(90deg,${[0, 0.25, 0.5, 0.75, 1].map(t => lutColor(lut, t)).join(',')})"></span><span class="mp-cbar-t"><span>${sc.min.toFixed(1)}</span><span>${isX ? '% of the GO' : '°C'}</span><span>${sc.max.toFixed(1)}</span></span></div><p class="fv-why">${when}. Seen from the stack's outer corner: its top (the plate), its two outer sides; its middle, on the mirror planes, behind (dashed edges).</p>`;
+}
 /** Quarter pieces' planes side by side (x along the line, y across, each from its middle at the lower left), one shared scale. */
 function mpPlanes(c, w, h, sx, sy, planes, lut, sc) {
   const X1 = sx[sx.length - 1], Y1 = sy[sy.length - 1], gap = 44, mt = 26, mb = 34, ml = 44;
@@ -353,4 +382,101 @@ function mpStackCsv() {
     ...MP_FOLLOW.flatMap(i => [`${MP_PIECE[i]} water, mean (kg/kg)`, `${MP_PIECE[i]} water, its middle (kg/kg)`, `${MP_PIECE[i]} pull (MPa)`])]];
   for (const q of r.series) rows.push([MP_DIMS[r.dim], q.t, q.stage ? 'room' : 'oven', q.Tair, q.T.plateTop, q.T.top, q.T.mid, q.T.bottom, q.T.midEdge ?? '', ...MP_FOLLOW.flatMap(i => [q.X[i][0], q.X[i][1], q.pull[i]])]);
   downloadCSV(`stack-multiphysics-${MP_DIMS[r.dim]}-${csvStamp()}.csv`, rows);
+}
+
+// ---- MP-W: the stack's pages 1D, 2D, 3D (mp-bench-ui.js): its domain, mesh, faces and answers ----
+const MP_AL_C = '#8d96a3';   // (the aluminium plate, drawn: a mid grey that reads in either theme)
+SWB_ADAPT['film:stack'] = {
+  key: 'stack', sk: 'film:stack', t: 'Pre heat treatment', ready: 'mp1',
+  S: () => MPS,
+  inputs: dim => mpStackInputs(dim),
+  current: dim => mpCurrent(dim),
+  failed: dim => !!(MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim)),
+  request: dim => mpStackRequest(dim),
+  // (1D and 2D solve by themselves when their page is shown, as before; 3D on Solve)
+  auto: dim => { if (dim < 3 && !mpCurrent(dim) && !(MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim))) mpStackRequest(dim); },
+  stop: () => mpStackStop(),
+  why: () => 'The stack is solved after the film and the piece cut from it (Peel and wind, Cutting).',
+  slow3: 'The 3D takes about a minute',
+  dofs: () => 2, coupled: 'temperature and vapour pressure',
+  axes: (dim, o) => smpAxes(o),
+  axisNames: dim => (dim === 1 ? ['Up the stack (z)'] : dim === 2 ? ['From the middle out (x)', 'Up the stack (z)'] : ['Along the line (x)', 'Across it (y)', 'Up the stack (z)']),
+  meshFields: dim => [
+    ...(dim > 1 ? [{ k: 'nx', t: dim === 3 ? 'Elements along, middle to edge' : 'Elements from the middle to the edge', min: 2, max: dim === 3 ? 30 : 80, step: 1, int: true, def: MP_MESH_DEF[dim].nx }] : []),
+    ...(dim === 3 ? [{ k: 'ny', t: 'Elements across, middle to edge', min: 2, max: 30, step: 1, int: true, def: MP_MESH_DEF[3].ny }] : []),
+    ...(dim > 1 ? [{ k: 'grade', t: 'Grading to the edge (largest / smallest)', min: 1, max: 100, step: 1, def: MP_MESH_DEF[dim].grade }] : []),
+    { k: 'per', t: 'Pieces in an element, through the stack', min: 1, max: MP_N, step: 1, int: true, def: 1 },
+    { k: 'nPlate', t: 'Elements through the plate', min: 1, max: 20, step: 1, int: true, def: 4 },
+    { k: 'steps', t: 'Time steps a stage (the oven, the room)', min: 5, max: 400, step: 5, int: true, def: MP_MESH_DEF[dim].steps },
+  ],
+  meshHow: dim => `Linear elements, the flows taken at the nodes (no overshoot); each piece one element through (or the pieces an element holds), the plate graded to its faces${dim > 1 ? ', the pieces\' planes graded toward the stack\'s edges where the water leaves' : ''}. The default is the mesh the solve has always used.`,
+  extraMeshes: (dim, o) => (dim === 1 ? 'A piece\'s middle is even: no stress solved in 1D.' : dim === 2 ? `Each followed piece's stress on its own line along it: ${2 * mpStackMesh(2).mesh.nx + 1} nodes.` : `Each followed piece's stress on its own plane: ${(mpStackMesh(3).mesh.nx + 1) * (mpStackMesh(3).mesh.ny + 1)} nodes, plane stress.`),
+  layout: (dim, o) => {
+    const { hx, hy, Hs, H } = smpAxes(o), W1 = dim === 1 ? H * 0.12 : hx;
+    const parts = [{ k: 'go', t: `Pieces (${o.N})`, c: '--go-film', rects: [[0, 0, W1, Hs]], layers: { n: o.N }, label: { t: `${o.N} pieces`, at: dim === 1 ? 'out' : 'in' } },
+      { k: 'al', t: 'Aluminium plate', c: MP_AL_C, rects: [[0, Hs, W1, H]], label: { t: 'aluminium plate', at: dim === 1 ? 'out' : 'in' } }];
+    if (dim === 3) return { parts, partAt: (x, y, z) => (z <= Hs ? parts[0] : parts[1]), zLines: [Hs], kz: 1 };
+    return { x0: 0, x1: W1, z0: 0, z1: H, parts, bands: [{ z0: 0, z1: Hs, share: 0.62 }, { z0: Hs, z1: H, share: 0.38 }],
+      mirrors: dim === 2 ? [{ x0: 0, z0: 0, x1: 0, z1: H }] : [],
+      dims: dim === 1 ? [{ v: true, at: 0, a: 0, b: Hs, t: `${swbMm(Hs)} mm`, off: -14 }, { v: true, at: 0, a: Hs, b: H, t: `${swbMm(H - Hs)} mm`, off: -14 }]
+        : [{ at: 0, a: 0, b: hx, t: `${swbMm(hx)} mm, the middle to the edge`, off: 22 }, { v: true, at: 0, a: 0, b: Hs, t: `${swbMm(Hs)} mm`, off: -14 }, { v: true, at: 0, a: Hs, b: H, t: `${swbMm(H - Hs)} mm`, off: -14 }] };
+  },
+  domain: (dim, o) => ({ 1: 'the line up through the stack at its middle', 2: 'a section from the stack\'s middle to its edge, the stack taken long across', 3: 'a quarter of the stack, on its two mirror planes' }[dim]),
+  domainShort: (dim, o) => { const { hx, hy, H } = smpAxes(o); return dim === 1 ? `${swbMm(H)} mm up the stack` : dim === 2 ? `${swbMm(hx)} × ${swbMm(H)} mm` : `${swbMm(hx)} × ${swbMm(hy)} × ${swbMm(H)} mm`; },
+  parts: (dim, o) => {
+    const { hx, hy, Hs, H, nEl, nPl } = smpAxes(o);
+    return [{ t: 'Pieces', c: '--go-film', mat: 'Dried GO film', rec: 'gofilm', size: `${o.N} × ${swbMm(o.h)} mm thick, ${swbMm(o.Lx)} × ${swbMm(o.Ly)} mm`, how: `${o.N} pieces stacked, ${nEl} element${nEl === 1 ? '' : 's'} through them` },
+      { t: 'Plate', c: MP_AL_C, mat: 'Aluminium', rec: 'al', size: `${swbMm(o.plateT)} mm thick, the pieces' size`, how: `on the stack, ${nPl} elements through it` }];
+  },
+  domainRows: (dim, o) => {
+    const { hx, hy, Hs, H } = smpAxes(o);
+    return [['Domain', SWB_ADAPT['film:stack'].domain(dim, o)], ['Size', dim === 1 ? `${swbMm(H)} mm high` : dim === 2 ? `${swbMm(hx)} mm (the middle to the edge) × ${swbMm(H)} mm high` : `${swbMm(hx)} × ${swbMm(hy)} mm (a quarter) × ${swbMm(H)} mm high`],
+      ['The stack', `${swbMm(Hs)} mm of pieces under ${swbMm(H - Hs)} mm of aluminium`], ['Mirror planes', dim === 1 ? 'none: a line at the middle' : dim === 2 ? 'the stack\'s middle (x = 0)' : 'its middle along and across (x = 0, y = 0)'],
+      ['Stands on', OVEN_SHELVES[OVEN.peel.shelf]]];
+  },
+  geoTiles: (dim, o) => { const { hx, hy, Hs, H } = smpAxes(o); return [['Pieces', `${o.N} × ${swbMm(o.h)} mm`, `${swbMm(Hs)} mm in all`, 'film'], ['Plate', `${swbMm(o.plateT)} mm`, 'aluminium', 'weight'],
+    ['Domain', dim === 1 ? `${swbMm(H)} mm` : dim === 2 ? `${swbMm(hx)} × ${swbMm(H)} mm` : `${swbMm(hx)} × ${swbMm(hy)} × ${swbMm(H)}`, dim === 3 ? 'mm, a quarter' : dim === 2 ? 'the section' : 'the line', 'section'], ['Water as cut', `${(o.X0 * 100).toFixed(1)} %`, 'of the GO', 'drop']]; },
+  geoNote: (dim, o) => (dim === 1 ? 'Far from the stack\'s edges the water cannot leave along the pieces: the 1D follows it through them, to the underside.' : dim === 2 ? 'The pieces are thin against the plate: Layers stretched draws them taller.' : 'The quarter seen from the stack\'s outer corner: its middle is on the two mirror planes behind.'),
+  meshNote: (dim, o) => (dim === 3 ? 'The mesh on the quarter\'s outer faces: the pieces one element each through, the plate graded to its faces.' : 'The pieces one element each through, the plate graded to its faces' + (dim === 2 ? '; along the pieces graded toward the stack\'s edge.' : '.')),
+  physics: (dim, o) => {
+    const d = MAT.dry, pl = OVEN.peel;
+    return [['Heat', 'ρc ∂T/∂t = ∇·(k ∇T) − L ∂S/∂t', `plate: aluminium, k ${o.al.k} W/(m·K); pieces: k ${d.kIn.v} along, ${d.kS.v} through W/(m·K)`],
+      ['Water', '∂S/∂t = ∇·(K_v ∇p),  S = ρS · GAB(p / p_sat(T))', `along the pieces K ${(o.go.K * 1e7).toPrecision(3)} × 10⁻⁷, through them ${d.skinK.v} × 10⁻¹² kg/(m·s·Pa); the isotherm at the local temperature`],
+      ['Stress', dim === 3 ? 'plane stress in each piece: σ = C(X) (ε − ε*(X, T) − ε_c)' : dim === 2 ? 'along each piece\'s edge: σ_yy = E(X) (ε̄ − ε*(X, T) − ε_c)' : '— (a piece\'s middle is even)', dim === 1 ? '—' : `the film's stiffness and stretch by its water, its expansion ${MAT.film.alphaF.v} × 10⁻⁶ /K; creep at the rate its water sets; held flat by the plate, free in its plane`]];
+  },
+  coupling: dim => `heat ⇄ water in one system, Newton on both (the latent heat where the water leaves; p_sat at the local temperature)${dim > 1 ? ' → each followed piece\'s stress every step' : ''}.`,
+  bcCols: ['Heat', 'Water', 'Stress'],
+  faces: (dim, o) => {
+    const { hx, hy, Hs, H } = smpAxes(o), pl = OVEN.peel, d = MAT.dry, air = pl.stackAirU > 0 ? `a fan's air at ${pl.stackAirU} m/s` : 'still air', W1 = dim === 1 ? H * 0.12 : hx;
+    const heat = '--heat', water = '#1c7ed6', sym = cssVar('--muted'), ink = cssVar('--ink');
+    const F = [];
+    F.push({ t: 'Plate\'s top', c: cssVar(heat), kind: 'conv', segs: [[[0, H], [W1, H]]], side: 'top', face3: 'z1', at3: (X, Y, Z) => [X * 0.55, Y * 0.55, Z],
+      bc: [`the oven's air at ${pl.dryT} °C (${air}, natural convection facing up) + radiation to the walls, ε ${pl.epsPl}; after it, the room's`, 'none (the plate holds no water)', '—'] });
+    F.push(pl.shelf === 'solid'
+      ? { t: 'Underside', c: ink, kind: 'value', segs: [[[0, 0], [W1, 0]]], side: 'bottom', bc: [`on a solid shelf at the oven's temperature, ${pl.dryT} °C`, 'sealed by the shelf', '—'] }
+      : { t: 'Underside', c: cssVar(heat), kind: 'conv', segs: [[[0, 0], [W1, 0]]], side: 'bottom', bc: [`on a wire shelf: the air below (facing down) + radiation, GO ε ${d.emis.v}`, 'its vapour to the air below (by the heat\'s analogy)', '—'] });
+    if (dim > 1) {
+      F.push({ t: dim === 3 ? 'The stack\'s edges (along and across)' : 'The stack\'s edge', c: water, kind: 'open', segs: [[[hx, 0], [hx, Hs]]], side: 'right', face3: ['x1', 'y1'], where: (x, y, z) => z <= Hs * (1 + 1e-9), at3: (X, Y, Z) => [X, Y * 0.5, Hs * 0.5],
+        bc: [`the air (a vertical face, Churchill–Chu) + radiation, GO ε ${d.emis.v}`, 'the room\'s air heated: its vapour pressure', 'free'] });
+      F.push({ t: dim === 3 ? 'The plate\'s edges' : 'The plate\'s edge', c: cssVar(heat), kind: 'conv', segs: [[[hx, Hs], [hx, H]]], side: 'right', face3: ['x1', 'y1'], where: (x, y, z) => z > Hs * (1 + 1e-9), at3: (X, Y, Z) => [X * 0.5, Y, (Hs + Z) / 2],
+        bc: [`the air (a vertical face) + radiation, ε ${pl.epsPl}`, 'none', '—'] });
+      F.push({ t: dim === 3 ? 'Mirror planes (x = 0, y = 0)' : 'Mirror plane (x = 0)', c: sym, kind: 'sym', segs: [[[0, 0], [0, H]]], side: 'left', bc: ['no heat across (symmetry)', 'no water across', 'symmetry'] });
+    }
+    return F;
+  },
+  time: (dim, o) => o.stages.map((g, i) => [i === 0 ? 'In the oven' : 'In the room, under the plate', `${(g.tEnd / 3600).toFixed(2)} h`, `the air at ${g.Tair} °C${g.creep ? '; the pieces creep as their water lets them' : ''}`, `${o.steps}`]),
+  solver: (dim, o, r) => [['Elements', `linear (${dim === 1 ? 'lines' : dim === 2 ? 'quadrilaterals' : 'hexahedra'}), the flows at the nodes`], ['In time', `BDF2, ${o.steps} steps a stage`],
+    ['Heat and water', 'one system, Newton (the matrix banded, Cholesky)'], ['Start', `the room's ${o.Troom} °C; the pieces' water as cut, ${(o.X0 * 100).toFixed(1)} %`],
+    ...(r ? [['Balances', mpStackBal(r)], ['Solved in', `${(r.ms / 1000).toFixed(1)} s`]] : [])],
+  solveTiles: (dim, o, r) => [['Stages', `${o.stages.length}`, o.stages.map(g => `${(g.tEnd / 3600).toFixed(1)} h`).join(' + '), 'period'], ['Time steps', `${o.steps * o.stages.length}`, `${o.steps} a stage`, 'conv'],
+    ['Oven\'s air', `${OVEN.peel.dryT} °C`, OVEN.peel.stackAirU > 0 ? `${OVEN.peel.stackAirU} m/s along it` : 'still air', 'temp'], ['Solved in', r ? `${(r.ms / 1000).toFixed(1)} s` : '—', r ? 'for the inputs as they are' : 'not solved yet', 'play']],
+  resultsHTML: dim => mpStackHTML(true),
+  renderResults: dim => mpStackRender(),
+  csv: dim => { MPS.dim = dim; mpStackCsv(); },
+  openInputs: () => { setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
+};
+/** The balances of a solve, in words. */
+function mpStackBal(r) {
+  const e = Math.abs(r.energy.in - r.energy.held) / Math.max(1e-30, Math.abs(r.energy.in)), u = r.dim === 2 ? ' per m across' : r.dim === 1 ? ' per m²' : ' (the quarter)';
+  return `heat in ${(r.energy.in / 1e3).toPrecision(4)} kJ = held ${(r.energy.held / 1e3).toPrecision(4)} kJ (${e < 1e-6 ? 'closes' : `off by ${(e * 100).toFixed(3)} %`}); water out ${(r.water.out * 1e3).toPrecision(4)} g = lost ${(r.water.lostHeld * 1e3).toPrecision(4)} g${u}`;
 }

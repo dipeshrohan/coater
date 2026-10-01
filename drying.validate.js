@@ -4,8 +4,11 @@
  *     and water's viscosity against the steam tables, air against Incropera's table.
  *  2. The flakes' diffusion: Carnahan–Starling's d(φZ)/dφ against the derivative of φZ; D0 of a thin disc.
  *  3. Natural convection: the regime by the density difference (heat and the vapour's own buoyancy), facing up or
- *     down; slot jets: Martin's correlation computed apart, its ranges.
- *  4. Evaporation through a skin: both sides of the skin's outer face give the same flux; no skin: Stefan's log law.
+ *     down; the vapour by the same correlation at its own Rayleigh number (continuous through laminar to turbulent);
+ *     slot jets: Martin's correlation computed apart, its ranges.
+ *  4. Evaporation through a skin: both sides of the skin's outer face give the same flux; no skin: Stefan's log law;
+ *     under still air (its convection feeling the vapour at the outer face) that face's pressure solved, the flux
+ *     smooth in the water's temperature.
  *  5. The constant-rate period: the wet film's top alone reaches the wet-bulb temperature, which with forced air is
  *     the air's adiabatic saturation temperature (psychrometry, computed apart) within 1.5 K; the strip on its wet
  *     plateau against the steady state (drConstantRate).
@@ -70,6 +73,15 @@ const base = (over = {}) => ({
   const v = D.drNat(50, 50, D.drPsat(50), 0, 0.15, P0, 'up'), vd = D.drNat(50, 50, D.drPsat(50), 0, 0.15, P0, 'down');
   check('the vapour\'s own buoyancy: a wet surface at the air\'s temperature still drives convection (unstable facing up, stable facing down)',
     v.unstable && !vd.unstable && v.h > 1 && v.km > 1e-3, `h ${v.h.toFixed(2)} W/(m² K), k_m ${(v.km * 1000).toFixed(2)} mm/s`);
+  // the vapour: the same law at Ra Sc/Pr, through both switches (laminar ↔ turbulent for the heat, then the vapour)
+  const Ls = [], sw = Math.pow(0.54 / 0.15, 12);
+  for (let L = 0.05; L < 1.5; L *= 1.0005) Ls.push(L);
+  const ns = Ls.map(L => D.drNat(60, 20, 0, 0, L, P0, 'up')), r = ns[0].air.Sc / ns[0].air.Pr;
+  const law = R => Math.max(0.54 * Math.pow(R, 0.25), 0.15 * Math.cbrt(R));
+  let jump = 0; for (let i = 1; i < ns.length; i++) jump = Math.max(jump, Math.abs(ns[i].Sh / ns[i - 1].Sh - 1));
+  const span = ns.some(n => n.Ra < sw) && ns.some(n => n.Ra * r > sw), lawOk = ns.every(n => rel(n.Sh, law(n.Ra * r)) < 1e-12);
+  check('natural convection, the vapour: Sh by the same law at Ra Sc/Pr, continuous through laminar to turbulent (between lengths 0.05 % apart no step over 0.1 %: its growth, Sh ∝ L^3/4 to L, is 0.04–0.05 %)',
+    span && lawOk && jump < 1e-3, `Ra ${ns[0].Ra.toExponential(1)} to ${ns[ns.length - 1].Ra.toExponential(1)}, the switch at ${sw.toExponential(2)}; largest step ${(100 * jump).toFixed(3)} %`);
   // Martin's slot nozzles, computed apart
   const jet = { U: 10, T: 100, B: 0.005, H: 0.02, S: 0.1 }, j = D.drJets(jet, P0), air = D.drAir(100, P0);
   const Re = 10 * 0.01 / air.nu, f = 0.05, f0 = 1 / Math.sqrt(60 + 4 * (0.02 / 0.01 - 2) ** 2);
@@ -88,6 +100,16 @@ const base = (over = {}) => ({
   check('evaporation: no skin is Stefan\'s log law; with a skin the gas side and the skin carry the same flux (log and supply sides)',
     rel(noSkin.m, want) < 1e-12 && rel(outer, sk.m) < 1e-9 && rel(inner, sk.m) < 1e-9 && rel(spOut, sp.m) < 1e-9 && sk.m < noSkin.m,
     `${(noSkin.m * 1e3).toFixed(3)} g/(m² s) bare, ${(sk.m * 1e3).toFixed(4)} through 100 µm of skin`);
+  // under still air: the outer face's pressure pv is drEvap's with the gas side taken at pv; the flux smooth in the
+  // water's temperature (the oven's 100 °C air, 20 % humidity, a 40 µm skin, the water near 83 °C: the vapour's
+  // buoyancy against the heat's)
+  const o = base(), Z = { Ta: 100, pa: 0.2 * D.drPsat(100), Tw: 100, top: { kind: 'nat' }, ir: 0 }, dl = 4.05e-5;
+  const sts = [], Tfs = [];
+  for (let T = 83.2; T <= 83.4; T += 0.0005) { Tfs.push(T); sts.push(D.drSideState(D.drTopSide, Z, T, T + 0.05, dl, o)); }
+  const fixed = Math.max(...sts.map((st, i) => Math.abs(D.drEvap(D.drPsat(Tfs[i]), dl, o.skinK, D.drTopSide(Z, Tfs[i] + 0.05, st.pv, o).gas, P0).pi - st.pv) / P0));
+  let step = 0; for (let i = 1; i < sts.length; i++) step = Math.max(step, Math.abs(sts[i].m / sts[i - 1].m - 1));
+  check('through a skin under still air: the outer face\'s pressure solved (drEvap\'s at the gas side it gives, within 1e-9 of the pressure), the flux smooth (no step over 0.05 % per 0.5 mK)',
+    fixed < 1e-9 && step < 5e-4, `pv ${(sts[0].pv / 1000).toFixed(2)} kPa, m ${(sts[0].m * 1e3).toFixed(4)} g/(m² s); off by ${fixed.toExponential(1)}; largest step ${(100 * step).toFixed(3)} %`);
 }
 
 // ---- 5. the constant-rate period ----

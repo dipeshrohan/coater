@@ -479,5 +479,24 @@ const fmt = x => x.toExponential(2);
   check('  an isotropic solid given whole ({ C }) gives what { E, ν } gives, bit for bit', iso.u.every((v, i) => v === isoC.u[i]));
 }
 
+// the elastic solve again on the same stiffness and supports, its matrix factored once: other loads (eigenstrains,
+// the supports' values) as a solve from scratch gives
+{
+  let worst = 0;
+  for (const dim of [2, 3]) {
+    const axes = dim === 2 ? [{ L: 1, n: 6, grade: 4 }, { L: 0.2, n: 4 }] : [{ L: 1, n: 4 }, { L: 0.5, n: 3, grade: 3 }, { L: 0.2, n: 3 }];
+    const M = C.mpMesh({ dim, p: 1, axes, mat: ijk => (ijk[dim - 1] > 1 ? 1 : 0) });
+    const mats = [{ E: 1e9, nu: 0.3 }, { E: 20e9, nu: 0.2 }], scale = (m, x) => 1 + 0.5 * x[0];
+    const bc = (v) => [{ face: dim === 2 ? 'y0' : 'z0', fix: [dim - 1] }, { face: 'x0', fix: [0] }, ...(dim === 3 ? [{ face: 'y0', fix: [1] }] : []), { face: 'x1', fix: [0], value: () => [v, 0, 0] }];
+    const eig1 = (m, x) => [1e-3 * x[0], 2e-4 * m, -1e-4, 0, 0, 0], eig2 = (m, x) => [-5e-4 * m, 3e-4 * x[0], 2e-4, 0, 0, 1e-5];
+    const a = C.mpElastic(M, { mats, scale, eig: eig1, bc: bc(0) });
+    const again = C.mpElastic(M, { mats, scale, eig: eig2, bc: bc(1e-4), factored: a.factored }), fresh = C.mpElastic(M, { mats, scale, eig: eig2, bc: bc(1e-4) });
+    const big = Math.max(...fresh.gp.flatMap(g => Array.from(g.stress, Math.abs)));
+    for (let i = 0; i < fresh.gp.length; i++) for (let c = 0; c < 6; c++) worst = Math.max(worst, Math.abs(again.gp[i].stress[c] - fresh.gp[i].stress[c]) / big);
+    worst = Math.max(worst, Math.abs(again.reaction('x1')[0] - fresh.reaction('x1')[0]) / Math.abs(fresh.reaction('x1')[0]));
+  }
+  check('elasticity solved again on its factored matrix (2D, 3D; other eigenstrains and support values) = solved from scratch', worst < 1e-10, fmt(worst));
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;

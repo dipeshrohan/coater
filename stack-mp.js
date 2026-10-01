@@ -64,6 +64,23 @@ function smpAir(kind, Ts, Ta, L, air) {
 }
 
 /**
+ * The stack's domain and mesh (MP-W: the solve's and the page's drawing alike): the pieces one element each through (or
+ * per pieces an element), the plate graded toward its faces; in their plane graded to the stack's edges. o: smpStack's
+ * (dim, Lx, Ly, N, h, plateT, mesh). Returns { hx, hy (the half sizes), Hs (the pieces' height), H (with the plate), zi
+ * (the axis up), nEl (the elements through the pieces), nPl (through the plate), per, nx, ny, grade, ms, axes (mpMesh's),
+ * mat (ijk, seg) → 0 the pieces, 1 the plate }.
+ */
+function smpAxes(o) {
+  const dim = o.dim, N = o.N, hp = o.h, hx = o.Lx / 2, hy = o.Ly / 2, ms = o.mesh || {}, nx = ms.nx || 8, ny = ms.ny || nx, grade = ms.grade || 12, nPl = ms.nPlate || 4;
+  const Hs = N * hp, H = Hs + o.plateT, zi = dim - 1;
+  // (per: the pieces an element holds through the stack -- the heat and water vary smoothly across a few)
+  const per = Math.max(1, Math.min(N, ms.per || 1)), nEl = Math.ceil(N / per);
+  const zAxis = [...Array(nEl)].map((_, k) => ({ L: hp * Math.min(per, N - k * per), n: 1 })).concat([{ L: o.plateT, n: nPl, grade: 3, end: 'both' }]);
+  const xAxis = [{ L: hx, n: nx, grade, end: 'hi' }], yAxis = [{ L: hy, n: ny, grade, end: 'hi' }];
+  const axes = dim === 1 ? [zAxis] : dim === 2 ? [xAxis, zAxis] : [xAxis, yAxis, zAxis];
+  return { hx, hy, Hs, H, zi, nEl, nPl, per, nx, ny, grade, ms, axes, mat: (ijk, seg) => (seg[zi] < nEl ? 0 : 1) };
+}
+/**
  * The stack in the pre heat treatment and after it. o: {
  *   dim: 1 | 2 | 3, Lx, Ly (m, the pieces), N (pieces), h (m, a piece), plateT (m, the plate), X0 (the water as cut),
  *   Troom (°C: the stack at the start, the room), rhRoom, stages: [{ tEnd (s), Tair (°C), creep (bool) }] (the oven,
@@ -91,17 +108,10 @@ function smpStack(o) {
   const t0 = Date.now(), dim = o.dim, N = o.N, hp = o.h, go = o.go, AL = o.al || SMP_AL;
   // (each conductivity and heat capacity at the point's temperature when defined in T, MH-4b; else its constant)
   const kInT = smpAtT(go.kInT, go.kIn), kThrT = smpAtT(go.kThrT, go.kThr), cT = smpAtT(go.cT, go.c), alkT = smpAtT(AL.kT, AL.k), alcT = smpAtT(AL.cT, AL.c);
-  const hx = o.Lx / 2, hy = o.Ly / 2, ms = o.mesh || {}, nx = ms.nx || 8, ny = ms.ny || nx, grade = ms.grade || 12, nPl = ms.nPlate || 4;
-  const Hs = N * hp, H = Hs + o.plateT, zi = dim - 1;
+  const { hx, hy, ms, nx, ny, grade, Hs, H, zi, nEl, axes, mat } = smpAxes(o);
   const pvAir = o.rhRoom * SMP_DR.drPsat(o.Troom);   // the room's air, heated in the oven: the same vapour pressure
   const air = { fan: (o.air && o.air.fan) || 0, pv: pvAir, Lfan: o.Lx };
-  // ---- the mesh: the pieces one element each through, the plate graded toward its faces; in their plane graded to the edges ----
-  // (per: the pieces an element holds through the stack -- the heat and water vary smoothly across a few)
-  const per = Math.max(1, Math.min(N, ms.per || 1)), nEl = Math.ceil(N / per);
-  const zAxis = [...Array(nEl)].map((_, k) => ({ L: hp * Math.min(per, N - k * per), n: 1 })).concat([{ L: o.plateT, n: nPl, grade: 3, end: 'both' }]);
-  const xAxis = [{ L: hx, n: nx, grade, end: 'hi' }], yAxis = [{ L: hy, n: ny, grade, end: 'hi' }];
-  const axes = dim === 1 ? [zAxis] : dim === 2 ? [xAxis, zAxis] : [xAxis, yAxis, zAxis];
-  const M = SMP.mpMesh({ dim, p: 1, axes, mat: (ijk, seg) => (seg[zi] < nEl ? 0 : 1) });   // 0 the pieces, 1 the plate
+  const M = SMP.mpMesh({ dim, p: 1, axes, mat });   // 0 the pieces, 1 the plate
   // ---- the pieces' water: the isotherm at the local temperature, capped at the pores' ----
   const GAB = a => SMP_PR.prGAB(a, go.gab), dGAB = a => SMP_PR.prGABslope(a, go.gab);
   const aCap = go.Xcap < GAB(1) ? SMP_PR.prActivity(go.Xcap, go.gab) : 1, Xc = GAB(aCap), sl = 1e-3 * dGAB(aCap);
@@ -285,4 +295,4 @@ function smpSummary(series, o, follow) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { smpStack, smpAir, smpSummary, SMP_AL };
+if (typeof module !== 'undefined') module.exports = { smpStack, smpAxes, smpAir, smpSummary, SMP_AL };

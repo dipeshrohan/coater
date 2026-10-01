@@ -237,7 +237,7 @@ function furnSectionHTML() {
       <figure class="pane dry-pane furn-piece-fig"><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
     </div>
     <div id="furnMeas" data-pstep="results"></div>
-    <div data-pstep="multi" data-fpart="runs">${typeof fmpHTML === 'function' ? fmpHTML() : ''}</div>
+    ${PROC_ALL && typeof fmpHTML === 'function' ? `<div data-fpart="runs">${fmpHTML()}</div>` : ''}
     <p class="fv-note" id="furnNote" data-pstep="solve" data-fpart="runs"></p>
   </section>`;
 }
@@ -282,8 +282,8 @@ function furnRender() {
   if (!sec.dataset.wired) furnWire(sec);
   sec.querySelectorAll('[data-furn]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.furn === DRY.sel)));
   const st = document.getElementById('furnState');
-  // (the multiphysics, MP-2: solved only when its step is shown; for the report, every step open, drawn too once solved)
-  if (typeof fmpRender === 'function' && (((FURN.part || 'runs') === 'runs' && typeof processStep === 'function' && processStep('furn') === 'multi') || (PROC_ALL && fmpCurrent(FMS.dim)))) fmpRender();
+  // (the multiphysics, MP-2: its own pages, MP-W; for the report, every step open, drawn too once solved)
+  if (typeof fmpRender === 'function' && PROC_ALL && fmpCurrent(FMS.dim)) fmpRender();
   if (typeof furnSetupRender === 'function') { furnSetupRender(); furnShowChart(); }
   if (!furnInputs()) { st.innerHTML = '<p class="fv-why">After the film and its cut piece are solved (the Film stage).</p>'; furnClear(); furnMeasured(null); if (typeof furnSolveRender === 'function') furnSolveRender(null); return; }
   furnRequest();

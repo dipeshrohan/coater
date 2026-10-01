@@ -704,6 +704,16 @@ const NAV = {
   stack: { v: 12, st: 'film', fv: 'stack', t: 'Pre heat treatment', icon: 'weight', note: 'The pre heat treatment: its oven\'s temperature, the time in it, and the time under the plate after it.', q: 'The pieces pressed in a stack under the plate and heated: their water and stress, and how they lie when taken out.' },
   furn: { v: 12, st: 'furn', fp: 'runs', t: 'Furnace', icon: 'oven', note: 'The furnace: the two runs\' programs, the stack in its holder (papers, plates, the room above it).', q: 'The stack in the furnace, run 1 then run 2: its gas, puffing, cracks, sticking and waves, piece by piece.' },
   gfilm: { v: 12, st: 'furn', fp: 'product', t: 'Graphene film', icon: 'bars', note: 'The graphene film is the furnace\'s result: its inputs are the furnace\'s, with your limit on its thickness\'s spread.', q: 'The graphene film that comes out: its thickness and spread, density, heat conduction, C/O and graphitization.' },
+  // (MP-W: a stage's multiphysics solved in 1D, 2D and 3D, a page each as Coating's models: Geometry › Mesh › Solve › Results)
+  dry1d: { v: 12, st: 'dry', md: 1, t: '1D', icon: 8, note: 'The film and the web solved through them at one place: the Drying card, the line and the oven\'s zones.', q: 'The film drying on its web at one place, in 1D: its heat, its water, the air up through the web, its drying stress.' },
+  dry2d: { v: 12, st: 'dry', md: 2, t: '2D', icon: 4, note: 'The film and the web solved on a section across the web: the Drying card, the line and the oven\'s zones.', q: 'The film drying on its web across its width, in 2D: its heat, its water, the air through the web, its drying stress.' },
+  dry3d: { v: 12, st: 'dry', md: 3, t: '3D', icon: 9, note: 'A piece of the line solved across the web\'s width: the Drying card, the line and the oven\'s zones.', q: 'A piece of the line drying across the web, in 3D: its heat, its water, the air through the web, its drying stress.' },
+  stack1d: { v: 12, st: 'film', fv: 'stack', md: 1, t: '1D', icon: 8, note: 'The stack solved through its middle: the pre heat treatment\'s inputs and the Materials\' records.', q: 'The pressed stack through its middle, in 1D: its heat and its water against time in the oven and after it.' },
+  stack2d: { v: 12, st: 'film', fv: 'stack', md: 2, t: '2D', icon: 4, note: 'The stack solved on a section from its middle to its edge: the pre heat treatment\'s inputs and the Materials\' records.', q: 'The pressed stack on a section from its middle to its edge, in 2D: its heat, its water and each piece\'s stress.' },
+  stack3d: { v: 12, st: 'film', fv: 'stack', md: 3, t: '3D', icon: 9, note: 'The stack solved on a quarter: the pre heat treatment\'s inputs and the Materials\' records.', q: 'A quarter of the pressed stack, in 3D: its heat, its water and each piece\'s stress in its plane.' },
+  furn1d: { v: 12, st: 'furn', fp: 'runs', md: 1, t: '1D', icon: 8, note: 'The furnace\'s stack solved along the pieces at its middle height: the furnace\'s inputs and the Materials\' records.', q: 'The furnace\'s stack along its pieces at its middle height, in 1D: its heat, its chemistry, its gas and each piece\'s pull.' },
+  furn2d: { v: 12, st: 'furn', fp: 'runs', md: 2, t: '2D', icon: 4, note: 'The holder and its stack solved on a section from the middle to the side: the furnace\'s inputs and the Materials\' records.', q: 'The holder and its stack on a section, in 2D: its heat, its chemistry, its gas and each piece\'s pull.' },
+  furn3d: { v: 12, st: 'furn', fp: 'runs', md: 3, t: '3D', icon: 9, note: 'A quarter of the holder solved: the furnace\'s inputs and the Materials\' records.', q: 'A quarter of the holder and its stack, in 3D: its heat, its chemistry, its gas and each piece\'s pull in its plane.' },
   summary: { v: 7 }, doe: { v: 5 }, meas: { v: 6 },
 };
 const navTitle = k => NAV[k].t || TABS[NAV[k].v];
@@ -711,9 +721,14 @@ const navQ = k => NAV[k].q || TAB_Q[NAV[k].v];
 /** The page shown: the view, and on the Process view its stage and part. */
 function navNow() {
   if (tab !== 12) return Object.keys(NAV).find(k => NAV[k].v === tab && !NAV[k].st) || 'line';
-  const fv = typeof FILM !== 'undefined' && FILM.view || 'film', fp = typeof FURN !== 'undefined' && FURN.part || 'runs';
-  return Object.keys(NAV).find(k => { const q = NAV[k]; return q.v === 12 && q.st === PROC.stage && (!q.fv || q.fv === fv) && (!q.fp || q.fp === fp); }) || 'wetdry';
+  const fv = typeof FILM !== 'undefined' && FILM.view || 'film', fp = typeof FURN !== 'undefined' && FURN.part || 'runs', md = swbDimNow();
+  return Object.keys(NAV).find(k => { const q = NAV[k]; return q.v === 12 && q.st === PROC.stage && (!q.fv || q.fv === fv) && (!q.fp || q.fp === fp) && (q.md || 0) === md; }) || 'wetdry';
 }
+/** MP-W: the dimension page shown for the stage's part on the Process view (1, 2, 3; 0 its own page), by its step key. */
+const SWB_DIM = {};
+/** MP-W: each dimension page's step (Geometry, Mesh, Solve, Results), by its step key and dimension ('film:stack:2'). */
+const SWB_STEP = {};
+const swbDimNow = () => (typeof procStepKey === 'function' && SWB_DIM[procStepKey()]) || 0;
 /** Show page k (a stage page keeps its own step; step, if given, opens that one). */
 function navGo(k, step) {
   const q = NAV[k];
@@ -721,7 +736,8 @@ function navGo(k, step) {
   if (q.st) PROC.stage = q.st;
   if (q.fv) FILM.view = q.fv;
   if (q.fp) FURN.part = q.fp;
-  if (step && q.v === 12 && typeof procStepKey === 'function') PROC.step[procStepKey()] = step;
+  if (q.v === 12 && typeof procStepKey === 'function') SWB_DIM[procStepKey()] = q.md || 0;
+  if (step && q.v === 12 && typeof procStepKey === 'function') { if (q.md) SWB_STEP[`${procStepKey()}:${q.md}`] = step; else PROC.step[procStepKey()] = step; }
   tab = q.v;
   render();
 }
@@ -737,11 +753,12 @@ const SECTIONS = [
   { k: 'mix', n: 1, t: 'Mixing', pages: ['mix'] },
   { k: 'coat', n: 2, t: 'Coating', groups: [{ k: '1d', t: '1D', pages: ['gap', 'oven1d', 'across', 'startup'] }, { k: '2d', t: '2D', pages: ['cfd2d'] }, { k: '3d', t: '3D', pages: ['cfd3d'] },
     { k: 'res', t: 'Results', pages: ['contact', 'edge', 'surface', 'wetdry', 'flakes'] }] },
-  { k: 'dry', n: 3, t: 'Drying', pages: ['dry'] },
+  { k: 'dry', n: 3, t: 'Drying', groups: [{ k: 'dry1d', d: '1d', t: '1D', pages: ['dry1d'] }, { k: 'dry2d', d: '2d', t: '2D', pages: ['dry2d'] }, { k: 'dry3d', d: '3d', t: '3D', pages: ['dry3d'] }, { k: 'dryres', t: 'Results', pages: ['dry'] }] },
   { k: 'peel', n: 4, t: 'Peel and wind', short: 'Peel', pages: ['peel'] },
   { k: 'cut', n: 5, t: 'Cutting', pages: ['cut'] },
-  { k: 'stack', n: 6, t: 'Pre heat treatment', short: 'Pre heat', pages: ['stack'] },
-  { k: 'furn', n: 7, t: 'Furnace', pages: ['furn'] },
+  // (MP-W: a stage with its multiphysics has Coating's sub tabs -- its models 1D, 2D, 3D and its Results, the stage's page)
+  { k: 'stack', n: 6, t: 'Pre heat treatment', short: 'Pre heat', groups: [{ k: 'stack1d', d: '1d', t: '1D', pages: ['stack1d'] }, { k: 'stack2d', d: '2d', t: '2D', pages: ['stack2d'] }, { k: 'stack3d', d: '3d', t: '3D', pages: ['stack3d'] }, { k: 'stackres', t: 'Results', pages: ['stack'] }] },
+  { k: 'furn', n: 7, t: 'Furnace', groups: [{ k: 'furn1d', d: '1d', t: '1D', pages: ['furn1d'] }, { k: 'furn2d', d: '2d', t: '2D', pages: ['furn2d'] }, { k: 'furn3d', d: '3d', t: '3D', pages: ['furn3d'] }, { k: 'furnres', t: 'Results', pages: ['furn'] }] },
   { k: 'gfilm', n: 8, t: 'Graphene film', short: 'Graphene', pages: ['gfilm'] },
   { k: 'results', t: 'Results', icon: 7, pages: ['summary'] },
   { k: 'studies', t: 'Studies', icon: 5, pages: ['doe', 'meas'] },
@@ -765,7 +782,9 @@ SECTIONS.forEach((s, i) => {
     : `<svg viewBox="0 0 16 16" aria-hidden="true">${TAB_ICONS[s.icon]}</svg><span>${s.t}</span>`;
   b.type = 'button';
   b.dataset.sec = s.k;
-  b.title = s.groups ? s.groups.map(g => g.t).join(' · ') : s.pages.length > 1 ? s.pages.map(navTitle).join(' · ') : navQ(s.pages[0]);
+  // (a stage with its multiphysics pages, MP-W: what the stage is -- its own page's question -- and its sub tabs)
+  const own = s.groups && s.groups.find(g => !g.d && g.pages.length === 1 && g.pages[0] === s.k);
+  b.title = s.groups ? `${own ? navQ(own.pages[0]) + ' ' : ''}${s.groups.map(g => g.t).join(' · ')}` : s.pages.length > 1 ? s.pages.map(navTitle).join(' · ') : navQ(s.pages[0]);
   NAV_TIP.set(s.k, b.title);
   b.setAttribute('role', 'tab');
   b.onclick = () => goSection(i);
@@ -801,7 +820,7 @@ function subTabs() {
   const ico = k => NAV[k].icon || NAV[k].v;
   if (s.groups) {
     const g = groupOfPage(pg);
-    const top = `<div class="subtabs" role="tablist" aria-label="${s.t}: its models and results">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.pages[0], x.t, x === g, x.pages.map(navTitle).join(' · '), 'g', GROUP_ICON[x.k])).join('')}</div>`;
+    const top = `<div class="subtabs" role="tablist" aria-label="${s.t}: its models and results">${s.groups.map(x => btn(GROUP_LAST[x.k] ?? x.pages[0], x.t, x === g, (x.d ? x.pages.map(navQ) : x.pages.map(navTitle)).join(' · '), 'g', GROUP_ICON[x.d || x.k])).join('')}</div>`;
     return top + (g && g.pages.length > 1 ? `<div class="subtabs subtabs-2" role="tablist" aria-label="${g.t} pages">${g.pages.map(k => btn(k, navTitle(k), k === pg, navQ(k), 'v', ico(k))).join('')}</div>` : '');
   }
   if (s.pages.length < 2) return '';

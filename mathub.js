@@ -44,11 +44,12 @@ const HUB_PHYS = [
   { k: 'coat', l: 'Coating flow 1D · 2D · 3D', s: 'generalized-Newtonian Stokes flow with a free surface and contact lines', nav: ['cfd2d'] },
   { k: 'align', l: 'Flake alignment', s: 'Doi–Hess or Folgar–Tucker along the 2D flow\'s streamlines', nav: ['flakes'] },
   { k: 'dry', l: 'Drying', s: 'heat and water through the film and the web, the skin, the isotherm', nav: ['dry', 'results'] },
+  { k: 'mp5', l: 'Drying: multiphysics 1D · 2D · 3D', s: 'heat, water, the oven\'s air through the web and the drying stress', nav: ['dry2d'] },
   { k: 'film', l: 'Peel and wind', s: 'plane-strain FEM of the film on the web: stress, cracks, peel, curl', nav: ['peel', 'results'] },
   { k: 'stack', l: 'Pre heat: pressed stack', s: 'in-plane drying of the pieces, creep held flat, release buckling', nav: ['stack', 'results'] },
-  { k: 'mp1', l: 'Pre heat: multiphysics 1D · 2D · 3D', s: 'heat, water and stress in the stack under the aluminium plate', nav: ['stack', 'multi'] },
+  { k: 'mp1', l: 'Pre heat: multiphysics 1D · 2D · 3D', s: 'heat, water and stress in the stack under the aluminium plate', nav: ['stack2d'] },
   { k: 'furn', l: 'Furnace', s: 'conversion kinetics, gas and puffing, graphitization, the piece on its papers', nav: ['furn', 'results'] },
-  { k: 'mp2', l: 'Furnace: multiphysics 1D · 2D · 3D', s: 'heat with the reaction heat in the holder, the papers and the pieces', nav: ['furn', 'multi'] },
+  { k: 'mp2', l: 'Furnace: multiphysics 1D · 2D · 3D', s: 'heat with the reaction heat in the holder, the papers and the pieces', nav: ['furn2d'] },
 ];
 const hubPhys = k => HUB_PHYS.find(p => p.k === k);
 function hubGoPhys(k) {
@@ -367,6 +368,8 @@ const HUB_RECORDS = [
       ] },
       { l: 'Thermal', props: [
         { id: 'cpWeb', sym: 'c_p', l: 'Specific heat capacity', b: hC('dry', 'cpWeb'), phys: ['dry', 'film'] },
+        { id: 'kFib', sym: 'k_f', l: 'Thermal conductivity of its fibres', b: hC('dry', 'kFib'), phys: ['mp5'] },
+        { id: 'kWeb', sym: 'k', l: 'Thermal conductivity, the web (fibres in air)', b: hCalc(() => { const e = fibreStructure().eps, ka = 0.0283, kf = MAT.dry.kFib.v; return ka * (2 * ka + kf - 2 * (1 - e) * (ka - kf)) / (2 * ka + kf + (1 - e) * (ka - kf)); }, 'W/(m·K)', 3, 'Maxwell–Eucken, the air around the fibres (air 0.028 W/(m·K) at 50 °C)'), phys: ['mp5'] },
         { id: 'alphaW', sym: 'α', l: 'Thermal expansion', b: hC('film', 'alphaW'), phys: ['film'] },
       ] },
       { l: 'Mechanical', props: [
@@ -455,6 +458,12 @@ const HUB_RECORDS = [
     ] },
 ];
 /** The interfaces: a pair's own properties (surface tension, wetting, adhesion, friction, contact). */
+// (MP-5: the drying's multiphysics reads what the drying reads, the film's and the web's mechanics and the GO's conduction along
+//  the film -- marked here rather than on each row)
+{
+  const mp5 = { gofilm: ['kIn', 'beta', 'Xh', 'C', 'Ep', 'Et', 'nup', 'nupt', 'Gpt', 'alphaF', 'sigF'], web: ['alphaW', 'C', 'Ew', 'soft', 'nuw', 'nupt', 'Gpt'], gel: ['Eg', 'nu', 'G'] };
+  for (const r of HUB_RECORDS) for (const g of r.groups || []) for (const q of g.props) if (q.phys && !q.phys.includes('mp5') && (q.phys.includes('dry') || (mp5[r.id] || []).includes(q.id))) q.phys.push('mp5');
+}
 const HUB_IFACES = [
   { id: 'i-slurry-air', name: 'Slurry | air', a: 'slurry', bb: 'air', sub: 'Free surface', icon: 'flow', domains: ['Coating: the meniscus and the free film (1D, 2D, 3D)'],
     groups: [{ l: 'Surface', props: [{ id: 'g', sym: 'γ', l: 'Surface tension', b: hI('g'), phys: ['coat'] }] }] },
@@ -495,14 +504,14 @@ const hubProps = r => r.groups.flatMap(g => g.props);
  */
 /** Each record's domains (its r.domains, in order): the solvers in each. */
 const HUB_DOMAIN_PHYS = {
-  slurry: [['coat', 'align'], ['mix'], ['dry', 'film']], flakes: [['mix', 'coat', 'align'], ['dry', 'film', 'stack', 'mp1', 'furn', 'mp2']],
-  water: [['mix', 'coat'], ['dry', 'film', 'stack', 'mp1', 'mp2']], air: [['dry', 'film'], ['mp1'], ['coat']], argon: [['mp2']], gel: [['film']],
-  gofilm: [['dry', 'align'], ['film'], ['stack', 'mp1'], ['furn', 'mp2']], gfilm: [['furn'], ['mp2']], web: [['coat'], ['dry'], ['film']],
+  slurry: [['coat', 'align'], ['mix'], ['dry', 'film', 'mp5']], flakes: [['mix', 'coat', 'align'], ['dry', 'film', 'stack', 'mp1', 'furn', 'mp2', 'mp5']],
+  water: [['mix', 'coat'], ['dry', 'film', 'stack', 'mp1', 'mp2', 'mp5']], air: [['dry', 'film', 'mp5'], ['mp1'], ['coat']], argon: [['mp2']], gel: [['film', 'mp5']],
+  gofilm: [['dry', 'align', 'mp5'], ['film'], ['stack', 'mp1'], ['furn', 'mp2']], gfilm: [['furn'], ['mp2']], web: [['coat'], ['dry', 'mp5'], ['film']],
   paper: [['furn'], ['mp2']], plate: [['furn'], ['mp2']], al: [['mp1']], paste: [[]], cfilm: [[]], blade: [[]], 'i-slurry-air': [['coat']], 'i-slurry-blade': [['coat']], 'i-slurry-web': [['coat']],
   'i-film-web': [['film']], 'i-film-paper': [['furn'], ['mp2']], 'i-film-plate': [['furn']],
 };
 /** The solvers that take an assigned material: each builds its inputs in one function, run with the material (matRun). */
-const HUB_SWAP = { dry: ['dryBase'], film: ['filmOpts'], stack: ['stackInputs'], mp1: ['mpStackInputs'], furn: ['furnInputs', 'furnDoeOpts'], mp2: ['fmpInputs'] };
+const HUB_SWAP = { dry: ['dryBase'], film: ['filmOpts'], stack: ['stackInputs'], mp1: ['mpStackInputs'], furn: ['furnInputs', 'furnDoeOpts'], mp2: ['fmpInputs'], mp5: ['dmpInputs'] };
 const hubBaseRec = id => hubBaseAll().find(r => r.id === id);
 /** A copy as a record: its base's, with its own name and id; its properties' bindings carry the copy's id. */
 function hubInstRec(id) {

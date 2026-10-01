@@ -65,8 +65,9 @@ let PROC_ALL = false;
 const procStepKey = (k = PROC.stage) => k === 'film' ? `film:${FILM.view || 'film'}` : k === 'furn' ? `furn:${FURN.part || 'runs'}` : k;
 /** The pages that are computed here, with their steps (the cut piece and the stack are solved after the film, on their own;
  *  the graphene film is the furnace's result); the others show their one page. */
-const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results', 'multi'],
-  'furn:runs': ['setup', 'solve', 'results', 'multi'], 'furn:product': ['results'] };
+// (the stack's and the furnace's multiphysics, MP-1 and MP-2: their own pages, 1D, 2D and 3D, beside these: MP-W)
+const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results'],
+  'furn:runs': ['setup', 'solve', 'results'], 'furn:product': ['results'] };
 const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results', multi: 'Multiphysics' };
 /** A solve's state as a stage's: solved, solving, failed or not yet. */
 const procSolveSt = (cur, R) => cur ? 'solved' : R.busy ? 'busy' : R.error ? 'failed' : 'todo';
@@ -207,7 +208,8 @@ function processShowStage() {
  * values (from Materials); Drying, the oven's zones; Peel and wind, Cutting and Pre heat treatment, their rows of what
  * follows the oven; Furnace and Graphene film, the furnace.
  */
-const PROC_BAR = { mix: [], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'] };
+const PROC_BAR = { mix: [], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'],
+  stack1d: ['peel'], stack2d: ['peel'], stack3d: ['peel'], furn1d: ['furn'], furn2d: ['furn'], furn3d: ['furn'], dry1d: ['oven'], dry2d: ['oven'], dry3d: ['oven'] };
 function processSidebar() {
   const open = k => FV.tree[k] !== false ? ' open' : '', pg = navNow(), part = NAV[pg].fv;
   const c = MAT.slurry, row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
@@ -223,7 +225,7 @@ function processSidebar() {
   };
   // (Mixing: none -- its page shows the slurry card's values, its inputs are the slurry's flow above)
   const groups = PROC_BAR[pg] || ['oven', 'furn', 'matro'];
-  document.getElementById('setupExtra').innerHTML = groups.length ? `<div class="tree-sep">${navTitle(pg)}: its setup</div>${groups.map(k => G[k]()).join('')}` : '';
+  document.getElementById('setupExtra').innerHTML = groups.length ? `<div class="tree-sep">${NAV[pg].md ? secOfPage(pg).t : navTitle(pg)}: its setup</div>${groups.map(k => G[k]()).join('')}` : '';
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
   const toMat = document.getElementById('procToMat'); if (toMat) toMat.onclick = () => { tab = 13; render(); };
   wireOvenZones(() => processPage(true), render);
@@ -247,6 +249,9 @@ function processPage(alone = false) {
 }
 function processPageBody() {
   oneDRequest(true);
+  // (a stage's multiphysics in 1D, 2D or 3D: its own page, MP-W)
+  const wbp = typeof swbNow === 'function' ? swbNow() : null;
+  if (wbp) { swbPage(wbp.A, wbp.dim); return; }
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   view.innerHTML = moduleFrame({
     top: processStageHead()

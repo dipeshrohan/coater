@@ -63,6 +63,7 @@ const MAT_DRY = [
   ['gabC', 'Water the dry GO keeps: GAB C', '', 0.1, 1000, 0.5, 1, 8, 'assumed', 'the same isotherm'],
   ['gabK', 'Water the dry GO keeps: GAB K', '', 0.1, 0.99, 0.01, 2, 0.8, 'assumed', 'the same isotherm'],
   ['cpWeb', 'Fibre web\'s specific heat', 'J/(kg·K)', 500, 3000, 10, 0, 1300, 'assumed', 'PET'],
+  ['kFib', 'Fibre web\'s fibres: heat conductivity', 'W/(m·K)', 0.02, 5, 0.01, 2, 0.2, 'assumed', 'PET 0.15–0.24, polypropylene 0.1–0.22 W/(m·K); the web\'s own (its fibres in the air) follows by Maxwell–Eucken (the drying\'s multiphysics)'],
   ['Troom', 'Room temperature', '°C', 0, 60, 1, 0, 25, 'assumed', 'between the blade and the oven: the film enters the oven at it'],
   ['rhRoom', 'Room humidity', '%', 0, 100, 1, 0, 50, 'assumed', 'between the blade and the oven'],
 ];
@@ -302,7 +303,9 @@ const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['pa
   ['dTload', 'The load\'s temperature spread (its hottest stack less its coldest)', '°C', 0, 1000, 5, 0, 'dTSet']];
 const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
 const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
-const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults() });
+// (mp: the stages' multiphysics mesh and time settings as set on their Mesh steps, MP-W -- { stage: { dim: { k: v } } };
+//  none set: each solve's defaults)
+const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults(), mp: {} });
 let OVEN = ovenDefaults();
 const OVEN_MAX_ZONES = 8;
 /** The oven's length (m) and the time the film spends in it at the line speed U (m/s). */

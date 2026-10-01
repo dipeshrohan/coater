@@ -119,7 +119,11 @@ function unusedWhy(k) {
 // (the 3D also the contact angle on the web: its open edges)
 // (WF-2: a stage's tab, its own: Mixing the slurry's flow, Drying the web's speed and the room to the oven, Peel and wind the
 //  web's speed; the later stages none of these (their own inputs are below them); the Line none)
-const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () => ['U', 'oven'], peel: () => ['U'], cut: () => [], stack: () => [], furn: () => [], gfilm: () => [] };
+const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () => ['U', 'oven'], peel: () => ['U'], cut: () => [], stack: () => [], furn: () => [], gfilm: () => [],
+  // (MP-W: the stack's and the furnace's multiphysics pages: their stage's inputs only, as the stage's own page)
+  stack1d: () => [], stack2d: () => [], stack3d: () => [], furn1d: () => [], furn2d: () => [], furn3d: () => [],
+  // (MP-5: the drying's multiphysics pages: the Drying page's inputs)
+  dry1d: () => ['U', 'oven'], dry2d: () => ['U', 'oven'], dry3d: () => ['U', 'oven'] };
 // (the coating's results on the Process view: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
 /** The shared inputs page pg uses (null: all of them). */
 const usesOf = pg => { const v = NAV[pg].v; return NAV_USES[pg] ? NAV_USES[pg]() : v === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : v === 4 || v === 5 || v === 8 || v === 12 ? cfdUses() : v === 10 ? [...cfdUses(), 'lam', 'vib'] : v === 11 ? [...cfdUses(), 'face'] : v === 9 ? [...cfdUses(), 'face', 'thw'] : USES[v]; };
