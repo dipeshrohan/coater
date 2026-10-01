@@ -630,6 +630,47 @@ function hubExport(ids = hubAll().map(r => r.id)) {
   }
   return out;
 }
+/**
+ * A file's unit to this app's: null when either is not a unit (a name), either is a share, or their dimensions differ; else the value's
+ * conversion (affine: a temperature's offset too) and a definition's (a table's values each; an expression scaled, which an
+ * offset cannot be). Rounded to 12 significant digits (the conversion's last bits).
+ */
+function hubUnitConv(from, to) {
+  const tidy = u => String(u).replace('m³/m²·s', 'm³/(m²·s)');
+  let a, b;
+  try { a = mlParseUnit(tidy(from)); b = mlParseUnit(tidy(to)); } catch (e) { return null; }
+  // (a share -- %, vol%, kg/kg, a fraction -- has no dimension to check it by: a volume share is not a mass share; never converted)
+  if (!mlDimEq(a.dim, b.dim) || a.dim.every(d => !d)) return null;
+  const v = x => +mlConvert(x, a, b).toPrecision(12), k = a.f / b.f;
+  return {
+    v, factor: k,
+    def: q => (q.kind === 'table' ? { ...q, y: q.y.map(v) } : q.kind === 'expr' && !a.off && !b.off ? { ...q, src: k === 1 ? q.src : `(${q.src}) * ${+k.toPrecision(15)}` } : null),
+  };
+}
+/**
+ * A table in T from a CSV (MH-4b): two columns, temperature then value; separated by commas, semicolons, tabs or spaces; a
+ * header line may name their units -- "T (K)" or "T [°C]", "k (mW/(m·K))" -- the temperature in °C unless its header says K,
+ * the value in this app's unit unless its header names another of the same dimension (converted). Returns { x (kelvin), y }
+ * or throws why it cannot be read.
+ */
+function hubParseTCsv(text, unit) {
+  const rows = String(text).split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const cellsOf = l => (/[,;\t]/.test(l) ? l.split(/[,;\t]/) : l.split(/\s+/)).map(c => c.trim());
+  const unitIn = c => { const m = /[([]\s*(.+?)\s*[)\]]\s*$/.exec(c); return m ? m[1] : null; };
+  let tK = false, conv = null; const pts = [];
+  rows.forEach((l, i) => {
+    const c = cellsOf(l), a = Number(c[0]), b = Number(c[1]);
+    if (c.length >= 2 && c[0] !== '' && c[1] !== '' && Number.isFinite(a) && Number.isFinite(b)) { pts.push([a, b]); return; }
+    if (pts.length || i > 0) throw new Error(`line ${i + 1} is not two numbers: "${l.slice(0, 40)}"`);
+    const tu = unitIn(c[0] || ''), vu = unitIn(c[1] || '');
+    if (tu && !['K', '°C', 'C', 'degC'].includes(tu)) throw new Error(`its temperature's unit ${tu}: K or °C only`);
+    tK = tu === 'K';
+    if (vu && vu !== unit) { conv = hubUnitConv(vu, unit); if (!conv) throw new Error(`its values' unit ${vu} is not ${unit} and does not convert to it`); }
+  });
+  if (pts.length < 2) throw new Error('two points at least');
+  pts.sort((p, q) => p[0] - q[0]);
+  return { x: pts.map(p => +(tK ? p[0] : p[0] + 273.15).toPrecision(12)), y: pts.map(p => (conv ? conv.v(p[1]) : p[1])) };
+}
 /** Read a material file: what it would change (and what it cannot), applied when apply is true. */
 function hubImport(data, apply = false) {
   const changes = [], skipped = [];
@@ -641,15 +682,27 @@ function hubImport(data, apply = false) {
       const p = hubProps(r).find(x => x.id === pid);
       if (!p || !['card', 'inp', 'cfdg', 'peel'].includes(p.b.t)) { skipped.push(`${r.name} · ${pid}: not an editable property here`); continue; }
       const cur = hubVal(p);
-      if (q.unit !== cur.u && !(p.b.k === 'K')) { skipped.push(`${r.name} · ${p.l}: its unit ${q.unit} is not this app's (${cur.u})`); continue; }
-      if (!Number.isFinite(q.value) || q.value < cur.lo || q.value > cur.hi) { skipped.push(`${r.name} · ${p.l}: ${q.value} is outside ${cur.lo}–${cur.hi} ${cur.u}`); continue; }
+      // (its unit: this app's, or another of the same dimension converted to it -- kPa to MPa, W/(m·K) to mW/(m·K)...; a
+      // name or a share (no unit to parse) must be this app's)
+      let value = q.value, unitConv = null;
+      if (q.unit !== cur.u && !(p.b.k === 'K')) {
+        unitConv = hubUnitConv(q.unit, cur.u);
+        if (!unitConv) { skipped.push(`${r.name} · ${p.l}: its unit ${q.unit} is not this app's (${cur.u}) and does not convert to it`); continue; }
+        value = Number.isFinite(q.value) ? unitConv.v(q.value) : q.value;
+      }
+      if (!Number.isFinite(value) || value < cur.lo || value > cur.hi) { skipped.push(`${r.name} · ${p.l}: ${q.value}${unitConv ? ` ${q.unit} (${hubFmt(value, -6)} ${cur.u})` : ''} is outside ${cur.lo}–${cur.hi} ${cur.u}`); continue; }
       const prov = HUB_PROV[q.provenance] ? q.provenance : null;
       // (a definition in temperature, MH-4b: taken when the property may have one and it holds; its value then follows it)
       let def;
-      if (q.definition) { if (!hubTdep(p)) { skipped.push(`${r.name} · ${p.l}: a definition in temperature, which this property does not take`); continue; } const bad = hubDefCheck(q.definition, hubTdep(p)[1]); if (bad.length) { skipped.push(`${r.name} · ${p.l}: its definition ${bad[0]}`); continue; } def = q.definition; }
+      if (q.definition) {
+        if (!hubTdep(p)) { skipped.push(`${r.name} · ${p.l}: a definition in temperature, which this property does not take`); continue; }
+        def = unitConv ? unitConv.def(q.definition) : q.definition;
+        if (!def) { skipped.push(`${r.name} · ${p.l}: its definition in ${q.unit} does not convert to ${cur.u}`); continue; }
+        const bad = hubDefCheck(def, hubTdep(p)[1]); if (bad.length) { skipped.push(`${r.name} · ${p.l}: its definition ${bad[0]}`); continue; }
+      }
       const curDef = p.b.t === 'card' ? MAT[p.b.card][p.b.k].def : undefined;
-      if (q.value === cur.v && (!prov || prov === cur.prov) && (q.source == null || q.source === cur.src) && JSON.stringify(def) === JSON.stringify(curDef)) continue;
-      changes.push({ r, p, from: cur.v, to: q.value, prov, src: q.source, def });
+      if (value === cur.v && (!prov || prov === cur.prov) && (q.source == null || q.source === cur.src) && JSON.stringify(def) === JSON.stringify(curDef)) continue;
+      changes.push({ r, p, from: cur.v, to: value, prov, src: q.source, def, unit: unitConv ? q.unit : null });
     }
   }
   if (apply) for (const c of changes) { hubSet(c.p, c.to, { prov: c.prov, src: c.src }); if (hubTdep(c.p)) hubSetDef(c.p, c.def || null); }

@@ -236,7 +236,7 @@ function hubDefHTML(p, v) {
   if (kind === 'const') body = `<p class="hub-muted">${hubFmt(v.v, -6)} ${hubEsc(v.u)} at every temperature. A table or an expression in T makes ${names} take it at each point's temperature.</p>`;
   else if (kind === 'table') body = `<div class="hub-dt-wrap"><table class="hub-dt" aria-label="${hubEsc(p.l)} against temperature"><thead><tr><th scope="col">T <small>°C</small></th><th scope="col">${hubSym(p.sym)} <small>${hubEsc(v.u)}</small></th><th></th></tr></thead><tbody>
       ${q.x.map((x, i) => `<tr><td><input type="number" step="any" id="hubdt_${p.id}_x${i}" data-hubdt="${p.id}" data-c="x" value="${+(x - 273.15).toFixed(6)}" aria-label="Point ${i + 1}: temperature"></td><td><input type="number" step="any" id="hubdt_${p.id}_y${i}" data-hubdt="${p.id}" data-c="y" value="${q.y[i]}" aria-label="Point ${i + 1}: value"></td><td>${q.x.length > 2 ? `<button type="button" class="hub-link" id="hubdtdel_${p.id}_${i}" data-hubdtdel="${p.id}|${i}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table>
-      <div class="hub-dt-ctl"><button type="button" class="btn btn-secondary btn-sm" id="hubdtadd_${p.id}" data-hubdtadd="${p.id}">${uiIco('plus')}Add a point</button>
+      <div class="hub-dt-ctl"><span class="hub-dt-btns"><button type="button" class="btn btn-secondary btn-sm" id="hubdtadd_${p.id}" data-hubdtadd="${p.id}">${uiIco('plus')}Add a point</button><button type="button" class="btn btn-secondary btn-sm" id="hubdtcsv_${p.id}" data-hubdtcsv="${p.id}">${uiIco('upload')}Load CSV…</button></span>
         <label>Between points <select class="hub-sel" id="hubdto_${p.id}_interp" data-hubdtopt="${p.id}" data-o="interp"><option value="linear"${q.interp !== 'pchip' ? ' selected' : ''}>Linear</option><option value="pchip"${q.interp === 'pchip' ? ' selected' : ''}>Monotone cubic</option></select></label>
         <label>Outside them <select class="hub-sel" id="hubdto_${p.id}_extrap" data-hubdtopt="${p.id}" data-o="extrap">${[['clamp', 'Held at the end values'], ['extrapolate', 'Carried on'], ['error', 'Refused (the solve stops)']].map(([k, t]) => `<option value="${k}"${(q.extrap || 'error') === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label></div></div>`;
   else body = `<label class="hub-expr-l">${hubSym(p.sym)}(T) = <input type="text" class="hub-expr" id="hubdexpr_${p.id}" data-hubdexpr="${p.id}" value="${hubEsc(q.src)}" spellcheck="false" aria-label="${hubEsc(p.l)} as an expression in T"></label>
@@ -491,6 +491,24 @@ function hubWireEditor(r) {
     const [id, i] = b.dataset.hubdtdel.split('|'), { q } = defOf(id);
     defSet(id, { ...q, x: q.x.filter((_, j) => j !== +i), y: q.y.filter((_, j) => j !== +i) }, 'a point removed');
   }; });
+  // (a table read from a CSV: its points replace the table's; its file the source; the way between and outside kept)
+  view.querySelectorAll('[data-hubdtcsv]').forEach(b => { b.onclick = () => {
+    const id = b.dataset.hubdtcsv, { p, q } = defOf(id), inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.csv,.txt,text/csv,text/plain';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0], err = document.getElementById(`hubDefErr_${id}`);
+      if (!f) return;
+      let t;
+      try { t = hubParseTCsv(await f.text(), hubVal(p).u); } catch (e) { if (err) { err.textContent = `Not taken: ${f.name}: ${e.message}.`; err.hidden = false; } return; }
+      const nq = { kind: 'table', var: 'T', x: t.x, y: t.y, interp: (q && q.interp) || 'linear', extrap: (q && q.extrap) || 'clamp' };
+      let bad = [];
+      try { bad = hubDefCheck(nq, hubTdep(p)[1]); } catch (e) { bad = [e.message]; }
+      if (bad.length) { if (err) { err.textContent = `Not taken: ${f.name}: ${/does not increase/.test(bad[0]) ? 'two points at one temperature' : bad[0]}`; err.hidden = false; } return; }
+      undoHint(`${r.name}: ${hubPropName(r, p).toLowerCase()}, a table from ${f.name}`);
+      hubSetDef(p, nq); hubSet(p, null, { src: f.name }); hubSoon();
+    };
+    inp.click();
+  }; });
   view.querySelectorAll('select[data-hubdtopt]').forEach(el => el.addEventListener('change', () => {
     const id = el.dataset.hubdtopt, { q } = defOf(id);
     defSet(id, { ...q, [el.dataset.o]: el.value }, el.dataset.o === 'interp' ? 'its interpolation' : 'outside its points');
@@ -593,7 +611,8 @@ function hubImportFile() {
     if (!res.changes.length) { imgToast(`${f.name}: nothing to change${res.skipped.length ? ` (${res.skipped.length} not taken: ${res.skipped.slice(0, 3).join('; ')})` : ''}.`); return; }
     undoHint(`Import materials from ${f.name}`);
     hubImport(JSON.parse(await f.text()), true);
-    imgToast(`${f.name}: ${res.changes.length} values taken${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
+    const nConv = res.changes.filter(c => c.unit).length;
+    imgToast(`${f.name}: ${res.changes.length} values taken${nConv ? ` (${nConv} converted to this app's units)` : ''}${res.skipped.length ? `; ${res.skipped.length} not (${res.skipped.slice(0, 2).join('; ')})` : ''}.`);
     render();
   };
   inp.click();

@@ -2413,6 +2413,7 @@ body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"
 .hub-dt input:focus-visible, .hub-expr:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 .hub-dt-ctl { display: grid; gap: 8px; justify-items: start; font-size: 12.5px; color: var(--muted); }
 .hub-dt-ctl label { display: flex; align-items: center; gap: 8px; }
+.hub-dt-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .hub-expr-l { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); }
 .hub-expr { flex: 1; max-width: 560px; height: 28px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; background: var(--surface); color: var(--ink); font: 12.5px var(--mono); }
 .hub-err { margin: 0; color: var(--bad); font-size: 12.5px; }
