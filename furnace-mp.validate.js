@@ -139,6 +139,63 @@ const base = {
   check('the gas under a paper: held, the parabola; lifting past the load, the obstacle problem\'s exact solution', e1 < 1e-9 && e2 < 2e-3, `${fmt(e1)}; ${fmt(e2)} of the load (lifted over ${(a / L * 100).toFixed(1)} % of it)`);
 }
 
+// 9. a piece against a holder's plate (the ends on the plates, furnace.js's GO-7e): the slab's peak (fmpSlabPeak) against the
+//    slab solved independently (finite differences, −K p″ = G, the paper's face held, the plate's face letting the gas through
+//    the plate, held at the load once it passes it), one plate face and two; then in the stack: the pieces between papers as
+//    before, a plate face never above the load, and with no plate permeability given the model as before
+{
+  // the slab on n intervals: Dirichlet (a value) or Robin (K p' = ∓ cPl p, the gas out through the plate) at each face
+  const slabFD = (G, K, left, right, n = 4000) => {
+    const hN = 1 / n, a = new Float64Array(n + 1), b = new Float64Array(n + 1), c = new Float64Array(n + 1), d = new Float64Array(n + 1);
+    for (let i = 1; i < n; i++) { a[i] = -K / (hN * hN); b[i] = 2 * K / (hN * hN); c[i] = -K / (hN * hN); d[i] = G; }
+    // (a face: { v } held, or { c } the plate's conductance: −K p'(1) = c p(1) / K p'(0) = c p(0), second order by a ghost node)
+    const face = (i, f, sgn) => { if (f.v != null) { b[i] = 1; d[i] = f.v; return; } const o = i === 0 ? 1 : n - 1;
+      b[i] = 2 * K / (hN * hN) + 2 * f.c / hN; (i === 0 ? c : a)[i] = -2 * K / (hN * hN); d[i] = G; void sgn; void o; };
+    face(0, left, -1); face(n, right, 1);
+    for (let i = 1; i <= n; i++) { const m = a[i] / b[i - 1]; b[i] -= m * c[i - 1]; d[i] -= m * d[i - 1]; }
+    const p = new Float64Array(n + 1); p[n] = d[n] / b[n]; for (let i = n - 1; i >= 0; i--) p[i] = (d[i] - c[i] * p[i + 1]) / b[i];
+    return { peak: Math.max(...p), p0: p[0], p1: p[n] };
+  };
+  // (one plate face: solve with the plate letting the gas through; past the load, that face held at the load)
+  const onePlate = (G, K, w1, cPl, cap) => { let r = slabFD(G, K, { v: w1 }, { c: cPl }); if (r.p1 > cap) r = slabFD(G, K, { v: w1 }, { v: cap }); return r; };
+  const twoPlates = (G, K, cPl, cap) => { let r = slabFD(G, K, { c: cPl }, { c: cPl }); if (r.p1 > cap) r = slabFD(G, K, { v: cap }, { v: cap }); return r; };
+  const cases = [
+    ['one plate face below the load', 1e-3, 1e-8, 300, 2e-6, 1e9],
+    ['one plate face past the load (held there)', 1e-3, 1e-8, 300, 1e-9, 2e3],
+    ['the paper\'s face the higher (the peak at it)', 1e-6, 1e-8, 2e3, 1e-4, 1e9],
+  ];
+  let worst = 0; const info = [];
+  for (const [name, G, K, w1, cPl, cap] of cases) {
+    const a = F.fmpSlabPeak(G, K, w1, 1, cPl, cap), b = onePlate(G, K, w1, cPl, cap), e = Math.max(rel(a.p, b.peak), rel(a.w2, b.p1));
+    worst = Math.max(worst, e); info.push(`${name}: ${a.p.toFixed(1)} vs ${b.peak.toFixed(1)} Pa`);
+  }
+  for (const [G, K, cPl, cap] of [[1e-3, 1e-8, 2e-6, 1e9], [1e-3, 1e-8, 1e-9, 2e3]]) {
+    const a = F.fmpSlabPeak(G, K, 0, 2, cPl, cap), b = twoPlates(G, K, cPl, cap); worst = Math.max(worst, rel(a.p, b.peak), rel(a.w2, b.p1));
+    info.push(`both faces on plates${cap < 1e8 ? ', past the load' : ''}: ${a.p.toFixed(1)} vs ${b.peak.toFixed(1)} Pa`);
+  }
+  const between = F.fmpSlabPeak(1e-3, 1e-8, 300, 0, 0, 1e9), betweenFD = slabFD(1e-3, 1e-8, { v: 300 }, { v: 300 });
+  void between;
+  check('a piece on a plate: the slab\'s peak and its plate face against the slab solved independently (finite differences)', worst < 1e-6 && Math.abs(300 + 1e-3 / (8 * 1e-8) - betweenFD.peak) / betweenFD.peak < 1e-6,
+    `within ${fmt(worst)}; ${info.join('; ')}`);
+  // in the stack: 20 pieces, the first run
+  const o = { ...base, dim: 2, N: 20, runs: [run1], plane: null }, B = 2e-6;
+  const paperOnly = F.fmpStack(o), withB = F.fmpStack({ ...o, plate: { ...o.plate, B } }), papers = F.fmpStack({ ...o, ends: 'papers' }), papersB = F.fmpStack({ ...o, ends: 'papers', plate: { ...o.plate, B } });
+  const mid = withB.follow.find(i => i !== 0 && i !== o.N - 1), ends = [0, o.N - 1];
+  let dMid = 0, dPapers = 0, overLoad = 0, dEnd = 0, bound = 0;
+  for (let k = 0; k < withB.series.length; k++) {
+    const a = withB.series[k].pieces, b = paperOnly.series[k].pieces;
+    dMid = Math.max(dMid, Math.abs(a[mid].middle - b[mid].middle));
+    for (const i of ends) { dEnd = Math.max(dEnd, Math.abs(a[i].middle - b[i].middle)); bound = Math.max(bound, Math.abs(a[i].middle - b[i].middle) - (a[i].hold - 200e3)); }
+  }
+  for (let k = 0; k < papers.series.length; k++) for (const i of papers.follow) dPapers = Math.max(dPapers, Math.abs(papers.series[k].pieces[i].middle - papersB.series[k].pieces[i].middle));
+  for (const g of withB.summary.gas) if (g.plate != null) overLoad = Math.max(overLoad, g.plate - (g.hold - 200e3));
+  check('in the stack: the middle piece and every piece between papers as before; the top and bottom pieces differ by at most their load', dMid === 0 && dPapers === 0 && bound <= 1e-6 && overLoad <= 1e-6,
+    `the middle piece ${dMid} Pa apart; ends 'papers' with the plate's permeability ${dPapers} Pa; the end pieces up to ${dEnd.toFixed(1)} Pa apart, within their load; the plate face at most the load`);
+  const one = F.fmpStack({ ...o, N: 1, plate: { ...o.plate, B } }), g1 = one.summary.gas[0];
+  check('a stack of one piece: both faces on the plates, its gas finite and its faces at most its load', Number.isFinite(g1.ratio) && g1.plate != null && g1.plate <= g1.hold - 200e3 + 1e-6,
+    `peak ${fmt(g1.middle)} Pa, faces ${g1.plate.toFixed(1)} Pa, hold ${fmt(g1.hold)} Pa`);
+}
+
 // 8. the balances, each dimension, through both runs of the app's stack (its runaway included); and a piece that
 //    converts evenly holds no stress
 {

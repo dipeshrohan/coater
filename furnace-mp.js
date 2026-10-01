@@ -98,6 +98,7 @@ function fmpStack(o) {
   const grade = ms.grade || 4, nPl = ms.nPlate || 3, iso = !!o.isothermal, resolve = !!o.resolve && dim > 1;
   const plates = o.plates !== false && dim > 1, onPl = (o.ends || 'plates') === 'plates';
   const nPap = onPl ? N - 1 : N + 1, Hs = N * h + nPap * tp, plT = plates ? o.plateT : 0, H = Hs + 2 * plT, zi = dim - 1;
+  const plT0 = o.plateT || 0;   // (a plate's thickness, for its gas)
   const fGO = N * h / Hs, fP = nPap * tp / Hs, nC = 2 * N;   // (the GO's and the papers' shares of the stack; its contacts)
   const Rc = resolve ? 0 : (o.Rc || 0), pa = (o.furnace && o.furnace.p) || 101325;
   const epsF = o.furnace ? o.furnace.eps : 0.8, useGas = !(o.furnace && o.furnace.gas === false);
@@ -226,6 +227,12 @@ function fmpStack(o) {
   const Mp = dim === 3 ? FMP.mpMesh({ dim: 2, p: 1, axes: [xAxis, yAxis] }) : FMP.mpMesh({ dim: 1, p: 1, axes: [xAxis] });
   const T20 = 293.15, R = FMP_FU.FU_R, gs = o.gas || {};
   const kapOf = T => P.D * Math.pow(T20 / (T + FMP_K0), 0.7) * tp / (R * (T + FMP_K0));
+  // (the holder's plates, the top and bottom pieces on them (furnace.js's GO-7e): a plate's conductance through it per area of
+  //  the piece, Darcy across its thickness to the surroundings, µ ∝ T^0.7 as the paper's -- given its permeability coefficient
+  //  o.plate.B (m²/s at 20 °C); without one, every face a paper's, as before)
+  const plB = o.plate && Number.isFinite(o.plate.B) ? o.plate.B : null;
+  const plateFaces = i => (plB == null || !onPl ? 0 : N === 1 ? 2 : i === 0 || i === N - 1 ? 1 : 0);
+  const cPlOf = TK => (plB > 0 && plT0 > 0 ? plB * Math.pow(T20 / TK, 0.7) / (R * TK * plT0) : 0);
   const inPiece = x => x[0] <= hx * (1 + 1e-9) && (Mp.dim === 1 || x[1] <= hy * (1 + 1e-9));
   const gasEdge = Mp.dim === 1 || o.sealY ? ['x1'] : ['x1', 'y1'];
   const dOf = g => { const spacerAll = Xin + chem.O0 * FMP_FU.FU_M.O * perKg / 1000, O = chem.O0 * (1 - oGone(g)), sp = (Xin * (1 - alpha[0][g]) + O * FMP_FU.FU_M.O * perKg / 1000) / Math.max(1e-30, spacerAll);
@@ -249,18 +256,21 @@ function fmpStack(o) {
       Tp[k] = at(Tn, xy, z); Gp[k] = inPiece(xy) ? Math.max(0, at(Gstep, xy, z)) : 0;
       kp[k] = at(kept, xy, z); if (inPiece(xy)) { km += kp[k]; kc++; }
     }
-    const cap = loadOf(i, kc ? km / kc : 1), G = { u: fmpGasLevel(Mp, { T: Tp, G: Gp, cap, kap: kapOf, edges: gasEdge }) };
-    // (across the piece, its middle above its faces: G R T h / (8 D), D its galleries' (their spacing from its chemistry))
-    let uMax = 0, pMax = 0, at_ = null;
+    // (its faces against the holder's plates: none between papers, one for the top and bottom pieces, both for a stack of one)
+    const nPl = plateFaces(i), cap = loadOf(i, kc ? km / kc : 1);
+    const G = { u: nPl === 2 ? new Float64Array(Mp.N) : fmpGasLevel(Mp, { T: Tp, G: Gp, cap, kap: kapOf, edges: gasEdge }) };
+    // (across the piece, its middle above its faces: G R T h / (8 D) between papers, D its galleries' (their spacing from its
+    //  chemistry); against a plate the slab with that face's own pressure, fmpSlabPeak)
+    let uMax = 0, pMax = 0, plMax = 0, at_ = null;
     for (let k = 0; k < Mp.N; k++) {
       const xy = Array.from(Mp.X.subarray(k * Mp.dim, k * Mp.dim + Mp.dim)); if (!inPiece(xy)) continue;
-      const TK = Tp[k] + FMP_K0, dd = dOfAt(xy, z), D = Dof(dd, TK), hc = h * dd / (gs.dIn || 0.8);
-      const across = D > 0 ? Gp[k] * R * TK * hc / (8 * D) : 0;
-      dp[k] = Math.min(G.u[k], cap) + across;
-      if (G.u[k] > uMax) uMax = Math.min(G.u[k], cap);
+      const TK = Tp[k] + FMP_K0, dd = dOfAt(xy, z), D = Dof(dd, TK), hc = h * dd / (gs.dIn || 0.8), w1 = Math.min(G.u[k], cap);
+      if (!nPl || !(D > 0)) dp[k] = w1 + (D > 0 ? Gp[k] * R * TK * hc / (8 * D) : 0);
+      else { const sl = fmpSlabPeak(Gp[k], D / (R * TK * hc), w1, nPl, cPlOf(TK), cap); dp[k] = sl.p; if (sl.w2 > plMax) plMax = sl.w2; }
+      if (nPl < 2 && G.u[k] > uMax) uMax = w1;
       if (dp[k] > pMax) { pMax = dp[k]; at_ = xy; }
     }
-    return { under: uMax, middle: pMax, hold: (gs.sigZ || 0) + cap, load: cap, at: at_, u: Float64Array.from(G.u), p: dp };
+    return { under: nPl === 2 ? plMax : uMax, ...(nPl ? { plate: plMax } : {}), middle: pMax, hold: (gs.sigZ || 0) + cap, load: cap, at: at_, u: Float64Array.from(G.u), p: dp };
   }
   let dField = null;
   const dOfAt = (xy, z) => at(dField, xy, z);
@@ -316,7 +326,7 @@ function fmpStack(o) {
       const z = zPiece(i), mid = at(Tn, [0, 0], z), edge = at(Tn, [hx, hy], z);
       const aM = at(aNod, [0, 0], z), aE = at(aNod, [hx, hy], z), oM = at(oNod, [0, 0], z), oE = at(oNod, [hx, hy], z);
       const gz = gasAt(i, Gnode);
-      if (gz && gz.middle / gz.hold > gasPk[j].ratio) Object.assign(gasPk[j], { ratio: gz.middle / gz.hold, middle: gz.middle, hold: gz.hold, under: gz.under, t, T: mid, Tprog: T, run });
+      if (gz && gz.middle / gz.hold > gasPk[j].ratio) Object.assign(gasPk[j], { ratio: gz.middle / gz.hold, middle: gz.middle, hold: gz.hold, under: gz.under, ...(gz.plate != null ? { plate: gz.plate } : {}), t, T: mid, Tprog: T, run });
       const stv = pieceStress(i, eig);
       pc[i] = { mid, edge, aM, aE, oM, oE, under: gz ? gz.under : null, middle: gz ? gz.middle : null, hold: gz ? gz.hold : null, pull: stv ? stv.peak / 1e6 : null };
     }
@@ -424,6 +434,22 @@ function fmpStack(o) {
 }
 
 /**
+ * The peak pressure above the surroundings inside a piece (Pa) that makes gas G evenly through it (mol/(m² s)), across which
+ * the gas goes at K (mol/(m² s Pa), D/(R T h)): one face at w1 (its paper's) and the other against a plate (nPl 1), or both
+ * against plates (nPl 2). A plate face lets the gas out through the plate at cPl (mol/(m² s Pa)); beyond the load cap the
+ * piece lifts off it and that face is held at the load. The slab −K p″ = G exactly: p = w1 + (w2 − w1) ξ + B ξ (1 − ξ),
+ * B = G/(2K), its peak w1 + B ξ*² at ξ* = ½ + (w2 − w1)/(2B), the plate face's flux G/2 − K (w2 − w1) = cPl w2 (furnace.js's
+ * plate face, GO-7e). Returns { p, w1, w2 } (the faces' pressures).
+ */
+function fmpSlabPeak(G, K, w1, nPl, cPl, cap) {
+  if (nPl === 2) { let w = cPl > 0 ? G / (2 * cPl) : Infinity; if (!(w < cap)) w = cap; return { p: w + G / (8 * K), w1: w, w2: w }; }
+  let w2 = (G / 2 + K * w1) / (K + cPl); if (!(w2 < cap)) w2 = cap;
+  if (!(G > 0)) return { p: Math.max(w1, w2), w1, w2 };
+  const B = G / (2 * K), xs = 0.5 + (w2 - w1) / (2 * B);
+  return { p: xs > 0 && xs < 1 ? w1 + B * xs * xs : Math.max(w1, w2), w1, w2 };
+}
+
+/**
  * The gas under a paper at one level of the stack (Darcy along the paper, steady: ∇·(κ(T) ∇u) + G = 0, u the pressure
  * above the surroundings, 0 at the paper's edges), where it passes the load `cap` the paper lifts and lets it by: u ≤ cap
  * (the obstacle problem; a stiff leak past the cap, 10⁴ times the largest source over it, Newton on it being the active
@@ -467,4 +493,4 @@ function fmpSummary(series, follow, o, gasPk) {
   return { runs, labileMid: half('aM'), labileEdge: half('aE'), labileRef, gas: follow.map((i, j) => ({ i, ...gasPk[j] })), pull, pullAt, mid };
 }
 
-if (typeof module !== 'undefined') module.exports = { fmpStack, fmpSummary, fmpGasLevel, fmpCg, fmpHg, fmpArgon, fmpNat };
+if (typeof module !== 'undefined') module.exports = { fmpStack, fmpSummary, fmpGasLevel, fmpSlabPeak, fmpCg, fmpHg, fmpArgon, fmpNat };
