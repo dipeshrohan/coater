@@ -80,8 +80,38 @@ function setInput(k, v) {
   const sl = document.getElementById('s_' + k);
   if (sl) { sl.value = v; sl.dispatchEvent(new Event('input')); } else P[k] = v;
 }
-/** Stop whatever is solving. */
-function projStopAll() { cancelAllLocations(); stopDOE(); measStopCfd(); m3StudyStop(true); c3dStop(); }
+/** Stop whatever is solving: every solve and fit, on every page (New, Open: their answers belong to the project being left). */
+function projStopAll() {
+  cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
+  m3StudyStop(true); acc3Stop(); c3dStop();
+  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop();
+}
+/** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
+function projRunning() {
+  const out = [], add = (where, what, done = '') => out.push({ where, what, done });
+  // (each as its page words it: the stages count from 1, the multiphysics its steps done)
+  const kn = (p, pre = '', done = false) => (p && Number.isFinite(p.k) && p.n > 0 ? `${pre}${Math.min(done ? p.k : p.k + 1, p.n)} of ${p.n}` : '');
+  const locs = cfdRuns.map((r, i) => (r.status === 'running' ? `L${CFD_LOCS[i].id}` : null)).filter(Boolean);
+  if (locs.length) add('Coating › 2D', `the flow at ${locs.join(', ')}`);
+  if (meshStudy && meshStudy.status === 'running') add('Coating › 2D', `mesh study at L${CFD_LOCS[meshStudy.loc].id}`);
+  for (const st of Object.values(ACC.runs)) if (st.status === 'running') add('Coating › 2D', `mesh to an accuracy at L${CFD_LOCS[st.i].id}`, `${st.cycles.length} meshes`);
+  for (const i of Object.keys(OR.redo)) add('Coating › 2D', `flake alignment at L${CFD_LOCS[i].id}`, `${Math.round((OR.redo[i].share || 0) * 100)} %`);
+  if (C3D_RUN.status === 'running') add('Coating › 3D', M3S.status === 'running' ? 'mesh study' : ACC3.status === 'running' ? 'mesh to an accuracy' : 'the 3D flow', `${Math.round((performance.now() - C3D_RUN.t0) / 1000)} s`);
+  if (ONE_D.busy) add('Coating › 1D', 'the 1D at the four locations');
+  if (ACR_CROWN.busy) add('Coating › 1D', 'the crown across the web', ACR_CROWN.stage || '');
+  if (DRY.busy) add('Drying', 'the film through the oven', kn(DRY.prog));
+  if (FILM.busy) add('Peel and wind', 'the film to the peel', kn(FILM.prog));
+  if (SHEET.busy) add('Cutting', 'the piece in 3D', kn(SHEET.prog));
+  if (STACK.busy) { const ps = Object.values(STACK.prog); add('Pre heat treatment', 'the pressed stack', ps.length ? kn({ k: ps.reduce((a, p) => a + p.k, 0), n: ps.reduce((a, p) => a + p.n, 0) }) : ''); }
+  if (MPS.busy) add('Pre heat treatment', `multiphysics ${MPS.bdim}D`, kn(MPS.prog, 'time step ', true));
+  if (FURN.busy) add('Furnace', 'the two runs', FURN.prog && FURN.prog.n > 1 ? kn(FURN.prog, 'stack ') : '');
+  if (FURN.fit && !FURN.fit.done) add('Furnace', 'a fit to your measurements', (FURN.fit.msg || '').replace(/^Fitting:?\s*|…$/g, ''));
+  if (FMS.busy) add('Furnace', `multiphysics ${FMS.bdim}D`, kn(FMS.prog, 'program step ', true));
+  if (DOE.status === 'running') add('Studies', 'the DOE', `${DOE.runs.filter(r => r.status === 'done' || r.status === 'error').length} of ${DOE.runs.length} runs`);
+  if (MQ.active.size + MQ.jobs.length > 0) add('Measured data', 'the CFD at the measured points');
+  if (MEAS.fitRun) add('Measured data', 'the fit to your data', `round ${MEAS.fitRun.done} of ${MEAS.fitRun.total}`);
+  return out;
+}
 /** The measured data of a project (none: empty). */
 function applyMeasured(m) {
   m = m || {};
@@ -233,7 +263,7 @@ function applyProject(p) {
 
 // ---- menu actions ----
 async function newProject() {
-  if (!(await confirmDiscard())) return;
+  if (!(await confirmStopRunning('new')) || !(await confirmDiscard())) return;
   projStopAll();
   for (const c of CFG) setInput(c.k, c.v);
   Object.assign(CFDG, JSON.parse(JSON.stringify(CFDG_DEFAULTS)));
@@ -257,7 +287,7 @@ async function newProject() {
   PROJ.savedKey = projKey(); updateProjectTitle();
 }
 async function openProject(handle) {
-  if (!(await confirmDiscard())) return;
+  if (!(await confirmStopRunning('open')) || !(await confirmDiscard())) return;
   let file = null;
   try {
     if (handle) {
@@ -325,6 +355,22 @@ function confirmDiscard() {
       <div class="img-actions"><button type="button" class="btn btn-secondary btn-sm" data-a="cancel">Cancel</button><button type="button" class="btn btn-secondary btn-sm" data-a="discard">Don't save</button><button type="button" class="btn btn-primary btn-sm" data-a="save">Save</button></div></form>`);
     d.querySelectorAll('[data-a]').forEach(b => { b.onclick = async () => { d.close(); const a = b.dataset.a; res(a === 'discard' ? true : a === 'save' ? await saveProject() : false); }; });
     d.addEventListener('cancel', () => res(false), { once: true });
+  });
+}
+/** Something solving: list it, and stop it (go on) or keep it (cancel). True = go on (nothing solving, or stop it). */
+function confirmStopRunning(to) {
+  const list = projRunning();
+  if (!list.length) return Promise.resolve(true);
+  const one = list.length === 1, esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return new Promise(res => {
+    const d = projDialog(`<form method="dialog" class="img-form"><div class="img-head"><h2>${one ? 'A solve is running' : `${list.length} solves are running`}</h2></div>
+      <p class="cap">${to === 'open' ? 'Opening a project' : 'A new project'} stops ${one ? 'it' : 'them'}; ${one ? 'its answer belongs' : 'their answers belong'} to “${esc(PROJ.name)}” and ${one ? 'is' : 'are'} not kept.</p>
+      <table class="cfd-table proj-run"><thead><tr><th scope="col">Stage</th><th scope="col">Solving</th><th scope="col">Done</th></tr></thead>
+      <tbody>${list.map(r => `<tr><td>${esc(r.where)}</td><td>${esc(r.what)}</td><td>${esc(r.done || '—')}</td></tr>`).join('')}</tbody></table>
+      <div class="img-actions"><button type="button" class="btn btn-secondary btn-sm" data-a="keep">Keep solving</button><button type="button" class="btn btn-primary btn-sm" data-a="stop">Stop and ${to === 'open' ? 'open' : 'start new'}</button></div></form>`);
+    d.classList.add('proj-dlg-run');
+    d.querySelectorAll('[data-a]').forEach(b => { b.onclick = () => { d.close(); d.classList.remove('proj-dlg-run'); res(b.dataset.a === 'stop'); }; });
+    d.addEventListener('cancel', () => { d.classList.remove('proj-dlg-run'); res(false); }, { once: true });
   });
 }
 function askProjectName(cur) {

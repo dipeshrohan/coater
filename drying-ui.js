@@ -12,6 +12,8 @@
  */
 
 const DRY = { key: null, pending: null, res: null, busy: false, again: false, error: null, worker: null, id: 0, prog: null, ms: 0, sel: 'web', x: null };
+/** Stop the drying's solve (New, Open): its worker ended. */
+function dryStop() { if (DRY.worker) { DRY.worker.terminate(); DRY.worker = null; } Object.assign(DRY, { busy: false, again: false, pending: null, prog: null }); }
 const DRY_WAYS = { top: 'From the top only', both: 'From the top and the bottom' };
 const DRY_ASPECT = 0.5;   // (the charts' height / width: the section scrolls, so they keep their shape)
 const dryEsc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));

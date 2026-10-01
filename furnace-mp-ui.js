@@ -67,6 +67,11 @@ function fmpRequest(dim) {
   FMS.worker.postMessage({ id, kind: 'furnace', o });
   fmpStatus();
 }
+/** Stop the multiphysics solve (New, Open): its worker ended, what was asked next dropped. */
+function fmpStop() {
+  if (FMS.worker) { FMS.worker.terminate(); FMS.worker = null; }
+  Object.assign(FMS, { busy: false, bdim: null, pending: null, prog: null, again: null });
+}
 /** Wait for a dimension's solve (the report, the tests): true when solved. */
 async function fmpWait(dim = FMS.dim) {
   if (typeof sheetWait === 'function' && !(await sheetWait())) return false;

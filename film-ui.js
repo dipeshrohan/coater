@@ -13,6 +13,8 @@
  */
 
 const FILM = { key: null, pending: null, res: null, busy: false, again: false, error: null, worker: null, id: 0, prog: null, ms: 0 };
+/** Stop the film's solve (New, Open): its worker ended. */
+function filmStop() { if (FILM.worker) { FILM.worker.terminate(); FILM.worker = null; } Object.assign(FILM, { busy: false, again: false, pending: null, prog: null }); }
 const FILM_ASPECT = 0.5;
 
 // ---- the pictures (the ones the questions were asked with, small) ----
