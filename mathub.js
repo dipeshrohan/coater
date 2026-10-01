@@ -121,7 +121,7 @@ const HUB_RECORDS = [
     groups: [
       { l: 'Composition', props: [
         { id: 'phi', sym: 'φ', l: 'Solids volume fraction', b: hC('slurry', 'phi'), phys: ['mix', 'coat', 'dry', 'film'] },
-        { id: 'rho', sym: 'ρ', l: 'Density', b: hCalc(() => slurryRho(), 'kg/m³', 0, 'φ ρ_GO + (1 − φ) ρ_water: the flow models\' density'), phys: ['mix', 'coat'] },
+        { id: 'rho', sym: 'ρ', l: 'Density', b: hCalc(() => slurryRho(), 'kg/m³', 0, () => `φ ρ_GO + (1 − φ) ρ_water: ${MAT.slurry.phi.v} % × ${MAT.slurry.rhoS.v * 1000} + ${(100 - MAT.slurry.phi.v).toFixed(1)} % × ${MAT.slurry.rhoL.v}; the flow models use it`), phys: ['mix', 'coat'] },
         { id: 'wm', sym: 'w', l: 'Solids mass fraction', b: hCalc(() => slurrySolidsMass() * 100, '%', 1, 'φ ρ_GO / ρ'), phys: ['mix'] },
         { id: 'X0', sym: 'X₀', l: 'Water per mass of GO', b: hCalc(() => (1 - MAT.slurry.phi.v / 100) * MAT.slurry.rhoL.v / (MAT.slurry.phi.v / 100 * MAT.slurry.rhoS.v * 1000), 'kg/kg', 2, '(1 − φ) ρ_water / (φ ρ_GO): the water the drying takes out'), phys: ['mix', 'dry'] },
       ] },
@@ -154,8 +154,8 @@ const HUB_RECORDS = [
       ] },
       { l: 'Transport in the wet film', props: [
         { id: 'mul', sym: 'f_D', l: 'Collective diffusion, × the hard-sphere law', b: hC('dry', 'mul'), phys: ['dry', 'film'] },
-        { id: 'D0', sym: 'D₀', l: 'Brownian diffusivity of a flake (25 °C)', b: hCalc(() => drD0(25, MAT.slurry.dMean.v * 1e-6 / 2), 'm²/s', -3, 'k_B T / (12 μ_water R): a thin disc of the mean flake size'), phys: ['dry'] },
-        { id: 'Dc', sym: 'D_c', l: 'Collective diffusivity at the solids fraction (25 °C)', b: hCalc(() => drDcoll(MAT.slurry.phi.v / 100, 25, MAT.slurry.dMean.v * 1e-6 / 2, MAT.slurry.phiDry.v, MAT.dry.mul.v), 'm²/s', -3, 'f_D × the hard-sphere law (Routh–Russel, Carnahan–Starling): small, a skin forms'), phys: ['dry'] },
+        { id: 'D0', sym: 'D₀', l: 'Brownian diffusivity of a flake (25 °C)', b: hCalc(() => drD0(25, MAT.slurry.dMean.v * 1e-6 / 2), 'm²/s', -3, () => `k_B T / (12 μ_water R): a thin disc ${MAT.slurry.dMean.v} µm across in water`), phys: ['dry'] },
+        { id: 'Dc', sym: 'D_c', l: 'Collective diffusivity at the solids fraction (25 °C)', b: hCalc(() => drDcoll(MAT.slurry.phi.v / 100, 25, MAT.slurry.dMean.v * 1e-6 / 2, MAT.slurry.phiDry.v, MAT.dry.mul.v), 'm²/s', -3, 'f_D × the hard-sphere law (Routh–Russel, Carnahan–Starling), 25 °C: how fast the water spreads against the flakes; small, a skin forms'), phys: ['dry'] },
       ] },
     ] },
   { id: 'flakes', name: 'GO flakes', cls: 'Particles', sub: 'Graphene oxide platelets', icon: 'fibre',
@@ -234,7 +234,7 @@ const HUB_RECORDS = [
     groups: [
       { l: 'Basic', props: [
         { id: 'phiDry', sym: 'φ_dry', l: 'Packing (solids volume fraction)', b: hC('slurry', 'phiDry'), phys: ['dry', 'film', 'align'] },
-        { id: 'rho', sym: 'ρ', l: 'Density (pores empty)', b: hCalc(() => MAT.slurry.phiDry.v * MAT.slurry.rhoS.v * 1000, 'kg/m³', 0, 'φ_dry ρ_GO'), phys: ['dry', 'film'] },
+        { id: 'rho', sym: 'ρ', l: 'Density (pores empty)', b: hCalc(() => MAT.slurry.phiDry.v * MAT.slurry.rhoS.v * 1000, 'kg/m³', 0, 'φ_dry ρ_GO: the dry film\'s packing × the GO density, its pores empty'), phys: ['dry', 'film'] },
         { id: 'cS', sym: 'c_p', l: 'Specific heat capacity', b: hC('dry', 'cS'), phys: ['dry', 'film', 'mp1', 'mp2'], note: 'the furnace\'s multiphysics scales graphite\'s c_p(T) by c_p / c_p,graphite(20 °C)' },
         { id: 'emis', sym: 'ε', l: 'Emissivity', b: hC('dry', 'emis'), phys: ['dry', 'film', 'mp1'] },
         { id: 'irAbs', sym: 'α_IR', l: 'IR absorptance', b: hC('dry', 'irAbs'), phys: ['dry', 'film'] },
@@ -248,12 +248,12 @@ const HUB_RECORDS = [
         { id: 'gabXm', sym: 'X_m', l: 'Sorption isotherm (GAB): monolayer', b: hC('dry', 'gabXm'), phys: ['dry', 'film'] },
         { id: 'gabC', sym: 'C', l: 'Sorption isotherm (GAB): C', b: hC('dry', 'gabC'), phys: ['dry', 'film'] },
         { id: 'gabK', sym: 'K', l: 'Sorption isotherm (GAB): K', b: hC('dry', 'gabK'), phys: ['dry', 'film'] },
-        { id: 'Xlast', sym: 'X', l: 'Water held at the last oven zone\'s humidity', b: hCalc(() => { const z = OVEN.zones[OVEN.zones.length - 1]; return drGAB(z.rh / 100, { Xm: MAT.dry.gabXm.v, C: MAT.dry.gabC.v, K: MAT.dry.gabK.v }) * 100; }, '% of its mass', 1, 'the isotherm at the last zone\'s relative humidity'), phys: ['dry'] },
+        { id: 'Xlast', sym: 'X', l: 'Water held at the last oven zone\'s humidity', b: hCalc(() => { const z = OVEN.zones[OVEN.zones.length - 1]; return drGAB(z.rh / 100, { Xm: MAT.dry.gabXm.v, C: MAT.dry.gabC.v, K: MAT.dry.gabK.v }) * 100; }, '% of its mass', 1, 'the isotherm at the last zone\'s relative humidity: the water left in a dry film at the exit'), phys: ['dry'] },
         { id: 'Kv', sym: 'K_v', l: 'Water vapour permeability', b: { t: 'tensor', axial: 'skinK', trans: 'stackK', u: 'kg/(m·s·Pa)', what: 'water', scale: { skinK: 1e-12, stackK: 1e-7 } }, phys: ['dry', 'film', 'stack', 'mp1'] },
         { id: 'stackK', sym: 'K_v,11', l: 'in the plane (along the pieces in the stack)', b: hC('film', 'stackK'), phys: ['stack', 'mp1'], sub: true },
         { id: 'skinK', sym: 'K_v,33', l: 'through the thickness (the skin)', b: hC('dry', 'skinK'), phys: ['dry', 'film', 'mp1'], sub: true },
         { id: 'beta', sym: 'β', l: 'Hygroscopic swelling in the plane', b: hC('film', 'beta'), phys: ['film', 'stack', 'furn', 'mp2'] },
-        { id: 'swell', sym: 'β X_cap', l: 'Swelling from dry to its pores full of water', b: hCalc(() => MAT.film.beta.v * hubXcap() * 100, '%', 2, 'β × the most water its pores hold (in the plane)'), phys: ['film'] },
+        { id: 'swell', sym: 'β X_cap', l: 'Swelling from dry to its pores full of water', b: hCalc(() => MAT.film.beta.v * hubXcap() * 100, '%', 2, 'β × the most water its pores hold (in the plane): along the film, its water from none to the most the dry film\'s pores hold'), phys: ['film'] },
         { id: 'Xh', sym: 'X_h', l: 'Softening: water content that halves its stiffness', b: hC('film', 'Xh'), phys: ['film'] },
       ] },
       { l: 'Mechanical', props: [
@@ -266,11 +266,11 @@ const HUB_RECORDS = [
         { id: 'alphaF', sym: 'α₁', l: 'Thermal expansion in the plane', b: hC('film', 'alphaF'), phys: ['film', 'mp1'] },
         { id: 'creepTau', sym: 'τ_c', l: 'Creep time, wet', b: hC('film', 'creepTau'), phys: ['stack', 'mp1'] },
         { id: 'setFrac', sym: 's', l: 'Set: share of the roll\'s curl kept', b: hC('film', 'setFrac'), phys: ['film'] },
-        { id: 'Ewet', sym: 'E₁(X_cap)', l: 'Young\'s modulus in the plane, wet', b: hCalc(() => MAT.film.Ep.v / (1 + hubXcap() / MAT.film.Xh.v), 'GPa', 1, 'E₁ / (1 + X/X_h) at the most water its pores hold'), phys: ['film'] },
+        { id: 'Ewet', sym: 'E₁(X_cap)', l: 'Young\'s modulus in the plane, wet', b: hCalc(() => MAT.film.Ep.v / (1 + hubXcap() / MAT.film.Xh.v), 'GPa', 1, 'E₁ / (1 + X/X_h) at the most water its pores hold: softer with water, as its X_h sets'), phys: ['film'] },
       ] },
       { l: 'Strength and fracture', props: [
         { id: 'sigF', sym: 'σ_f', l: 'Tensile strength', b: hC('film', 'sigF'), phys: ['film', 'furn', 'mp1', 'mp2'] },
-        { id: 'epsF', sym: 'ε_f', l: 'Failure strain', b: hCalc(() => MAT.film.sigF.v / (MAT.film.Ep.v * 1000) * 100, '%', 2, 'σ_f / E₁'), phys: ['film'] },
+        { id: 'epsF', sym: 'ε_f', l: 'Failure strain', b: hCalc(() => MAT.film.sigF.v / (MAT.film.Ep.v * 1000) * 100, '%', 2, 'σ_f / E₁ (strength / stiffness): bent round a core of diameter D, its surface strains by its thickness / D'), phys: ['film'] },
         { id: 'GcF', sym: 'G_c', l: 'Fracture energy, through the film', b: hC('film', 'GcF'), phys: ['film'] },
         { id: 'Gil', sym: 'G_c,il', l: 'Fracture energy, between its layers', b: hC('film', 'Gil'), phys: ['film'] },
         { id: 'sigZ', sym: 'σ_z', l: 'Interlaminar cohesion', b: hC('furn', 'sigZ'), phys: ['furn', 'mp2'] },
@@ -283,7 +283,7 @@ const HUB_RECORDS = [
         { id: 'kept', sym: 'm/m₀', l: 'Mass kept, all its oxygen gone', b: hCalc(() => hubChem().kept, '% of the dry GO', 1, 'the carbon left: some leaves with the oxygen as CO and CO₂'), phys: ['furn'] },
         { id: 'co1', sym: 'C/O', l: 'C/O with its labile oxygen gone', b: hCalc(() => hubChem().co1, '', 1, 'after about 300 °C'), phys: ['furn'] },
         { id: 'co2', sym: 'C/O', l: 'C/O with its stable oxygen gone too', b: hCalc(() => hubChem().co2, '', 1, 'after about 1000 °C'), phys: ['furn'] },
-        { id: 'split', sym: '', l: 'Labile oxygen out as CO₂ · CO · water', b: hCalc(() => hubChem().split, '%', 0, 'its hydrogen limits the water: the rest as CO'), phys: ['furn'] },
+        { id: 'split', sym: '', l: 'Labile oxygen out as CO₂ · CO · water', b: hCalc(() => hubChem().split, '%', 0, () => (hubChem().short ? 'its hydrogen runs short of the water set: the rest as CO' : 'as set')), phys: ['furn'] },
       ] },
       { l: 'Gas transport and puffing', props: [
         { id: 'Dgal', sym: 'D_gal', l: 'Gas diffusivity through its layers, open', b: hC('furn', 'Dgal'), phys: ['furn', 'mp2'] },
@@ -345,7 +345,7 @@ const HUB_RECORDS = [
         { id: 'nuw', sym: 'ν₁₂', l: 'Poisson\'s ratio', b: hC('film', 'nuw'), phys: ['film'], sub: true },
         { id: 'nupt', sym: 'ν₁₃', l: 'Poisson\'s ratio, plane to thickness', b: { t: 'const', id: 'webNupt' }, phys: ['film'], sub: true },
         { id: 'Gpt', sym: 'G₁₃', l: 'Shear modulus through it', b: hCalc(() => MAT.film.Ew.v * MAT.film.soft.v / 2, 'GPa', 3, 'E₁ × (E₃/E₁) / 2: the solver\'s rule'), phys: ['film'], sub: true, prov: 'builtin' },
-        { id: 'EA', sym: 'E₁ t', l: 'Tensile stiffness per width', b: hCalc(() => MAT.film.Ew.v * 1e9 * P.tf / 1000 / 1000, 'kN/m', 0, 'E₁ × its thickness'), phys: ['film'] },
+        { id: 'EA', sym: 'E₁ t', l: 'Tensile stiffness per width', b: hCalc(() => MAT.film.Ew.v * 1e9 * P.tf / 1000 / 1000, 'kN/m', 0, 'E₁ × its thickness, along it (the inputs bar\'s fibre thickness)'), phys: ['film'] },
       ] },
     ] },
   { id: 'paper', name: 'Graphite paper', cls: 'Solid', sub: 'Flexible graphite · transversely isotropic', icon: 'film',
