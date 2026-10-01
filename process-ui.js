@@ -381,7 +381,7 @@ const MS_CARD_T = { slurry: 'Slurry', flow: 'How it flows', rheo: 'How it flows'
 function msHeadHTML(m, card) {
   const S = MSETS, M = msMat(m), own = !!S.own[S.sel[m]];
   const cards = [['lit', M.t], ...Object.values(S.own).filter(o => o.mat === m).map(o => [o.id, o.name])];
-  const also = [...new Set(msRowsOf(m).map(r => r.card))].filter(c => c !== card).map(c => MS_CARD_T[c]);
+  const also = [...new Set(msRowsOf(m).map(r => MS_CARD_T[r.card]))].filter(t => t !== MS_CARD_T[card]);
   return `<div class="ms-head" data-msm="${m}" data-mscard="${card}">
     <div class="ms-name"><b>${msEsc(M.t)}</b><small>${msEsc(M.pair ? 'contact' : M.d)}</small></div>
     <label class="ms-set"><span>Card</span><select data-msset="${m}" aria-label="${msEsc(M.t)}: its material card (the same on every page)">${cards.map(([id, t]) => `<option value="${id}"${id === S.sel[m] ? ' selected' : ''}>${msEsc(t)}</option>`).join('')}</select></label>
