@@ -502,6 +502,8 @@ function acrossReportHTML() {
 
 // ---- the crown finder: the best parabola and the free curve that even the film (the 1D, in a worker) ----
 const ACR_CROWN = { worker: null, id: 0, busy: false, stage: '', key: null, res: null, error: null, ms: 0 };
+/** Stop finding the crown (New, Open): its worker ended. */
+function acrossCrownStop() { if (ACR_CROWN.worker) { ACR_CROWN.worker.terminate(); ACR_CROWN.worker = null; } ACR_CROWN.busy = false; ACR_CROWN.stage = ''; }
 /** What the crown is found for: each position's 1D inputs with the gap as it is but without a crown, the counted span, the parabola's shape. */
 function acrossCrownInput() {
   const keep = ACR.crown.on;

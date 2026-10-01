@@ -525,6 +525,11 @@ function meshPvPump() {
   MESH_PV.job = MESH_PV.queue.shift();
   MESH_PV.worker.postMessage({ ...MESH_PV.job.msg, preview: MESH_PV.job.key });
 }
+/** Stop laying out starting meshes (New, Open): the worker ended, the queue dropped (asked again when shown). */
+function meshPvStop() {
+  if (MESH_PV.worker) { MESH_PV.worker.terminate(); MESH_PV.worker = null; }
+  MESH_PV.job = null; MESH_PV.queue = []; MESH_PV.pending.clear();
+}
 /** The four locations' starting meshes that are missing or out of date. */
 function requestMeshPreviews() {
   CFD_LOCS.forEach((_, i) => {

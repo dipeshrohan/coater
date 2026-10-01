@@ -827,6 +827,9 @@ button[data-help], summary[data-help] { cursor: pointer; }
 @media (min-width: 1024px) and (max-width: 1199px) { .modules button { padding: 0 7px; } .tb-menu { padding: 0 6px; } }
 @media (min-width: 1024px) and (max-width: 1099px) { .modules button { padding: 0 5px; } }
 .proj-dlg { width: min(420px, calc(100vw - 32px)); }
+.proj-dlg.proj-dlg-run { width: min(560px, calc(100vw - 32px)); }
+.proj-run { width: 100%; }
+.proj-run th:last-child, .proj-run td:last-child { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* ---- session memory ---- */
 .session-bar { position: fixed; top: 48px; left: 50%; transform: translateX(-50%); z-index: 55; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: min(760px, calc(100vw - 24px)); padding: 9px 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--accent); border-radius: 8px; box-shadow: var(--shadow-lg); font-size: 12.5px; }

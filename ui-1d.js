@@ -7,6 +7,8 @@
  * a worker as the inputs change; a page shows the last results with "Solving" until the new arrive.
  */
 const ONE_D = { loc: 0, res: null, key: null, across: null, acrossKey: null, busy: false, again: false, worker: null, id: 0, error: null, ms: 0 };
+/** Stop the 1D (New, Open): its worker ended. */
+function oneDStop() { if (ONE_D.worker) { ONE_D.worker.terminate(); ONE_D.worker = null; } ONE_D.busy = false; ONE_D.again = false; }
 const ACROSS_N = 61, ACROSS_W = 300;   // positions across the web (mm) for Across the web
 
 /** The 1D's inputs from a 2D geometry (cfd-ui.js's cfdGeometry), SI. */

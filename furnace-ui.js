@@ -103,6 +103,11 @@ function furnRequest() {
   FURN.worker.onerror = e => { FURN.busy = false; FURN.pending = null; FURN.key = key; FURN.res = null; FURN.error = e.message || 'the furnace\'s worker failed'; if (tab === 12) furnRender(); };
   FURN.worker.postMessage({ id, kind: 'run', o: q.o });
 }
+/** Stop the furnace's runs and any fit (New, Open): their workers ended, their late answers never arrive. */
+function furnStop() {
+  for (const k of ['worker', 'fitWorker']) if (FURN[k]) { FURN[k].terminate(); FURN[k] = null; }
+  Object.assign(FURN, { busy: false, pending: null, again: false, prog: null, fit: null });
+}
 /** Wait for the furnace for the inputs as they are (the report): true when solved. */
 async function furnWait() {
   if (typeof sheetWait === 'function' && !(await sheetWait())) return false;

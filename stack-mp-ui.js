@@ -55,6 +55,11 @@ function mpStackRequest(dim) {
   MPS.worker.postMessage({ id, kind: 'stack', o });
   mpStackStatus();
 }
+/** Stop the multiphysics solve (New, Open): its worker ended, what was asked next dropped. */
+function mpStackStop() {
+  if (MPS.worker) { MPS.worker.terminate(); MPS.worker = null; }
+  Object.assign(MPS, { busy: false, bdim: null, pending: null, prog: null, again: null });
+}
 /** Wait for a dimension's solve (the report, the tests): true when solved. */
 async function mpStackWait(dim = MPS.dim) {
   if (typeof stackWait === 'function' && !(await stackWait())) return false;

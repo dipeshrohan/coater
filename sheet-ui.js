@@ -56,6 +56,13 @@ async function sheetWait() {
 
 // ---- the stack (GO-4f): the pieces pressed through the pre heat treatment and under the plate after it; let go ----
 const STACK = { res: null, key: null, busy: false, error: null, pending: null, workers: [], id: 0, again: false, prog: {}, ms: 0 };
+/** Stop the piece's and the stack's solves (New, Open): their workers ended. */
+function sheetStop() {
+  if (SHEET.worker) { SHEET.worker.terminate(); SHEET.worker = null; }
+  Object.assign(SHEET, { busy: false, again: false, pending: null, prog: null });
+  STACK.workers.forEach(w => w && w.terminate()); STACK.workers = [];
+  Object.assign(STACK, { busy: false, again: false, pending: null, prog: {} });
+}
 const SHEET_STATES = { cut: 'As cut', out: 'Out of the stack', day: 'A day later' };
 SHEET.state = 'cut';
 /** The stack to solve: the pieces as sheetInputs, the stack's permeability and creep (the Film card), the times (after the pre heat treatment). */

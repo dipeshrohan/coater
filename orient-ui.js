@@ -129,6 +129,8 @@ function orRedo(i) {
   worker.postMessage({ orientOnly: true, grid, orient: cur, tRest });
   renderCFD();
 }
+/** Stop every alignment being redone (New, Open): their workers ended (each wrote into its location's result). */
+function orStopAll() { for (const i of Object.keys(OR.redo)) { OR.redo[i].worker.terminate(); delete OR.redo[i]; } }
 /** The redo's progress, in place. */
 function orProgress() {
   const el = document.getElementById('orBusy');
