@@ -2736,7 +2736,8 @@ canvas { box-shadow: none; border-radius: 0; }
 .vp-bar .tool-btn, .vp-bar .btn { height: 30px; padding: 0 10px; font-size: 12px; }
 .vp-bar .seg { gap: 0; padding: 2px; }
 .vp-bar .seg button, .vp-bar.vp-tight .seg button { font-size: 12px; }
-.vp-bar select { font-size: 12px; padding: 3px 6px; }
+/* (the toolbars', docks' and pop-overs' fields keep their compact 26 px, so the docks and the Display pop-over keep their heights) */
+.vp-bar select, .dock select, .dock input[type=number], .dock input[type=text], .pop-body select, .pop-body input[type=number] { height: 26px; padding: 3px 6px; font-size: 12px; }
 @media (max-width: 1365px) { .vp-bar .seg button { padding: 0 7px; } }
 /* (a phone: the Materials page's buttons on their own row under its tabs, not a column beside them) */
 @media (max-width: 600px) { .pg-tools:has(> .hub-tools) { flex-wrap: wrap; } .pg-tools > .hub-tools { margin-left: 0; } }
