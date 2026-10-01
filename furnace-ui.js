@@ -725,50 +725,6 @@ function wireFurnTree(changed) {
 }
 
 // ---- Materials: the Furnace card ----
-function furnCardHTML() {
-  return `<section class="mat-card" aria-labelledby="matFurnH">
-    <header><h3 id="matFurnH">${uiBadge('oven')}The furnace and the graphene film</h3><button type="button" class="linkish" id="matFurnSee">See it on Furnace</button></header>
-    <div class="mat-head" aria-hidden="true"><span></span><span>Value</span><span>From</span><span>Source</span></div>
-    ${Object.entries(MAT_FURN_GROUPS).map(([g, t]) => `<div class="mat-sub"><b>${t}</b></div>${matEditRows(MAT_FURN.filter(q => q[10] === g), MAT.furn, 'mfu', 'matu')}`).join('')}
-    <div id="matFurnDerived"></div>
-    <div class="mat-actions"><button type="button" class="btn btn-secondary btn-sm" id="matFurnReset">${uiIco('restart')}Defaults</button><span class="mat-count" id="matFurnCount"></span></div>
-  </section>`;
-}
-function furnWireCard() {
-  const key = k => MAT_FURN.find(q => q[0] === k);
-  view.querySelectorAll('input[type=number][data-mfu]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfu, [, l, u, lo, hi] = key(k);
-    guardNumber(el, { label: l, lo, hi, unit: u }, v => { MAT.furn[k] = { ...MAT.furn[k], v }; });
-    el.value = MAT.furn[k].v;
-    furnDerived();
-  }));
-  view.querySelectorAll('select[data-mfu]').forEach(el => el.addEventListener('change', () => {
-    const k = el.dataset.mfu; MAT.furn[k] = { ...MAT.furn[k], flag: el.value };
-    el.className = `mat-fsel ${MAT_FLAG_CLASS[el.value] || ''}`;
-    furnDerived();
-  }));
-  view.querySelectorAll('input.mat-src[data-mfu]').forEach(el => el.addEventListener('change', () => { const k = el.dataset.mfu; MAT.furn[k] = { ...MAT.furn[k], src: el.value.trim() }; }));
-  document.getElementById('matFurnReset').onclick = () => { undoHint('Furnace values back to their defaults'); MAT = { ...MAT, furn: matDefaults().furn }; render(); };
-  document.getElementById('matFurnSee').onclick = () => navGo('furn', 'results');
-  furnDerived();
-}
-/** What follows from the Furnace card and the GO's C/O: in place. */
-function furnDerived() {
-  const f = MAT.furn, c = typeof fuChem === 'function' ? fuChem({ co: MAT.slurry.co.v, hc: f.hc.v, s1: f.s1.v, c1CO2: f.c1CO2.v, c1CO: f.c1CO.v, s2: f.s2.v, c2CO: f.c2CO.v }) : null;
-  const rows = [];
-  if (c) {
-    const keptAfter = n => (1 - c.stages.slice(0, n).reduce((s, q) => s + q.mass, 0) / c.mGO) * 100;
-    const coAfter = n => { const O = c.O0 - c.stages.slice(0, n).reduce((s, q) => s + q.O, 0), C = 1 - c.stages.slice(0, n).reduce((s, q) => s + q.C, 0); return O > 1e-9 ? C / O : Infinity; };
-    rows.push(['Its weight kept, all its oxygen gone', keptAfter(3).toFixed(1), '% of the dry GO', 'the carbon left: some of it leaves with the oxygen as CO and CO₂']);
-    rows.push(['C/O with its labile oxygen gone', coAfter(1).toFixed(1), '', 'after about 300 °C']);
-    rows.push(['C/O with its stable oxygen gone too', coAfter(2).toFixed(1), '', 'after about 1000 °C']);
-    rows.push(['Its labile oxygen out as CO₂ · CO · water', `${(c.split1.CO2 * 100).toFixed(0)} · ${(c.split1.CO * 100).toFixed(0)} · ${(c.split1.H2O * 100).toFixed(0)}`, '%', c.split1.H2O < 1 - f.c1CO2.v - f.c1CO.v - 1e-9 ? 'its hydrogen runs short of the water set: the rest as CO' : 'as set']);
-  }
-  rows.push(['Heat along a dense film, graphitized', (f.kG.v * 0.93 * f.La1.v / (f.La1.v + f.ell.v)).toFixed(0), 'W/(m·K)', 'at 2.1 g/cm³ with its crystallites at La graphitized']);
-  const der = document.getElementById('matFurnDerived');
-  if (der) der.innerHTML = rows.map(([l, v, u, s]) => `<div class="mat-row mat-ro"><span class="mat-l">${l}</span><span class="mat-v"><b>${v}</b><span class="prop-u">${u}</span></span>${matFlagChip('calc')}<span class="mat-src-t" title="${dryEsc(s)}">${s}</span></div>`).join('');
-  const cnt = document.getElementById('matFurnCount'), n = fl => MAT_FURN.filter(q => f[q[0]].flag === fl).length;
-  if (cnt) cnt.textContent = `${n('given')} from you · ${n('assumed')} assumed · ${n('measured')} measured`;
-}
+// (its values are edited in the material hub, mathub-ui.js)
 /** The card read-only (the report). */
 const furnCardRows = () => MAT_FURN.map(([k, l, u, , , , dd]) => [l, (+MAT.furn[k].v).toFixed(dd), u, MAT.furn[k].flag, MAT.furn[k].src]);

@@ -185,7 +185,7 @@ const TREE_NOTE = [
   'The 1D uses these inputs and the 2D setup; the ripple comes from the gap waviness and vibration below.',
   'The 1D at every position across the web: the gap and contact angle vary there with the inputs under Variation across the web.',
   'The chain starts from the wet film these inputs give (the 1D, or the 2D and 3D where solved); the oven\'s zones are below.',
-  'The slurry\'s card and the rheology model, its laws\' extras and the structure are edited on the page; viscosity, n, yield stress, surface tension and the fibre web as set here and in Coating › 2D.',
+  'Every material is edited on the page, in its record: these are the slurry\'s flow law and surface tension and the fibre web\'s thickness, the same values as its records\'.',
   'The line: nothing to set here; each stage\'s page has its own inputs.',
 ];
 /** The (i) of a view's toolbar: this tab's guide in the help. */
@@ -665,7 +665,7 @@ const TAB_Q = [
   'How does the film settle, and the ripple level, between the blade and the oven? (1D)',
   'How do the film and the contact line vary across the web? (1D at every position)',
   'From the wet film to the dry GO film: how thick and heavy is it, and how much water must the oven take out?',
-  'What is the slurry made of, and what is it coated onto? Each value with its unit, where it is from, and whether it is assumed.',
+  'The project\'s materials and interfaces: every property the solvers read, its definition, unit, provenance and source.',
   'The process stage by stage, from the mixer to the graphene film: where each stands and its answers.',
 ];
 const TAB_ICONS = [

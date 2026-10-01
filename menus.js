@@ -22,7 +22,8 @@ function mbTab(t) { if (tab !== t) { tab = t; render(); } }
 function mb2D(step) { mbTab(4); if (step && step2D() !== step) goStep2D(step); }
 function mb3D(step) { mbTab(9); if (step && step3D() !== step) goStep3D(step); }
 /** The Materials page, scrolled to one of its cards (by its heading's id). */
-function mbMat(id) { mbTab(13); const h = document.getElementById(id); if (h) h.scrollIntoView({ block: 'start' }); }
+// (a stage card's place in the material hub, MH-5)
+function mbMat(id) { mbTab(13); if (typeof hubShow === 'function' && HUB_CARD_AT[id]) hubShow(HUB_CARD_AT[id]); }
 const mbEl = sel => document.querySelector(sel);
 /** A page's control, operated as a click on it would (after its page is opened by go). */
 function mbClick(go, sel) { go(); const el = mbEl(sel); if (el && !el.disabled) el.click(); return !!el; }
@@ -110,8 +111,8 @@ mbA('geo.3d', { l: 'Blade geometry (3D)…', tip: 'The blade the 3D solves: made
 mbA('geo.across', { l: 'The blade across the web…', tip: 'Bow, tilt, chamfered ends and the crown (Coating › 1D › Across the web).', run: () => mbTab(11), chk: () => tab === 11 });
 
 // ===================================================================== Physics
-mbA('phys.mat', { l: 'Materials…', tip: 'What the slurry is made of and what it is coated onto: every value with its unit and source.', run: () => mbTab(13), chk: () => tab === 13 });
-[['matSlurryH', 'Slurry (GO in water)'], ['matRheoH', 'How it flows (rheology)'], ['matOrH', 'Flakes: how they line up'], ['matFibreH', 'Fibre web'], ['matDryH', 'Drying'], ['matFilmH', 'Dry film'], ['matFurnH', 'Furnace and graphene film']]
+mbA('phys.mat', { l: 'Materials…', tip: 'The material hub: every material and interface the solvers read, each property with its definition, unit, provenance and source.', run: () => mbTab(13), chk: () => tab === 13 });
+[['matSlurryH', 'GO slurry'], ['matRheoH', 'Its flow law'], ['matOrH', 'Its flakes\' alignment'], ['matFibreH', 'Fibre web'], ['matDryH', 'What the drying reads'], ['matFilmH', 'Dried GO film'], ['matFurnH', 'What the furnace reads']]
   .forEach(([id, l]) => mbA('phys.card.' + id, { l, tip: `Materials › ${l}.`, run: () => mbMat(id) }));
 Object.entries(RHEO_MODELS).forEach(([k, m]) => mbA('phys.rheo.' + k, { l: m.l, tip: m.law, run: () => mbSelect(() => mbTab(13), '#matModel', k), chk: () => CFDG.model === k }));
 mbA('phys.struct', { l: 'Structure (thixotropy)', tip: 'The slurry\'s structure breaking down in the flow and building up at rest.', run: () => mbCheck(() => mbMat('matRheoH'), '#matStructOn', !MAT.rheo.structOn), chk: () => !!MAT.rheo.structOn });
@@ -218,7 +219,7 @@ const MB_MENUS = {
     { sub: '3D view', items: [{ h: 'Camera' }, ...MB_V3.map(q => 'view.3d.' + q[0]), 'view.3d.reset', { h: 'Show' }, 'view.3d.show.blade', 'view.3d.show.slurry', 'view.3d.show.web', 'view.3d.show.mesh', 'res.3d.stream', { h: 'Vertical scale' }, ...[1, 2, 5, 10, 20, 50].map(v => 'view.3d.h' + v)] }],
   geometry: ['geo.2d', { sub: 'Blade shape', items: BLADE_SHAPES.map(q => 'geo.shape.' + q[0]) }, { sub: 'Contact line on the face', items: ['geo.cl.full', 'geo.cl.simple'] },
     { sub: 'Custom profile', items: ['imp.profile.csv', 'imp.profile.dxf', 'imp.profile.stl'] }, '-', 'geo.3d', { sub: 'Blade for the 3D', items: ['geo.src.made', 'geo.src.file'] }, 'imp.blade3d', 'exp.stl3d', '-', 'geo.across', 'imp.gap'],
-  physics: ['phys.mat', { sub: 'Materials card', items: ['phys.card.matSlurryH', 'phys.card.matRheoH', 'phys.card.matOrH', 'phys.card.matFibreH', 'phys.card.matDryH', 'phys.card.matFilmH', 'phys.card.matFurnH'] },
+  physics: ['phys.mat', { sub: 'Materials', items: ['phys.card.matSlurryH', 'phys.card.matRheoH', 'phys.card.matOrH', 'phys.card.matFibreH', 'phys.card.matDryH', 'phys.card.matFilmH', 'phys.card.matFurnH'] },
     { sub: 'Rheology model', items: Object.keys(RHEO_MODELS).map(k => 'phys.rheo.' + k) }, 'phys.struct', 'imp.rheometer', '-', 'phys.process', { sub: 'Process stage', items: MB_STAGES.map(s => 'phys.stage.' + s.k) }, 'phys.inputs'],
   mesh: [{ h: '2D' }, 'mesh.2d', { sub: '2D mesh preset', items: ['mesh.2d.coarse', 'mesh.2d.medium', 'mesh.2d.fine', 'mesh.2d.custom'] }, 'mesh.2d.study', 'mesh.2d.acc',
     { h: '3D' }, 'mesh.3d', { sub: '3D mesh preset', items: Object.keys(C3D_MESH_PRESETS).map(k => 'mesh.3d.' + k) }, { sub: 'Element type', items: ['mesh.3d.type'] }, 'mesh.3d.stats',
