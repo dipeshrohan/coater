@@ -359,7 +359,7 @@ function fplCycle(o, onProgress = () => {}) {
       X: f32(r.M.X), Y: f32(r.M.Y), Z: f32(r.M.Z), u, v, w, p, flows: r.flows, hdot: r.hdot, converged: r.converged, newton });
   }
   // the paths: from each landing (its middle, and half its radius either way), released t0 into a pulse
-  onProgress('The paths from each landing', done / n);
+  onProgress(dip ? 'The paths from each pipe\'s tip' : 'The paths from each landing', done / n);
   // (each path from under where the paste enters: the landing, the heap's foot -- or, the tips in the paste, the bore's mouth)
   const t0 = o.t0 ?? o.tau / 2, h0 = dip ? o.pipe.tip - 2e-4 : Math.min(o.hP, o.hD) - 2e-4, rs = dip ? 0.9 * o.pipe.d / 2 : o.r, starts = [], meta = [];
   outlets.forEach((q, j) => (dim === 2 ? [[0, 0], [-0.5, 0], [0.5, 0], [-0.25, 0], [0.25, 0]] : [[0, 0], [-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]]).forEach(([a, b], s) => {

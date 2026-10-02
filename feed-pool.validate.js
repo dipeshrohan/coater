@@ -24,6 +24,10 @@
  *     the rest, nothing through the pipe's walls; down the bore, plug where it enters, the flow between two walls: 4 bores
  *     below the entry, the exact parabola v = −(3/2) V (1 − (2ξ/d)²) (V the bore's mean speed). Between pulses the bore
  *     at rest and the balance the drain's.
+ *  9. The tips in the paste in 3D: round pipes on the coater's block mesh (the mirror half of four outlets): in a pulse the
+ *     paste in through the bores is the pulse's (each bore's plug over its discrete area), out at the pool edge the web's,
+ *     the top rising with the rest, nothing through the walls; down each bore, the flow in a round pipe, Poiseuille's
+ *     v = −2 V (1 − r²/rb²), 3 bores below the entry, to the O-grid's accuracy (POISEUILLE_TOL of the peak).
  */
 const FP = require('./feed-pool.js'), PM = require('./feed-pool-mesh.js');
 let fails = 0;
@@ -31,6 +35,9 @@ const check = (name, ok, info = '') => { if (!ok) fails++; console.log(`${ok ? '
 const R = 0.1, H = 1.725e-3, blade = x => H + R - Math.sqrt(Math.max(0, R * R - x * x)), rho = 1360, g = 9.81, U = 0.28 / 60;
 const W = 0.3, xBack = 0.13, xEnd = 0.04, h = 0.0367, outlets = [37.5, 112.5, 187.5, 262.5].map(z => ({ x: -0.1, z: z / 1000 }));
 const coarse = { hFine: 6e-3, hMax: 25e-3, ny: 3 }, newt = () => 10.5;
+// (check 9: the round pipes' mesh -- feed-mesh.js's options: half a bore per layer up the 6-bore channel -- and how near
+//  Poiseuille its bores' flow must come)
+const PIPE_MESH = { nUp: 12 }, POISEUILLE_TOL = 1e-3;
 const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mesh: coarse };
 
 // 1. at rest: exact under a straight blade face; under the round blade the stir falls with the mesh
@@ -186,6 +193,24 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
   check('the tips in the paste (a pipe across the 2D\'s slice): the paste in through its bore in a pulse, out at the pool edge, the top rising with the rest; the bore\'s flow the exact parabola once developed; at rest between pulses',
     bal < 1e-6 && n >= 11 && e < 1e-3 && rest < 1e-6 * V,
     `${M.nE} elements; flows off ${bal.toExponential(1)} of the web's; ${n} nodes across the bore 4 bores below its entry, off the parabola by ${e.toExponential(1)} of its peak; between pulses the bore's paste at ${(rest / V).toExponential(1)} of its pulse speed`);
+}
+
+// 9. the tips in the paste in 3D: round pipes on the coater's block mesh -- the balance; down each bore, Poiseuille
+{
+  const d = 0.01, tip = 0.03, bore = 6 * d, Qin = 20e-6 / 2, Qout = 2.14e-6 / 2, rb = d / 2;
+  const r = FP.fplSolvePipes({ W, half: true, xBack, xEnd, h, blade, U, rho, g, outlets: outlets.map(q => ({ x: -0.1, z: q.z })), mu: newt, Qin, Qout, pulse: true,
+    pipe: { d, Do: 0.014, tip, bore }, mesh: PIPE_MESH, solve: { tol: 1e-11 } });
+  const f = r.flows, M = r.M, nP = M.info.pipes.length, V = Qin / nP / (Math.PI * rb * rb), yq = tip + bore - 3 * d;
+  const bal = Math.max(Math.abs(f.bore + Qin), Math.abs(f.end - Qout), Math.abs(f.top - (Qin - Qout)), Math.abs(f.pipe), Math.abs(f.web), Math.abs(f.back), Math.abs(f.side0)) / Qout;
+  let e = 0, n = 0;
+  for (const q of M.info.pipes) {
+    let best = Infinity; for (let i = 0; i < M.nN; i++) if (Math.hypot(M.X[i] + 0.1, M.Z[i] - q.z) <= rb + 1e-9) best = Math.min(best, Math.abs(M.Y[i] - yq));
+    for (let i = 0; i < M.nN; i++) { const rr = Math.hypot(M.X[i] + 0.1, M.Z[i] - q.z); if (rr > rb + 1e-9 || Math.abs(Math.abs(M.Y[i] - yq) - best) > 1e-9) continue;
+      e = Math.max(e, Math.abs(r.v[i] + 2 * V * (1 - rr * rr / (rb * rb))) / (2 * V)); n++; }
+  }
+  check('the tips in the paste in 3D (round pipes on the coater\'s block mesh, half the pool): the paste in through the bores, out at the pool edge, the top rising with the rest; down each bore, Poiseuille\'s flow',
+    bal < 1e-6 && n >= 2 * 100 && e < POISEUILLE_TOL,
+    `${M.nE} elements, ${nP} pipes; flows off ${bal.toExponential(1)} of the web's; ${n} nodes across the bores 3 bores below their entry, off Poiseuille by ${e.toExponential(1)} of its peak`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

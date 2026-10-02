@@ -22,6 +22,8 @@ function poolPulseLines(T, x1) {
   return out;
 }
 const poolDash = j => (j >= 8 ? [5, 3] : []);
+/** A line's points (x, y) split where they jump across a pipe (more than 3 of its neighbours' spacing): one line each side. */
+const poolSegs = pts => { const out = [[]]; pts.forEach((q, i) => { if (i > 1 && q[0] - pts[i - 1][0] > 3 * (pts[i - 1][0] - pts[i - 2][0]) + 1e-9) out.push([]); out[out.length - 1].push(q); }); return out.filter(a => a.length); };
 
 /** The pool's inputs for the 2D (2) or the 3D (3): the 1D's cycle (the levels, the web's paste), the feed's inputs, the
  *  paste's law at location 1 (the pool is one paste); null until the 1D is solved. */
@@ -127,8 +129,12 @@ function poolSectionDraw(cv, res, base) {
       const y = yMax - (py + 0.5) / sc; if (y < 0 || y > top) continue;
       const sg = y / top; let j = 0; while (j < NY - 1 - st && s.Y[plId(I, ia, j + st, k)] / s.Y[plId(I, ia, NY - 1, k)] < sg) j += st;
       const ya = s.Y[plId(I, ia, j, k)] / s.Y[plId(I, ia, NY - 1, k)], yb = s.Y[plId(I, ia, j + st, k)] / s.Y[plId(I, ia, NY - 1, k)], u = Math.min(1, Math.max(0, (sg - ya) / (yb - ya)));
-      const v = (1 - t) * (1 - u) * val(ia, j) + t * (1 - u) * val(ib, j) + (1 - t) * u * val(ia, j + st) + t * u * val(ib, j + st);
-      if (!Number.isFinite(v)) continue;
+      // (bilinear between the four nodes round the pixel; next to a pipe's wall -- its nodes carry no flow, NaN -- from those
+      //  in the paste only)
+      const cw = [(1 - t) * (1 - u), t * (1 - u), (1 - t) * u, t * u], cv = [val(ia, j), val(ib, j), val(ia, j + st), val(ib, j + st)];
+      let sw = 0, sv = 0; for (let q = 0; q < 4; q++) if (Number.isFinite(cv[q]) && cw[q] > 0) { sw += cw[q]; sv += cw[q] * cv[q]; }
+      if (!(sw > 1e-9)) continue;
+      const v = sv / sw;
       const q = Math.round(scaleT(scl, v) * (LUT_N - 1)) * 3, o = (py * W + px) * 4;
       img.data[o] = lut[q]; img.data[o + 1] = lut[q + 1]; img.data[o + 2] = lut[q + 2]; img.data[o + 3] = 255;
     }
@@ -291,11 +297,13 @@ function viewPoolFeed(dim) {
   plotChart(c2, poolAspect(c2), { x0: uLo - 0.1 * (uHi - uLo), x1: uHi + 0.1 * (uHi - uLo), y0: 0, y1: yE * 1.05, yticks: niceTicks(0, yE * 1.05, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(uLo, uHi, 5), xf: v => String(+v.toPrecision(6)),
     yl: 'y at the pool edge (mm)', xl: 'speed along the web (mm/s)', s: [{ p: e0, c: warn, w: 4 }, { p: e1, c: acc, w: 2, dash: [6, 4] }], vl: [{ x: 0, c: cssVar('--muted'), t: '' }] });
   // (along the top: its corner nodes in the section shown)
-  const kk = poolPlane(res, true), topP = s => { const out = []; for (let i = 0; i < I.NX; i += 2) { const n = plId(I, i, I.NY - 1, kk); if (s.X[n] > I.xJ + 1e-9) break; const v = s.p[n] - rhoG * (s.info.h - s.Y[n]); if (Number.isFinite(v)) out.push([s.X[n] * 1e3, v]); } return out; };
+  // (the tips in the paste: not inside a pipe, where the column's top is the bore's channel)
+  const inPipe = x => base.entry === 'dip' && Math.abs(x - base.outlets[0].x) < base.pipe.Do / 2 - 1e-9;
+  const kk = poolPlane(res, true), topP = s => { const out = []; for (let i = 0; i < I.NX; i += 2) { const n = plId(I, i, I.NY - 1, kk); if (s.X[n] > I.xJ + 1e-9) break; if (inPipe(s.X[n])) continue; const v = s.p[n] - rhoG * (s.info.h - s.Y[n]); if (Number.isFinite(v)) out.push([s.X[n] * 1e3, v]); } return out; };
   const t0 = topP(s0), t1 = topP(s1), pLo = Math.min(0, ...t0.map(q => q[1]), ...t1.map(q => q[1])), pHi = Math.max(0, ...t0.map(q => q[1]), ...t1.map(q => q[1]));
   const c3 = document.getElementById('pq3');
   plotChart(c3, poolAspect(c3), { x0: -I.xBack * 1e3, x1: I.xJ * 1e3, y0: pLo - 0.08 * (pHi - pLo || 1), y1: pHi + 0.08 * (pHi - pLo || 1), yticks: niceTicks(pLo, pHi, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(-I.xBack * 1e3, I.xJ * 1e3, 6), xf: v => String(+v.toPrecision(6)),
-    yl: 'pressure under the top (Pa)', xl: 'x along the web (mm)', s: [{ p: t0, c: warn, w: 2 }, { p: t1, c: acc, w: 2 }], vl: [{ x: base.outlets[0].x * 1e3, c: cssVar('--muted'), t: E.at }] });
+    yl: 'pressure under the top (Pa)', xl: 'x along the web (mm)', s: [...poolSegs(t0).map(p => ({ p, c: warn, w: 2 })), ...poolSegs(t1).map(p => ({ p, c: acc, w: 2 }))], vl: [{ x: base.outlets[0].x * 1e3, c: cssVar('--muted'), t: E.at }] });
   // the answer, the numbers
   const qOut = s0.flows.end / share, qTop = -s0.flows.top / share, pushMax = Math.max(...t0.map(q => q[1]));
   let html = ps.out ? pill(`The paste reaches the pool edge ${ps.tMin.toFixed(0)}–${ps.tMax.toFixed(0)} s after ${E.from} (${(ps.tMin / base.T).toFixed(1)}–${(ps.tMax / base.T).toFixed(1)} pulses), ${(ps.yMin * 1e3).toFixed(1)}–${(ps.yMax * 1e3).toFixed(1)} mm above the web`, '')
