@@ -95,7 +95,7 @@ const ALL_IN = CFG.map(c => c.k);
 // (the pool and its feed: only on Coating › 1D › Pool and feed)
 const FEED_IN = ['fN', 'fV', 'fTau', 'fTip', 'fX', 'fD', 'fDo', 'fBack'];
 // (the pool's mesh: each on its own page, Coating › 2D and 3D › Pool and feed)
-const POOL2_IN = ['f2H', 'f2Hm', 'f2Ny'], POOL3_IN = ['f3H', 'f3Hm', 'f3Ny'];
+const POOL2_IN = ['f2H', 'f2Hm', 'f2Ny'], POOL3_IN = ['f3H', 'f3Hm', 'f3Ny', 'f3Pm', 'f3PLo', 'f3PUp'];
 const USES = [
   ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN, ...POOL2_IN, ...POOL3_IN].includes(k)),
   ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN, ...POOL2_IN, ...POOL3_IN].includes(k)),
@@ -132,7 +132,7 @@ const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () =>
   // (the pool and its feed: the 1D's inputs, which give the film and its sensitivity to the pool, and the feed's own)
   feed1d: () => [...cfdUses(), ...FEED_IN],
   // (the pool in 2D and 3D: the 1D's (its cycle), the feed's, and its own mesh)
-  feed2d: () => [...cfdUses(), ...FEED_IN, ...POOL2_IN], feed3d: () => [...cfdUses(), ...FEED_IN, ...POOL3_IN] };
+  feed2d: () => [...cfdUses(), ...FEED_IN, ...POOL2_IN], feed3d: () => [...cfdUses(), ...FEED_IN, ...POOL3_IN.filter(k => !k.startsWith('f3P') || feedEntry() === 'dip')] };   // (the pipes' mesh: with the tips in the paste)
 // (the coating's results on the Process view: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
 /** The shared inputs page pg uses (null: all of them). */
 const usesOf = pg => { const v = NAV[pg].v; return NAV_USES[pg] ? NAV_USES[pg]() : v === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : v === 4 || v === 5 || v === 8 || v === 12 ? cfdUses() : v === 10 ? [...cfdUses(), 'lam', 'vib'] : v === 11 ? [...cfdUses(), 'face'] : v === 9 ? [...cfdUses(), 'face', 'thw'] : USES[v]; };

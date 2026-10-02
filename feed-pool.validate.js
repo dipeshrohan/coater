@@ -19,6 +19,11 @@
  *     the same flow per width (to rounding).
  *  7. The 3D page's pool with its outlets in mirror pairs: half the pool solved (a mirror at its middle) and rebuilt is the
  *     whole pool solved on the same mesh -- every node's velocity and pressure, the flows, the paths' times.
+ *  8. The tips in the paste (the 2D page's slice, a pipe a slot across it standing from above the top down into the paste):
+ *     in a pulse the paste in through the bore is the pulse's, out through the pool edge the web's, the top rising with
+ *     the rest, nothing through the pipe's walls; down the bore, plug where it enters, the flow between two walls: 4 bores
+ *     below the entry, the exact parabola v = −(3/2) V (1 − (2ξ/d)²) (V the bore's mean speed). Between pulses the bore
+ *     at rest and the balance the drain's.
  */
 const FP = require('./feed-pool.js'), PM = require('./feed-pool-mesh.js');
 let fails = 0;
@@ -159,6 +164,28 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
   for (const p of A.paths) { const q = bm.get(key(p)); if (!q) { same = false; continue; } nP++; if (p.out) dt = Math.max(dt, Math.abs(p.t - q.t) / q.t); }
   check('the 3D page\'s pool with its outlets in mirror pairs: half solved and mirrored is the whole pool solved (fields, flows, paths)', same && nP === B.paths.length && du < 1e-6 * umax && dp < 1e-6 && dq < 1e-9 && dt < 1e-4,
     `${A.states[0].info.nESolved} of ${B.states[0].info.nE} elements solved; velocity off ${(du / umax).toExponential(1)} of its largest, pressure ${dp.toExponential(1)} ρgh (the fields kept to single precision), flows ${dq.toExponential(1)} of the web's; ${nP} paths, times off ${dt.toExponential(1)}`);
+}
+
+// 8. the tips in the paste: a pipe across the 2D's slice, the paste in through its bore -- the balance, and the bore's
+//  flow between its walls the exact parabola once developed
+{
+  const Ws = 0.01, sh = Ws / W, d = 0.01, tip = 0.03, bore = 6 * d, Qin = 20e-6 * sh, Qout = 2.14e-6 * sh, V = Qin / (d * Ws);
+  const so = { W: Ws, xBack, xEnd, h, blade, U, rho, g, outlets: [{ x: -0.1, z: Ws / 2 }], r: 3e-3, line: true, mu: newt, Qin, Qout, sides: 'slip',
+    pipes: [{ x: -0.1, d, Do: 0.014, tip, bore }], mesh: { hFine: 1e-3, hMax: 10e-3, ny: 6, nz: 1, sideFine: false }, solve: { tol: 1e-11 } };
+  const A = FP.fplSolve({ ...so, pulse: true }), B = FP.fplSolve({ ...so, pulse: false }), fa = A.flows, fb = B.flows;
+  const bal = Math.max(Math.abs(fa.bore + Qin), Math.abs(fa.end - Qout), Math.abs(fa.top - (Qin - Qout)), Math.abs(fa.pipe), Math.abs(fa.web), Math.abs(fa.back),
+    Math.abs(fb.bore), Math.abs(fb.end - Qout), Math.abs(fb.top + Qout), Math.abs(fb.pipe)) / Qout;
+  // (the row of nodes 4 bores below the entry, 2 above the tip, across the bore; and the bore at rest between pulses)
+  const M = A.M, yq = tip + bore - 4 * d; let e = 0, n = 0, rest = 0;
+  for (let i = 0; i < M.nN; i++) {
+    const xi = M.X[i] + 0.1; if (Math.abs(M.Z[i]) > 1e-12 || Math.abs(xi) > d / 2 + 1e-12) continue;
+    if (M.Y[i] > tip + 1e-9) rest = Math.max(rest, Math.hypot(B.u[i], B.v[i]));
+    if (Math.abs(M.Y[i] - yq) > 1e-9) continue;
+    e = Math.max(e, Math.abs(A.v[i] + 1.5 * V * (1 - (2 * xi / d) ** 2)) / (1.5 * V)); n++;
+  }
+  check('the tips in the paste (a pipe across the 2D\'s slice): the paste in through its bore in a pulse, out at the pool edge, the top rising with the rest; the bore\'s flow the exact parabola once developed; at rest between pulses',
+    bal < 1e-6 && n >= 11 && e < 1e-3 && rest < 1e-6 * V,
+    `${M.nE} elements; flows off ${bal.toExponential(1)} of the web's; ${n} nodes across the bore 4 bores below its entry, off the parabola by ${e.toExponential(1)} of its peak; between pulses the bore's paste at ${(rest / V).toExponential(1)} of its pulse speed`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

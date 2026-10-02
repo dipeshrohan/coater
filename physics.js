@@ -65,6 +65,9 @@ const CFG = [
   { k: 'f3H', l: '3D pool: elements where the paste lands', min: 0.5, max: 10, step: 0.1, u: 'mm', d: 1, v: 1.5, h: 'smaller: finer and much slower' },
   { k: 'f3Hm', l: '3D pool: elements elsewhere', min: 2, max: 60, step: 0.5, u: 'mm', d: 1, v: 20, h: 'the largest along and across the web' },
   { k: 'f3Ny', l: '3D pool: rows from the web to the top', min: 2, max: 12, step: 1, u: '', d: 0, v: 4, h: 'finer near the web' },
+  { k: 'f3Pm', l: '3D pool, tips in the paste: elements along a pipe\'s square', min: 2, max: 12, step: 1, u: '', d: 0, v: 4, h: 'round each pipe: 4 times this' },
+  { k: 'f3PLo', l: '3D pool, tips in the paste: layers below the tips', min: 2, max: 16, step: 1, u: '', d: 0, v: 4, h: 'from the web up to the tips' },
+  { k: 'f3PUp', l: '3D pool, tips in the paste: layers above the tips', min: 2, max: 16, step: 1, u: '', d: 0, v: 4, h: 'from the tips up to the top, and up each bore' },
 
   { g: 'Web edge and film', k: 'a0e', l: 'Edge irregularity at exit', min: 5, max: 200, step: 5, u: 'µm', d: 0, v: 30 },
   { k: 'lam', l: 'Ripple wavelength on film', min: 2, max: 40, step: 0.5, u: 'mm', d: 1, v: 8 },
