@@ -93,7 +93,7 @@ function groupOf(details) {
 // ---- which shared inputs each tab uses ----
 const ALL_IN = CFG.map(c => c.k);
 // (the pool and its feed: only on Coating › 1D › Pool and feed)
-const FEED_IN = ['fN', 'fV', 'fTau', 'fTip', 'fX', 'fD', 'fBack'];
+const FEED_IN = ['fN', 'fV', 'fTau', 'fTip', 'fX', 'fD', 'fDo', 'fBack'];
 // (the pool's mesh: each on its own page, Coating › 2D and 3D › Pool and feed)
 const POOL2_IN = ['f2H', 'f2Hm', 'f2Ny'], POOL3_IN = ['f3H', 'f3Hm', 'f3Ny'];
 const USES = [

@@ -56,6 +56,7 @@ const CFG = [
   { k: 'fTip', l: 'Outlet tip above the web', min: 5, max: 300, step: 1, u: 'mm', d: 0, v: 60, h: 'measure it on the line' },
   { k: 'fX', l: 'Outlets upstream of the blade edge', min: 5, max: 400, step: 1, u: 'mm', d: 0, v: 100, h: 'measure it on the line' },
   { k: 'fD', l: 'Outlet inner diameter', min: 1, max: 40, step: 0.5, u: 'mm', d: 1, v: 10, h: 'measure it on the line' },
+  { k: 'fDo', l: 'Outlet outer diameter', min: 2, max: 60, step: 0.5, u: 'mm', d: 1, v: 14, h: 'measure it on the line' },
   { k: 'fBack', l: 'Pool back edge upstream of the blade edge', min: 10, max: 500, step: 1, u: 'mm', d: 0, v: 130, h: 'where the paste ends behind the blade' },
   // (the pool's mesh, Coating › 2D and 3D › Pool and feed: each page its own)
   { g: 'Pool mesh', k: 'f2H', l: '2D pool: elements where the paste lands', min: 0.3, max: 10, step: 0.1, u: 'mm', d: 1, v: 1, h: 'smaller: finer and slower' },
@@ -76,7 +77,11 @@ const P = {};
 CFG.forEach(c => { P[c.k] = c.v; });
 // The pool's outlets across the web (Coating › 1D › Pool and feed): their positions (mm from the web's edge at z = 0), or
 // null: equidistant (each in the middle of its share of the width). Kept by the project file and the undo history.
-const FEED_POS = { z: null };
+const FEED_POS = { z: null, entry: 'fall' };
+/** How the paste enters the pool: 'fall' (from the tips onto the top), 'heap' (a heap stands from the top up to each tip), 'dip'
+ *  (the tips in the paste: it leaves the bore inside the pool). */
+const FEED_ENTRY = [['fall', 'Falls from the tips'], ['heap', 'A heap up to the tips'], ['dip', 'Tips in the paste']];
+const feedEntry = () => (FEED_ENTRY.some(e => e[0] === FEED_POS.entry) ? FEED_POS.entry : 'fall');
 /** The outlets' positions now (mm): as placed if placed for this many outlets, else equidistant. */
 const feedZs = (n = P.fN, W = 300) => FEED_POS.z && FEED_POS.z.length === n ? FEED_POS.z.slice() : Array.from({ length: n }, (_, i) => +(W * (i + 0.5) / n).toFixed(3));
 

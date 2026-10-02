@@ -351,17 +351,19 @@ function feedNow() {
   const g0 = oneDGeo(0), n = R.locs.length, mean = f => R.locs.reduce((a, L) => a + f(L), 0) / n, W = ACROSS_W / 1000;
   const round = g0.shape === 'round' && !g0.blade;
   const o = { W, U: R.locs[0].U, film0: mean(L => L.film), dfdP: mean(L => L.dfdP), rho: g0.rho, g: g0.g, Pup: g0.Pup, R: g0.R, H: mean(L => L.H),
-    xBack: P.fBack / 1000, V: P.fV * 1e-6, tau: P.fTau, ...(round ? {} : { meets: () => g0.Xup }) };
+    xBack: P.fBack / 1000, V: P.fV * 1e-6, tau: P.fTau, ...(round ? {} : { meets: () => g0.Xup }),
+    pipes: { n: P.fN, Do: P.fDo / 1000, tip: P.fTip / 1000, entry: feedEntry() } };
   const c = feedCycle(o);
   if (c.error) return { error: c.error, o, round };
   const zs = feedZs().map(z => z / 1000);
-  const out = feedOutlets({ V: o.V, tau: o.tau, n: P.fN, d: P.fD / 1000, tip: P.fTip / 1000, x: P.fX / 1000, zs, W, g: o.g, rho: o.rho, xBack: o.xBack }, c);
+  const out = feedOutlets({ V: o.V, tau: o.tau, n: P.fN, d: P.fD / 1000, Do: P.fDo / 1000, tip: P.fTip / 1000, x: P.fX / 1000, zs, W, g: o.g, rho: o.rho, xBack: o.xBack, entry: feedEntry() }, c);
   return { c, o, out, zs, round };
 }
 /** The pool and its outlets seen from the side (x along the web, y up; mm, true scale): the blade, the pool at its mean
- *  level and the two levels a cycle moves between, an outlet and its falling stream, with their dimensions. */
+ *  level and the two levels a cycle moves between, an outlet and how its paste enters (a falling stream, a heap up to the
+ *  tip, or the tip in the paste), with their dimensions. */
 function feedSideSVG(F, w, h) {
-  const { c, o } = F, R = o.R * 1e3, H = o.H * 1e3, tip = P.fTip, xO = -P.fX, d = P.fD, xB = -P.fBack;
+  const { c, o } = F, R = o.R * 1e3, H = o.H * 1e3, tip = P.fTip, xO = -P.fX, d = P.fD, Do = Math.max(P.fDo, d), xB = -P.fBack, entry = feedEntry();
   const meetsMm = hh => (F.round ? feedMeetsBlade(hh / 1e3, o.R, o.H) : o.meets(0)) * 1e3;
   const xMin = Math.min(xB, xO - d) - 22, xMax = 26, yMax = Math.max(tip + 16, c.hHigh * 1e3 + 18);
   const L = 10, Rg = 10, T = 10, B = 58, s = Math.min((w - L - Rg) / (xMax - xMin), (h - T - B) / yMax);
@@ -384,12 +386,20 @@ function feedSideSVG(F, w, h) {
   }
   g.push(`<line class="fd-web" x1="${f(X(xMin))}" x2="${f(X(xMax))}" y1="${f(Y(0))}" y2="${f(Y(0))}"/>`);
   g.push(`<line class="fd-wall" x1="${f(X(xB))}" x2="${f(X(xB))}" y1="${f(Y(0))}" y2="${f(Y(Math.max(lev, c.hHigh * 1e3) + 3))}"/>`);
-  // the outlet and its falling stream (it narrows as it speeds up)
+  // the outlet, and how its paste enters: a falling stream (it narrows as it speeds up), a heap standing from the top up to
+  //  the tip (as wide as the pipe, hanging from its rim, spreading at its foot), or nothing to draw: the tip in the paste
   const dl = F.out.dLand * 1e3, yL = c.hHigh * 1e3;
-  g.push(`<rect class="fd-pipe" x="${f(X(xO - d / 2 - 1.5))}" y="${f(Y(yMax))}" width="${f((d + 3) * s)}" height="${f((yMax - tip) * s)}"/><rect class="fd-bore" x="${f(X(xO - d / 2))}" y="${f(Y(yMax))}" width="${f(d * s)}" height="${f((yMax - tip) * s)}"/>`);
-  if (tip > yL) g.push(`<path class="fd-stream" d="M${f(X(xO - d / 2))} ${f(Y(tip))} L${f(X(xO - dl / 2))} ${f(Y(yL))} L${f(X(xO + dl / 2))} ${f(Y(yL))} L${f(X(xO + d / 2))} ${f(Y(tip))} Z"/>`);
+  if (entry === 'heap' && tip > lev) {
+    const r0 = Do / 2, foot = Do;
+    let hp = `M${f(X(xO - r0))} ${f(Y(tip))}`;
+    for (let k = 0; k <= 12; k++) { const t = k / 12, y = tip - (tip - lev) * t, r = r0 + (foot - r0) * t ** 3; hp += ` L${f(X(xO - r))} ${f(Y(y))}`; }
+    for (let k = 12; k >= 0; k--) { const t = k / 12, y = tip - (tip - lev) * t, r = r0 + (foot - r0) * t ** 3; hp += ` L${f(X(xO + r))} ${f(Y(y))}`; }
+    g.push(`<path class="fd-paste" d="${hp} Z"/>`);
+  }
+  g.push(`<rect class="fd-pipe" x="${f(X(xO - Do / 2))}" y="${f(Y(yMax))}" width="${f(Do * s)}" height="${f((yMax - tip) * s)}"/><rect class="fd-bore" x="${f(X(xO - d / 2))}" y="${f(Y(yMax))}" width="${f(d * s)}" height="${f((yMax - tip) * s)}"/>`);
+  if (entry === 'fall' && tip > yL) g.push(`<path class="fd-stream" d="M${f(X(xO - d / 2))} ${f(Y(tip))} L${f(X(xO - dl / 2))} ${f(Y(yL))} L${f(X(xO + dl / 2))} ${f(Y(yL))} L${f(X(xO + d / 2))} ${f(Y(tip))} Z"/>`);
   // dimensions: the tip's height (beside the stream), the outlet before the edge, the pool's back edge
-  const xd = xO + d / 2 + 5, yb = Y(0);
+  const xd = xO + Do / 2 + 5, yb = Y(0);
   g.push(`<line class="fd-dim" x1="${f(X(xd))}" x2="${f(X(xd))}" y1="${f(Y(0))}" y2="${f(Y(tip))}"/><line class="fd-dim" x1="${f(X(xd) - 3)}" x2="${f(X(xd) + 3)}" y1="${f(Y(tip))}" y2="${f(Y(tip))}"/>`);
   g.push(`<text class="fd-t fd-dt" x="${f(X(xd) + 4)}" y="${f(Y((tip + yL) / 2) + 4)}">tip ${tip} mm</text>`);
   const dimH = (a, b, y, t) => `<line class="fd-dim" x1="${f(X(a))}" x2="${f(X(b))}" y1="${f(y)}" y2="${f(y)}"/><line class="fd-dim" x1="${f(X(a))}" x2="${f(X(a))}" y1="${f(y - 3)}" y2="${f(y + 3)}"/><line class="fd-dim" x1="${f(X(b))}" x2="${f(X(b))}" y1="${f(y - 3)}" y2="${f(y + 3)}"/><text class="fd-t fd-dt" x="${f((X(a) + X(b)) / 2)}" y="${f(y - 4)}" text-anchor="middle">${t}</text>`;
@@ -400,7 +410,7 @@ function feedSideSVG(F, w, h) {
 /** The pool and its outlets seen from above (across the web to the right, along it downward: the web moves down; mm, true
  *  scale): the side plates, the pool, the blade from where the pool meets it to the edge, the outlets. */
 function feedPlanSVG(F, w, h) {
-  const { c } = F, W = ACROSS_W, xB = -P.fBack, xO = -P.fX, d = P.fD, xm = -c.meetsLow * 1e3, xMin = Math.min(xB, xO - d) - 6, xMax = 14;
+  const { c } = F, W = ACROSS_W, xB = -P.fBack, xO = -P.fX, d = Math.max(P.fDo, P.fD), xm = -c.meetsLow * 1e3, xMin = Math.min(xB, xO - d) - 6, xMax = 14;
   const L = 12, Rg = 40, T = 16, B = 22, s = Math.min((w - L - Rg) / (W + 16), (h - T - B) / (xMax - xMin));
   const Z = z => L + (z + 8) * s, X = x => T + (x - xMin) * s, f = v => v.toFixed(1), g = [];
   g.push(`<rect class="fd-webp" x="${f(Z(-8))}" y="${f(X(xMin))}" width="${f((W + 16) * s)}" height="${f((xMax - xMin) * s)}"/>`);
@@ -417,17 +427,29 @@ function feedPlanSVG(F, w, h) {
 function feedPanelHTML(F) {
   const zs = feedZs(), placed = !!(FEED_POS.z && FEED_POS.z.length === P.fN);
   const rows = zs.map((z, i) => `<div class="acr-row"><span class="acr-l">Outlet ${i + 1}</span><span class="acr-v"><input class="acr-in" type="number" step="0.5" min="0" max="${ACROSS_W}" value="${z}" data-feedz="${i}" aria-label="Outlet ${i + 1} position across the web, mm"><span class="u">mm</span></span></div>`).join('');
-  const o = F && F.out;
-  return `<div class="acr-grp">Outlets across the web</div>
+  const o = F && F.out, entry = feedEntry(), mm = v => (v * 1e3).toFixed(1);
+  const seg = `<div class="seg fd-entry" role="radiogroup" aria-label="How the paste enters the pool">${FEED_ENTRY.map(([k, t]) => `<button type="button" role="radio" data-feedentry="${k}" aria-checked="${k === entry}" aria-selected="${k === entry}">${t}</button>`).join('')}</div>`;
+  const how = !o ? '' : entry === 'heap' ? `
+    <div class="acr-row"><span class="acr-l">Heap, at the highest level</span><span class="acr-v">${mm(o.fall)} <span class="u">mm</span></span></div>
+    <div class="acr-row"><span class="acr-l">Speed down the heap</span><span class="acr-v">${(o.vLand * 1e3).toFixed(1)} <span class="u">mm/s</span></span></div>
+    <p class="acr-note">A heap stands from the top up to each tip, as wide as the pipe (${P.fDo} mm): the paste runs down it into the pool. The heaps take their width off the pool's top.</p>`
+    : entry === 'dip' ? `
+    <div class="acr-row"><span class="acr-l">Tip below the lowest level</span><span class="acr-v">${mm(o.depth)} <span class="u">mm</span></span></div>
+    <div class="acr-row"><span class="acr-l">Speed out of the bore</span><span class="acr-v">${(o.vLand * 1e3).toFixed(1)} <span class="u">mm/s</span></span></div>
+    <p class="acr-note">The tips stand in the paste: it leaves the bore inside the pool. The pipes (${P.fDo} mm across) take their width off the pool's top.</p>`
+    : `
+    <div class="acr-row"><span class="acr-l">Fall to the highest level</span><span class="acr-v">${mm(o.fall)} <span class="u">mm</span></span></div>
+    <div class="acr-row"><span class="acr-l">Landing speed, at most</span><span class="acr-v">${(o.vLand * 1e3).toFixed(0)} <span class="u">mm/s</span></span></div>
+    <p class="acr-note">Landing: free fall without drag, an upper bound; the stream thins to ${(o.dLand * 1e3).toFixed(1)} mm as it speeds up.</p>`;
+  return `<div class="acr-grp">How the paste enters the pool</div>
+    <div class="acr-row fd-entry-row">${seg}</div>
+    <div class="acr-grp">Outlets across the web</div>
     <div class="acr-row"><span class="acr-l">${P.fN} outlet${P.fN === 1 ? '' : 's'}, ${placed ? 'placed' : 'equidistant'}</span><span class="acr-v"><button type="button" class="btn btn-secondary btn-sm" id="feedEq"${placed ? '' : ' disabled'}>Equidistant</button></span></div>
     ${rows}
-    <p class="acr-note">Positions from the web's edge at z = 0 (the side plates at 0 and ${ACROSS_W} mm). The count, the tip's height, the distance before the edge, the bore and the pulse are on the left.</p>
+    <p class="acr-note">Positions from the web's edge at z = 0 (the side plates at 0 and ${ACROSS_W} mm). The count, the tip's height, the distance before the edge, the pipe's diameters and the pulse are on the left.</p>
     ${o ? `<div class="acr-grp">Each outlet during a pulse</div>
     <div class="acr-row"><span class="acr-l">Flow</span><span class="acr-v">${(o.q * 1e6).toFixed(2)} <span class="u">ml/s</span></span></div>
-    <div class="acr-row"><span class="acr-l">Speed out of the tip</span><span class="acr-v">${(o.v0 * 1e3).toFixed(1)} <span class="u">mm/s</span></span></div>
-    <div class="acr-row"><span class="acr-l">Fall to the highest level</span><span class="acr-v">${(o.fall * 1e3).toFixed(1)} <span class="u">mm</span></span></div>
-    <div class="acr-row"><span class="acr-l">Landing speed, at most</span><span class="acr-v">${(o.vLand * 1e3).toFixed(0)} <span class="u">mm/s</span></span></div>
-    <p class="acr-note">Landing: free fall without drag, an upper bound; the stream thins to ${(o.dLand * 1e3).toFixed(1)} mm as it speeds up.</p>` : ''}`;
+    <div class="acr-row"><span class="acr-l">Speed out of the tip</span><span class="acr-v">${(o.v0 * 1e3).toFixed(1)} <span class="u">mm/s</span></span></div>${how}` : ''}`;
 }
 document.addEventListener('change', e => {
   const t = e.target;
@@ -437,15 +459,21 @@ document.addEventListener('change', e => {
   if (!Number.isFinite(v)) { queueRender(); return; }
   zs[i] = +v.toFixed(3); FEED_POS.z = zs; queueRender();
 });
-document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#feedEq')) { FEED_POS.z = null; queueRender(); } });
+document.addEventListener('click', e => {
+  if (!e.target.closest) return;
+  if (e.target.closest('#feedEq')) { FEED_POS.z = null; queueRender(); return; }
+  const b = e.target.closest('[data-feedentry]');
+  if (b && b.dataset.feedentry !== feedEntry()) { FEED_POS.entry = b.dataset.feedentry; queueRender(); }
+});
 
 /** The report's part for Pool and feed: the feed as set, and each outlet. */
 function feedReportHTML() {
   const F = ONE_D.res ? feedNow() : null, u = (v, d, unit) => `${(+v).toFixed(d)} ${unit}`;
   const rows = [['Outlets', `${P.fN}, ${FEED_POS.z && FEED_POS.z.length === P.fN ? 'placed' : 'equidistant'} at ${feedZs().join(', ')} mm across the web`],
-    ['Outlet tip above the web', u(P.fTip, 0, 'mm')], ['Outlets upstream of the blade edge', u(P.fX, 0, 'mm')], ['Outlet inner diameter', u(P.fD, 1, 'mm')],
+    ['How the paste enters the pool', FEED_ENTRY.find(e => e[0] === feedEntry())[1]],
+    ['Outlet tip above the web', u(P.fTip, 0, 'mm')], ['Outlets upstream of the blade edge', u(P.fX, 0, 'mm')], ['Outlet inner diameter', u(P.fD, 1, 'mm')], ['Outlet outer diameter', u(P.fDo, 1, 'mm')],
     ['Paste per pulse, all outlets', u(P.fV, 0, 'ml')], ['Pulse length', u(P.fTau, 1, 's')], ['Pool back edge upstream of the blade edge', u(P.fBack, 0, 'mm')]];
-  if (F && !F.error) rows.push(['Each outlet during a pulse', `${(F.out.q * 1e6).toFixed(2)} ml/s, ${(F.out.v0 * 1e3).toFixed(1)} mm/s out of the tip, at most ${(F.out.vLand * 1e3).toFixed(0)} mm/s landing`]);
+  if (F && !F.error) rows.push(['Each outlet during a pulse', `${(F.out.q * 1e6).toFixed(2)} ml/s, ${(F.out.v0 * 1e3).toFixed(1)} mm/s out of the tip, ` + (F.out.entry === 'heap' ? `${(F.out.vLand * 1e3).toFixed(1)} mm/s down a heap ${(F.out.fall * 1e3).toFixed(1)} mm high` : F.out.entry === 'dip' ? `the tip ${(F.out.depth * 1e3).toFixed(1)} mm below the lowest level` : `at most ${(F.out.vLand * 1e3).toFixed(0)} mm/s landing`)]);
   return '<h3>The feed</h3>' + repRows(rows.map(([a, b]) => [repEsc(a), repEsc(b)]), ['Input', 'Value']);
 }
 function view1DFeed() {
@@ -496,7 +524,8 @@ function view1DFeed() {
   // the answer, the numbers
   const fMin = filmAt(c.hLow) * 1e6, fMax = filmAt(c.hHigh) * 1e6, fMid = (fMin + fMax) / 2, bad = out.checks.filter(k => !k.ok);
   let st = pill(`A pulse every ${T.toFixed(1)} s: the pool's level swings ${(c.swing * 1e3).toFixed(2)} mm, the wet film at L${i + 1} ±${((fMax - fMin) / 2).toFixed(1)} µm (±${((fMax - fMin) / 2 / fMid * 100).toFixed(2)} %)`, '');
-  st += bad.length ? bad.map(k => pill(k.text, 'bad')).join('') : pill('The outlets are placed well: the paste falls onto the pool', 'ok');
+  const how = { fall: 'the paste falls onto the pool', heap: 'a heap stands from the pool up to each tip', dip: 'the tips stay in the paste' }[feedEntry()];
+  st += bad.length ? bad.map(k => pill(k.text, 'bad')).join('') : pill(`The outlets are placed well: ${how}`, 'ok');
   st += pill('1D: the film and its sensitivity to the pool from the 1D at the four locations', '');
   if (!F.round) st += pill('This blade\'s pool meets it at the 2D\'s pool edge', 'warn');
   if (!oneDCurrent()) st += solvePending('1d') ? pill('Solving for the inputs as they are…', '') : solveCtl('1d');

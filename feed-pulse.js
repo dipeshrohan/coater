@@ -5,7 +5,10 @@
  * film the blade leaves follow from the volume balance of the pool:
  *   A(h) dh/dt = Qin(t) − Qout(h),   Qin = V / τ during a pulse (else 0),   Qout(h) = U W film(h)
  *   film(h) = film0 + (dfilm/dP) ρ g (h − h̄)   (the film's sensitivity to the bead pressure, from the 1D at each location)
- * A(h): the pool's top, between its back edge and where it meets the blade (W wide, side plates at the web's edges).
+ * A(h): the pool's top, between its back edge and where it meets the blade (W wide, side plates at the web's edges), less
+ * what the outlets take of it: their pipes where they stand in the paste (the level above their tips), and the heaps that
+ * stand from the top up to the tips when the paste enters by a heap (as wide as the pipes: the paste hangs from their rim)
+ * -- the paste in a heap shortens as the level rises, so the level rises as if the top were smaller by the heaps.
  * h̄, the level over a cycle on average, is the one the bead pressure input gives (Pup = ρ g h̄); the level where the camera
  * fires is found so the cycle's mean is h̄. The outlets: the stream each gives, its speed out of the outlet and where it
  * lands (a falling stream, free fall without drag: an upper bound on its speed), and checks of where it is. Pure
@@ -24,7 +27,8 @@ function feedMeetsBlade(h, R, H) {
  * o: { W (m, between the side plates), U (m/s), film0 (m, at the mean level), dfdP (m/Pa), rho, g, Pup (Pa: the mean level
  *   Pup / (ρ g)), R, H (m, the blade), meets (optional: h -> distance upstream where the pool meets the blade, m; default
  *   the round entry's), xBack (m, the pool's back edge upstream of the metering edge), V (m³ per pulse, all outlets),
- *   tau (s, a pulse's length), n (steps per cycle, default 4000) }
+ *   tau (s, a pulse's length), n (steps per cycle, default 4000), pipes (optional: { n (outlets), Do (m, the pipes' outer
+ *   diameter), tip (m, above the web), entry: 'fall' | 'heap' | 'dip' }: what they take of the top, above) }
  * Returns { T (s, between pulses), hLow, hHigh, hMean (m), swing (m), filmMin, filmMax (m), band (m: the film's repeat along
  *   the web, U T), Qmean (m³/s), t, h, film, Qin, Qout (arrays over a cycle, t from a pulse's start), filmAlong (s from the
  *   edge, m -> the film there, m, at the moment a pulse starts), volIn, volOut (m³ over a cycle), area (h -> A, m²) } or
@@ -33,7 +37,9 @@ function feedMeetsBlade(h, R, H) {
 function feedCycle(o) {
   const { W, U, film0, dfdP, rho, g, Pup, R, H, xBack, V, tau } = o, n = o.n || 4000;
   const hBar = Pup / (rho * g), meets = o.meets || (h => feedMeetsBlade(h, R, H));
-  const area = h => W * (xBack - meets(h));
+  // (the outlets' share of the top: each pipe's footprint where the level is above its tip; with heaps, at every level)
+  const pp = o.pipes, foot = pp ? pp.n * Math.PI * pp.Do * pp.Do / 4 : 0;
+  const area = h => W * (xBack - meets(h)) - (pp && (pp.entry === 'heap' || h > pp.tip) ? foot : 0);
   const film = h => film0 + dfdP * rho * g * (h - hBar), Qout = h => U * W * film(h), Qin = V / tau;
   if (!(V > 0 && tau > 0 && U > 0 && W > 0)) return { error: 'the pulse, the web\'s speed and the width must be above zero' };
   if (!(area(hBar) > 0)) return { error: 'the pool\'s back edge must be upstream of where the pool meets the blade' };
@@ -89,28 +95,42 @@ function feedCycle(o) {
 }
 
 /**
- * The outlets: their stream and where it falls. o: { V (m³ per pulse, all), tau (s), n (outlets), d (m, bore), tip (m, above
- *   the web), x (m, upstream of the metering edge), zs (m, across the web), W (m), g, rho }, cycle: feedCycle's.
- * Returns { q (m³/s per outlet), v0 (m/s, out of the outlet), fall (m, tip above the highest level), vLand (m/s, free fall,
- *   no drag: at most this), dLand (m, the stream's diameter there by continuity), pLand (Pa, ρ v² / 2 at landing), checks: [{ ok,
- *   text }] }.
+ * The outlets: their stream and where it enters the pool. o: { V (m³ per pulse, all), tau (s), n (outlets), d (m, bore), Do
+ *   (m, the pipe's outer diameter; default d), tip (m, above the web), x (m, upstream of the metering edge), zs (m, across the
+ *   web), W (m), g, rho, entry ('fall', default: the paste falls from the tips onto the top; 'heap': a heap stands from the top
+ *   up to each tip, the paste running down it; 'dip': the tips in the paste, the paste leaving the bore inside the pool) },
+ *   cycle: feedCycle's.
+ * Returns { entry, q (m³/s per outlet), v0 (m/s, out of the outlet), fall (m, tip above the highest level; below it, negative),
+ *   depth (m, the tip below the lowest level), vLand (m/s: where the paste meets the pool -- falling, free fall without drag:
+ *   at most this; down a heap, its mean speed across the heap; out of a tip in the paste, the bore's), dLand (m, the stream's
+ *   diameter there: by continuity; the heap's; the bore's), pLand (Pa, ρ v² / 2 there), checks: [{ ok, text }] }.
  */
 function feedOutlets(o, cycle) {
-  const q = o.V / o.tau / o.n, v0 = q / (Math.PI * o.d * o.d / 4), fall = o.tip - cycle.hHigh;
-  const vLand = Math.sqrt(v0 * v0 + 2 * o.g * Math.max(0, fall)), dLand = o.d * Math.sqrt(v0 / vLand);
+  const entry = o.entry || 'fall', Do = o.Do || o.d, q = o.V / o.tau / o.n, v0 = q / (Math.PI * o.d * o.d / 4);
+  const fall = o.tip - cycle.hHigh, depth = cycle.hLow - o.tip;
+  const vLand = entry === 'heap' ? q / (Math.PI * Do * Do / 4) : entry === 'dip' ? v0 : Math.sqrt(v0 * v0 + 2 * o.g * Math.max(0, fall));
+  const dLand = entry === 'heap' ? Do : entry === 'dip' ? o.d : o.d * Math.sqrt(v0 / vLand);
+  const mm = v => (v * 1e3).toFixed(1);
+  const first = entry === 'heap'
+    ? (fall > 0 ? { ok: true, text: `A heap stands from the top up to each tip: ${mm(fall)} mm at the highest level, ${mm(o.tip - cycle.hLow)} mm at the lowest.` }
+      : { ok: false, text: `The tips are ${mm(-fall)} mm below the highest level: they are in the paste then, with no heap under them.` })
+    : entry === 'dip'
+      ? (depth > 0 ? { ok: true, text: `The tips stay in the paste through the cycle: ${mm(depth)} mm below the lowest level.` }
+        : { ok: false, text: `The tips come out of the paste when the level is low: ${mm(-depth)} mm above the lowest level.` })
+      : (fall > 0 ? { ok: true, text: `The outlets' tips are ${mm(fall)} mm above the highest level: the paste falls onto the pool.` }
+        : { ok: false, text: `The outlets' tips are ${mm(-fall)} mm below the highest level: they dip into the paste.` });
   const checks = [
-    fall > 0 ? { ok: true, text: `The outlets' tips are ${(fall * 1e3).toFixed(1)} mm above the highest level: the paste falls onto the pool.` }
-      : { ok: false, text: `The outlets' tips are ${(-fall * 1e3).toFixed(1)} mm below the highest level: they dip into the paste.` },
+    first,
     o.x > cycle.meetsHigh ? { ok: true, text: `The streams land ${((o.x - cycle.meetsHigh) * 1e3).toFixed(1)} mm upstream of where the pool meets the blade (at the highest level).` }
       : { ok: false, text: `The streams fall on the blade's face: the outlets are ${((cycle.meetsHigh - o.x) * 1e3).toFixed(1)} mm downstream of where the pool meets the blade.` },
-    o.x + o.d / 2 < o.xBack ? { ok: true, text: `The outlets are ${((o.xBack - o.x) * 1e3).toFixed(1)} mm in front of the pool's back edge.` }
+    o.x + Do / 2 < o.xBack ? { ok: true, text: `The outlets are ${((o.xBack - o.x) * 1e3).toFixed(1)} mm in front of the pool's back edge.` }
       : { ok: false, text: 'The outlets are behind the pool\'s back edge.' },
   ];
   const zs = [...o.zs].sort((p, s) => p - s);
-  const inside = zs.every(z => z - o.d / 2 >= 0 && z + o.d / 2 <= o.W), apart = zs.every((z, i) => i === 0 || z - zs[i - 1] >= o.d);
+  const inside = zs.every(z => z - Do / 2 >= 0 && z + Do / 2 <= o.W), apart = zs.every((z, i) => i === 0 || z - zs[i - 1] >= Do);
   checks.push(inside && apart ? { ok: true, text: 'Every outlet is between the side plates, and none overlaps another.' }
     : { ok: false, text: !inside ? 'An outlet is outside the side plates.' : 'Two outlets overlap.' });
-  return { q, v0, fall, vLand, dLand, pLand: o.rho * vLand * vLand / 2, checks };
+  return { entry, q, v0, fall, depth, vLand, dLand, pLand: o.rho * vLand * vLand / 2, checks };
 }
 
 /** n outlets equidistant across the width W: each in the middle of its share (m). */
