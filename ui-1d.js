@@ -52,9 +52,9 @@ function oneDRequest(needAcross) {
       ONE_D.res = { locs: e.data.locs }; ONE_D.key = key; ONE_D.error = null; ONE_D.ms = e.data.ms;
       if (e.data.across) { ONE_D.across = e.data.across; ONE_D.acrossKey = aKey; }
     } else ONE_D.error = e.data.error;
-    if (ONE_D.again || [1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15].includes(tab)) render();
+    if (ONE_D.again || [1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16, 17].includes(tab)) render();
   };
-  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15].includes(tab)) render(); };
+  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16, 17].includes(tab)) render(); };
   ONE_D.worker.postMessage({ id, locs, across: needAcross && aKey !== ONE_D.acrossKey ? across : null, ripple });
 }
 /** The 1D across the web, if it is for the inputs as they are (else null). */

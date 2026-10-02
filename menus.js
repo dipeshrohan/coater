@@ -185,6 +185,7 @@ mbA('res.3d.stream', { l: '3D streamlines', tip: 'Streamlines through the solved
   run: () => { mb3D('results'); if (C3D.uzView !== v) c3dSet('uzView', v); const el = mbEl('.m3-uz'); if (el) el.scrollIntoView({ block: 'start' }); }, chk: () => C3D.uzView === v, on: mbRes3D, why: () => NEED_3D }));
 mbA('res.3d.xflow', { l: 'Cross-flow diagnostic', tip: 'The largest u_x, u_y, u_z and what drives the flow across the web.', run: () => { mb3D('results'); const el = mbEl('.m3-xflow'); if (el) el.scrollIntoView({ block: 'start' }); }, on: mbRes3D, why: () => NEED_3D });
 [[8, 'Gap flow'], [10, 'To the oven'], [11, 'Across the web'], [15, 'Pool and feed'], [0, 'Start-up']].forEach(([t, l]) => mbA('res.1d.' + t, { l, tip: TAB_Q[t], run: () => mbTab(t), chk: () => tab === t }));
+[[16, 'Pool and feed (2D)'], [17, 'Pool and feed (3D)']].forEach(([t, l]) => mbA('res.pool.' + t, { l, tip: TAB_Q[t], run: () => mbTab(t), chk: () => tab === t }));
 mbA('res.meas', { l: 'Measured data…', tip: TAB_Q[6], run: () => mbTab(6), chk: () => tab === 6 });
 
 // ===================================================================== Tools
@@ -231,7 +232,7 @@ const MB_MENUS = {
   results: [{ sub: 'Results pages', items: ['res.page.7', 'res.page.1', 'res.page.2', 'res.page.3', 'res.page.wetdry', 'res.page.flakes'] }, '-', 'res.2d', { sub: '2D field', items: MB_FIELDS.map(q => 'res.2d.f.' + q[0]) }, 'res.2d.probe', 'res.2d.cut',
     { sub: '2D locations', items: ['key:view.l1', 'key:view.l2', 'key:view.l3', 'key:view.l4', 'key:view.compare', 'key:view.diff'] },
     { sub: '2D panels', items: ['res.2d.dock.metrics', 'res.2d.dock.probes', 'res.2d.dock.cuts', 'res.2d.dock.across', 'res.2d.dock.profiles', 'res.2d.dock.flakes', 'res.2d.dock.fibre', 'res.2d.dock.conv', 'res.2d.dock.cases'] },
-    '-', 'res.3d', { sub: '3D field', items: Object.keys(C3D_FIELDS).map(k => 'res.3d.f.' + k) }, 'res.3d.stream', { sub: 'Cross-web velocity u_z', items: ['res.3d.uz.yz', 'res.3d.uz.xz'] }, 'res.3d.xflow', '-', { sub: '1D', items: ['res.1d.8', 'res.1d.10', 'res.1d.11', 'res.1d.0'] }, 'res.meas'],
+    '-', 'res.3d', { sub: '3D field', items: Object.keys(C3D_FIELDS).map(k => 'res.3d.f.' + k) }, 'res.3d.stream', { sub: 'Cross-web velocity u_z', items: ['res.3d.uz.yz', 'res.3d.uz.xz'] }, 'res.3d.xflow', '-', { sub: '1D', items: ['res.1d.8', 'res.1d.10', 'res.1d.11', 'res.1d.15', 'res.1d.0'] }, { sub: 'Pool and feed', items: ['res.pool.16', 'res.pool.17'] }, 'res.meas'],
   tools: ['key:tools.palette', 'tools.keys', 'tools.history', '-', 'sim.doe', 'res.meas', 'mesh.3d.stats', 'res.3d.xflow', '-', 'tools.report', 'file.imgSave'],
   window: ['key:panel.model', 'key:panel.dock', 'key:panel.next', 'key:panel.prev', '-', { h: 'Sections' }, ...SECTIONS.map(s => 'win.sec.' + s.k), 'win.secNext', 'win.secPrev', '-', 'win.reset'],
   help: ['-', 'help.about'],

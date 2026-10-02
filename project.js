@@ -91,6 +91,7 @@ function projStopAll() {
   cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
   m3StudyStop(true); acc3Stop(); c3dStop();
   oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop();
+  if (typeof poolStop === 'function') poolStop();
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
 function projRunning() {
@@ -105,6 +106,7 @@ function projRunning() {
   if (C3D_RUN.status === 'running') add('Coating › 3D', M3S.status === 'running' ? 'mesh study' : ACC3.status === 'running' ? 'mesh to an accuracy' : 'the 3D flow', `${Math.round((performance.now() - C3D_RUN.t0) / 1000)} s`);
   if (ONE_D.busy) add('Coating › 1D', 'the 1D at the four locations');
   if (ACR_CROWN.busy) add('Coating › 1D', 'the crown across the web', ACR_CROWN.stage || '');
+  if (typeof POOL !== 'undefined') for (const d of [2, 3]) if (POOL[d].busy) add(`Coating › ${d}D`, 'the pool and its feed', POOL[d].prog ? `${Math.round(POOL[d].prog.f * 100)} %` : '');
   if (DRY.busy) add('Drying', 'the film through the oven', kn(DRY.prog));
   if (FILM.busy) add('Peel and wind', 'the film to the peel', kn(FILM.prog));
   if (SHEET.busy) add('Cutting', 'the piece in 3D', kn(SHEET.prog));

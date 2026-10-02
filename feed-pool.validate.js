@@ -14,6 +14,9 @@
  *     elements' local mass error, a part of U: q is the small net flow of a larger one turning in the pool).
  *  5. Paths through the cycle: in a flow steady in each part of it (one speed in a pulse, another between), the time to the
  *     pool edge exact, never stepping across a switch.
+ *  6. The 2D page's pool: the same solver on a strip one element across with mirrors at its sides and the feed a band
+ *     across it is a slice along the web -- no flow across, the same flow at both sides, and strips of two widths giving
+ *     the same flow per width (to rounding).
  */
 const FP = require('./feed-pool.js'), PM = require('./feed-pool-mesh.js');
 let fails = 0;
@@ -105,6 +108,25 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
     P.forEach((p, j) => { const te = exact(starts[j][0], t0); err = Math.max(err, Math.abs(p.t - te)); ok = ok && p.out && p.pts.every(q => Math.abs(q[1] - starts[j][1]) < 1e-15 && Math.abs(q[2] - starts[j][2]) < 1e-15); info.push(`${p.t.toFixed(4)} s (exact ${te.toFixed(4)})`); });
   }
   check('paths through the cycle (2 mm/s in a pulse, 0.5 mm/s between): the time to the pool edge exact, never across a switch', ok && err < 1e-9, info.join(', ') + ` (off ${err.toExponential(1)} s)`);
+}
+
+// 6. the 2D page's pool: the 3D solver on a strip one element across, mirrors at its sides, the feed a band across it — a
+//  slice along the web: nothing across, the same flow at both sides, and the same flow per width for any strip
+{
+  const Qin = 20e-6, Qout = 2.14e-6, run = Ws => FP.fplSolve({ W: Ws, xBack, xEnd, h, blade, rho, g, outlets: [{ x: -0.1, z: Ws / 2 }], r: 6e-3, line: true, mu: newt,
+    U, Qin: Qin * Ws / W, Qout: Qout * Ws / W, pulse: true, sides: 'slip', mesh: { ...coarse, nz: 1, sideFine: false } });
+  const A = run(0.02), B = run(0.045), I = A.M.info, NX = I.NX, NY = I.NY, rgh = rho * g * h;
+  let wMax = 0, side = 0, sideP = 0, wid = 0, widP = 0, same = I.NZ === 3 && B.M.info.NX === NX && B.M.info.NY === NY;
+  for (const r of [A, B]) for (let n = 0; n < r.M.nN; n++) wMax = Math.max(wMax, Math.abs(r.w[n]));
+  for (let j = 0; j < NY && same; j++) for (let i = 0; i < NX; i++) {
+    const a = j * NX + i;
+    same = same && A.M.X[a] === B.M.X[a] && A.M.Y[a] === B.M.Y[a];
+    for (const r of [A, B]) for (const k of [1, 2]) { const b = (k * NY + j) * NX + i; side = Math.max(side, Math.abs(r.u[b] - r.u[a]), Math.abs(r.v[b] - r.v[a])); sideP = Math.max(sideP, Math.abs(r.p[b] - r.p[a])); }
+    wid = Math.max(wid, Math.abs(A.u[a] - B.u[a]), Math.abs(A.v[a] - B.v[a])); widP = Math.max(widP, Math.abs(A.p[a] - B.p[a]));
+  }
+  const qa = A.flows.end / 0.02, qb = B.flows.end / 0.045;
+  check('the 2D page\'s pool (a strip one element across, mirrors at its sides, the feed a band across it): a slice along the web, the same for any strip', same && wMax < 1e-9 * U && side < 1e-9 * U && sideP < 1e-9 * rgh && wid < 1e-9 * U && widP < 1e-9 * rgh && Math.abs(qa / qb - 1) < 1e-9,
+    `across: ${(wMax / U).toExponential(1)} U; side to side: u, v ${(side / U).toExponential(1)} U, p ${(sideP / rgh).toExponential(1)} ρgh; strips 20 and 45 mm wide: u, v ${(wid / U).toExponential(1)} U, p ${(widP / rgh).toExponential(1)} ρgh, out per width ${(qa * 1e3).toFixed(9)} and ${(qb * 1e3).toFixed(9)} ml/s per mm; ${A.M.nE} elements`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

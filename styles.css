@@ -1594,6 +1594,15 @@ body:has(#pgScope) #scope { display: none; }
 .fd-svg .fd-out { fill: var(--surface); stroke: var(--graphite); stroke-width: 1.5; }
 .fd-svg .fd-dim { stroke: var(--ink); stroke-width: .8; }
 @media (max-width: 900px) { .fd-two { flex-direction: column; } }
+/* Coating › 2D and 3D › Pool and feed: the section through an outlet, the pool from above */
+.pl-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.pl-top.pl-two { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }
+.pl-view { background: var(--surface); border: 1px solid var(--line-soft); border-radius: 14px; box-shadow: var(--shadow-sm); min-width: 0; padding: 10px 12px; }
+.pl-view h3 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pl-canvas { min-width: 0; }
+.pl-canvas canvas { display: block; width: 100%; }
+.pl-prog { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: 6px; }
+@media (max-width: 1100px) { .pl-top.pl-two { grid-template-columns: minmax(0, 1fr); } }
 .acr-crown { margin: 4px 0 2px 18px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }
 .acr-crown.stale { opacity: .7; }
 .acr-crown .acr-note { margin-left: 0; }

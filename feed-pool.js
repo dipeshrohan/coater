@@ -20,10 +20,10 @@ const FPL_ = (n, f) => (typeof globalThis[n] === 'function' ? globalThis[n] : re
 const FPL_FACES = () => (typeof FPM_FACES !== 'undefined' ? FPM_FACES : require('./feed-pool-mesh.js').FPM_FACES);
 
 /** The streams' discs on the top: each the stream's flow (m³/s), a bump (1 − d²/r²)² over radius r, scaled so the flow
- *  through the mesh's top (a: its free nodes' shares of the area, [node, m²]) is exactly the stream's. Returns (x, y, z) ->
- *  the velocity down. */
-function fplStreams(a, M, outlets, r, qEach) {
-  const bump = (q, x, z) => { const d2 = ((x - q.x) ** 2 + (z - q.z) ** 2) / (r * r); return d2 < 1 ? (1 - d2) ** 2 : 0; };
+ *  through the mesh's top (a: its free nodes' shares of the area, [node, m²]) is exactly the stream's; line: each a band
+ *  across the whole width instead (d along the web only: the 2D, a curtain). Returns (x, y, z) -> the velocity down. */
+function fplStreams(a, M, outlets, r, qEach, line) {
+  const bump = (q, x, z) => { const d2 = ((x - q.x) ** 2 + (line ? 0 : (z - q.z) ** 2)) / (r * r); return d2 < 1 ? (1 - d2) ** 2 : 0; };
   const scale = outlets.map(q => { let s = 0; for (const [n, an] of a) s += bump(q, M.X[n], M.Z[n]) * an; return s > 0 ? qEach / s : 0; });
   return (x, y, z) => outlets.reduce((s, q, i) => s + scale[i] * bump(q, x, z), 0);
 }
@@ -49,7 +49,8 @@ function fplTopAt(M, x, z) {
 /**
  * The pool's flow in one part of the cycle. o: { W, xBack, xEnd, h, blade (x -> m), U, mu (γ̇ -> Pa·s), gdMin, rho, g,
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin (m³/s, all outlets, during a pulse), Qout (m³/s, the web's),
- *   pulse (true: during a pulse), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool),
+ *   pulse (true: during a pulse), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool), line
+ *   (the streams a band across the width: a slice of the pool, the 2D),
  *   mesh (fpmMesh's options, optional), solve (ffSolve's options; x0 a start), eta (the top over the level at the plan's
  *   nodes, m: its shape; default flat), free (optional, the top free: { sigma (N/m, its tension), vLand (m/s, the streams'
  *   speed landing: their push), move (m, the most the top may move in a step, default the finest element), stepTol (each step's
@@ -88,7 +89,7 @@ function fplSolve(o) {
     // (each free node's share of the top's plan: its area share times n_y)
     const top = [...fsArea({ M, X: M.X, Y: M.Y, Z: M.Z }, ['pile'])].filter(([n]) => !onWall.has(n)).map(([n, a]) => [n, a * nrm.get(n)[1]]);
     const free = top.reduce((s, [, a]) => s + a, 0), hdot = ((o.pulse ? f * o.Qin : 0) - o.Qout) / free;
-    const stream = o.pulse ? fplStreams(top, M, o.outlets, o.r, f * o.Qin / o.outlets.length) : () => 0;
+    const stream = o.pulse ? fplStreams(top, M, o.outlets, o.r, f * o.Qin / o.outlets.length, o.line) : () => 0;
     // a top node from its place (for the lid's speed through it: its own n_y)
     const ix = new Map(), kz = new Map(); for (let i = 0; i < NX; i++) ix.set(M.X[i], i); for (let k = 0; k < I.NZ; k++) kz.set(M.Z[k * NY * NX], k);
     const nodeAt = (x, z) => (kz.get(z) * NY + NY - 1) * NX + ix.get(x);
@@ -200,4 +201,56 @@ function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3 
   });
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplPaths };
+/**
+ * The pool through a pulse cycle, as the pages show it (Coating › 2D and 3D › Pool and feed). o: { dim (2: a slice of the
+ *   pool along the web, one element across with mirrors at its sides, the feed a band across, the whole width's per width;
+ *   3: the whole pool between the side plates, its outlets), W, xBack, xEnd (m), R, H (m: the round blade's radius and gap;
+ *   R 0: a blade whose face stands at the pool edge), rho, g, U, law: { muRef (Pa·s at 2.7 1/s), ty (Pa), n } (the paste's
+ *   law, μ = τy/γ̇ + (μ − τy/2.7)(γ̇/2.7)^(n−1); or muLaw: γ̇ -> Pa·s, the app's own, with plain: true for a Newtonian one),
+ *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin, Qout (m³/s, the whole
+ *   width: all outlets during a pulse, the web's), hP, hD (m: the level during a pulse and between), T, tau (s), mesh: {
+ *   hFine, hMax, ny }, t0 (s into a pulse the paths start, default τ/2), tMax (s, default 4000) }; onProgress(text, 0..1).
+ * The paste's law by continuation: its viscosity at 2.7 1/s first, then the law with its γ̇ floor brought down tenfold
+ * twice (0.1, 0.01, 0.001 of U/H), each solve from the last.
+ * Returns { dim, W (the width solved, m), states: [pulse, drain], each { info, X, Y, Z, u, v, w, p (Float32Array; p NaN off
+ *   the corners), flows (m³/s), hdot, converged, newton }, paths: [{ outlet, s, out, t (s), pts (Float32Array: x, y, z, t …) }] }.
+ */
+function fplCycle(o, onProgress = () => {}) {
+  const dim = o.dim, M3 = o.mesh || {}, W = dim === 2 ? Math.max(M3.hMax || 0.02, 4 * (M3.hFine || 2e-3)) : o.W, share = W / o.W;
+  const blade = o.R > 0 ? (x => o.H + o.R - Math.sqrt(Math.max(0, o.R * o.R - x * x))) : (() => 1e3);
+  const L = o.law || {}, base = L.muRef - L.ty / 2.7, gd0 = o.U / o.H;
+  const law = o.muLaw || (gd => L.ty / gd + base * Math.pow(gd / 2.7, L.n - 1)), mu27 = law(2.7), plain = o.muLaw ? !!o.plain : !(L.ty > 0) && L.n === 1;
+  if (!(mu27 > 0)) throw new Error('the paste\'s law gives no viscosity at 2.7 1/s');
+  const outlets = dim === 2 ? [{ x: o.outlets[0].x, z: W / 2 }] : o.outlets;
+  const mesh = { hFine: M3.hFine, hMax: M3.hMax, ny: M3.ny, ...(dim === 2 ? { nz: 1, sideFine: false } : {}) };
+  const stages = plain ? [null] : [null, 1e-1, 1e-2, 1e-3], n = 2 * stages.length + 1;
+  const f32 = a => Float32Array.from(a), states = [], fields = [];
+  let done = 0;
+  for (const pulse of [true, false]) {
+    const so = { W, xBack: o.xBack, xEnd: o.xEnd, h: pulse ? o.hP : o.hD, blade, U: o.U, rho: o.rho, g: o.g, outlets, r: o.r, line: dim === 2,
+      Qin: o.Qin * share, Qout: o.Qout * share, pulse, sides: dim === 2 ? 'slip' : 'wall', mesh };
+    let r = null, x0 = null, newton = 0;
+    for (const f of stages) {
+      onProgress(`${pulse ? 'During a pulse' : 'Between pulses'}: ${f == null ? (plain ? 'the flow' : 'the flow at the viscosity at 2.7 1/s') : `the paste's law, γ̇ floor ${(f * gd0).toPrecision(2)} 1/s`}`, done / n);
+      r = fplSolve({ ...so, mu: f == null ? () => mu27 : law, gdMin: f == null ? undefined : f * gd0,
+        solve: { x0, ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } });
+      x0 = r.x; newton += r.hist.length; done++;
+    }
+    const I = r.M.info;
+    fields.push(r);
+    states.push({ info: { NX: I.NX, NY: I.NY, NZ: I.NZ, xs: I.xs, zs: I.zs, xJ: I.xJ, h: I.h, W, xBack: I.xBack, xEnd: I.xEnd, nE: r.M.nE, nN: r.M.nN },
+      X: f32(r.M.X), Y: f32(r.M.Y), Z: f32(r.M.Z), u: f32(r.u), v: f32(r.v), w: f32(r.w), p: f32(r.p), flows: r.flows, hdot: r.hdot, converged: r.converged, newton });
+  }
+  // the paths: from each landing (its middle, and half its radius either way), released t0 into a pulse
+  onProgress('The paths from each landing', done / n);
+  const t0 = o.t0 ?? o.tau / 2, h0 = Math.min(o.hP, o.hD) - 2e-4, starts = [], meta = [];
+  outlets.forEach((q, j) => (dim === 2 ? [[0, 0], [-0.5, 0], [0.5, 0], [-0.25, 0], [0.25, 0]] : [[0, 0], [-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]]).forEach(([a, b], s) => {
+    starts.push([q.x + a * o.r, h0, q.z + b * o.r]); meta.push({ outlet: j, s }); }));
+  const P = fplPaths(fields[0], fields[1], starts, { T: o.T, tau: o.tau, t0, xEnd: o.xEnd, tMax: o.tMax ?? 4000 });
+  const paths = P.map((p, i) => { const k = Math.max(1, Math.ceil(p.pts.length / 400)), sel = p.pts.filter((q, j) => j % k === 0 || j === p.pts.length - 1);
+    return { ...meta[i], out: p.out, t: p.t, pts: Float32Array.from(sel.flat().map((v, j) => (j % 4 === 3 ? v - t0 : v))) }; });
+  onProgress('Done', 1);
+  return { dim, W, states, paths, t0 };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplPaths, fplCycle };
