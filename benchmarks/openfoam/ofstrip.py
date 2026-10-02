@@ -10,9 +10,10 @@ Patches and conditions, as the app's (cfd-fem3d.js):
   inlet   the pool edge: the pressure Pup (the app's traction Pup - rho g y; gravity folded into the modified pressure
           p + rho g y), no cross-flow (pressureInletVelocity: the normal component only)
   outlet  the film moving with the web (plug)
-  sideLo/Hi  symmetry planes (the app's strip sides)
+  sideLo/Hi  symmetry planes (the app's strip sides); empty for a 2D case (exp2d.js: one layer, dim 2)
+  'open' (5th argument): the outlet at the level film's pressure instead of the plug, so the flow rate is OpenFOAM's
 Viscosity: strainRateFunction with a table of the app's own law at sqrt(gd^2 + gdMin^2) (its regularisation), kinematic.
-usage: python3 ofstrip.py <app.json> <case dir> [refine levels (0, 1, 2)] [np]
+usage: python3 ofstrip.py <app.json> <case dir> [refine levels (0, 1, 2)] [np] [open]
 """
 import json, os, sys, shutil, math
 import numpy as np
@@ -67,9 +68,10 @@ def build(src, case, refine=0, nproc=4):
     patch('surface', 'patch', [top(c, l) for c in range(NCc) if c + 1 > cCL for l in range(NLc)])
     patch('inlet', 'patch', [([nid(0, l, k), nid(0, l + 1, k), nid(0, l + 1, k + 1), nid(0, l, k + 1)], cid(0, l, k)) for l in range(NLc) for k in range(NRc)])
     patch('outlet', 'patch', [([nid(NC - 1, l, k), nid(NC - 1, l + 1, k), nid(NC - 1, l + 1, k + 1), nid(NC - 1, l, k + 1)], cid(NCc - 1, l, k)) for l in range(NLc) for k in range(NRc)])
+    side = 'empty' if d.get('dim') == 2 else 'symmetry'
     if not W:
-        patch('sideLo', 'symmetry', [([nid(c, 0, k), nid(c + 1, 0, k), nid(c + 1, 0, k + 1), nid(c, 0, k + 1)], cid(c, 0, k)) for c in range(NCc) for k in range(NRc)])
-        patch('sideHi', 'symmetry', [([nid(c, NL - 1, k), nid(c + 1, NL - 1, k), nid(c + 1, NL - 1, k + 1), nid(c, NL - 1, k + 1)], cid(c, NLc - 1, k)) for c in range(NCc) for k in range(NRc)])
+        patch('sideLo', side, [([nid(c, 0, k), nid(c + 1, 0, k), nid(c + 1, 0, k + 1), nid(c, 0, k + 1)], cid(c, 0, k)) for c in range(NCc) for k in range(NRc)])
+        patch('sideHi', side, [([nid(c, NL - 1, k), nid(c + 1, NL - 1, k), nid(c + 1, NL - 1, k + 1), nid(c, NL - 1, k + 1)], cid(c, NLc - 1, k)) for c in range(NCc) for k in range(NRc)])
     else:
         # cyclic: face i of sideHi matches face i of sideLo, the same first point, the order reversed (outward normals -z and +z)
         start = len(faces)
@@ -118,7 +120,7 @@ relaxationFactors { equations { U 0.9; } fields { p 1; } }""")
     write(case, 'system/decomposeParDict', 'dictionary', f'numberOfSubdomains {nproc}; method simple; simpleCoeffs {{ n ({nproc} 1 1); delta 0.001; }}')
     return d, b, U, W, rho, m
 
-def fields(case, d, b, U, W, rho, m):
+def fields(case, d, b, U, W, rho, m, openOut=False):
     """0/U and 0/p after any refinement: the web's slip fraction per face from the (refined) mesh's face-cell distances."""
     import re
     def readlist(path):
@@ -144,6 +146,10 @@ def fields(case, d, b, U, W, rho, m):
         n = A / np.linalg.norm(A); dist = abs(np.dot(n, ctr - cs[own[i]]))
         fr.append(1 / (1 + b / dist) if b > 0 else 1.0)
     Uw = (U, 0, W); Pin = m['Pup'] / rho
+    side = 'cyclic' if W else 'empty' if d.get('dim') == 2 else 'symmetry'
+    # open outlet: the film's own pressure there instead of the plug (the flow rate is then OpenFOAM's, not the app's):
+    # a level film at the app's end height h, p = rho g (h - y), so the modified pressure p + rho g y = rho g h
+    pOut = m['g'] * d['hEnd'] if openOut else 0
     write(case, '0/U', 'volVectorField', f"""dimensions [0 1 -1 0 0 0 0];
 internalField uniform {vec(Uw)};
 boundaryField
@@ -152,9 +158,9 @@ boundaryField
     blade {{ type noSlip; }}
     surface {{ type slip; }}
     inlet {{ type directionMixed; refValue uniform (0 0 0); refGradient uniform (0 0 0); valueFraction uniform {'(0 0 0 1 0 0)' if W else '(0 0 0 1 0 1)'}; value uniform (0 0 0); }}
-    outlet {{ type fixedValue; value uniform {vec(Uw)}; }}
-    sideLo {{ type {'cyclic' if W else 'symmetry'}; }}
-    sideHi {{ type {'cyclic' if W else 'symmetry'}; }}
+    outlet {{ {'type zeroGradient;' if openOut else f'type fixedValue; value uniform {vec(Uw)};'} }}
+    sideLo {{ type {side}; }}
+    sideHi {{ type {side}; }}
 }}""")
     write(case, '0/p', 'volScalarField', f"""dimensions [0 2 -2 0 0 0 0];
 internalField uniform {Pin:.10g};
@@ -162,18 +168,19 @@ boundaryField
 {{
     web {{ type zeroGradient; }} blade {{ type zeroGradient; }} surface {{ type zeroGradient; }}
     inlet {{ type fixedValue; value uniform {Pin:.10g}; }}
-    outlet {{ type zeroGradient; }}
-    sideLo {{ type {'cyclic' if W else 'symmetry'}; }} sideHi {{ type {'cyclic' if W else 'symmetry'}; }}
+    outlet {{ {f'type fixedValue; value uniform {pOut:.10g};' if openOut else 'type zeroGradient;'} }}
+    sideLo {{ type {side}; }} sideHi {{ type {side}; }}
 }}""")
 
 if __name__ == '__main__':
     src, case = sys.argv[1], sys.argv[2]
     refine = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     nproc = int(sys.argv[4]) if len(sys.argv) > 4 else 4
+    openOut = len(sys.argv) > 5 and sys.argv[5] == 'open'
     d, b, U, W, rho, m = build(src, case, refine, nproc)
     print('checkMesh', run(case, 'checkMesh', 'log.checkMesh0'))
     for i in range(refine):
         print('refineMesh', i + 1, run(case, 'refineMesh -overwrite', f'log.refine{i + 1}'))
     print('checkMesh', run(case, 'checkMesh', 'log.checkMesh'))
-    fields(case, d, b, U, W, rho, m)
+    fields(case, d, b, U, W, rho, m, openOut)
     print('fields written; slip length b = %.4g m' % b)
