@@ -13,7 +13,7 @@
 
 // ---- the films the chain starts from ----
 /** At location i, the wet film (m) of the most detailed model solved for the inputs as they are (answers.js: 3D, else 2D,
- *  else the 1D) and which; null while the 1D solves. */
+ *  else the 1D; the 3D only with the structure model off) and which; null while the 1D solves. */
 function processFilmAt(i) {
   const a = ansAt(i);
   return a ? { h: a.film, src: a.src } : null;
@@ -44,7 +44,7 @@ function processStages() {
   return [
     { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids, flakes ${c.dMin.v}–${c.dMax.v} µm` },
     { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : 'busy',
-      s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
+      s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}${ans3DTag() ? ` (${ans3DTag()}, not used)` : ''}` : ''].filter(Boolean).join(' · ') },
     (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
       return { k: 'align', t: 'Flake alignment', go: 4, st: !MAT.orient.on ? 'set' : o.length ? 'solved' : 'wait',
         s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')}${o.every(q => q.film.dried) ? `, dried ${o.map(q => q.film.dried.Sy.toFixed(2)).join(', ')}` : ''} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].charAt(0).toLowerCase() + OR_MODELS[MAT.orient.model].slice(1)}: computed with each 2D run` }; })(),
@@ -340,7 +340,7 @@ function drawProcessTable(locs, web) {
     <thead><tr><th scope="col">Quantity</th>${cols.map(c => `<th scope="col"${c.tip ? ` title="${c.tip}"` : ''}>${c.head}</th>`).join('')}</tr></thead>
     ${rows.map(([t, u, f]) => `<tr><th scope="row">${t} <small>${u}</small></th>${cols.map(c => c.h != null ? `<td>${f(c.h)}</td>` : '<td class="na" title="solving">—</td>').join('')}</tr>`).join('')}
   </table></div>
-  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
+  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D${ans3DTag() ? '; the structure model is on and the 3D has the plain flow curve, so the 3D is not used (models are not mixed)' : ''}. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
 }
 
 // ---- Materials ----
@@ -364,7 +364,7 @@ function matRheoRows() {
   return [
     ...matRheoBase(),
     ...MAT_RHEO.filter(q => q[10] === 'law').map(row),
-    ['Structure (thixotropy)', r.structOn ? 'on' : 'off', '', 'given', r.structOn ? 'the 2D carries it along its flow; the 1D along the blade; it rebuilds at rest on the web' : 'off: every result from the steady flow curve'],
+    ['Structure (thixotropy)', r.structOn ? 'on' : 'off', '', 'given', r.structOn ? 'the 2D carries it along its flow; the 1D along the blade; it rebuilds at rest on the web; the 3D has the plain flow curve, so the answers take the 2D' : 'off: every result from the steady flow curve'],
     ...MAT_RHEO.filter(q => q[10] === 'struct').map(row),
   ];
 }

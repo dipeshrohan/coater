@@ -189,7 +189,9 @@ function oneDCompareTable() {
   ];
   const head = `<tr><th>Quantity</th><th>Stage</th>${CFD_LOCS.map((l, i) => `<th>L${i + 1}<small>z ${l.z} mm</small></th>`).join('')}</tr>`;
   const three = threeDAt;
-  const body = rows.map(([t, u, f1, f2, d, f3]) => ['1D', '2D', '3D'].map((s, k) => `<tr${k ? '' : ' class="grp-start"'}>${k ? '' : `<th rowspan="3">${t} <small>${u}</small></th>`}<td class="stage">${s}</td>${CFD_LOCS.map((_, i) => {
+  // (the structure model on: the 3D has the plain flow curve, the 2D the structure -- said in the 3D's rows)
+  const tag3 = ans3DTag();
+  const body = rows.map(([t, u, f1, f2, d, f3]) => ['1D', '2D', '3D'].map((s, k) => `<tr${k ? '' : ' class="grp-start"'}>${k ? '' : `<th rowspan="3">${t} <small>${u}</small></th>`}<td class="stage">${s}${k === 2 && tag3 ? ` <small>${tag3}</small>` : ''}</td>${CFD_LOCS.map((_, i) => {
     const L = R.locs[i], two = twoDAt(i), v1 = f1(L);
     if (k === 0) return cell(v1, null, d);
     if (k === 1) return two ? cell(f2(two), null, d).replace('</td>', `${two.stale ? ' <small class="warn-text">out of date</small>' : ` <small>1D ${v1 >= f2(two) ? '+' : ''}${f2(two) ? ((v1 / f2(two) - 1) * 100).toFixed(1) : '—'} %</small>`}</td>`) : cell(null);
@@ -200,7 +202,7 @@ function oneDCompareTable() {
   }).join('')}</tr>`).join('')).join('');
   const cols = `<colgroup><col class="c-q"><col class="c-s">${CFD_LOCS.map(() => '<col>').join('')}</colgroup>`;
   return `<h3 class="oned-h">1D, 2D and 3D compared</h3><div class="oned-scroll"><table class="cfd-table oned-cmp">${cols}${head}${body}</table></div>
-    <p class="fv-note">— : not solved yet (2D: Coating › 2D, Run; 3D: Coating › 3D, Solve 3D on a strip at that location or the full width). The 2D values are from the last solve at each location, the 3D from the middle of the last strip solved or the full width's station nearest the location; the % is how far the 1D (in the 2D row) and the 3D are from the 2D. Contact line: 1D, the static meniscus on the exit face; 2D and 3D, solved with the flow.</p>`;
+    <p class="fv-note">— : not solved yet (2D: Coating › 2D, Run; 3D: Coating › 3D, Solve 3D on a strip at that location or the full width). The 2D values are from the last solve at each location, the 3D from the middle of the last strip solved or the full width's station nearest the location; the % is how far the 1D (in the 2D row) and the 3D are from the 2D. Contact line: 1D, the static meniscus on the exit face; 2D and 3D, solved with the flow.${tag3 ? ' The structure (thixotropy) model is on: the 2D carries it, the 3D has the plain flow curve, so the 3D\'s % includes that difference and Results take the 2D (models are not mixed).' : ''}</p>`;
 }
 
 // ---------------------------------------------------------------------

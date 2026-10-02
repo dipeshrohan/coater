@@ -136,7 +136,8 @@ async function repModule(m, statsTitle = 'Results') {
     html += '<h3>Scenario</h3>' + repRows(ANIM_UNDO.map(([k, l, f]) => [repEsc(l), repEsc(f(ANIM[k]))]), ['Setting', 'Value']);
   }
   if (m === 11) html += acrossReportHTML();
-  const stats = [...document.querySelectorAll('#ss .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
+  // (a tile's note under its number, e.g. the 3D's "plain flow curve", goes with its value)
+  const stats = [...document.querySelectorAll('#ss .stat')].map(s => { const t = s.querySelector('small.stat-tag'); return [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')) + (t ? ` (${cleanText(t)})` : ''))]; });
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
   // (not an editor's drawing; a multiphysics step's charts only once it is solved for the inputs as they are, never empty)
   const figs = imageTargets().filter(t => t.id.startsWith('pane:') && !t.canvases().some(c => c.closest('.no-report')) && t.canvases().every(repMpSolved));
@@ -359,6 +360,7 @@ async function rep3D() {
   const eg = C3D.region === 'edge' ? c3dEdgeGeom() : null;
   const G = c3dBuild(), rg = C3D.region === 'strip' ? `strip ${C3D.stripW} mm wide at L${C3D.loc + 1} (z ${CFD_LOCS[C3D.loc].z} mm)` : eg ? `edge strip ${C3D.edgeW} mm wide at the ${C3D.edgeEnd} end, from z ${+eg.out.toFixed(2)} mm inward; its outer side open (the edge bead), its inner side a symmetry plane; contact angles on the blade ${cfdLocalContactDeg(eg.out).toFixed(1)}°, on the web ${P.thw}°; the bead pressure raised in steps from none` : `full web width, ${ACROSS_W} mm${C3D.webEdges === 'open' ? ', its edges open (the edge bead)' : ''}`;
   const rows = [['Blade', repEsc(G.label || 'no file imported')], ['Region', repEsc(rg)],
+    ['Slurry', ans3DTag() ? 'the plain flow curve: the structure (thixotropy) model is on and is the 2D\'s, so the answers take the 2D (models are not mixed)' : 'the steady flow curve, as the 2D (the structure model is off)'],
     ['Mesh', repEsc(C3D.frac3 || c3dZAdapted() ? `adapted by meshing to an accuracy: ${c3dCounts().a1} along the flow, ${c3dCounts().ny} across the gap, ${c3dNz()} ${C3D.region === 'strip' ? 'across the strip' : 'across the web'}`
       : `elements: ${C3D.nxGap} along the blade, ${C3D.nxFace} up the exit face, ${C3D.nxFilm} along the free surface, ${c3dNy()} across the gap${c3dOpenEdges() ? ' (the open edges\' own)' : ''}, ${C3D.region === 'strip' ? C3D.nzStrip + ' across the strip' : eg ? `${C3D.edgeNz} across the strip (${c3dEdgeElemsText()})` : C3D.webEdges === 'open' ? `${C3D.nzFull} across the web between the edge strips, each edge strip ${C3D.edgeW} mm of ${C3D.edgeNz} (${c3dEdgeElemsText()})` : C3D.nzFull + ' across the web'}`)],
     ['Refinement zones', repEsc(`along the flow and up the gap: ${zonesText(C3D.region === 'full' ? CFDS.zones : solverOf(C3D.loc).zones)}${C3D.zoneScale !== 1 ? ` (sizes ÷${(+C3D.zoneScale).toFixed(2)})` : ''}; across: ${c3dZonesText(C3D.zZones)}${c3dNz() !== (C3D.region === 'strip' ? C3D.nzStrip : C3D.nzFull) ? ` (${c3dNz()} elements)` : ''}`)]];

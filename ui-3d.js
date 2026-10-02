@@ -946,11 +946,13 @@ function view3D() {
   const pane = (id, icon, title, aria, legend = '') => `<figure class="pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas>${legend ? `<div class="pane-legend">${legend}</div>` : ''}</figure>`;
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   const where = R && R.region === 'full' ? 'web' : R && R.region === 'edge' ? 'edge strip' : 'strip';
+  // (the structure model on: the 3D and the 2D its stations solved have the plain flow curve, said beside every number)
+  const tag = ans3DTag(), tagT = tag ? ` · ${tag}` : '', two = tag ? `2D at each station, ${tag}` : '2D at each station';
   const charts = R ? `<div class="v3d-charts">
-      ${R.region === 'edge' ? '' : pane('c3dFilm', 'film', `Wet film across the ${where}${R.openEdges ? ', out over the edge beads (at the end of the film)' : ''}${stale ? ' (out of date)' : ''}`, `Wet film thickness across the ${where}, 3D and 2D`, oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
-      ${pane('c3dCL', 1, `Contact line up the exit face across the ${where}`, `Contact line height up the exit face across the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], ['2D at each station', mut, 'dash']]))}
+      ${R.region === 'edge' ? '' : pane('c3dFilm', 'film', `Wet film across the ${where}${R.openEdges ? ', out over the edge beads (at the end of the film)' : ''}${tagT}${stale ? ' (out of date)' : ''}`, `Wet film thickness across the ${where}, 3D and 2D${tagT}`, oneDLegend([['3D', acc], [two, mut, 'dash']]))}
+      ${pane('c3dCL', 1, `Contact line up the exit face across the ${where}${tagT}`, `Contact line height up the exit face across the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}${tagT}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], [two, mut, 'dash']]))}
       ${pane('c3dPB', 'pressure', 'Pressure on the blade', `Pressure on the blade underside, along the flow and across the ${where}`, '')}
-      ${pane('c3dPX', 'pressure', `Pressure along the blade, ${R.region === 'edge' ? 'the edge strip\'s inner side' : `middle of the ${where}`}`, `Pressure along the blade and exit face at the ${R.region === 'edge' ? 'inner side' : 'middle'} of the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], ['2D', mut, 'dash']]))}
+      ${pane('c3dPX', 'pressure', `Pressure along the blade, ${R.region === 'edge' ? 'the edge strip\'s inner side' : `middle of the ${where}`}${tagT}`, `Pressure along the blade and exit face at the ${R.region === 'edge' ? 'inner side' : 'middle'} of the ${where}${R.region === 'edge' ? '' : ', 3D and 2D'}${tagT}`, R.region === 'edge' ? '' : oneDLegend([['3D', acc], [tag ? `2D, ${tag}` : '2D', mut, 'dash']]))}
       ${pane('c3dTW', 'shear', `Wall shear stress on the web${stale ? ' (out of date)' : ''}`, `Wall shear stress on the web, along the flow and across the ${where}`, '')}
       ${pane('c3dTX', 'shear', `Wall shear stress on the web along the flow${stale ? ' (out of date)' : ''}`, `Wall shear stress on the web along the flow, at the middle and the sides of the ${where}`, oneDLegend([[`middle of the ${where}`, acc], ['its two sides', mut, 'dash']]))}
       ${c3dCrossFlowPane(R, stale, where)}
@@ -972,7 +974,7 @@ function view3D() {
       ${R && C3D.stream ? `<select data-c3d="streamDensity" aria-label="Streamline density" title="How many streamlines">${Object.entries(C3D_STREAM).map(([k, d]) => `<option value="${k}"${k === C3D.streamDensity ? ' selected' : ''}>${d.l}</option>`).join('')}</select>` : ''}
       ${vscale}`,
   }[stp];
-  const fig = `<figure class="pane v3d"><figcaption>${uiBadge(9)}${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : stp === 'mesh' ? `The 3D mesh${c3dSolvedMesh() ? ' as solved' : ''}${secOn ? ` — ${secT[1]}` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `, edge strip at the ${C3D.edgeEnd} end` : ', full web width'}${R && stale ? ' — out of date' : ''}</figcaption>
+  const fig = `<figure class="pane v3d"><figcaption>${uiBadge(9)}${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : stp === 'mesh' ? `The 3D mesh${c3dSolvedMesh() ? ' as solved' : ''}${secOn ? ` — ${secT[1]}` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `, edge strip at the ${C3D.edgeEnd} end` : ', full web width'}${R ? tagT : ''}${R && stale ? ' — out of date' : ''}</figcaption>
       ${secOn ? `<div class="v3d-host m3-sec" id="c3dSecHost"><canvas id="c3dSec" role="img" aria-label="The mesh: ${secT[2]}"></canvas><div class="m3-sec-read" id="c3dSecRead" aria-live="off"></div></div>`
         : '<div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>'}
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
@@ -997,8 +999,9 @@ function view3D() {
   if (running) st = pill('Solving the 3D…', '') + `<span class="c3d-busy" id="c3dBusy"></span>`;
   else if (R) {
     const mid = (R.NL - 1) / 2, sm = R.stations[mid], films = c3dFilmStations(R).map(s => s.film * 1000), cls = c3dFilmStations(R).map(s => s.s * 1000);
-    st = pill(`3D solved: wet film ${Math.min(...films).toFixed(3)} to ${Math.max(...films).toFixed(3)} mm across the ${R.region === 'full' ? 'web' : 'strip'}`, stale ? 'warn' : 'ok')
+    st = pill(`3D solved: wet film ${Math.min(...films).toFixed(3)} to ${Math.max(...films).toFixed(3)} mm across the ${R.region === 'full' ? 'web' : 'strip'}${tag ? `, ${tag}` : ''}`, stale ? 'warn' : 'ok')
       + (stale ? pill('Out of date: the inputs changed since (Solve 3D again)', 'warn') : '')
+      + (tag ? pill('Structure model on: the 3D has the plain flow curve, so Results take the 2D at every location (models are not mixed)', '') : '')
       + pill(R.mode === 'climbed' ? `Contact line ${Math.min(...cls).toFixed(2)} to ${Math.max(...cls).toFixed(2)} mm ${R.k != null ? 'along the face' : 'up the exit face'}` : R.k ? `Contact line pinned at corner ${R.k} of the face` : 'Contact line pinned at the edge', '')
       + pill(R.region === 'full' ? `${c3dTime(S.ms / 1000)}: ${R.size.strips} strips, ${R.sweeps} sweeps until they agreed` : `${(S.ms / 1000).toFixed(0)} s, ${R.iterations} Newton steps`, '')
       + (R.region === 'full' ? pill(R.openEdges ? 'The web\'s edges: open (the edge bead solved at each end)' : R.skew ? 'The web\'s edges: open, each held at its own station\'s flow along the skewed blade (the edge bead is not modelled)' : 'The web\'s edges: symmetry planes (the edge bead is not modelled)', '') : '')
@@ -1017,7 +1020,7 @@ function view3D() {
   }
   document.getElementById('st').innerHTML = st;
   c3dBusy();
-  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`;
+  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}${a[2] ? ` (${a[2]})` : ''}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong>${a[2] ? `<small class="stat-tag">${a[2]}</small>` : ''}</div>`;
   const geoTiles = G.mesh ? [
     [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(ACROSS_W)],
     ['Gap at the edge, mm', Number.isFinite(G.gMin) ? `${(G.gMin * 1000).toFixed(3)}–${(G.gMax * 1000).toFixed(3)}` : 'no blade'],
@@ -1039,7 +1042,7 @@ function view3D() {
     document.getElementById('ss').innerHTML = [
       ['Bead pressure held, left end, Pa', `${FO.edges.left.valid ? (+FO.edges.left.P).toFixed(1) : 'none'} of ${(+FO.Pset).toFixed(1)}`],
       ['Bead pressure held, right end, Pa', `${FO.edges.right.valid ? (+FO.edges.right.P).toFixed(1) : 'none'} of ${(+FO.Pset).toFixed(1)}`],
-      ['Slurry past the blade\'s ends, left / right, mm', `${past(FO.edges.left)} / ${past(FO.edges.right)}`],
+      ['Slurry past the blade\'s ends, left / right, mm', `${past(FO.edges.left)} / ${past(FO.edges.right)}`, tag],
       ['Solve time', c3dTime(S.ms / 1000)],
     ].map(stat).join('');
   } else if (E3) {
@@ -1047,9 +1050,9 @@ function view3D() {
     const lastOk = E3.steps.filter(q => q.ok).pop(), films = R ? R.stations.map(q => q.film * 1000) : [], inner = R ? R.stations[E3.edgeGeom.left ? R.NL - 1 : 0].film * 1000 : NaN;
     document.getElementById('ss').innerHTML = [
       ['Bead pressure held, Pa', `${E3.valid ? (+E3.P).toFixed(1) : 'none'} of ${(+E3.Pset).toFixed(1)}`],
-      ['Slurry past the blade\'s end, mm', lastOk ? c3dEdgePast(E3, lastOk.web).toFixed(2) : '—'],
+      ['Slurry past the blade\'s end, mm', lastOk ? c3dEdgePast(E3, lastOk.web).toFixed(2) : '—', lastOk ? tag : ''],
       ['Angle at the blade\'s end, max', lastOk ? `${lastOk.angle.toFixed(1)}° (limit ${(E3.thBlade + 90).toFixed(0)}°)` : E3.steps[0] && c3dEdgeSolved(E3.steps[0]) && Number.isFinite(E3.steps[0].angle) ? `${E3.steps[0].angle.toFixed(1)}° (limit ${(E3.thBlade + 90).toFixed(0)}°)` : '—'],
-      ['Edge bead, mm', R ? `${Math.max(...films).toFixed(3)} (inside ${inner.toFixed(3)})` : '—'],
+      ['Edge bead, mm', R ? `${Math.max(...films).toFixed(3)} (inside ${inner.toFixed(3)})` : '—', R ? tag : ''],
       ['Steps solved', String(E3.steps.length)],
       ['Solve time', c3dTime(S.ms / 1000)],
     ].map(stat).join('');
@@ -1059,10 +1062,10 @@ function view3D() {
     const dev = Math.max(...c3dFilmStations(R).map(s => Math.abs(s.film / s.film2 - 1))) * 100;
     const full = R.region === 'full', films = c3dFilmStations(R).map(s => s.film * 1000);
     document.getElementById('ss').innerHTML = [
-      full ? ['Wet film, mean, mm', (films.reduce((a, b) => a + b, 0) / films.length).toFixed(3)] : ['Wet film at L' + (C3D.loc + 1) + ', mm', (sm.film * 1000).toFixed(3)],
-      ['3D vs 2D film, largest', dev.toFixed(2) + ' %'],
-      full ? ['Film range across the web', ((Math.max(...films) - Math.min(...films)) * 1000).toFixed(1) + ' µm'] : ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : R.k ? `pinned at corner ${R.k}` : 'pinned'],
-      ...(R.openEdges ? [['Edge beads, left / right, mm', ['lo', 'hi'].map(k => Math.max(...R.open[k].y[R.NC - 1]) * 1000).map(v => v.toFixed(3)).join(' / ')]] : [['Flow across the web, max', (wMax * 1000).toFixed(3) + ' mm/s']]),
+      full ? ['Wet film, mean, mm', (films.reduce((a, b) => a + b, 0) / films.length).toFixed(3), tag] : ['Wet film at L' + (C3D.loc + 1) + ', mm', (sm.film * 1000).toFixed(3), tag],
+      ['3D vs 2D film, largest', dev.toFixed(2) + ' %', tag ? `both ${tag}` : ''],
+      full ? ['Film range across the web', ((Math.max(...films) - Math.min(...films)) * 1000).toFixed(1) + ' µm', tag] : ['Contact line at L' + (C3D.loc + 1) + ', mm', R.mode === 'climbed' ? (sm.s * 1000).toFixed(2) : R.k ? `pinned at corner ${R.k}` : 'pinned', tag],
+      ...(R.openEdges ? [['Edge beads, left / right, mm', ['lo', 'hi'].map(k => Math.max(...R.open[k].y[R.NC - 1]) * 1000).map(v => v.toFixed(3)).join(' / '), tag]] : [['Flow across the web, max', (wMax * 1000).toFixed(3) + ' mm/s', tag]]),
       full ? ['Unknowns per strip', `${R.size.unknowns.toLocaleString()} × ${R.size.strips}`] : ['Unknowns', R.size.unknowns.toLocaleString()],
       ['Solve time', full ? c3dTime(S.ms / 1000) : `${(S.ms / 1000).toFixed(0)} s`],
     ].map(stat).join('');
