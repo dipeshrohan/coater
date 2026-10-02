@@ -49,14 +49,14 @@ const CFG = [
   { k: 'dth', l: 'Wetting variation on blade', min: 0, max: 20, step: 0.5, u: '°', d: 1, v: 4, h: 'contamination, residue' },
 
   // (the pool fed in pulses, Coating › 1D › Pool and feed: the paste falls from the outlets onto the pool's top, all of
-  //  them together, when the level has dropped; values assumed until measured, each editable)
+  //  them together, when the level has dropped; each value editable)
   { g: 'Pool and feed', k: 'fN', l: 'Outlets', min: 1, max: 12, step: 1, u: '', d: 0, v: 4, h: 'all fire together; equidistant across the web unless placed on Pool and feed' },
-  { k: 'fV', l: 'Paste per pulse, all outlets', min: 5, max: 1000, step: 1, u: 'ml', d: 0, v: 60, h: 'assumed: set it to your pump\'s' },
-  { k: 'fTau', l: 'Pulse length', min: 0.5, max: 60, step: 0.5, u: 's', d: 1, v: 3, h: 'assumed: set it to your pump\'s' },
-  { k: 'fTip', l: 'Outlet tip above the web', min: 5, max: 300, step: 1, u: 'mm', d: 0, v: 60, h: 'assumed: measure it' },
-  { k: 'fX', l: 'Outlets upstream of the blade edge', min: 5, max: 400, step: 1, u: 'mm', d: 0, v: 100, h: 'assumed: measure it' },
-  { k: 'fD', l: 'Outlet inner diameter', min: 1, max: 40, step: 0.5, u: 'mm', d: 1, v: 10, h: 'assumed: measure it' },
-  { k: 'fBack', l: 'Pool back edge upstream of the blade edge', min: 10, max: 500, step: 1, u: 'mm', d: 0, v: 130, h: 'assumed: where the paste ends behind the blade' },
+  { k: 'fV', l: 'Paste per pulse, all outlets', min: 5, max: 1000, step: 1, u: 'ml', d: 0, v: 60, h: 'set it from your pump' },
+  { k: 'fTau', l: 'Pulse length', min: 0.5, max: 60, step: 0.5, u: 's', d: 1, v: 3, h: 'set it from your pump' },
+  { k: 'fTip', l: 'Outlet tip above the web', min: 5, max: 300, step: 1, u: 'mm', d: 0, v: 60, h: 'measure it on the line' },
+  { k: 'fX', l: 'Outlets upstream of the blade edge', min: 5, max: 400, step: 1, u: 'mm', d: 0, v: 100, h: 'measure it on the line' },
+  { k: 'fD', l: 'Outlet inner diameter', min: 1, max: 40, step: 0.5, u: 'mm', d: 1, v: 10, h: 'measure it on the line' },
+  { k: 'fBack', l: 'Pool back edge upstream of the blade edge', min: 10, max: 500, step: 1, u: 'mm', d: 0, v: 130, h: 'where the paste ends behind the blade' },
 
   { g: 'Web edge and film', k: 'a0e', l: 'Edge irregularity at exit', min: 5, max: 200, step: 5, u: 'µm', d: 0, v: 30 },
   { k: 'lam', l: 'Ripple wavelength on film', min: 2, max: 40, step: 0.5, u: 'mm', d: 1, v: 8 },

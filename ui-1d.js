@@ -439,7 +439,7 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#feedEq')) { FEED_POS.z = null; queueRender(); } });
 
-/** The report's part for Pool and feed: the feed as set (each value assumed until measured), and each outlet. */
+/** The report's part for Pool and feed: the feed as set, and each outlet. */
 function feedReportHTML() {
   const F = ONE_D.res ? feedNow() : null, u = (v, d, unit) => `${(+v).toFixed(d)} ${unit}`;
   const rows = [['Outlets', `${P.fN}, ${FEED_POS.z && FEED_POS.z.length === P.fN ? 'placed' : 'equidistant'} at ${feedZs().join(', ')} mm across the web`],
