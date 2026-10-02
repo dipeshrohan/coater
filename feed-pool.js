@@ -52,8 +52,11 @@ function fplTopAt(M, x, z) {
  *   pulse (true: during a pulse), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool),
  *   mesh (fpmMesh's options, optional), solve (ffSolve's options; x0 a start), eta (the top over the level at the plan's
  *   nodes, m: its shape; default flat), free (optional, the top free: { sigma (N/m, its tension), vLand (m/s, the streams'
- *   speed landing: their push), move (m, the most the top may move in a step, default a third of the finest element),
- *   dtMax (s, the longest step, default 0.15: the tension is explicit), steps (most, default 80), tol (m/s: the top's
+ *   speed landing: their push), move (m, the most the top may move in a step, default the finest element), stepTol (each step's
+ *   solve, relative, default 1e-6: the steps settle the top; the last solve, on it, to the solve's own tolerance),
+ *   dtMax (s, the longest step, default 0.15: the tension is explicit), ramp (s, default 1: the streams brought on over
+ *   it, their flow, their push and the level's rate with them, so a heap spreads as it grows instead of standing up as a
+ *   tower on the landing; the top settled after), steps (most, default 80), tol (m/s: the top's
  *   largest speed against its steady place to stop at; default 1 % of ḣ) }), onTop (called after each step) }.
  * The top free: time steps (backward in its weight), each a solve with the top a free surface (its tension, the streams'
  * push, and its weight over the step held implicitly: feed-fem.js's ffRobinFace, kn = ρ g Δt) and the top then moved by
@@ -64,7 +67,8 @@ function fplTopAt(M, x, z) {
  * once more on it with its kinematics exact (a lid: the speed through it vn), so the paste's balance is exact.
  * Returns { M, S, x, u, v, w, p, hdot, area (the top's plan, m²), free (its part off the walls, by n_y × area, m²), flows: {
  *   top, end, back, web, blade, side0, side1 } (m³/s, out), hist, converged, eta (m, at the plan's nodes), tops (per step:
- *   { speed (m/s, the top's largest against its steady place), high, low (m, the top over the level), dt, t (s) }), stream }.
+ *   { speed (m/s, the top's largest against its steady place), high, low (m, the top over the level), dt, t (s), streams
+ *   (the share of the streams on) }), stream }.
  */
 function fplSolve(o) {
   const fpmMesh = FPL_('fpmMesh', './feed-pool-mesh.js'), ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
@@ -72,7 +76,7 @@ function fplSolve(o) {
   const FMF = FPL_FACES(), F = o.free, tops = [], rg = o.rho * o.g, slipSides = o.sides === 'slip';
   let eta = o.eta ? Float64Array.from(o.eta) : null, x0 = o.solve && o.solve.x0;
   // the pool on a top: its mesh, the top's free nodes (their area shares, their normals), the streams, the level's rate
-  const pool = eta => {
+  const pool = (eta, f = 1) => {
     const M = fpmMesh({ W: o.W, xBack: o.xBack, xEnd: o.xEnd, h: o.h, blade: o.blade, outlets: o.outlets, r: o.r, ...(o.mesh || {}), eta });
     const I = M.info, NX = I.NX, NY = I.NY, iJ = 2 * I.xs.findIndex(v => Math.abs(v - I.xJ) < 1e-12);
     // (the top's nodes on the walls -- the side plates, where it meets the blade -- hold the walls' no-slip; the top moves
@@ -83,8 +87,8 @@ function fplSolve(o) {
     for (const [n, a] of nrm) { const l = Math.hypot(...a); nrm.set(n, a.map(v => v / l)); }
     // (each free node's share of the top's plan: its area share times n_y)
     const top = [...fsArea({ M, X: M.X, Y: M.Y, Z: M.Z }, ['pile'])].filter(([n]) => !onWall.has(n)).map(([n, a]) => [n, a * nrm.get(n)[1]]);
-    const free = top.reduce((s, [, a]) => s + a, 0), hdot = ((o.pulse ? o.Qin : 0) - o.Qout) / free;
-    const stream = o.pulse ? fplStreams(top, M, o.outlets, o.r, o.Qin / o.outlets.length) : () => 0;
+    const free = top.reduce((s, [, a]) => s + a, 0), hdot = ((o.pulse ? f * o.Qin : 0) - o.Qout) / free;
+    const stream = o.pulse ? fplStreams(top, M, o.outlets, o.r, f * o.Qin / o.outlets.length) : () => 0;
     // a top node from its place (for the lid's speed through it: its own n_y)
     const ix = new Map(), kz = new Map(); for (let i = 0; i < NX; i++) ix.set(M.X[i], i); for (let k = 0; k < I.NZ; k++) kz.set(M.Z[k * NY * NX], k);
     const nodeAt = (x, z) => (kz.get(z) * NY + NY - 1) * NX + ix.get(x);
@@ -101,35 +105,39 @@ function fplSolve(o) {
   let P = pool(eta), last = null;
   if (F) {
     // the free top, by steps in time
-    const vL = F.vLand || 0, dmax = F.move ?? (o.mesh && o.mesh.hFine || 2e-3) / 3, dtMax = F.dtMax ?? 0.15;
-    let smax = 0; for (const [n] of P.top) smax = Math.max(smax, P.stream(P.M.X[n], P.M.Y[n], P.M.Z[n]));
-    let dt = Math.min(dtMax, dmax / (smax + Math.abs(P.hdot) + 1e-9));
+    const vL = F.vLand || 0, dmax = F.move ?? (o.mesh && o.mesh.hFine || 2e-3), dtMax = F.dtMax ?? 0.15, ramp = o.pulse ? (F.ramp ?? 1) : 0;
+    const frac = t => (ramp > 0 ? Math.min(1, t / ramp) : 1);
+    let t = 0, dt = Math.min(dtMax, ramp > 0 ? ramp / 10 : dtMax);
+    P = pool(eta, frac(dt));
     for (let it = 0, tries = 0; it < (F.steps ?? 80) && tries < 4 * (F.steps ?? 80); tries++) {
       const S = setup(P, { type: 'free', sigma: F.sigma || 0, kn: rg * dt, vn: (x, y, z, n) => (P.hdot - P.stream(x, y, z)) * n[1],
         t: vL && o.pulse ? (x, y, z, n) => { const q = o.rho * P.stream(x, y, z) * vL; return [-q * n[0], -q * n[1], -q * n[2]]; } : undefined });
-      const R = ffSolve(S, { tol: 1e-8, ...(o.solve || {}), x0 });
+      const R = ffSolve(S, { tol: 1e-8, ...(o.solve || {}), tol: F.stepTol ?? 1e-6, x0 });
       // the top's rise over the step at each free node of the plan
       const { I, NX, NY, iJ } = P, next = Float64Array.from(eta || new Float64Array(NX * I.NZ));
       let sp = 0;
       for (let k = 0; k < I.NZ; k++) for (let i = 0; i < iJ; i++) {
         const n = (k * NY + NY - 1) * NX + i; if (P.onWall.has(n)) continue;
-        const nv = P.nrm.get(n), V = (R.u[n] * nv[0] + R.v[n] * nv[1] + R.w[n] * nv[2]) / nv[1] - (P.hdot - P.stream(P.M.X[n], P.M.Y[n], P.M.Z[n]));
+        const nv = P.nrm.get(n), V = (R.u[n] * nv[0] + R.v[n] * nv[1] + R.w[n] * nv[2]) / Math.max(nv[1], 0.2) - (P.hdot - P.stream(P.M.X[n], P.M.Y[n], P.M.Z[n]));
         next[k * NX + i] += dt * V; sp = Math.max(sp, Math.abs(V));
       }
       // (moved too far: the step again, shorter)
-      if (sp * dt > 2 * dmax) { dt = Math.max(dt / 4, 1e-6); continue; }
-      x0 = R.x; last = R; it++;
+      if (sp * dt > 2 * dmax) { dt = Math.max(dt / 4, 1e-6); P = pool(eta, frac(t + dt)); continue; }
+      x0 = R.x; last = R; it++; t += dt;
       // (at the side plates: the top meets them square, η′ = 0 there: from the first element's nodes)
       if (!slipSides) for (let i = 0; i < iJ; i++) { next[i] = (4 * next[NX + i] - next[2 * NX + i]) / 3; const K = I.NZ - 1; next[K * NX + i] = (4 * next[(K - 1) * NX + i] - next[(K - 2) * NX + i]) / 3; }
       eta = next;
       let hi = -Infinity, lo = Infinity; for (let k = 0; k < I.NZ; k++) for (let i = 0; i <= iJ; i++) { hi = Math.max(hi, eta[k * NX + i]); lo = Math.min(lo, eta[k * NX + i]); }
-      tops.push({ speed: sp, high: hi, low: lo, dt, t: (tops.length ? tops[tops.length - 1].t : 0) + dt });
-      if (o.onTop) o.onTop(tops[tops.length - 1]);
-      P = pool(eta);
-      if (sp < (F.tol ?? 0.01 * Math.max(Math.abs(P.hdot), 1e-9))) break;
-      // (the next step: as long as moves the top `move` at its speed now, at most twice this one, never above dtMax)
+      tops.push({ speed: sp, high: hi, low: lo, dt, t, streams: frac(t), newton: R.hist.length, lin: R.hist.reduce((a, k) => a + k.lin, 0) });
+      if (o.onTop) o.onTop(tops[tops.length - 1], eta, P);
+      if (t >= ramp && sp < (F.tol ?? 0.01 * Math.max(Math.abs(P.hdot), 1e-9))) { P = pool(eta, 1); break; }
+      // (the next step: as long as moves the top `move` at its speed now, at most twice this one, never above dtMax, and
+      //  ending on the ramp's end)
       dt = Math.min(dtMax, 2 * dt, 0.9 * dmax / sp);
+      if (t < ramp && t + dt > ramp) dt = ramp - t;
+      P = pool(eta, frac(t + dt));
     }
+    P = pool(eta, 1);
   }
   // the flow on the top as it is (a lid: the speed through it, vn = (ḣ − s) n_y, given)
   const S = setup(P, { type: 'slip', normal: 'surface', un: (x, y, z) => { const n = P.nodeAt(x, z); return (P.hdot - P.stream(x, y, z)) * (P.nrm.get(n) || [0, 1, 0])[1]; } });

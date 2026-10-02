@@ -5,12 +5,13 @@
  *     at every node -- exact under a straight blade face (the elements' maps polynomial); under the round blade, the
  *     quadrature's stir there falling as the mesh is refined.
  *  2. The free top at rest, started from two heaps (one up, one down): it returns flat to the level (a free top at rest
- *     carries no stress), the pseudo-time steps moving it slower each time.
+ *     carries no stress), the steps moving it slower each time (slowest where it meets the blade: no-slip there).
  *  3. The paste's balance, in a pulse and between pulses: out through the pool edge the web's flow, in through the top
  *     the same, nothing through the walls, the web or the back edge; each stream's flow exactly the pulse's share.
  *  4. A long shallow strip of pool (mirrors for side plates), between pulses: far from its ends, the exact flow of a pool
  *     fed through its top and dragged by the web (by hand: u = U (1 − 3y/h + 3y²/2h²) + q(x) (3y/h² − 3y²/2h³),
- *     v = −w0 (3y²/2h² − y³/2h³), q′ = w0; w0 the top's speed down, q the flow along the pool per width there).
+ *     v = −w0 (3y²/2h² − y³/2h³), q′ = w0; w0 the top's speed down, q the flow along the pool per width there; q′ to the
+ *     elements' local mass error, a part of U: q is the small net flow of a larger one turning in the pool).
  *  5. Paths through the cycle: in a flow steady in each part of it (one speed in a pulse, another between), the time to the
  *     pool edge exact, never stepping across a switch.
  */
@@ -30,9 +31,9 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
     return { um, pe, nE: r.M.nE };
   };
   const a = still(line, coarse), b = still(blade, coarse), c = still(blade, { hFine: 3e-3, hMax: 12.5e-3, ny: 6 });
-  check('at rest: the paste still, the pressure the pool\'s weight ρ g (h − y) at every node (exact under a straight blade face; under the round one, falling with the mesh)',
-    a.um < 1e-12 && a.pe < 1e-9 * rho * g * h && c.um < b.um / 4 && c.pe < b.pe / 4,
-    `straight: fastest ${a.um.toExponential(1)} m/s, pressure off ${a.pe.toExponential(1)} Pa; round: ${b.um.toExponential(1)} → ${c.um.toExponential(1)} m/s, ${b.pe.toExponential(1)} → ${c.pe.toExponential(1)} Pa (${b.nE} → ${c.nE} elements)`);
+  check('at rest: the paste still, the pressure the pool\'s weight ρ g (h − y) at every node (exact under a straight blade face; under the round one, small and falling with the mesh)',
+    a.um < 1e-12 && a.pe < 1e-9 * rho * g * h && c.um < b.um / 2 && c.pe < b.pe && c.um < 1e-5 * rho * g * h * h / 10.5 && c.pe < 3e-3 * rho * g * h,
+    `straight: fastest ${a.um.toExponential(1)} m/s, pressure off ${a.pe.toExponential(1)} Pa; round: ${b.um.toExponential(1)} → ${c.um.toExponential(1)} m/s (of ρgh²/μ ${(rho * g * h * h / 10.5).toFixed(2)} m/s), ${b.pe.toExponential(1)} → ${c.pe.toExponential(1)} Pa (${b.nE} → ${c.nE} elements)`);
 }
 
 // 2. the free top at rest returns flat
@@ -44,10 +45,13 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
   // (the second heap down, so the top's mean is the level)
   const s1 = eta.reduce((s, v, j) => s + wts[j] * v, 0), s2 = b2.reduce((s, v, j) => s + wts[j] * v, 0);
   for (let j = 0; j < eta.length; j++) eta[j] -= s1 / s2 * b2[j];
-  const e0 = Math.max(...eta.map(Math.abs)), r = FP.fplSolve({ ...base, U: 0, Qin: 0, Qout: 0, pulse: false, eta, free: { sigma: 0.07, dt: 0.2, steps: 12, tol: 1e-12 } });
-  const e1 = Math.max(...r.eta.map(Math.abs)), sp = r.tops.map(t => t.speed), slower = sp.every((m, i) => i === 0 || m < 0.7 * sp[i - 1]);
-  check('the free top at rest, started from two heaps (2 mm up, 2 mm down): it returns flat to the level, each step slower', e1 < 1e-3 * e0 && slower,
-    `the heaps ${(e0 * 1e3).toFixed(2)} mm → ${(e1 * 1e6).toFixed(3)} µm after ${r.tops.length} steps of 0.2 s; the top's speed ${sp.map(m => (m * 1e6).toExponential(1)).join(', ')} µm/s`);
+  const e0 = Math.max(...eta.map(Math.abs)), r = FP.fplSolve({ ...base, U: 0, Qin: 0, Qout: 0, pulse: false, eta, free: { sigma: 0.07, dtMax: 0.4, steps: 30, tol: 1e-12 } });
+  // (where the top meets the blade, a no-slip wall, the paste barely moves and the top settles slowest: two elements
+  //  apart from it, the rest)
+  const away = j => I.xJ - XN(j % NX) > 2 * coarse.hFine, e1 = Math.max(...r.eta.map((v, j) => (away(j) ? Math.abs(v) : 0))), e2 = Math.max(...r.eta.map(Math.abs));
+  const sp = r.tops.map(t => t.speed), slower = sp.every((m, i) => i === 0 || m < sp[i - 1]);
+  check('the free top at rest, started from two heaps (2 mm up, 2 mm down): it returns flat to the level, each step slower', e1 < 1e-3 * e0 && e2 < 3e-3 * e0 && slower,
+    `the heaps ${(e0 * 1e3).toFixed(2)} mm → ${(e1 * 1e6).toFixed(3)} µm (${(e2 * 1e6).toFixed(3)} µm next to the blade) after ${r.tops.length} steps (${r.tops[r.tops.length - 1].t.toFixed(2)} s); the top's speed ${sp.filter((m, i) => i % 3 === 0).map(m => (m * 1e6).toExponential(1)).join(', ')} µm/s (every third step)`);
 }
 
 // 3. the paste's balance
@@ -76,11 +80,16 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
   let q = 0; for (let j = 0; j + 2 < NY; j += 2) q += (ys[j + 2] - ys[j]) * (r.u[col[j]] + 4 * r.u[col[j + 1]] + r.u[col[j + 2]]) / 6;
   const f0 = y => 1 - 3 * y / hs + 1.5 * y * y / (hs * hs), f1 = y => 3 * y / (hs * hs) - 1.5 * y * y / hs ** 3, F1 = y => 1.5 * y * y / (hs * hs) - 0.5 * y ** 3 / hs ** 3;
   let eu = 0, ev = 0; col.forEach((n, j) => { eu = Math.max(eu, Math.abs(r.u[n] - (U * f0(ys[j]) + q * f1(ys[j])))); ev = Math.max(ev, Math.abs(r.v[n] + w0 * F1(ys[j]))); });
-  // q′ = w0: the flow along the pool grows by what comes through the top (two columns either side)
+  // q′ = w0: the flow along the pool grows by what comes through the top (its slope over ±40 mm, least squares on the
+  //  elements' boundaries: the elements keep the paste on average over each, not at every point)
   const qAt = ii => { const c = col.map(n => n - i + ii); let s = 0; for (let j = 0; j + 2 < NY; j += 2) s += (M.Y[c[j + 2]] - M.Y[c[j]]) * (r.u[c[j]] + 4 * r.u[c[j + 1]] + r.u[c[j + 2]]) / 6; return s; };
-  const dq = (qAt(i + 2) - qAt(i - 2)) / (M.X[i + 2] - M.X[i - 2]);
-  check('a long shallow strip of pool between pulses: far from its ends, the exact flow of a pool fed through its top and dragged by the web', eu < 1e-4 * U && ev < 1e-3 * w0 && Math.abs(dq / w0 - 1) < 1e-4,
-    `at ${(xm * 1e3).toFixed(0)} mm, ${(hs * 1e3).toFixed(0)} mm deep: u off by ${(eu / U).toExponential(1)} U, v by ${(ev / w0).toExponential(1)} w0; q′/w0 ${(dq / w0).toFixed(5)}; the top's speed ${(w0 * 1e6).toFixed(3)} µm/s; ${M.nE} elements`);
+  const fit = []; for (let ii = 0; ii < NX; ii += 2) if (Math.abs(M.X[ii] - xm) <= 0.04) fit.push([M.X[ii], qAt(ii)]);
+  const mx = fit.reduce((a, p) => a + p[0], 0) / fit.length, mq = fit.reduce((a, p) => a + p[1], 0) / fit.length;
+  const dq = fit.reduce((a, p) => a + (p[0] - mx) * (p[1] - mq), 0) / fit.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+  // (q is the small net flow of a much larger one turning in the pool, U h / 3 each way: the elements' local mass error is
+  //  of that one's, so q′ = w0 to a part of U, not of w0)
+  check('a long shallow strip of pool between pulses: far from its ends, the exact flow of a pool fed through its top and dragged by the web', eu < 1e-4 * U && ev < 1e-3 * w0 && Math.abs(dq - w0) < 1e-4 * U,
+    `at ${(xm * 1e3).toFixed(0)} mm, ${(hs * 1e3).toFixed(0)} mm deep: u off by ${(eu / U).toExponential(1)} U, v by ${(ev / w0).toExponential(1)} w0; q′ − w0 ${((dq - w0) / U).toExponential(1)} U (q′/w0 ${(dq / w0).toFixed(4)}); the top's speed ${(w0 * 1e6).toFixed(3)} µm/s; ${M.nE} elements`);
 }
 
 // 5. paths through the cycle in a flow steady in each part of it

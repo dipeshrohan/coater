@@ -49,7 +49,9 @@ function fpmMeets(blade, h, xBack, xEnd) {
 /**
  * The pool's mesh. o: { W, xBack, xEnd, h (m), blade: x -> the blade's underside height (m), outlets: [{ x, z }] (m, x
  *   negative), r (m: the landing's radius, fine around it), hFine (m, default 2 mm), hMax (m, default 12 mm), grow (default
- *   0.35), ny (rows, default 6), webBias (default 1.6: rows finer near the web), eta (optional: the free top's height over
+ *   0.35), ny (rows, default 6), webBias (default 1.6: rows finer near the web), topFine (rows fine at the top as well as at
+ *   the web: a heap on the top resolved), sideFine (default true: finer near the side plates; false for mirrors), eta
+ *   (optional: the free top's height over
  *   the level at each node of the plan, m, index k·NX + i; 0 where the top meets the blade) }.
  * Returns { nN, nE, X, Y, Z, elems, faces, info: { xJ, xs, zs, rows, W, h, xBack, xEnd, top, NX, NY, NZ } }: node (i, j, k)
  *   (along x, up, across) is (k·NY + j)·NX + i; the top's nodes j = NY − 1.
@@ -58,10 +60,10 @@ function fpmMesh(o) {
   const { W, xBack, xEnd, h, blade } = o, outs = o.outlets || [], hF = o.hFine ?? 2e-3, hM = o.hMax ?? 12e-3, gr = o.grow ?? 0.35, r = o.r ?? 3e-3;
   const xJ = fpmMeets(blade, h, xBack, xEnd);
   const xs = fpmLine(-xBack, -xEnd, fpmSize([...outs.map(q => q.x), xJ, -xBack, -xEnd], hF, r, gr, hM), [xJ]);
-  const zs = fpmLine(0, W, fpmSize([...outs.map(q => q.z), 0, W], hF, r, gr, hM));
+  const zs = fpmLine(0, W, fpmSize([...outs.map(q => q.z), ...(o.sideFine === false ? [] : [0, W])], hF, r, gr, hM));
   const ny = o.ny ?? 6, bias = o.webBias ?? 1.6;
-  // rows: σ from 0 (web) to 1 (top), finer near the web
-  const sig = Array.from({ length: ny + 1 }, (_, j) => (Math.pow(bias, j / ny) - 1) / (bias - 1));
+  // rows: σ from 0 (web) to 1 (top), finer near the web (or near both, 1 − cos)
+  const sig = Array.from({ length: ny + 1 }, (_, j) => (o.topFine ? (1 - Math.cos(Math.PI * j / ny)) / 2 : (Math.pow(bias, j / ny) - 1) / (bias - 1)));
   const nx = xs.length - 1, nz = zs.length - 1;
   // nodes: the element boundaries and their midpoints in each direction (Q2), columns of 2 ny + 1 nodes
   const mid = a => a.flatMap((v, i) => i + 1 < a.length ? [v, (v + a[i + 1]) / 2] : [v]);
