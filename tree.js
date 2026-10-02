@@ -92,13 +92,15 @@ function groupOf(details) {
 
 // ---- which shared inputs each tab uses ----
 const ALL_IN = CFG.map(c => c.k);
+// (the pool and its feed: only on Coating › 1D › Pool and feed)
+const FEED_IN = ['fN', 'fV', 'fTau', 'fTip', 'fX', 'fD', 'fBack'];
 const USES = [
-  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw'].includes(k)),
-  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw'].includes(k)),
+  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN].includes(k)),
+  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN].includes(k)),
   ['U', 'Hm', 'tf', 'oven', 'mu', 'n', 'ty', 'g', 'Pup', 'L', 'a0e'],
   ['U', 'Hm', 'tf', 'oven', 'mu', 'n', 'ty', 'g', 'Pup', 'L', 'dH', 'lam', 'vib'],
   null, null,     // (CFD, DOE: below, with the setup)
-  ALL_IN,
+  ALL_IN.filter(k => !FEED_IN.includes(k)),
 ];
 const cfdUses = () => {
   const uses = RHEO_MODELS[CFDG.model].uses;
@@ -123,7 +125,9 @@ const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () =>
   // (MP-W: the stack's and the furnace's multiphysics pages: their stage's inputs only, as the stage's own page)
   stack1d: () => [], stack2d: () => [], stack3d: () => [], furn1d: () => [], furn2d: () => [], furn3d: () => [],
   // (MP-5: the drying's multiphysics pages: the Drying page's inputs)
-  dry1d: () => ['U', 'oven'], dry2d: () => ['U', 'oven'], dry3d: () => ['U', 'oven'] };
+  dry1d: () => ['U', 'oven'], dry2d: () => ['U', 'oven'], dry3d: () => ['U', 'oven'],
+  // (the pool and its feed: the 1D's inputs, which give the film and its sensitivity to the pool, and the feed's own)
+  feed1d: () => [...cfdUses(), ...FEED_IN] };
 // (the coating's results on the Process view: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)
 /** The shared inputs page pg uses (null: all of them). */
 const usesOf = pg => { const v = NAV[pg].v; return NAV_USES[pg] ? NAV_USES[pg]() : v === 13 ? ['mu', 'n', 'ty', 'g', 'tf'] : v === 4 || v === 5 || v === 8 || v === 12 ? cfdUses() : v === 10 ? [...cfdUses(), 'lam', 'vib'] : v === 11 ? [...cfdUses(), 'face'] : v === 9 ? [...cfdUses(), 'face', 'thw'] : USES[v]; };

@@ -147,6 +147,7 @@ const UNDO_UNITS = (() => {
     } });
     u.push({ id: `loc${i}.solver`, get: () => CFD_LOCS[i].solver, set: v => { CFD_LOCS[i].solver = { ...(v || {}) }; }, label: () => `${L} own solver settings` });
   });
+  u.push({ id: 'feed.z', get: () => FEED_POS.z, set: v => { FEED_POS.z = v ? v.slice() : null; }, label: (a, b) => b ? 'Outlet positions across the web' : 'Outlets back to equidistant' });
   u.push({ id: 'probes', get: () => cfdProbes, set: v => { cfdProbes = (v || []).map(q => ({ ...q })); saveProbes(); }, label: (a, b) => undoListChange(a, b, 'probe', ['x', 'y']) });
   u.push({ id: 'cuts', get: () => cfdCuts, set: v => { cfdCuts = (v || []).map(q => ({ ...q })); saveCuts(); }, label: (a, b) => undoListChange(a, b, 'cut line', ['x1', 'y1', 'x2', 'y2']) });
   u.push({ id: 'cases', get: () => readCases() || [], set: v => { writeCases(v || []); }, label: (a, b) => undoListChange(a, b, 'case', []) });

@@ -647,9 +647,9 @@ function viewSummary() {
 // ---------------------------------------------------------------------
 // The views, by number (the number is what the project file, the undo history and the help keep):
 // 0 Start-up animation, 1 Contact line, 2 Web edge, 3 Film surface, 4 2D CFD, 5 DOE, 6 Measured data, 7 Summary,
-// 8 1D gap flow, 9 3D, 10 1D to the oven, 11 1D across the web, 12 Process, 13 Materials.
+// 8 1D gap flow, 9 3D, 10 1D to the oven, 11 1D across the web, 12 Process, 13 Materials, 14 Line, 15 1D pool and feed.
 let tab = 14;   // (WF-2: the app opens on the Line, the map of the process)
-const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web', 'Process', 'Materials', 'Line'];
+const TABS = ['Start-up', 'Contact line', 'Web edge', 'Film surface', '2D CFD', 'DOE', 'Measured data', 'Summary', 'Gap flow', '3D', 'To the oven', 'Across the web', 'Process', 'Materials', 'Line', 'Pool and feed'];
 /** What each view answers, in plain words (its tooltip, the welcome screen, its About). */
 const TAB_Q = [
   'How the slurry moves under the blade, from start-up (animation)',
@@ -667,6 +667,7 @@ const TAB_Q = [
   'From the wet film to the dry GO film: how thick and heavy is it, and how much water must the oven take out?',
   'The project\'s materials and interfaces: every property the solvers read, its definition method, value, unit, valid range and data source.',
   'The process stage by stage, from the mixer to the graphene film: where each stands and its answers.',
+  'How does the paste arrive: the pulses from the outlets, the pool\'s level through a cycle, and the wet film it leaves? (1D)',
 ];
 const TAB_ICONS = [
   '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.6 5.3v5.4L11 8z" fill="currentColor"/>',
@@ -684,6 +685,7 @@ const TAB_ICONS = [
   '<rect x="1.2" y="5.8" width="3.6" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="11.2" y="5.8" width="3.6" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M4.8 8h6.4M9.4 6.4 11 8l-1.6 1.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3.5h10" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".55"/>',
   '<path d="M6 1.8h4M6.6 1.8v4.3L2.9 12.6a1.1 1.1 0 0 0 1 1.6h8.2a1.1 1.1 0 0 0 1-1.6L9.4 6.1V1.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/><path d="M4.4 10.2h7.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity=".6"/>',
   '<path d="M1.5 8h3M11.5 8h3M6 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><rect x="4.5" y="6" width="2" height="4" rx=".6" fill="currentColor"/><rect x="9.5" y="6" width="2" height="4" rx=".6" fill="currentColor"/>',
+  '<path d="M6.5 1.5v3.5M9.5 1.5v3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M8 6.6v2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-dasharray="1.4 1.2"/><path d="M1.5 10.5c2 0 2-1 4-1s2 1 4 1 2-1 4.5-1M1.5 14h13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'
 ];
 /**
  * The pages the tab bar opens (WF-2: the tabs in the process's order). A page is a view -- its number, which the project
@@ -694,7 +696,7 @@ const TAB_ICONS = [
 const NAV = {
   line: { v: 14 }, materials: { v: 13 },
   mix: { v: 12, st: 'slurry', t: 'Mixing', icon: 'drop', note: 'The slurry\'s flow as the mixer makes it: viscosity, n, yield stress, surface tension. Its solids and densities are on Materials.', q: 'The slurry the mixer makes: what it is made of and how it flows (the mixer itself is not modelled yet).' },
-  gap: { v: 8 }, oven1d: { v: 10 }, across: { v: 11 }, startup: { v: 0 }, cfd2d: { v: 4 }, cfd3d: { v: 9 },
+  gap: { v: 8 }, oven1d: { v: 10 }, across: { v: 11 }, feed1d: { v: 15 }, startup: { v: 0 }, cfd2d: { v: 4 }, cfd3d: { v: 9 },
   contact: { v: 1 }, edge: { v: 2 }, surface: { v: 3 },
   wetdry: { v: 12, st: 'coat', t: 'Wet and dry film', icon: 'film', q: 'The wet film across the web and the dry film it leaves: the coat weight, and the water the oven must take out.' },
   flakes: { v: 12, st: 'align', t: 'Flakes', icon: 'fibre', note: 'The flakes\' alignment is computed with each 2D run: its inputs are the 2D\'s (Coating › 2D) and the alignment card on Materials.', q: 'How flat the flakes lie in the film at the oven, and dried, at each location (computed with each 2D run).' },
@@ -751,7 +753,7 @@ const SECTIONS = [
   { k: 'line', t: 'Line', icon: 14, pages: ['line'] },
   { k: 'materials', t: 'Materials', icon: 13, pages: ['materials'] },
   { k: 'mix', n: 1, t: 'Mixing', pages: ['mix'] },
-  { k: 'coat', n: 2, t: 'Coating', groups: [{ k: '1d', t: '1D', pages: ['gap', 'oven1d', 'across', 'startup'] }, { k: '2d', t: '2D', pages: ['cfd2d'] }, { k: '3d', t: '3D', pages: ['cfd3d'] },
+  { k: 'coat', n: 2, t: 'Coating', groups: [{ k: '1d', t: '1D', pages: ['gap', 'oven1d', 'across', 'feed1d', 'startup'] }, { k: '2d', t: '2D', pages: ['cfd2d'] }, { k: '3d', t: '3D', pages: ['cfd3d'] },
     { k: 'res', t: 'Results', pages: ['contact', 'edge', 'surface', 'wetdry', 'flakes'] }] },
   { k: 'dry', n: 3, t: 'Drying', groups: [{ k: 'dry1d', d: '1d', t: '1D', pages: ['dry1d'] }, { k: 'dry2d', d: '2d', t: '2D', pages: ['dry2d'] }, { k: 'dry3d', d: '3d', t: '3D', pages: ['dry3d'] }, { k: 'dryres', t: 'Results', pages: ['dry'] }] },
   { k: 'peel', n: 4, t: 'Peel and wind', short: 'Peel', pages: ['peel'] },
@@ -892,7 +894,7 @@ function render() {
   document.getElementById('sbCoord').textContent = '';
   renderRunChips();
   work.classList.add('fill');
-  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials, viewLine][tab]();
+  [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials, viewLine, view1DFeed][tab]();
   if (keepS) {
     const vp = document.querySelector('.mod-vp'), el = keepS.id && document.getElementById(keepS.id);
     if (vp) vp.scrollTop = el && vp.contains(el) ? vp.scrollTop + el.getBoundingClientRect().top - vp.getBoundingClientRect().top - keepS.dy : keepS.top;
