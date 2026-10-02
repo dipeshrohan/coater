@@ -22,8 +22,9 @@
  *  8. The tips in the paste (the 2D page's slice, a pipe a slot across it standing from above the top down into the paste):
  *     in a pulse the paste in through the bore is the pulse's, out through the pool edge the web's, the top rising with
  *     the rest, nothing through the pipe's walls; down the bore, plug where it enters, the flow between two walls: 4 bores
- *     below the entry, the exact parabola v = −(3/2) V (1 − (2ξ/d)²) (V the bore's mean speed). Between pulses the bore
- *     at rest and the balance the drain's.
+ *     below the entry, the exact parabola v = −(3/2) V (1 − (2ξ/d)²) (V the bore's mean speed). Between pulses the drain's
+ *     balance, and the bore's paste at rest away from its mouth: the pool's stir there dies up the bore as Stokes flow in a
+ *     channel does (its slowest end mode e^(−4.21 y/d), Papkovich–Fadle): 2 bores up, under 1e-3 of the stir at the mouth.
  *  9. The tips in the paste in 3D: round pipes on the coater's block mesh (the mirror half of four outlets): in a pulse the
  *     paste in through the bores is the pulse's (each bore's plug over its discrete area), out at the pool edge the web's,
  *     the top rising with the rest, nothing through the walls; down each bore, the flow in a round pipe, Poiseuille's
@@ -183,16 +184,18 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
   const bal = Math.max(Math.abs(fa.bore + Qin), Math.abs(fa.end - Qout), Math.abs(fa.top - (Qin - Qout)), Math.abs(fa.pipe), Math.abs(fa.web), Math.abs(fa.back),
     Math.abs(fb.bore), Math.abs(fb.end - Qout), Math.abs(fb.top + Qout), Math.abs(fb.pipe)) / Qout;
   // (the row of nodes 4 bores below the entry, 2 above the tip, across the bore; and the bore at rest between pulses)
-  const M = A.M, yq = tip + bore - 4 * d; let e = 0, n = 0, rest = 0;
+  const M = A.M, yq = tip + bore - 4 * d; let e = 0, n = 0, mouth = 0, rest = 0;
   for (let i = 0; i < M.nN; i++) {
     const xi = M.X[i] + 0.1; if (Math.abs(M.Z[i]) > 1e-12 || Math.abs(xi) > d / 2 + 1e-12) continue;
-    if (M.Y[i] > tip + 1e-9) rest = Math.max(rest, Math.hypot(B.u[i], B.v[i]));
+    // (between pulses: the stir at the mouth, and up the bore from 2 bores above the tip)
+    if (Math.abs(M.Y[i] - tip) < 1e-9) mouth = Math.max(mouth, Math.hypot(B.u[i], B.v[i]));
+    if (M.Y[i] >= tip + 2 * d - 1e-9) rest = Math.max(rest, Math.hypot(B.u[i], B.v[i]));
     if (Math.abs(M.Y[i] - yq) > 1e-9) continue;
     e = Math.max(e, Math.abs(A.v[i] + 1.5 * V * (1 - (2 * xi / d) ** 2)) / (1.5 * V)); n++;
   }
-  check('the tips in the paste (a pipe across the 2D\'s slice): the paste in through its bore in a pulse, out at the pool edge, the top rising with the rest; the bore\'s flow the exact parabola once developed; at rest between pulses',
-    bal < 1e-6 && n >= 11 && e < 1e-3 && rest < 1e-6 * V,
-    `${M.nE} elements; flows off ${bal.toExponential(1)} of the web's; ${n} nodes across the bore 4 bores below its entry, off the parabola by ${e.toExponential(1)} of its peak; between pulses the bore's paste at ${(rest / V).toExponential(1)} of its pulse speed`);
+  check('the tips in the paste (a pipe across the 2D\'s slice): the paste in through its bore in a pulse, out at the pool edge, the top rising with the rest; the bore\'s flow the exact parabola once developed; between pulses its paste at rest away from the mouth',
+    bal < 1e-6 && n >= 11 && e < 1e-3 && mouth > 0 && rest < 1e-3 * mouth,
+    `${M.nE} elements; flows off ${bal.toExponential(1)} of the web's; ${n} nodes across the bore 4 bores below its entry, off the parabola by ${e.toExponential(1)} of its peak; between pulses the stir at the mouth ${(mouth / V).toExponential(1)} of the bore's pulse speed, 2 bores up ${(rest / mouth).toExponential(1)} of it`);
 }
 
 // 9. the tips in the paste in 3D: round pipes on the coater's block mesh -- the balance; down each bore, Poiseuille
