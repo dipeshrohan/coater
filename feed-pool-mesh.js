@@ -50,7 +50,8 @@ function fpmMeets(blade, h, xBack, xEnd) {
  * The pool's mesh. o: { W, xBack, xEnd, h (m), blade: x -> the blade's underside height (m), outlets: [{ x, z }] (m, x
  *   negative), r (m: the landing's radius, fine around it), hFine (m, default 2 mm), hMax (m, default 12 mm), grow (default
  *   0.35), ny (rows, default 6), webBias (default 1.6: rows finer near the web), topFine (rows fine at the top as well as at
- *   the web: a heap on the top resolved), sideFine (default true: finer near the side plates; false for mirrors), nz (a
+ *   the web: a heap on the top resolved), sideFine (default true: finer near the side plates; false for mirrors; or [at
+ *   z = 0, at z = W]), zs (the element boundaries across, given: 0 … W), nz (a
  *   fixed number of elements across, evenly: 1 for a slice of the pool, the 2D), eta
  *   (optional: the free top's height over
  *   the level at each node of the plan, m, index k·NX + i; 0 where the top meets the blade) }.
@@ -61,7 +62,11 @@ function fpmMesh(o) {
   const { W, xBack, xEnd, h, blade } = o, outs = o.outlets || [], hF = o.hFine ?? 2e-3, hM = o.hMax ?? 12e-3, gr = o.grow ?? 0.35, r = o.r ?? 3e-3;
   const xJ = fpmMeets(blade, h, xBack, xEnd);
   const xs = fpmLine(-xBack, -xEnd, fpmSize([...outs.map(q => q.x), xJ, -xBack, -xEnd], hF, r, gr, hM), [xJ]);
-  const zs = o.nz ? Array.from({ length: o.nz + 1 }, (_, k) => W * k / o.nz) : fpmLine(0, W, fpmSize([...outs.map(q => q.z), ...(o.sideFine === false ? [] : [0, W])], hF, r, gr, hM));
+  // (sideFine: true or false for both side plates, or [at z = 0, at z = W]: a mirror needs no refining; zs: the element
+  //  boundaries across, given)
+  const sf = Array.isArray(o.sideFine) ? o.sideFine : [o.sideFine !== false, o.sideFine !== false];
+  const zs = o.zs ? o.zs.slice() : o.nz ? Array.from({ length: o.nz + 1 }, (_, k) => W * k / o.nz)
+    : fpmLine(0, W, fpmSize([...outs.map(q => q.z), ...(sf[0] ? [0] : []), ...(sf[1] ? [W] : [])], hF, r, gr, hM));
   const ny = o.ny ?? 6, bias = o.webBias ?? 1.6;
   // rows: σ from 0 (web) to 1 (top), finer near the web (or near both, 1 − cos)
   const sig = Array.from({ length: ny + 1 }, (_, j) => (o.topFine ? (1 - Math.cos(Math.PI * j / ny)) / 2 : (Math.pow(bias, j / ny) - 1) / (bias - 1)));

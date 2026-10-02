@@ -275,6 +275,7 @@ function viewPoolFeed(dim) {
     : pill('No path reached the pool edge in the time followed', 'warn');
   html += Math.abs(qOut / base.Qout - 1) < 1e-3 ? pill(`Paste in = out: ${(qTop * 1e6).toFixed(3)} ml/s through the top, ${(qOut * 1e6).toFixed(3)} ml/s to the blade, the 1D's ${(base.Qout * 1e6).toFixed(3)}`, 'ok') : pill(`Paste out ${(qOut * 1e6).toFixed(3)} ml/s against the 1D's ${(base.Qout * 1e6).toFixed(3)}`, 'warn');
   html += pill(`The top held at the level: under each stream it carries ${(pushMax / 1000).toFixed(2)} kPa — a free top there rises into the heap`, 'warn');
+  if (res.mirror) html += pill('The outlets are in mirror pairs: half the pool solved, mirrored at its middle', '');
   if (typeof matStruct === 'function' && matStruct()) html += pill('The paste\'s flow curve: the structure model is not carried in the pool', 'warn');
   if (!poolCurrent(dim)) html += solvePending(id) ? pill('Solving for the inputs as they are…', '') + `<span class="pl-prog" id="plProg"></span>` : solveCtl(id);
   st.innerHTML = html;
@@ -284,7 +285,7 @@ function viewPoolFeed(dim) {
     ['Height at the pool edge', ps.out ? `${(ps.yMin * 1e3).toFixed(1)} to ${(ps.yMax * 1e3).toFixed(1)} mm` : '—'],
     ['Push under each stream', `${(pushMax / 1000).toFixed(2)} kPa`],
     ['Out to the blade', `${(qOut * 1e6).toFixed(3)} ml/s`],
-    ['Mesh', `${I.nE} Q2 hexahedra`],
+    ['Mesh', I.mirror ? `${I.nESolved} Q2 hexahedra, half the pool` : `${I.nE} Q2 hexahedra`],
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
@@ -294,7 +295,7 @@ function poolReportHTML(dim) {
   if (!S.res || !poolCurrent(dim)) return `<p class="cap">The pool in ${dim}D: not solved for these inputs.</p>`;
   const ps = poolPathStats(S.res), b = S.base, I = S.res.states[0].info, q = S.res.states[0].flows.end / (S.res.W / b.W);
   return `<table class="rep-t"><tbody>
-    <tr><th>The pool in ${dim}D</th><td>${dim === 2 ? 'a slice along the web, the feed a band across it' : 'the whole pool between the side plates, ' + b.outlets.length + ' outlets'}; ${I.nE} Q2 hexahedra</td></tr>
+    <tr><th>The pool in ${dim}D</th><td>${dim === 2 ? 'a slice along the web, the feed a band across it' : 'the whole pool between the side plates, ' + b.outlets.length + ' outlets'}; ${I.mirror ? `${I.nESolved} Q2 hexahedra on half the pool, mirrored at its middle` : `${I.nE} Q2 hexahedra`}</td></tr>
     <tr><th>Paste from a landing to the pool edge</th><td>${ps.out ? `${ps.tMin.toFixed(0)} to ${ps.tMax.toFixed(0)} s (${(ps.tMin / b.T).toFixed(1)} to ${(ps.tMax / b.T).toFixed(1)} pulses), ${(ps.yMin * 1e3).toFixed(1)} to ${(ps.yMax * 1e3).toFixed(1)} mm above the web` : 'no path reached it'}</td></tr>
     <tr><th>Out to the blade</th><td>${(q * 1e6).toFixed(3)} ml/s (the 1D's ${(b.Qout * 1e6).toFixed(3)})</td></tr></tbody></table>`;
 }

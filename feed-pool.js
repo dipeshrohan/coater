@@ -49,7 +49,8 @@ function fplTopAt(M, x, z) {
 /**
  * The pool's flow in one part of the cycle. o: { W, xBack, xEnd, h, blade (x -> m), U, mu (γ̇ -> Pa·s), gdMin, rho, g,
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin (m³/s, all outlets, during a pulse), Qout (m³/s, the web's),
- *   pulse (true: during a pulse), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool), line
+ *   pulse (true: during a pulse), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool; or
+ *   [at z = 0, at z = W]: half a pool mirrored at its middle), line
  *   (the streams a band across the width: a slice of the pool, the 2D),
  *   mesh (fpmMesh's options, optional), solve (ffSolve's options; x0 a start), eta (the top over the level at the plan's
  *   nodes, m: its shape; default flat), free (optional, the top free: { sigma (N/m, its tension), vLand (m/s, the streams'
@@ -74,7 +75,9 @@ function fplTopAt(M, x, z) {
 function fplSolve(o) {
   const fpmMesh = FPL_('fpmMesh', './feed-pool-mesh.js'), ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
   const ffFaceNormals = FPL_('ffFaceNormals', './feed-fem.js'), fsArea = FPL_('fsArea', './feed-free.js');
-  const FMF = FPL_FACES(), F = o.free, tops = [], rg = o.rho * o.g, slipSides = o.sides === 'slip';
+  const FMF = FPL_FACES(), F = o.free, tops = [], rg = o.rho * o.g;
+  // (each side: 'wall' a side plate, 'slip' a mirror; one for both, or [at z = 0, at z = W])
+  const sideT = Array.isArray(o.sides) ? o.sides : [o.sides || 'wall', o.sides || 'wall'], slip0 = sideT[0] === 'slip', slip1 = sideT[1] === 'slip';
   let eta = o.eta ? Float64Array.from(o.eta) : null, x0 = o.solve && o.solve.x0;
   // the pool on a top: its mesh, the top's free nodes (their area shares, their normals), the streams, the level's rate
   const pool = (eta, f = 1) => {
@@ -83,7 +86,7 @@ function fplSolve(o) {
     // (the top's nodes on the walls -- the side plates, where it meets the blade -- hold the walls' no-slip; the top moves
     //  where it is free)
     const onWall = new Set();
-    for (const f of M.faces) if ((!slipSides && (f.tag === 'side0' || f.tag === 'side1')) || f.tag === 'blade') for (const i of FMF[f.f]) onWall.add(M.elems[27 * f.e + i]);
+    for (const f of M.faces) if ((!slip0 && f.tag === 'side0') || (!slip1 && f.tag === 'side1') || f.tag === 'blade') for (const i of FMF[f.f]) onWall.add(M.elems[27 * f.e + i]);
     const nrm = new Map(); for (const f of M.faces) if (f.tag === 'pile') ffFaceNormals(M, M.X, M.Y, M.Z, f, (n, v) => { const a = nrm.get(n) || [0, 0, 0]; for (let c = 0; c < 3; c++) a[c] += v[c]; nrm.set(n, a); });
     for (const [n, a] of nrm) { const l = Math.hypot(...a); nrm.set(n, a.map(v => v / l)); }
     // (each free node's share of the top's plan: its area share times n_y)
@@ -98,7 +101,7 @@ function fplSolve(o) {
   const bcs = (P, topBC) => {
     const wall = { type: 'velocity', u: [0, 0, 0] };
     return { web: { type: 'velocity', u: [o.U, 0, 0] }, blade: wall,
-      side0: slipSides ? { type: 'slip', normal: 'z' } : wall, side1: slipSides ? { type: 'slip', normal: 'z' } : wall,
+      side0: slip0 ? { type: 'slip', normal: 'z' } : wall, side1: slip1 ? { type: 'slip', normal: 'z' } : wall,
       back: { type: 'slip', normal: 'x', over: true },
       end: { type: 'traction', t: (x, y) => [-rg * (o.h - y), 0, 0] }, pile: topBC };
   };
@@ -126,7 +129,7 @@ function fplSolve(o) {
       if (sp * dt > 2 * dmax) { dt = Math.max(dt / 4, 1e-6); P = pool(eta, frac(t + dt)); continue; }
       x0 = R.x; last = R; it++; t += dt;
       // (at the side plates: the top meets them square, η′ = 0 there: from the first element's nodes)
-      if (!slipSides) for (let i = 0; i < iJ; i++) { next[i] = (4 * next[NX + i] - next[2 * NX + i]) / 3; const K = I.NZ - 1; next[K * NX + i] = (4 * next[(K - 1) * NX + i] - next[(K - 2) * NX + i]) / 3; }
+      for (let i = 0; i < iJ; i++) { const K = I.NZ - 1; if (!slip0) next[i] = (4 * next[NX + i] - next[2 * NX + i]) / 3; if (!slip1) next[K * NX + i] = (4 * next[(K - 1) * NX + i] - next[(K - 2) * NX + i]) / 3; }
       eta = next;
       let hi = -Infinity, lo = Infinity; for (let k = 0; k < I.NZ; k++) for (let i = 0; i <= iJ; i++) { hi = Math.max(hi, eta[k * NX + i]); lo = Math.min(lo, eta[k * NX + i]); }
       tops.push({ speed: sp, high: hi, low: lo, dt, t, streams: frac(t), newton: R.hist.length, lin: R.hist.reduce((a, k) => a + k.lin, 0) });
@@ -209,31 +212,45 @@ function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3 
  *   law, μ = τy/γ̇ + (μ − τy/2.7)(γ̇/2.7)^(n−1); or muLaw: γ̇ -> Pa·s, the app's own, with plain: true for a Newtonian one),
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin, Qout (m³/s, the whole
  *   width: all outlets during a pulse, the web's), hP, hD (m: the level during a pulse and between), T, tau (s), mesh: {
- *   hFine, hMax, ny }, t0 (s into a pulse the paths start, default τ/2), tMax (s, default 4000) }; onProgress(text, 0..1).
+ *   hFine, hMax, ny, zs (optional: the element boundaries across) }, t0 (s into a pulse the paths start, default τ/2), tMax
+ *   (s, default 4000), mirror (default true), solveTol (optional: each solve's tolerance) };
+ *   onProgress(text, 0..1).
  * The paste's law by continuation: its viscosity at 2.7 1/s first, then the law with its γ̇ floor brought down tenfold
  * twice (0.1, 0.01, 0.001 of U/H), each solve from the last.
- * Returns { dim, W (the width solved, m), states: [pulse, drain], each { info, X, Y, Z, u, v, w, p (Float32Array; p NaN off
- *   the corners), flows (m³/s), hdot, converged, newton }, paths: [{ outlet, s, out, t (s), pts (Float32Array: x, y, z, t …) }] }.
+ * The 3D with its outlets in mirror pairs across the pool's middle (the same x, z and W − z; none within two landing radii
+ * of the middle): the flow is symmetric about the middle, so half the pool is solved, a mirror at its middle (no flow
+ * across it, no shear along it), and the whole pool rebuilt from it -- the same flow at half the cost (feed-pool.validate.js
+ * checks it against the whole pool solved).
+ * Returns { dim, W (the width shown, m: the slice's in 2D, the pool's in 3D), mirror (true: half solved), states: [pulse,
+ *   drain], each { info, X, Y, Z, u, v, w, p (Float32Array; p NaN off the corners), flows (m³/s), hdot, converged, newton },
+ *   paths: [{ outlet, s, out, t (s), pts (Float32Array: x, y, z, t …) }] }.
  */
 function fplCycle(o, onProgress = () => {}) {
-  const dim = o.dim, M3 = o.mesh || {}, W = dim === 2 ? Math.max(M3.hMax || 0.02, 4 * (M3.hFine || 2e-3)) : o.W, share = W / o.W;
+  const dim = o.dim, M3 = o.mesh || {}, nO = o.outlets.length;
+  // (the outlets across the web in order; mirror pairs: the k-th from each side plate)
+  const ord = o.outlets.map((q, j) => j).sort((a, b) => o.outlets[a].z - o.outlets[b].z);
+  const mirror = dim === 3 && o.mirror !== false && nO >= 2 && nO % 2 === 0
+    && ord.every((j, i) => { const q = o.outlets[j], m = o.outlets[ord[nO - 1 - i]]; return Math.abs(q.z + m.z - o.W) < 1e-9 && Math.abs(q.x - m.x) < 1e-12; })
+    && ord.slice(0, nO / 2).every(j => o.outlets[j].z < o.W / 2 - 2 * o.r);
+  const W = dim === 2 ? Math.max(M3.hMax || 0.02, 4 * (M3.hFine || 2e-3)) : mirror ? o.W / 2 : o.W, share = W / o.W;
   const blade = o.R > 0 ? (x => o.H + o.R - Math.sqrt(Math.max(0, o.R * o.R - x * x))) : (() => 1e3);
   const L = o.law || {}, base = L.muRef - L.ty / 2.7, gd0 = o.U / o.H;
   const law = o.muLaw || (gd => L.ty / gd + base * Math.pow(gd / 2.7, L.n - 1)), mu27 = law(2.7), plain = o.muLaw ? !!o.plain : !(L.ty > 0) && L.n === 1;
   if (!(mu27 > 0)) throw new Error('the paste\'s law gives no viscosity at 2.7 1/s');
-  const outlets = dim === 2 ? [{ x: o.outlets[0].x, z: W / 2 }] : o.outlets;
-  const mesh = { hFine: M3.hFine, hMax: M3.hMax, ny: M3.ny, ...(dim === 2 ? { nz: 1, sideFine: false } : {}) };
+  const solved = dim === 2 ? [0] : mirror ? ord.slice(0, nO / 2) : o.outlets.map((q, j) => j);     // (the outlets solved, their indices)
+  const outlets = dim === 2 ? [{ x: o.outlets[0].x, z: W / 2 }] : solved.map(j => o.outlets[j]);
+  const mesh = { hFine: M3.hFine, hMax: M3.hMax, ny: M3.ny, ...(M3.zs ? { zs: M3.zs } : {}), ...(dim === 2 ? { nz: 1, sideFine: false } : mirror ? { sideFine: [true, false] } : {}) };
   const stages = plain ? [null] : [null, 1e-1, 1e-2, 1e-3], n = 2 * stages.length + 1;
   const f32 = a => Float32Array.from(a), states = [], fields = [];
   let done = 0;
   for (const pulse of [true, false]) {
     const so = { W, xBack: o.xBack, xEnd: o.xEnd, h: pulse ? o.hP : o.hD, blade, U: o.U, rho: o.rho, g: o.g, outlets, r: o.r, line: dim === 2,
-      Qin: o.Qin * share, Qout: o.Qout * share, pulse, sides: dim === 2 ? 'slip' : 'wall', mesh };
+      Qin: o.Qin * share, Qout: o.Qout * share, pulse, sides: dim === 2 ? 'slip' : mirror ? ['wall', 'slip'] : 'wall', mesh };
     let r = null, x0 = null, newton = 0;
     for (const f of stages) {
       onProgress(`${pulse ? 'During a pulse' : 'Between pulses'}: ${f == null ? (plain ? 'the flow' : 'the flow at the viscosity at 2.7 1/s') : `the paste's law, γ̇ floor ${(f * gd0).toPrecision(2)} 1/s`}`, done / n);
       r = fplSolve({ ...so, mu: f == null ? () => mu27 : law, gdMin: f == null ? undefined : f * gd0,
-        solve: { x0, ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } });
+        solve: { x0, ...(o.solveTol ? { tol: o.solveTol } : {}), ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } });
       x0 = r.x; newton += r.hist.length; done++;
     }
     const I = r.M.info;
@@ -247,10 +264,26 @@ function fplCycle(o, onProgress = () => {}) {
   outlets.forEach((q, j) => (dim === 2 ? [[0, 0], [-0.5, 0], [0.5, 0], [-0.25, 0], [0.25, 0]] : [[0, 0], [-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]]).forEach(([a, b], s) => {
     starts.push([q.x + a * o.r, h0, q.z + b * o.r]); meta.push({ outlet: j, s }); }));
   const P = fplPaths(fields[0], fields[1], starts, { T: o.T, tau: o.tau, t0, xEnd: o.xEnd, tMax: o.tMax ?? 4000 });
-  const paths = P.map((p, i) => { const k = Math.max(1, Math.ceil(p.pts.length / 400)), sel = p.pts.filter((q, j) => j % k === 0 || j === p.pts.length - 1);
-    return { ...meta[i], out: p.out, t: p.t, pts: Float32Array.from(sel.flat().map((v, j) => (j % 4 === 3 ? v - t0 : v))) }; });
+  let paths = P.map((p, i) => { const k = Math.max(1, Math.ceil(p.pts.length / 400)), sel = p.pts.filter((q, j) => j % k === 0 || j === p.pts.length - 1);
+    return { ...meta[i], outlet: solved[meta[i].outlet], out: p.out, t: p.t, pts: Float32Array.from(sel.flat().map((v, j) => (j % 4 === 3 ? v - t0 : v))) }; });
+  if (mirror) {
+    // the whole pool from the half: each node and its mirror image (z → W − z, the flow across reversed), each path and its
+    //  image from the mirrored outlet
+    const full = st => {
+      const I = st.info, NX = I.NX, NY = I.NY, Nh = I.NZ, NZ = 2 * Nh - 1, n = NX * NY * NZ, Wf = o.W, A = {};
+      for (const f of ['X', 'Y', 'Z', 'u', 'v', 'w', 'p']) A[f] = new Float32Array(n);
+      for (let k = 0; k < NZ; k++) { const kk = k < Nh ? k : 2 * Nh - 2 - k, sg = k < Nh ? 1 : -1;
+        for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const a = (k * NY + j) * NX + i, b = (kk * NY + j) * NX + i;
+          A.X[a] = st.X[b]; A.Y[a] = st.Y[b]; A.Z[a] = k < Nh ? st.Z[b] : Wf - st.Z[b]; A.u[a] = st.u[b]; A.v[a] = st.v[b]; A.w[a] = sg * st.w[b]; A.p[a] = st.p[b]; } }
+      const f = st.flows, flows = { top: 2 * f.top, end: 2 * f.end, back: 2 * f.back, web: 2 * f.web, blade: 2 * f.blade, side0: f.side0, side1: f.side0 };
+      return { ...st, ...A, flows, info: { ...I, NZ, W: Wf, zs: [...I.zs, ...I.zs.slice(0, -1).reverse().map(z => Wf - z)], nE: 2 * I.nE, nN: n, nESolved: I.nE, mirror: true } };
+    };
+    for (let s = 0; s < states.length; s++) states[s] = full(states[s]);
+    const img = new Map(ord.map((j, i) => [j, ord[nO - 1 - i]]));
+    paths = [...paths, ...paths.map(p => ({ ...p, outlet: img.get(p.outlet), pts: p.pts.map((v, j) => (j % 4 === 2 ? o.W - v : v)) }))];
+  }
   onProgress('Done', 1);
-  return { dim, W, states, paths, t0 };
+  return { dim, W: mirror ? o.W : W, mirror, states, paths, t0 };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplPaths, fplCycle };
