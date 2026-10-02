@@ -37,7 +37,8 @@ function reportSections() {
     { k: 'm2', l: TABS[2], note: 'results, plots, checks' },
     { k: 'm3', l: TABS[3], note: 'results, plots, checks' },
     { k: 'm1d', l: '1D: gap flow, to the oven, across the web, pool and feed', note: 'results, plots, checks, the 1D / 2D table, the outlets and the pulse' },
-    { k: 'pool', l: 'Pool and feed: 2D and 3D', note: [2, 3].map(d => `${d}D ${typeof poolCurrent === 'function' && poolCurrent(d) ? 'solved' : POOL[d].res ? 'out of date' : 'not solved'}`).join(', ') },
+    { k: 'pool', l: 'Pool and feed: 2D and 3D', note: [2, 3].map(d => `${d}D ${typeof poolCurrent === 'function' && poolCurrent(d) ? 'solved' : POOL[d].res ? 'out of date' : 'not solved'}`).join(', '),
+      off: !POOL[2].res && !POOL[3].res },   // (like the mesh study: off until a pool is solved -- the 3D's solve is long)
     { k: 'cfd', l: TABS[4], note: solved ? `${solved} of 4 locations solved${stale ? `, ${stale} out of date` : ''}` : 'nothing solved yet: setup and checks only' },
     { k: 'mesh', l: 'Mesh study', note: meshStudy ? `location ${meshStudy.loc + 1}, ${meshStudy.runs.filter(r => r.status === 'done').length} of ${meshStudy.runs.length} meshes solved` : 'not run', off: !meshStudy },
     { k: 'm3d', l: '3D: geometry and mesh', note: C3D.source === 'file' && !C3D_FILE ? 'no blade file imported' : 'setup, the 3D view, checks' },
