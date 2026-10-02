@@ -52,7 +52,10 @@ function fpmMeets(blade, h, xBack, xEnd) {
  *   0.35), ny (rows, default 6), webBias (default 1.6: rows finer near the web), topFine (rows fine at the top as well as at
  *   the web: a heap on the top resolved), sideFine (default true: finer near the side plates; false for mirrors; or [at
  *   z = 0, at z = W]), zs (the element boundaries across, given: 0 … W), nz (a
- *   fixed number of elements across, evenly: 1 for a slice of the pool, the 2D), eta
+ *   fixed number of elements across, evenly: 1 for a slice of the pool, the 2D), pipes (a slice only: [{ x (m, its
+ *   middle), d (m, its bore), Do (m, outside), tip (m, above the web, in the paste), bore (m, the bore's channel modelled
+ *   above the tip, default 2 d) }]: slots across the slice standing in the paste; faces 'pipe' (its walls in the paste) and
+ *   'bore' (the channel's top, where its paste enters)), eta
  *   (optional: the free top's height over
  *   the level at each node of the plan, m, index k·NX + i; 0 where the top meets the blade) }.
  * Returns { nN, nE, X, Y, Z, elems, faces, info: { xJ, xs, zs, rows, W, h, xBack, xEnd, top, NX, NY, NZ } }: node (i, j, k)
@@ -61,15 +64,27 @@ function fpmMeets(blade, h, xBack, xEnd) {
 function fpmMesh(o) {
   const { W, xBack, xEnd, h, blade } = o, outs = o.outlets || [], hF = o.hFine ?? 2e-3, hM = o.hMax ?? 12e-3, gr = o.grow ?? 0.35, r = o.r ?? 3e-3;
   const xJ = fpmMeets(blade, h, xBack, xEnd);
-  const xs = fpmLine(-xBack, -xEnd, fpmSize([...outs.map(q => q.x), xJ, -xBack, -xEnd], hF, r, gr, hM), [xJ]);
+  // pipes standing in the paste (a slice of the pool only: each a slot across it, its walls and its bore): their walls and
+  //  bore are element boundaries; the paste around them from the web to their tips and up to the top, the bore a channel
+  //  inside each down to its tip (its paste entering at the channel's top); the walls' elements cut out
+  const pipes = o.nz && o.pipes ? o.pipes : [];
+  const pbreaks = pipes.flatMap(q => [q.x - q.Do / 2, q.x - q.d / 2, q.x + q.d / 2, q.x + q.Do / 2]);
+  const xs = fpmLine(-xBack, -xEnd, fpmSize([...outs.map(q => q.x), ...pbreaks, xJ, -xBack, -xEnd], hF, r, gr, hM), [xJ, ...pbreaks]);
   // (sideFine: true or false for both side plates, or [at z = 0, at z = W]: a mirror needs no refining; zs: the element
   //  boundaries across, given)
   const sf = Array.isArray(o.sideFine) ? o.sideFine : [o.sideFine !== false, o.sideFine !== false];
   const zs = o.zs ? o.zs.slice() : o.nz ? Array.from({ length: o.nz + 1 }, (_, k) => W * k / o.nz)
     : fpmLine(0, W, fpmSize([...outs.map(q => q.z), ...(sf[0] ? [0] : []), ...(sf[1] ? [W] : [])], hF, r, gr, hM));
   const ny = o.ny ?? 6, bias = o.webBias ?? 1.6;
-  // rows: σ from 0 (web) to 1 (top), finer near the web (or near both, 1 − cos)
-  const sig = Array.from({ length: ny + 1 }, (_, j) => (o.topFine ? (1 - Math.cos(Math.PI * j / ny)) / 2 : (Math.pow(bias, j / ny) - 1) / (bias - 1)));
+  // rows: σ from 0 (web) to 1 (top), finer near the web (or near both, 1 − cos); with pipes, two blocks: from the web to the
+  //  tips' height (σ, as many rows as the tips' share of the level), from there to the top (evenly; in a bore, up its channel)
+  const tipY = pipes.length ? Math.min(...pipes.map(q => q.tip)) : 0;
+  if (pipes.length && !(tipY > 0 && tipY < h)) throw new Error('the pipes\' tips must be in the paste, above the web');
+  const nyL = pipes.length ? Math.max(2, Math.min(ny - 1, Math.round(ny * tipY / h))) : ny;
+  // (the upper block's rows: the level's share, and at least one per half bore along a bore's channel)
+  const nyU = pipes.length ? Math.max(2, ny - nyL, ...pipes.map(q => Math.ceil((q.bore ?? 2 * q.d) / (q.d / 2) - 1e-9))) : 0;
+  const sigOf = n => Array.from({ length: n + 1 }, (_, j) => (o.topFine ? (1 - Math.cos(Math.PI * j / n)) / 2 : (Math.pow(bias, j / n) - 1) / (bias - 1)));
+  const sig = pipes.length ? [...sigOf(nyL).map(v => v * nyL / (nyL + nyU)), ...Array.from({ length: nyU }, (_, j) => (nyL + j + 1) / (nyL + nyU))] : sigOf(ny);
   const nx = xs.length - 1, nz = zs.length - 1;
   // nodes: the element boundaries and their midpoints in each direction (Q2), columns of 2 ny + 1 nodes
   const mid = a => a.flatMap((v, i) => i + 1 < a.length ? [v, (v + a[i + 1]) / 2] : [v]);
@@ -77,20 +92,38 @@ function fpmMesh(o) {
   const top = x => (x <= xJ + 1e-12 ? h : Math.min(h, blade(x))), eta = o.eta;
   if (eta && eta.length !== NX * NZ) throw new Error('the free top\'s heights do not match the plan');
   const nN = NX * NY * NZ, X = new Float64Array(nN), Y = new Float64Array(nN), Z = new Float64Array(nN), id = (i, j, k) => (k * NY + j) * NX + i;
+  // (with pipes: a column's break between its blocks -- the tips' height in the pool, scaled with the column under the
+  //  blade; in a bore, its channel from the tip up its length)
+  const nyAll = nyL + nyU, sB = pipes.length ? nyL / nyAll : 1;
+  const inBore = x => pipes.find(q => x >= q.x - q.d / 2 - 1e-12 && x <= q.x + q.d / 2 + 1e-12);
   for (let k = 0; k < NZ; k++) for (let i = 0; i < NX; i++) {
     const tp = top(XN[i]) + (eta && XN[i] < xJ - 1e-12 ? eta[k * NX + i] : 0);
     if (!(tp > 0)) throw new Error('the free top reaches the web');
-    for (let j = 0; j < NY; j++) { const n = id(i, j, k); X[n] = XN[i]; Y[n] = SN[j] * tp; Z[n] = ZN[k]; }
+    const q = pipes.length ? inBore(XN[i]) : null, yb = q ? q.tip : pipes.length ? tp * Math.min(1, tipY / h) : 0, yt = q ? q.tip + (q.bore ?? 2 * q.d) : tp;
+    for (let j = 0; j < NY; j++) {
+      const n = id(i, j, k), sj = SN[j];
+      X[n] = XN[i]; Z[n] = ZN[k];
+      Y[n] = !pipes.length ? sj * tp : sj <= sB + 1e-12 ? sj / sB * yb : yb + (sj - sB) / (1 - sB) * (yt - yb);
+    }
   }
-  const nE = nx * ny * nz, elems = new Int32Array(27 * nE), faces = [];
+  // (an element of the upper block in a pipe's wall: cut out)
+  const wallOf = (ex, ey) => ey >= nyL && pipes.length && pipes.some(q => { const c = (xs[ex] + xs[ex + 1]) / 2; return c > q.x - q.Do / 2 && c < q.x + q.Do / 2 && !(c > q.x - q.d / 2 && c < q.x + q.d / 2); });
+  const boreOf = (ex, ey) => ey >= nyL && pipes.length && pipes.some(q => { const c = (xs[ex] + xs[ex + 1]) / 2; return c > q.x - q.d / 2 && c < q.x + q.d / 2; });
+  let nE = 0; for (let ez = 0; ez < nz; ez++) for (let ey = 0; ey < nyAll; ey++) for (let ex = 0; ex < nx; ex++) if (!wallOf(ex, ey)) nE++;
+  const elems = new Int32Array(27 * nE), faces = [];
   let e = 0;
-  for (let ez = 0; ez < nz; ez++) for (let ey = 0; ey < ny; ey++) for (let ex = 0; ex < nx; ex++, e++) {
+  for (let ez = 0; ez < nz; ez++) for (let ey = 0; ey < nyAll; ey++) for (let ex = 0; ex < nx; ex++) {
+    if (wallOf(ex, ey)) continue;
     for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) elems[27 * e + (g * 3 + b) * 3 + a] = id(2 * ex + a, 2 * ey + b, 2 * ez + g);
     if (ex === 0) faces.push({ e, f: 0, tag: 'back' }); if (ex === nx - 1) faces.push({ e, f: 1, tag: 'end' });
-    if (ey === 0) faces.push({ e, f: 2, tag: 'web' }); if (ey === ny - 1) faces.push({ e, f: 3, tag: xs[ex + 1] <= xJ + 1e-12 ? 'pile' : 'blade' });
+    if (ex > 0 && wallOf(ex - 1, ey)) faces.push({ e, f: 0, tag: 'pipe' }); if (ex < nx - 1 && wallOf(ex + 1, ey)) faces.push({ e, f: 1, tag: 'pipe' });
+    if (ey === 0) faces.push({ e, f: 2, tag: 'web' });
+    if (ey === nyAll - 1) faces.push({ e, f: 3, tag: boreOf(ex, ey) ? 'bore' : xs[ex + 1] <= xJ + 1e-12 ? 'pile' : 'blade' });
+    else if (wallOf(ex, ey + 1)) faces.push({ e, f: 3, tag: 'pipe' });
     if (ez === 0) faces.push({ e, f: 4, tag: 'side0' }); if (ez === nz - 1) faces.push({ e, f: 5, tag: 'side1' });
+    e++;
   }
-  return { nN, nE, X, Y, Z, elems, faces, info: { xJ, xs, zs, rows: sig, W, h, xBack, xEnd, top, NX, NY, NZ } };
+  return { nN, nE, X, Y, Z, elems, faces, info: { xJ, xs, zs, rows: sig, W, h, xBack, xEnd, top, NX, NY, NZ, pipes } };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { fpmLine, fpmSize, fpmMeets, fpmMesh, FPM_FACES };

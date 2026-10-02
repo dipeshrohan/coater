@@ -1,12 +1,13 @@
 /*
  * cfd-pool-worker.js — the pool behind the blade through a pulse cycle (Coating › 2D and 3D › Pool and feed), off the page:
- * the flow during a pulse and between pulses (feed-pool.js on feed-fem.js), with the paste's own law (rheo.js), and the
+ * the flow during a pulse and between pulses (feed-pool.js on feed-fem.js; with the tips in the paste in 3D, on feed-mesh.js's
+ * round pipes), with the paste's own law (rheo.js), and the
  * paths from each landing to the pool edge. Message in: { id, o } (fplCycle's options, the law as { muRef, ty, n, rheoX });
  * out: { id, progress: { text, f } } while it works, then { id, ok, res, ms } or { id, ok: false, error }.
  */
-importScripts('rheo.js', 'cfd-solver.js', 'feed-fem.js', 'feed-free.js', 'feed-post.js', 'feed-pool-mesh.js', 'feed-pool.js');
-// (the faces' node lists feed-fem.js reads: the pool mesh's, the same faces)
-var FM_FACES = FPM_FACES;
+importScripts('rheo.js', 'cfd-solver.js', 'feed-mesh.js', 'feed-fem.js', 'feed-free.js', 'feed-post.js', 'feed-pool-mesh.js', 'feed-pool.js');
+// (the faces' node lists feed-fem.js reads: feed-mesh.js's FM_FACES, the pool mesh's the same; the coater's mesher for the
+//  tips in the paste in 3D, round pipes)
 onmessage = e => {
   const { id, o } = e.data, t0 = Date.now();
   try {

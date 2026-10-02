@@ -152,6 +152,10 @@ function ffSetup(o) {
       }
     }
   }
+  // (nodes in no element -- a block with parts cut out of it, a pipe standing in the pool -- are out of the problem: held at
+  //  rest, their rows the identity)
+  const inEl = new Uint8Array(nN); for (let i = 0; i < 27 * nE; i++) inEl[M.elems[i]] = 1;
+  for (let n = 0; n < nN; n++) if (!inEl[n]) { rot[n] = -1; for (let k = 0; k < 3; k++) { fix[3 * n + k] = 1; val[3 * n + k] = 0; } }
   if (o.fixPressure) { fix[nU] = 1; val[nU] = 0; }
   const muLaw = o.mu, epsR = (o.gdMin ?? 1e-3 * Ur / Lr) * Lr / Ur, gd = o.gdir || [0, -1, 0];
   const Gr = (o.rho || 0) * (o.g || 0) * Lr * Lr / (muR * Ur);
@@ -549,6 +553,8 @@ function ffPrecond(S, opts = {}) {
     for (let q = 0; q < 27; q++) { const w = geo[(e * 27 + q) * 10 + 9] / st[(e * 27 + q) * 20]; for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) Me[i * 8 + j] += w * FF_REF.P[q * 8 + i] * FF_REF.P[q * 8 + j]; }
     for (let i = 0; i < 8; i++) { Sp[pe[i]] += Me[i * 8 + i]; for (let j = 0; j < 8; j++) { MI.push(pe[i]); MJ.push(pe[j]); MV.push(Me[i * 8 + j]); } }
   }
+  // (a node in no element -- cut out of a block -- an identity row: the multigrid needs every diagonal)
+  for (let n = 0; n < nN; n++) if (!cntN[n]) { I.push(n); J.push(n); V.push(1); VG.push(1); }
   const L = ffCSR(nN, I, J, V), Mp = ffCSR(S.nP, MI, MJ, MV);
   // (a free surface's implicit weight, lumped onto each axis's diagonal: kn ∫ N dA n_c²)
   const rob = [0, 1, 2].map(() => new Float64Array(nN));
@@ -560,7 +566,7 @@ function ffPrecond(S, opts = {}) {
     for (let i = 0; i < nN; i++) for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (fixC[3 * i + c] || fixC[3 * j + c]) A.val[p] = i === j ? 1 : 0; else if (i === j) A.val[p] += rob[c][i]; }
     return { A, H: ffAMG(A) };
   });
-  const lub = opts.lub === false ? null : ffLubrication(S, ffCSR(nN, I, J, VG), m1, muN.map((m, n) => m / cntN[n]), Mp);
+  const lub = opts.lub === false ? null : ffLubrication(S, ffCSR(nN, I, J, VG), m1, muN.map((m, n) => m / (cntN[n] || 1)), Mp);
   return { comp, Sp, Mp, lub };
 }
 

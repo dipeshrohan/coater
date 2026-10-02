@@ -49,7 +49,8 @@ function fplTopAt(M, x, z) {
 /**
  * The pool's flow in one part of the cycle. o: { W, xBack, xEnd, h, blade (x -> m), U, mu (γ̇ -> Pa·s), gdMin, rho, g,
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin (m³/s, all outlets, during a pulse), Qout (m³/s, the web's),
- *   pulse (true: during a pulse), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool; or
+ *   pulse (true: during a pulse), pipes (a slice only: [{ x, d, Do, tip, bore }] (m): the pipes standing in the paste, the
+ *   paste entering through their bores instead of the top -- feed-pool-mesh.js), sides ('wall', the side plates, default; 'slip': mirrors, a strip of a wider pool; or
  *   [at z = 0, at z = W]: half a pool mirrored at its middle), line
  *   (the streams a band across the width: a slice of the pool, the 2D),
  *   mesh (fpmMesh's options, optional), solve (ffSolve's options; x0 a start), eta (the top over the level at the plan's
@@ -81,18 +82,19 @@ function fplSolve(o) {
   let eta = o.eta ? Float64Array.from(o.eta) : null, x0 = o.solve && o.solve.x0;
   // the pool on a top: its mesh, the top's free nodes (their area shares, their normals), the streams, the level's rate
   const pool = (eta, f = 1) => {
-    const M = fpmMesh({ W: o.W, xBack: o.xBack, xEnd: o.xEnd, h: o.h, blade: o.blade, outlets: o.outlets, r: o.r, ...(o.mesh || {}), eta });
+    const M = fpmMesh({ W: o.W, xBack: o.xBack, xEnd: o.xEnd, h: o.h, blade: o.blade, outlets: o.outlets, r: o.r, ...(o.mesh || {}), ...(o.pipes ? { pipes: o.pipes } : {}), eta });
     const I = M.info, NX = I.NX, NY = I.NY, iJ = 2 * I.xs.findIndex(v => Math.abs(v - I.xJ) < 1e-12);
     // (the top's nodes on the walls -- the side plates, where it meets the blade -- hold the walls' no-slip; the top moves
     //  where it is free)
     const onWall = new Set();
-    for (const f of M.faces) if ((!slip0 && f.tag === 'side0') || (!slip1 && f.tag === 'side1') || f.tag === 'blade') for (const i of FMF[f.f]) onWall.add(M.elems[27 * f.e + i]);
+    for (const f of M.faces) if ((!slip0 && f.tag === 'side0') || (!slip1 && f.tag === 'side1') || f.tag === 'blade' || f.tag === 'pipe') for (const i of FMF[f.f]) onWall.add(M.elems[27 * f.e + i]);
     const nrm = new Map(); for (const f of M.faces) if (f.tag === 'pile') ffFaceNormals(M, M.X, M.Y, M.Z, f, (n, v) => { const a = nrm.get(n) || [0, 0, 0]; for (let c = 0; c < 3; c++) a[c] += v[c]; nrm.set(n, a); });
     for (const [n, a] of nrm) { const l = Math.hypot(...a); nrm.set(n, a.map(v => v / l)); }
     // (each free node's share of the top's plan: its area share times n_y)
     const top = [...fsArea({ M, X: M.X, Y: M.Y, Z: M.Z }, ['pile'])].filter(([n]) => !onWall.has(n)).map(([n, a]) => [n, a * nrm.get(n)[1]]);
     const free = top.reduce((s, [, a]) => s + a, 0), hdot = ((o.pulse ? f * o.Qin : 0) - o.Qout) / free;
-    const stream = o.pulse ? fplStreams(top, M, o.outlets, o.r, f * o.Qin / o.outlets.length, o.line) : () => 0;
+    // (the paste entering through the top where the streams land -- or, from pipes in the paste, through their bores)
+    const stream = o.pulse && !o.pipes ? fplStreams(top, M, o.outlets, o.r, f * o.Qin / o.outlets.length, o.line) : () => 0;
     // a top node from its place (for the lid's speed through it: its own n_y)
     const ix = new Map(), kz = new Map(); for (let i = 0; i < NX; i++) ix.set(M.X[i], i); for (let k = 0; k < I.NZ; k++) kz.set(M.Z[k * NY * NX], k);
     const nodeAt = (x, z) => (kz.get(z) * NY + NY - 1) * NX + ix.get(x);
@@ -103,7 +105,10 @@ function fplSolve(o) {
     return { web: { type: 'velocity', u: [o.U, 0, 0] }, blade: wall,
       side0: slip0 ? { type: 'slip', normal: 'z' } : wall, side1: slip1 ? { type: 'slip', normal: 'z' } : wall,
       back: { type: 'slip', normal: 'x', over: true },
-      end: { type: 'traction', t: (x, y) => [-rg * (o.h - y), 0, 0] }, pile: topBC };
+      end: { type: 'traction', t: (x, y) => [-rg * (o.h - y), 0, 0] }, pile: topBC,
+      // (pipes in the paste: their walls hold it; through each bore during a pulse its share of the paste, plug at the
+      //  channel's top -- it shapes itself down the channel -- and between pulses the paste in it at rest)
+      ...(o.pipes ? { pipe: wall, bore: { type: 'velocity', u: [0, o.pulse ? -o.Qin / o.pipes.length / (o.pipes[0].d * o.W) : 0, 0] } } : {}) };
   };
   const setup = (P, topBC) => ffSetup({ mesh: P.M, mu: o.mu, gdMin: o.gdMin, rho: o.rho, g: o.g, Lr: 1e-3, Ur: o.U || 1e-3, bc: bcs(P, topBC) });
   let P = pool(eta), last = null;
@@ -146,9 +151,69 @@ function fplSolve(o) {
   // the flow on the top as it is (a lid: the speed through it, vn = (ḣ − s) n_y, given)
   const S = setup(P, { type: 'slip', normal: 'surface', un: (x, y, z) => { const n = P.nodeAt(x, z); return (P.hdot - P.stream(x, y, z)) * (P.nrm.get(n) || [0, 1, 0])[1]; } });
   const R = ffSolve(S, { tol: 1e-8, ...(o.solve || {}), x0 });
-  const flows = {}; for (const t of ['pile', 'end', 'back', 'web', 'blade', 'side0', 'side1']) flows[t === 'pile' ? 'top' : t] = ffFlow(S, R.x, t);
+  const flows = {}; for (const t of ['pile', 'end', 'back', 'web', 'blade', 'side0', 'side1', ...(o.pipes ? ['pipe', 'bore'] : [])]) flows[t === 'pile' ? 'top' : t] = ffFlow(S, R.x, t);
   return { M: P.M, S, x: R.x, u: R.u, v: R.v, w: R.w, p: R.p, hdot: P.hdot, area: o.W * (o.xBack + P.I.xJ), free: P.free, flows, hist: R.hist, converged: R.converged,
     eta: eta || new Float64Array(P.NX * P.I.NZ), tops, stream: P.stream };
+}
+
+/**
+ * The pool's flow in one part of the cycle with the outlets' pipes standing in the paste, round (the 3D): on the coater's
+ * block mesh (feed-mesh.js: round each pipe O-grid blocks, its bore, its wall, a ring out to a square), cut at the pool's
+ * back edge, ending at the pool edge. o: as fplSolve's -- W the whole pool, outlets all of them (one x) -- and pipe: { d, Do,
+ * tip, bore (m: the bore's channel modelled above the tip, default 2 d) }, half (the mirror half: the outlets in mirror
+ * pairs, the middle a mirror), mesh (fmMesh's options: hFar, hJ, grow, m, sq, nLo, nUp, nCore, nWall, nRing). Qin: through
+ * the pipes solved (the half's, with half), each its share. The paste enters at each bore's top (pipeIn: plug, the same
+ * speed over the bore, the discrete area's; at rest between pulses) and shapes itself down the bore to the tip; the pipes'
+ * walls, their ends and their bores' walls hold it (pipeOut, pipeEnd, pipeInner). The top a lid at the level, the paste
+ * through it at ḣ n_y (ḣ from the balance over its free part); the web, the blade, the side plates, the back edge and the
+ * pool edge as fplSolve's.
+ * Returns { M, S, x, u, v, w, p, hdot, free, flows: { top, end, back, web, blade, side0, side1, pipe (the pipes' walls),
+ *   bore (their tops: in, negative) } (m³/s, out), hist, converged }.
+ */
+function fplSolvePipes(o) {
+  const fmMesh = FPL_('fmMesh', './feed-mesh.js'), ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
+  const ffFaceNormals = FPL_('ffFaceNormals', './feed-fem.js'), fsArea = FPL_('fsArea', './feed-free.js'), FMF = FPL_FACES(), rg = o.rho * o.g, Pp = o.pipe;
+  if (!(Pp.tip > 0 && Pp.tip < o.h)) throw new Error('the pipes\' tips must be in the paste, above the web');
+  const M = fmMesh({ W: o.W, half: !!o.half, d: Pp.d, t: (Pp.Do - Pp.d) / 2, xCut: -o.xBack, xEnd: -o.xEnd, bladeY: o.blade, H0: o.h, film0: 0,
+    outlets: o.outlets.map(q => ({ z: q.z, ym: Pp.tip, yIn: Pp.tip + (Pp.bore ?? 2 * Pp.d) })), xP: o.outlets[0].x, ...(o.mesh || {}) });
+  // the top's free nodes (off the walls: the side plates, the blade, the pipes), their normals and shares of its plan
+  const walls = new Set(['side0', 'side1', 'blade', 'pipeOut']), onWall = new Set();
+  for (const f of M.faces) if (walls.has(f.tag)) for (const i of FMF[f.f]) onWall.add(M.elems[27 * f.e + i]);
+  const nrm = new Map(); for (const f of M.faces) if (f.tag === 'pile') ffFaceNormals(M, M.X, M.Y, M.Z, f, (n, v) => { const a = nrm.get(n) || [0, 0, 0]; for (let c = 0; c < 3; c++) a[c] += v[c]; nrm.set(n, a); });
+  for (const [n, a] of nrm) { const l = Math.hypot(...a); nrm.set(n, a.map(v => v / l)); }
+  const S0 = { M, X: M.X, Y: M.Y, Z: M.Z }, top = [...fsArea(S0, ['pile'])].filter(([n]) => !onWall.has(n)).map(([n, a]) => [n, a * nrm.get(n)[1]]);
+  const free = top.reduce((s, [, a]) => s + a, 0), qIn = o.pulse ? o.Qin : 0, hdot = (qIn - o.Qout) / free;
+  // (each bore's plug: the pipes' flow over their tops' discrete area -- the flow in exact)
+  const inA = [...fsArea(S0, ['pipeIn']).values()].reduce((s, a) => s + a, 0), V = qIn / inA;
+  const wall = { type: 'velocity', u: [0, 0, 0] };
+  const bc = { web: { type: 'velocity', u: [o.U, 0, 0] }, blade: wall, side0: wall, side1: wall, sym: { type: 'slip', normal: 'z' },
+    cut: { type: 'slip', normal: 'x', over: true }, end: { type: 'traction', t: (x, y) => [-rg * (o.h - y), 0, 0] },
+    pile: { type: 'slip', normal: 'surface', un: hdot * 1 }, pipeOut: wall, pipeEnd: wall, pipeInner: wall,
+    // (last: the plug wins at the bore's rim, as the 2D's slot)
+    pipeIn: { type: 'velocity', u: [0, -V, 0] } };
+  // (the lid's speed through it: ḣ n_y at each node, its own normal)
+  const byPos = new Map(); for (const [n, v] of nrm) byPos.set(`${M.X[n]},${M.Y[n]},${M.Z[n]}`, v[1]);
+  bc.pile.un = (x, y, z) => hdot * (byPos.get(`${x},${y},${z}`) ?? 1);
+  const S = ffSetup({ mesh: M, mu: o.mu, gdMin: o.gdMin, rho: o.rho, g: o.g, Lr: 1e-3, Ur: o.U || 1e-3, bc });
+  const R = ffSolve(S, { tol: 1e-8, ...(o.solve || {}) });
+  const fl = t => ffFlow(S, R.x, t), flows = { top: fl('pile'), end: fl('end'), back: fl('cut'), web: fl('web'), blade: fl('blade'), side0: fl('side0'), side1: fl('side1'),
+    pipe: fl('pipeOut') + fl('pipeEnd') + fl('pipeInner'), bore: fl('pipeIn') };
+  return { M, S, x: R.x, u: R.u, v: R.v, w: R.w, p: R.p, hdot, free, flows, hist: R.hist, converged: R.converged, V };
+}
+
+/** A Q1 pressure (on the elements' corners; NaN elsewhere) at every node of a Q2 mesh: trilinear in each element. */
+function fplPressureAll(M, p) {
+  const out = Float64Array.from(p), L = (a, b, g) => (g * 3 + b) * 3 + a;
+  for (let e = 0; e < M.nE; e++) {
+    const el = M.elems.subarray(27 * e, 27 * e + 27), c = [0, 2].flatMap(g => [0, 2].flatMap(b => [0, 2].map(a => p[el[L(a, b, g)]])));
+    for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+      const n = el[L(a, b, g)]; if (Number.isFinite(out[n])) continue;
+      const w = (k, t) => (k ? t / 2 : 1 - t / 2);
+      let s = 0; for (let gg = 0; gg < 2; gg++) for (let bb = 0; bb < 2; bb++) for (let aa = 0; aa < 2; aa++) s += w(aa, a) * w(bb, b) * w(gg, g) * c[(gg * 2 + bb) * 2 + aa];
+      out[n] = s;
+    }
+  }
+  return out;
 }
 
 /**
@@ -156,10 +221,11 @@ function fplSolve(o) {
  * while t mod T < τ, the drain's after (RK4, the step a fraction of the element over the speed, never across a switch),
  * until the path leaves through the pool edge (x ≥ −xEnd) or tMax. A: the pulse's ({ M, u, v, w }), B: the drain's (each on
  * its own mesh: the top differs). Where the flow switches and a point is above the new top (in a heap that flattens), or a
- * step takes it past a wall or the top (where the flow runs along them), it is put back just inside. Returns per path { pts: [x, y, z, t], out (true: through the pool edge), t (s to get
- * there) }.
+ * step takes it past a wall or the top (where the flow runs along them), it is put back just inside (topAt(M, x, z): the
+ * top's height there, default the pool mesh's). Returns per path { pts: [x, y, z, t], out (true: through the pool edge), t
+ * (s to get there) }.
  */
-function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3 }) {
+function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3, topAt = fplTopAt }) {
   const fp = n => FPL_(n, './feed-post.js'), fpIndex = fp('fpIndex'), fpField = fp('fpField');
   const XA = fpIndex(A.M), XB = A.M === B.M ? XA : fpIndex(B.M), FA = [A.u, A.v, A.w], FB = [B.u, B.v, B.w], dT = 1e-9 * T;
   // the phase in the cycle (just before a pulse: its start), whether a pulse is on, the time to the next switch
@@ -168,10 +234,11 @@ function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3 
   const gone = p => p[0] >= -xEnd - 1e-6;   // (at the pool edge, to a micrometre: where the flow there turns back, a path
   //  reaching it creeps along it)
   // a point outside the flow (a step past a wall, the web or the top): back inside the pool's box, just under its top
-  const W = A.M.info.W, xB = A.M.info.xBack, e = 1e-9;
+  // (the pool's mesh, or the coater's with the pipes in the paste: its width solved, its back edge at its cut)
+  const W = A.M.info.Wend ?? A.M.info.W, xB = A.M.info.xBack ?? -A.M.info.xCut, e = 1e-9;
   const settle = (on, p) => { const [X, F, M] = flow(on); if (fpField(X, F, p)) return p;
     const q = [Math.max(p[0], -xB + e), Math.max(p[1], e), Math.min(Math.max(p[2], e), W - e)]; if (fpField(X, F, q)) return q;
-    const y = fplTopAt(M, q[0], q[2]); if (y == null) return p;
+    const y = topAt(M, q[0], q[2]); if (y == null) return p;
     for (let d = 1e-7; d < 2e-3; d *= 2) { const r = [q[0], Math.min(q[1], y - d), q[2]]; if (fpField(X, F, r)) return r; } return p; };
   return starts.map(p0 => {
     let t = t0, p = settle(inPulse(t0), p0.slice()); const pts = [[...p, t]];
@@ -212,13 +279,17 @@ function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3 
  *   law, μ = τy/γ̇ + (μ − τy/2.7)(γ̇/2.7)^(n−1); or muLaw: γ̇ -> Pa·s, the app's own, with plain: true for a Newtonian one),
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin, Qout (m³/s, the whole
  *   width: all outlets during a pulse, the web's), hP, hD (m: the level during a pulse and between), T, tau (s), mesh: {
- *   hFine, hMax, ny, zs (optional: the element boundaries across) }, t0 (s into a pulse the paths start, default τ/2), tMax
- *   (s, default 4000), mirror (default true), solveTol (optional: each solve's tolerance) };
+ *   hFine, hMax, ny, zs (optional: the element boundaries across), pipes (the 3D's round pipes: fmMesh's options) }, t0 (s
+ *   into a pulse the paths start, default τ/2), tMax (s, default 4000), mirror (default true), solveTol (optional: each
+ *   solve's tolerance), entry ('fall', 'heap': the paste entering through the top -- over the landing, the heap's foot --
+ *   or 'dip': through pipes standing in the paste, their tips in it through the cycle: the 2D's a slot across the slice,
+ *   the 3D's round, on the coater's block mesh, its flow shown on the pool's grid, NaN in the pipes' walls), pipe ({ d, Do,
+ *   tip } m: the outlets' bore, outside and tip, for 'dip') };
  *   onProgress(text, 0..1).
  * The paste's law by continuation: its viscosity at 2.7 1/s first, then the law with its γ̇ floor brought down tenfold
  * twice (0.1, 0.01, 0.001 of U/H), each solve from the last.
  * The 3D with its outlets in mirror pairs across the pool's middle (the same x, z and W − z; none within two landing radii
- * of the middle): the flow is symmetric about the middle, so half the pool is solved, a mirror at its middle (no flow
+ * of the middle -- with the tips in the paste, none whose pipe's square reaches it): the flow is symmetric about the middle, so half the pool is solved, a mirror at its middle (no flow
  * across it, no shear along it), and the whole pool rebuilt from it -- the same flow at half the cost (feed-pool.validate.js
  * checks it against the whole pool solved).
  * Returns { dim, W (the width shown, m: the slice's in 2D, the pool's in 3D), mirror (true: half solved), states: [pulse,
@@ -231,7 +302,7 @@ function fplCycle(o, onProgress = () => {}) {
   const ord = o.outlets.map((q, j) => j).sort((a, b) => o.outlets[a].z - o.outlets[b].z);
   const mirror = dim === 3 && o.mirror !== false && nO >= 2 && nO % 2 === 0
     && ord.every((j, i) => { const q = o.outlets[j], m = o.outlets[ord[nO - 1 - i]]; return Math.abs(q.z + m.z - o.W) < 1e-9 && Math.abs(q.x - m.x) < 1e-12; })
-    && ord.slice(0, nO / 2).every(j => o.outlets[j].z < o.W / 2 - 2 * o.r);
+    && ord.slice(0, nO / 2).every(j => o.outlets[j].z < o.W / 2 - (o.entry === 'dip' ? (M3.sq ?? 3) * o.pipe.Do / 2 : 2 * o.r));
   const W = dim === 2 ? Math.max(M3.hMax || 0.02, 4 * (M3.hFine || 2e-3)) : mirror ? o.W / 2 : o.W, share = W / o.W;
   const blade = o.R > 0 ? (x => o.H + o.R - Math.sqrt(Math.max(0, o.R * o.R - x * x))) : (() => 1e3);
   const L = o.law || {}, base = L.muRef - L.ty / 2.7, gd0 = o.U / o.H;
@@ -239,31 +310,63 @@ function fplCycle(o, onProgress = () => {}) {
   if (!(mu27 > 0)) throw new Error('the paste\'s law gives no viscosity at 2.7 1/s');
   const solved = dim === 2 ? [0] : mirror ? ord.slice(0, nO / 2) : o.outlets.map((q, j) => j);     // (the outlets solved, their indices)
   const outlets = dim === 2 ? [{ x: o.outlets[0].x, z: W / 2 }] : solved.map(j => o.outlets[j]);
+  // (the tips in the paste: the 2D's pipe a slot across the slice, standing from above the top down to the tip; the 3D's
+  //  round, on the coater's block mesh -- fplSolvePipes -- its flow then shown on the pool's own grid)
+  const dip = o.entry === 'dip';
+  if (dip && !(o.pipe.tip > 0 && o.pipe.tip < Math.min(o.hP, o.hD))) throw new Error(`the outlets' tips (${(o.pipe.tip * 1e3).toFixed(1)} mm above the web) must stay in the paste through the cycle: the level falls to ${(Math.min(o.hP, o.hD) * 1e3).toFixed(1)} mm between pulses`);
+  const pipes = dip && dim === 2 ? [{ x: outlets[0].x, d: o.pipe.d, Do: o.pipe.Do, tip: o.pipe.tip, bore: 2 * o.pipe.d }] : null, round = dip && dim === 3;
   const mesh = { hFine: M3.hFine, hMax: M3.hMax, ny: M3.ny, ...(M3.zs ? { zs: M3.zs } : {}), ...(dim === 2 ? { nz: 1, sideFine: false } : mirror ? { sideFine: [true, false] } : {}) };
   const stages = plain ? [null] : [null, 1e-1, 1e-2, 1e-3], n = 2 * stages.length + 1;
   const f32 = a => Float32Array.from(a), states = [], fields = [];
   let done = 0;
   for (const pulse of [true, false]) {
-    const so = { W, xBack: o.xBack, xEnd: o.xEnd, h: pulse ? o.hP : o.hD, blade, U: o.U, rho: o.rho, g: o.g, outlets, r: o.r, line: dim === 2,
+    const so = { W, xBack: o.xBack, xEnd: o.xEnd, h: pulse ? o.hP : o.hD, blade, U: o.U, rho: o.rho, g: o.g, outlets, r: o.r, line: dim === 2, ...(pipes ? { pipes } : {}),
       Qin: o.Qin * share, Qout: o.Qout * share, pulse, sides: dim === 2 ? 'slip' : mirror ? ['wall', 'slip'] : 'wall', mesh };
     let r = null, x0 = null, newton = 0;
     for (const f of stages) {
       onProgress(`${pulse ? 'During a pulse' : 'Between pulses'}: ${f == null ? (plain ? 'the flow' : 'the flow at the viscosity at 2.7 1/s') : `the paste's law, γ̇ floor ${(f * gd0).toPrecision(2)} 1/s`}`, done / n);
-      r = fplSolve({ ...so, mu: f == null ? () => mu27 : law, gdMin: f == null ? undefined : f * gd0,
-        solve: { x0, ...(o.solveTol ? { tol: o.solveTol } : {}), ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } });
+      const sv = { mu: f == null ? () => mu27 : law, gdMin: f == null ? undefined : f * gd0,
+        solve: { x0, ...(o.solveTol ? { tol: o.solveTol } : {}), ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } };
+      // (the round pipes: the whole pool's outlets to the coater's mesher, its own half when they are mirror pairs)
+      r = round ? fplSolvePipes({ ...so, ...sv, W: o.W, half: mirror, outlets: o.outlets, pipe: { d: o.pipe.d, Do: o.pipe.Do, tip: o.pipe.tip, bore: 2 * o.pipe.d }, mesh: M3.pipes })
+        : fplSolve({ ...so, ...sv });
       x0 = r.x; newton += r.hist.length; done++;
     }
-    const I = r.M.info;
     fields.push(r);
-    states.push({ info: { NX: I.NX, NY: I.NY, NZ: I.NZ, xs: I.xs, zs: I.zs, xJ: I.xJ, h: I.h, W, xBack: I.xBack, xEnd: I.xEnd, nE: r.M.nE, nN: r.M.nN },
-      X: f32(r.M.X), Y: f32(r.M.Y), Z: f32(r.M.Z), u: f32(r.u), v: f32(r.v), w: f32(r.w), p: f32(r.p), flows: r.flows, hdot: r.hdot, converged: r.converged, newton });
+    if (round) {
+      // the flow shown on the pool's own grid (as the other entries'): each node's velocity and pressure from the coater's
+      //  mesh where it is in the paste; in a pipe's wall none (NaN)
+      const fp = k => FPL_(k, './feed-post.js'), fpIndex = fp('fpIndex'), fpField = fp('fpField'), fpmMesh = FPL_('fpmMesh', './feed-pool-mesh.js');
+      const G = fpmMesh({ W, xBack: o.xBack, xEnd: o.xEnd, h: so.h, blade, outlets, r: o.pipe.Do / 2, ...mesh }), X = fpIndex(r.M), F = [r.u, r.v, r.w, fplPressureAll(r.M, r.p)];
+      const A = ['u', 'v', 'w', 'p'].map(() => new Float32Array(G.nN));
+      for (let i = 0; i < G.nN; i++) {
+        const q = [G.X[i], G.Y[i], G.Z[i]];
+        // (a node on a curved wall -- the blade's face, a pipe -- a hair outside the mesh's own surface: just inside)
+        let at = fpField(X, F, q);
+        for (let k = 0, e = 1e-7; !at && k < 6; k++, e *= 4) at = fpField(X, F, [q[0] - e, q[1] - e, q[2]]) || fpField(X, F, [q[0] + e, q[1] - e, q[2]]);
+        for (let c = 0; c < 4; c++) A[c][i] = at ? at.v[c] : NaN;
+      }
+      const I = G.info;
+      states.push({ info: { NX: I.NX, NY: I.NY, NZ: I.NZ, xs: I.xs, zs: I.zs, xJ: I.xJ, h: I.h, W, xBack: I.xBack, xEnd: I.xEnd, nE: r.M.nE, nN: r.M.nN, pipes: true },
+        X: f32(G.X), Y: f32(G.Y), Z: f32(G.Z), u: A[0], v: A[1], w: A[2], p: A[3], flows: r.flows, hdot: r.hdot, converged: r.converged, newton });
+      continue;
+    }
+    const I = r.M.info;
+    // (a slot's pipe: the nodes in its wall, in no element, carry no flow: NaN)
+    const u = f32(r.u), v = f32(r.v), w = f32(r.w), p = f32(r.p);
+    if (pipes) { const inEl = new Uint8Array(r.M.nN); for (let i = 0; i < r.M.elems.length; i++) inEl[r.M.elems[i]] = 1; for (let i = 0; i < r.M.nN; i++) if (!inEl[i]) u[i] = v[i] = w[i] = p[i] = NaN; }
+    states.push({ info: { NX: I.NX, NY: I.NY, NZ: I.NZ, xs: I.xs, zs: I.zs, xJ: I.xJ, h: I.h, W, xBack: I.xBack, xEnd: I.xEnd, nE: r.M.nE, nN: r.M.nN, ...(pipes ? { pipes: true } : {}) },
+      X: f32(r.M.X), Y: f32(r.M.Y), Z: f32(r.M.Z), u, v, w, p, flows: r.flows, hdot: r.hdot, converged: r.converged, newton });
   }
   // the paths: from each landing (its middle, and half its radius either way), released t0 into a pulse
-  onProgress('The paths from each landing', done / n);
-  const t0 = o.t0 ?? o.tau / 2, h0 = Math.min(o.hP, o.hD) - 2e-4, starts = [], meta = [];
+  onProgress(dip ? 'The paths from each pipe\'s tip' : 'The paths from each landing', done / n);
+  // (each path from under where the paste enters: the landing, the heap's foot -- or, the tips in the paste, the bore's mouth)
+  const t0 = o.t0 ?? o.tau / 2, h0 = dip ? o.pipe.tip - 2e-4 : Math.min(o.hP, o.hD) - 2e-4, rs = dip ? 0.9 * o.pipe.d / 2 : o.r, starts = [], meta = [];
   outlets.forEach((q, j) => (dim === 2 ? [[0, 0], [-0.5, 0], [0.5, 0], [-0.25, 0], [0.25, 0]] : [[0, 0], [-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]]).forEach(([a, b], s) => {
-    starts.push([q.x + a * o.r, h0, q.z + b * o.r]); meta.push({ outlet: j, s }); }));
-  const P = fplPaths(fields[0], fields[1], starts, { T: o.T, tau: o.tau, t0, xEnd: o.xEnd, tMax: o.tMax ?? 4000 });
+    starts.push([q.x + a * rs, h0, q.z + b * rs]); meta.push({ outlet: j, s }); }));
+  // (on the coater's mesh, the top flat at the level up to the blade)
+  const topAt = round ? (M, x) => Math.min(M.info.H0, blade(x)) : fplTopAt;
+  const P = fplPaths(fields[0], fields[1], starts, { T: o.T, tau: o.tau, t0, xEnd: o.xEnd, tMax: o.tMax ?? 4000, topAt });
   let paths = P.map((p, i) => { const k = Math.max(1, Math.ceil(p.pts.length / 400)), sel = p.pts.filter((q, j) => j % k === 0 || j === p.pts.length - 1);
     return { ...meta[i], outlet: solved[meta[i].outlet], out: p.out, t: p.t, pts: Float32Array.from(sel.flat().map((v, j) => (j % 4 === 3 ? v - t0 : v))) }; });
   if (mirror) {
@@ -275,7 +378,7 @@ function fplCycle(o, onProgress = () => {}) {
       for (let k = 0; k < NZ; k++) { const kk = k < Nh ? k : 2 * Nh - 2 - k, sg = k < Nh ? 1 : -1;
         for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const a = (k * NY + j) * NX + i, b = (kk * NY + j) * NX + i;
           A.X[a] = st.X[b]; A.Y[a] = st.Y[b]; A.Z[a] = k < Nh ? st.Z[b] : Wf - st.Z[b]; A.u[a] = st.u[b]; A.v[a] = st.v[b]; A.w[a] = sg * st.w[b]; A.p[a] = st.p[b]; } }
-      const f = st.flows, flows = { top: 2 * f.top, end: 2 * f.end, back: 2 * f.back, web: 2 * f.web, blade: 2 * f.blade, side0: f.side0, side1: f.side0 };
+      const f = st.flows, flows = {}; for (const k in f) flows[k] = k === 'side0' || k === 'side1' ? f.side0 : 2 * f[k];
       return { ...st, ...A, flows, info: { ...I, NZ, W: Wf, zs: [...I.zs, ...I.zs.slice(0, -1).reverse().map(z => Wf - z)], nE: 2 * I.nE, nN: n, nESolved: I.nE, mirror: true } };
     };
     for (let s = 0; s < states.length; s++) states[s] = full(states[s]);
@@ -286,4 +389,4 @@ function fplCycle(o, onProgress = () => {}) {
   return { dim, W: mirror ? o.W : W, mirror, states, paths, t0 };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplPaths, fplCycle };
+if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplSolvePipes, fplPressureAll, fplPaths, fplCycle };

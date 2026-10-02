@@ -8,6 +8,9 @@
  *  4. The pool's top growing with the level on the round blade: the cycle conserves the paste (in = out over a cycle =
  *     the pulse's volume), and twice the steps change the period and the swing by less than 1e-9 (RK4).
  *  5. The outlets: the stream's flow and speed, free fall, its diameter by continuity, and each check failing when it should.
+ *  6. How the paste enters: the pipes standing in the paste, or the heaps up to the tips, take their footprints off the top
+ *     (the exact saw-tooth on the smaller top); tips above the paste with the paste falling: the cycle unchanged.
+ *  7. The outlets for each entry: where the paste meets the pool (down a heap, out of a tip in the paste) and the checks.
  */
 const F = require('./feed-pulse.js');
 let fails = 0;
@@ -75,6 +78,34 @@ const rho = 1360, g = 9.81, R = 0.1, H = 1.725e-3, W = 0.3, U = 0.28 / 60, film0
     !low.checks[0].ok && !onBlade.checks[1].ok && !behind.checks[2].ok && !out.checks[3].ok && !overlap.checks[3].ok);
   const e = F.feedEquidistant(4, 0.3);
   check('  equidistant outlets: each in the middle of its share of the width', e.every((z, i) => Math.abs(z - 0.3 * (i + 0.5) / 4) < 1e-15), e.map(z => (z * 1e3).toFixed(1)).join(', ') + ' mm');
+}
+
+// 6. how the paste enters: the pipes in the paste (tips below the lowest level) and the heaps (at every level) take their
+//  footprints off the top -- the exact saw-tooth on the smaller top; tips above the paste, falling: nothing taken
+{
+  const V = 60e-6, tau = 3, xBack = 0.13, A = W * xBack, Do = 0.014, n = 4, foot = n * Math.PI * Do * Do / 4, hBar = Pup / (rho * g);
+  const base = { W, U, film0, dfdP: 0, rho, g, Pup, R, H, xBack, V, tau, meets: () => 0 };
+  const Q = U * W * film0, sw = (V - Q * tau) / (A - foot);
+  const dip = F.feedCycle({ ...base, pipes: { n, Do, tip: hBar - 0.02, entry: 'dip' } }), heap = F.feedCycle({ ...base, pipes: { n, Do, tip: hBar + 0.02, entry: 'heap' } });
+  const fall = F.feedCycle({ ...base, pipes: { n, Do, tip: hBar + 0.02, entry: 'fall' } }), none = F.feedCycle(base);
+  check('how the paste enters: the pipes in the paste, or the heaps up to the tips, take their footprints off the top (the exact saw-tooth on A − n π Do²/4)',
+    Math.abs(dip.swing / sw - 1) < 1e-9 && Math.abs(heap.swing / sw - 1) < 1e-9 && Math.abs(dip.T / (V / Q) - 1) < 1e-10,
+    `swing ${(dip.swing * 1e3).toFixed(6)} mm (tips in the paste), ${(heap.swing * 1e3).toFixed(6)} mm (heaps), exact ${(sw * 1e3).toFixed(6)}; without the pipes ${(none.swing * 1e3).toFixed(6)} mm`);
+  check('  falling from tips above the paste: the cycle exactly as without the pipes', fall.swing === none.swing && fall.T === none.T && fall.hLow === none.hLow);
+}
+
+// 7. the outlets for each entry: where the paste meets the pool, and the checks
+{
+  const c = F.feedCycle({ W, U, film0, dfdP: 0.66e-6, rho, g, Pup, R, H, xBack: 0.13, V: 60e-6, tau: 3 });
+  const o = { V: 60e-6, tau: 3, n: 4, d: 0.01, Do: 0.014, x: 0.1, zs: F.feedEquidistant(4, W), W, g, rho, xBack: 0.13 };
+  const q = 5e-6, v0 = q / (Math.PI * 0.01 * 0.01 / 4), vh = q / (Math.PI * 0.014 * 0.014 / 4);
+  const heap = F.feedOutlets({ ...o, entry: 'heap', tip: c.hHigh + 0.005 }, c), dip = F.feedOutlets({ ...o, entry: 'dip', tip: c.hLow - 0.005 }, c);
+  const heapLow = F.feedOutlets({ ...o, entry: 'heap', tip: c.hHigh - 0.001 }, c), dipHigh = F.feedOutlets({ ...o, entry: 'dip', tip: c.hLow + 0.001 }, c);
+  check('the outlets for each entry: down a heap, its mean speed across the pipe\'s width; out of a tip in the paste, the bore\'s speed; each check passes',
+    Math.abs(heap.vLand - vh) < 1e-15 && heap.dLand === 0.014 && Math.abs(dip.vLand - v0) < 1e-15 && dip.dLand === 0.01 && heap.checks.every(k => k.ok) && dip.checks.every(k => k.ok)
+    && Math.abs(heap.fall - 0.005) < 1e-15 && Math.abs(dip.depth - 0.005) < 1e-15,
+    `heap ${(heap.vLand * 1e3).toFixed(2)} mm/s over ${(heap.dLand * 1e3).toFixed(1)} mm; in the paste ${(dip.vLand * 1e3).toFixed(2)} mm/s over ${(dip.dLand * 1e3).toFixed(1)} mm; "${heap.checks[0].text}" "${dip.checks[0].text}"`);
+  check('  and fails when it should: a heap whose tip is in the paste at the highest level; tips in the paste that come out at the lowest', !heapLow.checks[0].ok && !dipHigh.checks[0].ok);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
