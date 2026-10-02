@@ -4,7 +4,8 @@
  *
  * The 1D uses the 2D's inputs (cfd-ui.js's cfdGeometry: the blade shape, exit face, rheology model,
  * fibre slip and each location's own values), so the two stages compare like for like. It solves in
- * a worker as the inputs change; a page shows the last results with "Solving" until the new arrive.
+ * a worker when asked (solve-ctl.js: nothing solves by itself); a page shows the last results marked out of date
+ * after an input change, and Solve beside them.
  */
 const ONE_D = { loc: 0, res: null, key: null, across: null, acrossKey: null, busy: false, again: false, worker: null, id: 0, error: null, ms: 0 };
 /** Stop the 1D (New, Open): its worker ended. */
@@ -31,12 +32,16 @@ function acrossPositions() {
 }
 /** Ask the worker for the 1D results these inputs need (the positions across the web only for that page). */
 function oneDRequest(needAcross) {
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveAsked('1d')) return;
+  needAcross = true;   // (a solve asked for gives the four locations and across the web together)
   const locs = CFD_LOCS.map((_, i) => oneDGeo(i)), ripple = oneDRipple();
   const key = JSON.stringify([locs, ripple]);
   const across = needAcross ? acrossPositions().map(oneDGeoAt) : null;
   const aKey = across ? JSON.stringify([across, ripple]) : null;
-  if (key === ONE_D.key && (!needAcross || aKey === ONE_D.acrossKey)) return;
+  if (key === ONE_D.key && (!needAcross || aKey === ONE_D.acrossKey)) { solveTake('1d'); return; }
   if (ONE_D.busy) { ONE_D.again = true; return; }
+  solveTake('1d');
   ONE_D.busy = true; ONE_D.again = false;
   if (!ONE_D.worker) ONE_D.worker = makeWorker('cfd-1d-worker.js');
   const id = ++ONE_D.id;
@@ -59,6 +64,8 @@ const oneDCurrent = () => ONE_D.key === JSON.stringify([CFD_LOCS.map((_, i) => o
 /** Wait for the 1D results of the inputs as they are (the report). */
 async function oneDWait(needAcross) {
   for (let k = 0; k < 600; k++) {
+    // (Phase 0: not asked for and not solving -- nothing to wait for; the report marks it not solved)
+    if (!solveAsked('1d') && !ONE_D.busy) return oneDCurrent() && (!needAcross || !!ONE_D.across);
     oneDRequest(needAcross);
     if (!ONE_D.busy && oneDCurrent() && (!needAcross || ONE_D.across)) return true;
     await new Promise(r => setTimeout(r, 50));
@@ -92,8 +99,11 @@ document.addEventListener('click', e => { const b = e.target.closest && e.target
 const oneDLegend = items => items.map(([t, c, kind]) => `<span class="lg"><i class="${kind === 'dot' ? 'lg-dot' : 'lg-ln' + (kind ? ' dash' : '')}" style="--c:${c}"></i>${t}</span>`).join('');
 /** Nothing to show yet: solving, or the error. */
 function oneDWaiting() {
-  document.getElementById('st').innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', '');
+  // (no results: one clear panel in place of empty charts, its Solve the only one -- Phase 0, nothing solves until asked)
+  const vp = document.querySelector('.mod-vp');
+  document.getElementById('st').innerHTML = (ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') + solveCtl('1d', null, !!vp) : solvePending('1d') ? pill('Solving the 1D…', '') : solveCtl('1d', null, !!vp));
   document.getElementById('ss').innerHTML = '';
+  if (vp) vp.innerHTML = `<div class="mod-extra">${emptyHint(ONE_D.error ? 'The 1D could not be solved' : solvePending('1d') ? 'Solving the 1D…' : 'Not solved yet', ONE_D.error ? escAttr(ONE_D.error) : 'The 1D solves the flow under the blade at the four locations and across the web for the inputs as they are. Nothing is solved until you ask.', solvePending('1d') ? '' : `<button type="button" class="btn btn-primary btn-sm" data-solve="1d">${uiIco('play')}Solve the 1D</button>`)}</div>`;
 }
 const f3 = v => v.toFixed(3), mm = v => (v * 1000).toFixed(3);
 /** The 2D result at a location, if solved (and whether it is out of date). */
@@ -147,7 +157,7 @@ function view1DGap() {
   st += film2 != null ? pill(`2D${two.stale ? ' (out of date)' : ''}: ${mm(film2)} mm, 1D ${L.film >= film2 ? '+' : ''}${((L.film / film2 - 1) * 100).toFixed(1)} %`, two.stale ? 'warn' : '') : pill('2D not solved at this location', '');
   st += pill(`One-viscosity estimate ${mm(L.filmLub)} mm`, '');
   if (!L.converged) st += pill('A station did not converge', 'bad');
-  if (!oneDCurrent()) st += pill('Solving for the inputs as they are…', 'warn');
+  if (!oneDCurrent()) st += solvePending('1d') ? pill('Solving for the inputs as they are…', '') : solveCtl('1d');
   document.getElementById('st').innerHTML = st;
   const kMax = L.p.indexOf(Math.max(...L.p)), n = L.x.length - 1;
   document.getElementById('ss').innerHTML = [
@@ -267,7 +277,7 @@ function view1DFilm() {
     + pill(Rp.residual >= Rp.a0 && Rp.residual > 0 ? 'Yield stress blocks levelling completely' : Rp.residual > 0 ? 'Levels down to a yield-limited residual' : 'Levelling limited by viscosity only', '')
     + (L.struct ? pill(`Structure λ ${L.struct.exit.toFixed(2)} leaving the blade (${L.struct.tMean.toFixed(0)} s under it), ${(1 - (1 - L.struct.exit) * Math.exp(-Rp.tRes / L.struct.S.tb)).toFixed(2)} at the oven${Rp.tFrozen != null && Rp.residualRested > 0 ? (Rp.tFrozen === 0 ? '; the yield stress holds the ripple from the start' : `; the rebuilding yield stress holds the ripple from ${Rp.tFrozen < 10 ? Rp.tFrozen.toFixed(1) : Rp.tFrozen.toFixed(0)} s`) : ''}`, '') : '')
     + (F.converged ? '' : pill('The film solve did not fully settle', 'warn'))
-    + (oneDCurrent() ? '' : pill('Solving for the inputs as they are…', 'warn'));
+    + (oneDCurrent() ? '' : solvePending('1d') ? pill('Solving for the inputs as they are…', '') : solveCtl('1d'));
   document.getElementById('ss').innerHTML = [
     ['Film at the edge (the gap)', (L.H * 1000).toFixed(3) + ' mm'],
     ['Film at the oven', hEnd.toFixed(3) + ' mm'],
@@ -318,7 +328,7 @@ function view1DAcross() {
       : sMx === 0 ? ['Pinned at the sharp edge everywhere', 'ok'] : ['Contact line steady', 'ok'];
   document.getElementById('st').innerHTML = pill(...verdict) + pill(`Film ${fMin.toFixed(3)} to ${fMax.toFixed(3)} mm across the web`, '')
     + (A.every(r => r.converged) ? '' : pill('A position did not converge', 'bad'))
-    + (ONE_D.acrossKey === JSON.stringify([acrossPositions().map(oneDGeoAt), oneDRipple()]) ? '' : pill('Solving for the inputs as they are…', 'warn'))
+    + (ONE_D.acrossKey === JSON.stringify([acrossPositions().map(oneDGeoAt), oneDRipple()]) ? '' : solvePending('1d') ? pill('Solving for the inputs as they are…', '') : solveCtl('1d'))
     + (ACR.bow.on && ACR.bow.mode === 'computed' && acrossBowComputed().error ? pill('Bow not computed: ' + acrossBowComputed().error, 'bad') : '');
   document.getElementById('ss').innerHTML = [
     ['Wet film range', `${fMin.toFixed(3)} to ${fMax.toFixed(3)} mm`],

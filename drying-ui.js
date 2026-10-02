@@ -79,8 +79,11 @@ function dryRequest() {
   const films = dryFilms();
   if (!films.length) return;
   const base = dryBase(), key = JSON.stringify([base, films]);
-  if (key === DRY.key || key === DRY.pending) return;
+  if (key === DRY.key || key === DRY.pending) { solveTake('dry'); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveAsked('dry')) return;
   if (DRY.busy) { DRY.again = true; return; }
+  solveTake('dry');
   DRY.busy = true; DRY.again = false; DRY.pending = key; DRY.prog = null;
   if (!DRY.worker) DRY.worker = makeWorker('cfd-dry-worker.js');
   const id = ++DRY.id;
@@ -100,6 +103,8 @@ function dryRequest() {
 /** Wait for the drying of the inputs as they are (the report). */
 async function dryWait() {
   for (let k = 0; k < 1200; k++) {
+    // (Phase 0: not asked for and not solving -- nothing to wait for; the report marks it not solved)
+    if (!solveAsked('dry') && !solveAsked('1d') && !DRY.busy && !ONE_D.busy) return dryCurrent();
     if (typeof oneDRequest === 'function') oneDRequest(true);
     dryRequest();
     if (!DRY.busy && dryCurrent()) return true;
@@ -119,7 +124,8 @@ const dryPlace = x => x == null ? 'not in the oven' : x < 0 ? `${(-x).toFixed(2)
 function dryStage() {
   const n = OVEN.zones.length, o = ovenTime(lineSpeed()), what = `${n} zone${n === 1 ? '' : 's'}, ${+o.len.toFixed(2)} m`;
   if (DRY.busy) return { st: 'busy', s: `${what}: drying the films…` };
-  if (!dryCurrent()) return DRY.error && DRY.key === dryKeyNow() ? { st: 'failed', s: `${what}: ${DRY.error}` } : { st: 'part', s: `${what}: the water to take out` };
+  // (not solved for these inputs: out of date when an older result is kept, else not solved yet -- Phase 0, on request)
+  if (!dryCurrent()) return DRY.error && DRY.key === dryKeyNow() ? { st: 'failed', s: `${what}: ${DRY.error}` } : { st: DRY.res ? 'stale' : 'todo', s: `${what}: the water to take out` };
   const [t, b] = dryRuns('web').map(r => r || null), f = r => !r ? '—' : r.exit.dry ? `dry at ${dryPlace(r.events.dry)}` : `${r.exit.waterPct.toFixed(0)} % water left`;
   return { st: 'solved', s: `${what}; the web: ${f(t)} (top only), ${f(b)} (top and bottom)` };
 }
@@ -177,14 +183,15 @@ function dryRender() {
   sec.querySelectorAll('[data-dry]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.dry === DRY.sel)));
   const st = document.getElementById('dryState');
   const films = dryFilms();
-  if (!films.length) { st.innerHTML = `<p class="dry-msg">${pill('Waiting for the 1D: the drying starts from the wet film', '')}</p>`; dryClear(); return; }
+  if (!films.length) { st.innerHTML = `<p class="dry-msg">${solvePending('dry') ? pill('Solving the 1D first: the drying starts from the wet film', '') : solveCtl('dry') + ' <span class="fv-why">(the 1D first: the drying starts from the wet film)</span>'}</p>`; dryClear(); return; }
   dryRequest();
   if (!dryCurrent()) {
     if (DRY.busy) dryStatusPaint();
     else if (DRY.error) st.innerHTML = `<p class="dry-msg">${pill('The drying could not be solved: ' + dryEsc(DRY.error), 'bad')}</p>`;
+    else st.innerHTML = `<p class="dry-msg">${solvePending('dry') ? pill('Solving the drying…', '') : solveCtl('dry')}</p>`;
     if (!DRY.res) { dryClear(); return; }
-    // (the previous results stay drawn, marked, until the new ones come)
-    st.insertAdjacentHTML('beforeend', `<p class="dry-msg">${pill('Showing the previous inputs\' drying while the new one solves', 'warn')}</p>`);
+    // (the previous results stay drawn, marked out of date, until solved again: Phase 0, solving only on request)
+    st.insertAdjacentHTML('beforeend', `<p class="dry-msg">${pill('Showing the drying for the previous inputs', 'warn')}</p>`);
   } else st.innerHTML = '';
   if (!DRY.res.runs.some(r => r.key === DRY.sel)) DRY.sel = DRY.res.runs.some(r => r.key === 'web') ? 'web' : DRY.res.runs[0].key;
   const [rt, rb] = dryRuns(DRY.sel);

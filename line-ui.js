@@ -11,7 +11,7 @@
  */
 
 /** A stage's state: its word and its colour. 'done': solved, with nothing its page judges. */
-const LINE_ST = { ok: ['OK', 'ok'], done: ['Solved', 'ok'], warn: ['Risk', 'warn'], bad: ['Defect', 'bad'], busy: ['Solving', 'muted'], todo: ['Not solved', 'muted'], none: ['Not modelled', 'muted'], fail: ['Failed', 'bad'] };
+const LINE_ST = { ok: ['OK', 'ok'], done: ['Solved', 'ok'], warn: ['Risk', 'warn'], bad: ['Defect', 'bad'], busy: ['Solving', 'muted'], todo: ['Not solved', 'muted'], stale: ['Out of date', 'warn'], none: ['Not modelled', 'muted'], fail: ['Failed', 'bad'] };
 const lineNum = (v, d = 2) => Number.isFinite(v) ? v.toFixed(d) : '—';
 /** A size change (strain) as a percentage to two significant figures, and what it is over the piece's length L (m). */
 const lineSize = (e, L) => !Number.isFinite(e) ? '—' : e === 0 ? '0 %'
@@ -92,32 +92,33 @@ function lineStages(C = lineChecks()) {
   const c = MAT.slurry;
   out.push({ k: 'mix', t: 'Mixing', go: () => navGo('mix'), st: 'none', checks: null,
     rows: [['Solids', `${c.phi.v} vol% GO (${(slurrySolidsMass() * 100).toFixed(1)} % by mass)`], ['Slurry density', `${slurryRho().toFixed(0)} kg/m³`]] });
+  // (a stage without its checks: solving (asked for or under way), out of date, could not be solved, or not solved -- Phase 0:
+  //  nothing solves until asked)
+  const unsolved = k => solvePending(k) ? 'busy' : ({ failed: 'fail', stale: 'stale' })[solveState(k)] || 'todo';
   // 2 Coating: the answers (answers.js)
   const web = processWeb();
-  out.push({ k: 'coat', t: 'Coating', go: () => lineGo('coat'), st: !ONE_D.res ? (ONE_D.error ? 'fail' : 'busy') : !C.coat ? 'busy' : worst(C.coat), checks: C.coat,
+  out.push({ k: 'coat', t: 'Coating', go: () => lineGo('coat'), st: C.coat ? worst(C.coat) : unsolved('1d'), checks: C.coat,
     rows: web ? [['Wet film, mean', `${(web.mean * 1000).toFixed(3)} mm`]] : [] });
   // 3 Drying
-  const dSt = dryStage();
-  out.push({ k: 'dry', t: 'Drying', go: () => navGo('dry'), st: C.dry ? worst(C.dry) : dSt.st === 'busy' || dSt.st === 'part' ? 'busy' : dSt.st === 'failed' ? 'fail' : 'todo', checks: C.dry, rows: [] });
+  out.push({ k: 'dry', t: 'Drying', go: () => navGo('dry'), st: C.dry ? worst(C.dry) : unsolved('dry'), checks: C.dry, rows: [] });
   // 4 Peel and wind
-  const fSt = filmStage();
-  out.push({ k: 'peel', t: 'Peel and wind', go: () => navGo('peel'), st: C.peel ? worst(C.peel) : fSt.st === 'busy' ? 'busy' : fSt.st === 'failed' ? 'fail' : 'todo', checks: C.peel, rows: [] });
+  out.push({ k: 'peel', t: 'Peel and wind', go: () => navGo('peel'), st: C.peel ? worst(C.peel) : unsolved('film'), checks: C.peel, rows: [] });
   // 5 Cutting: the piece as cut (its page's head: the piece, its curl, its corners)
   const sOk = typeof sheetCurrent === 'function' && sheetCurrent(), way = lineWay();
   const sRun = sOk ? SHEET.res.runs.find(r => r.where === way) : null, sP = sOk ? SHEET.res.q.pieces.find(x => x.where === way).plate : null;
-  out.push({ k: 'cut', t: 'Cutting', go: () => navGo('cut'), st: C.cut ? worst(C.cut) : SHEET.busy ? 'busy' : SHEET.error ? 'fail' : 'todo', checks: C.cut,
+  out.push({ k: 'cut', t: 'Cutting', go: () => navGo('cut'), st: C.cut ? worst(C.cut) : unsolved('sheet'), checks: C.cut,
     rows: sOk ? [['Piece', `${(SHEET.res.q.Lx * 1000).toFixed(0)} × ${(SHEET.res.q.Ly * 1000).toFixed(0)} mm`], ['Wants to curl to', Math.abs(sP.kS) > 1e-6 ? `R ${(1000 / Math.abs(sP.kS)).toFixed(0)} mm` : 'flat'],
       ['On a table: corners up', sheetMM(sRun.table.corner)], ['Held up: corners off its middle', sheetMM(sRun.free.corner)]] : [] });
   // 6 Pre heat treatment: the pressed stack, the pieces out of it
   const kOk = typeof stackCurrent === 'function' && stackCurrent(), kRun = kOk ? STACK.res.runs.find(r => r.where === way).stack : null, out6 = kOk ? kRun.shapes.outTable : null;
-  out.push({ k: 'stack', t: 'Pre heat treatment', go: () => navGo('stack'), st: C.stack ? worst(C.stack) : STACK.busy ? 'busy' : STACK.error ? 'fail' : 'todo', checks: C.stack,
+  out.push({ k: 'stack', t: 'Pre heat treatment', go: () => navGo('stack'), st: C.stack ? worst(C.stack) : unsolved('stack'), checks: C.stack,
     rows: kOk ? [['Stack', `pressed, ${OVEN.peel.dryT} °C, ${OVEN.peel.tOven} h`], ['Size out of it, from as cut', lineSize(kRun.sizeOut[0], SHEET.res ? SHEET.res.q.Lx : NaN)],
       ['Out of it: corners up on a table', sheetMM(out6.corner)]] : [] });
   // 7 Furnace: its checks; 8 the graphene film (the furnace's product: its checks are the furnace's)
-  const uSt = furnStage(), uOk = !!C.furn;
-  out.push({ k: 'furn', t: 'Furnace', go: () => navGo('furn'), st: uOk ? worst(C.furn) : uSt.st === 'busy' ? 'busy' : uSt.st === 'failed' ? 'fail' : 'todo', checks: C.furn, rows: [] });
+  const uOk = !!C.furn;
+  out.push({ k: 'furn', t: 'Furnace', go: () => navGo('furn'), st: uOk ? worst(C.furn) : unsolved('furn'), checks: C.furn, rows: [] });
   const B = uOk ? furnBatch(FURN.res) : null, e = uOk ? FURN.res.end : null;
-  out.push({ k: 'gfilm', t: 'Graphene film', go: () => navGo('gfilm'), st: uOk ? worst(C.furn) : uSt.st === 'busy' ? 'busy' : uSt.st === 'failed' ? 'fail' : 'todo', checks: null,
+  out.push({ k: 'gfilm', t: 'Graphene film', go: () => navGo('gfilm'), st: uOk ? worst(C.furn) : unsolved('furn'), checks: null,
     rows: uOk ? [['Thickness', `${furnUm(B.h)} ± ${(B.sd * 1e6).toFixed(1)} µm (${(B.h / FURN.res.q.P.h).toFixed(2)}× the GO piece)`], ['Density', `${(B.rho / 1000).toFixed(2)} g/cm³`],
       ['Heat along it', `${B.kappa.toFixed(0)} W/(m·K)`], ['C/O', furnCO(e.CO)], ['Graphitized', `${(e.g * 100).toFixed(0)} %`]] : [] });
   return out;
@@ -132,7 +133,8 @@ function lineStages(C = lineChecks()) {
  * as cut (S5), out of the pressed stack (S6), the furnace's batch and its middle piece's size (S7).
  */
 function lineStreams() {
-  const c = MAT.slurry, sel = lineSel(), way = lineWay(), busy = { v: '…', sub: '' };
+  // (a stream not solved: '…' while the line solves, else '—' -- Phase 0, nothing solves until asked)
+  const c = MAT.slurry, sel = lineSel(), way = lineWay(), busy = SOLVE_LINE.some(solvePending) ? { v: '…', sub: '' } : null;
   const cell = (v, sub = '') => ({ v, sub }), um = h => (h * 1e6).toFixed(0), pct = x => (x * 100).toFixed(1);
   const X0 = (1 - c.phi.v / 100) * c.rhoL.v / (c.phi.v / 100 * c.rhoS.v * 1000);   // (the slurry's water per GO, kg/kg)
   const S = [
@@ -185,7 +187,8 @@ function lineRequest() {
   if (typeof stackRequest === 'function' && filmCurrent() && sheetCurrent()) stackRequest();
   if (typeof furnRequest === 'function' && filmCurrent() && sheetCurrent()) furnRequest();
   clearTimeout(lineRequest.t);
-  const busy = ONE_D.busy || DRY.busy || FILM.busy || SHEET.busy || STACK.busy || FURN.busy || !dryCurrent() || !filmCurrent();
+  // (drawn again while the line solves -- only what was asked for: Phase 0)
+  const busy = SOLVE_LINE.some(solvePending);
   if (busy) lineRequest.t = setTimeout(() => { if (tab === 14) render(); }, 1200);
 }
 
@@ -248,6 +251,15 @@ function linePFD(S) {
     ${streams}${units}</svg>`;
 }
 
+/** Solve the line (Phase 0: nothing solves until asked): the 1D, the drying, the film, the piece, the stack and the
+ *  furnace, each after what it needs; while it solves, what it is on. */
+function lineSolveButton() {
+  const on = SOLVE_LINE.find(solvePending), left = SOLVE_LINE.filter(k => solveState(k) !== 'solved');
+  if (on) return `<span class="ln-solving">${pill(`Solving the line: ${SOLVE_M[on].l}…`, '')}</span>`;
+  if (!left.length) return `<button type="button" class="btn btn-secondary btn-sm" disabled title="Every stage of the line is solved for the inputs as they are">${uiIco('play')}Line solved</button>`;
+  return `<button type="button" class="btn btn-primary btn-sm" data-solve="line" title="Solve every stage of the line in order: ${left.map(k => SOLVE_M[k].l).join(', ')}">${uiIco('play')}Solve the line</button>`;
+}
+
 // ---- the page ----
 function viewLine() {
   document.getElementById('setupExtra').innerHTML = '';
@@ -256,14 +268,14 @@ function viewLine() {
   const icon = c => `<svg class="ln-mark ln-${c}" viewBox="-9 -9 18 18" aria-hidden="true"><circle r="9"/><path d="${PFD_MARK[c] || PFD_MARK.muted}"/></svg>`;
   // the page's head: what stands where
   // (worst first: defects and failures, risks, OK or solved, then the stages still solving or not solved, not modelled)
-  const groups = [['bad', ['bad', 'fail'], 'defect', 'defects'], ['warn', ['warn'], 'risk', 'risks'], ['ok', ['ok', 'done'], 'OK', 'OK'], ['muted', ['busy', 'todo'], 'not solved yet', 'not solved yet'], ['muted', ['none'], 'not modelled', 'not modelled']];
+  const groups = [['bad', ['bad', 'fail'], 'defect', 'defects'], ['warn', ['warn'], 'risk', 'risks'], ['ok', ['ok', 'done'], 'OK', 'OK'], ['warn', ['stale'], 'out of date', 'out of date'], ['muted', ['busy'], 'solving', 'solving'], ['muted', ['todo'], 'not solved yet', 'not solved yet'], ['muted', ['none'], 'not modelled', 'not modelled']];
   const summary = groups.map(([c, sts, one, many]) => { const n = S.filter(s => sts.includes(s.st)).length; return n ? `<span class="ln-count">${icon(c)}<b>${n}</b> ${n === 1 ? one : many}</span>` : ''; }).join('');
   // the switches: the film and the way the water leaves (the stage pages' own)
   const films = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
   const bar = `<div class="vp-bar pg-bar ln-bar" role="toolbar" aria-label="The line: which film">
     <span class="ln-ctl"><span class="ln-ctl-l">Film</span><span class="seg" role="tablist" aria-label="The film the stages follow" id="lnFilm">${films.map(([k, t]) => `<button type="button" role="tab" data-lnfilm="${k}" aria-selected="${k === sel}">${t}</button>`).join('')}</span></span>
     <span class="ln-ctl"><span class="ln-ctl-l">Water leaves</span><span class="seg" role="tablist" aria-label="Where the water leaves the film" id="lnWay">${Object.entries(LINE_WAYS).map(([k, t]) => `<button type="button" role="tab" data-lnway="${k}" aria-selected="${k === way}">${t}</button>`).join('')}</span></span>
-    <span class="vp-spacer"></span>${aboutButton()}</div>`;
+    <span class="vp-spacer"></span>${lineSolveButton()}${aboutButton()}</div>`;
   // the streams: one column each
   const rowsDef = [['h', 'Thickness', 'µm'], ['x', 'Water', '% of the GO'], ['m', 'Solids per area', 'g/m²'], ['size', 'Size', 'mm'], ['flat', 'Corners up on a table', 'mm'], ['rho', 'Density', 'g/cm³']];
   const td = q => q ? `<td>${q.v}${q.sub ? `<small>${q.sub}</small>` : ''}</td>` : '<td class="ln-na">—</td>';

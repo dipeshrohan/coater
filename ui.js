@@ -396,7 +396,7 @@ function surfaceOutlook() {
 }
 /** A Results page before the 1D has solved: its status and an empty numbers strip (the page redraws when it arrives). */
 function ansWaiting() {
-  document.getElementById('st').innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', '');
+  document.getElementById('st').innerHTML = (ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') + solveCtl('1d') : solvePending('1d') ? pill('Solving the 1D…', '') : solveCtl('1d'));
   document.getElementById('ss').innerHTML = '';
 }
 
@@ -595,7 +595,7 @@ function viewSummary() {
       <div class="vp-bar pg-bar" role="toolbar" aria-label="Page controls">${subTabs()}<span class="vp-spacer"></span>${aboutButton()}</div>
       <div class="sum-body"><div class="sum-top"><div><h1>Your coating at these settings</h1>
         <p class="sum-set">${[val('U', 'Web speed'), val('Hm', 'Scraper height'), val('mu', 'Viscosity'), val('ty', 'Yield stress')].join(' · ')}</p></div></div>
-      ${emptyHint(ONE_D.error ? 'The 1D could not be solved' : 'Solving the 1D across the web…', ONE_D.error ? escAttr(ONE_D.error) : 'The answers come from the most detailed model solved for these inputs: the 1D across the web, at the level of the 2D and 3D where they are solved.')}</div></div>`;
+      ${emptyHint(ONE_D.error ? 'The 1D could not be solved' : solvePending('1d') ? 'Solving the 1D across the web…' : ONE_D.res ? 'Out of date: the inputs changed' : 'Not solved yet', ONE_D.error ? escAttr(ONE_D.error) : 'The answers come from the most detailed model solved for these inputs: the 1D across the web, at the level of the 2D and 3D where they are solved. Nothing is solved until you ask.', solvePending('1d') ? '' : `<button type="button" class="btn btn-primary btn-sm" data-solve="1d">${uiIco('play')}${ONE_D.res ? 'Solve again' : 'Solve the coating (1D)'}</button><button type="button" class="btn btn-secondary btn-sm" data-solve="line">${uiIco('play')}Solve the line</button>`)}</div></div>`;
     return;
   }
   const answer = (v, yes, warn) => v[1] === 'bad' ? yes : v[1] === 'warn' ? warn : 'No';

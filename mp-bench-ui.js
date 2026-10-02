@@ -298,7 +298,7 @@ function swbStatus(A, dim, o) {
 function swbTools(A, dim, step, o) {
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim;
   const scale = dim === 2 && step !== 'results' && A.layout(2, o || A.inputs(2)).bands ? `<div class="seg seg-sm" role="tablist" aria-label="The drawing's scale" id="swbScale">${[['true', 'True scale'], ['stretch', 'Layers stretched']].map(([k, t]) => `<button type="button" role="tab" data-swbscale="${k}" aria-selected="${(SWB.scale[A.sk] || 'true') === k}">${t}</button>`).join('')}</div>` : '';
-  const solve = `<button type="button" class="btn btn-primary btn-sm" id="swbSolve"${!o || busy || cur ? ' disabled' : ''} title="${cur ? 'Solved for the inputs as they are' : dim === 3 ? A.slow3 : `Solve the ${SWB_DIMS[dim]}`}">${uiIco('play')}Solve ${SWB_DIMS[dim]}</button>`;
+  const solve = `<button type="button" class="btn btn-primary btn-sm" id="swbSolve"${busy || cur ? ' disabled' : ''} title="${cur ? 'Solved for the inputs as they are' : !o ? `Solve the ${SWB_DIMS[dim]} (and first what it needs: the stages before it)` : dim === 3 ? A.slow3 : `Solve the ${SWB_DIMS[dim]}`}">${uiIco('play')}Solve ${SWB_DIMS[dim]}</button>`;
   const stop = busy ? `<button type="button" class="btn btn-secondary btn-sm" id="swbStop">${uiIco('stop')}Stop</button>` : '';
   const prog = busy ? `<span class="swb-prog" role="progressbar" aria-label="The solve's progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${S.prog ? Math.round(100 * S.prog.k / S.prog.n) : 0}"><i style="width:${S.prog ? (100 * S.prog.k / S.prog.n).toFixed(1) : 0}%"></i></span>` : '';
   const csv = step === 'results' ? `<button type="button" class="btn btn-secondary btn-sm" id="swbCsv"${cur ? '' : ' disabled'}>${uiIco('download')}Export CSV</button>` : '';
@@ -327,8 +327,11 @@ function swbPage(A, dim) {
   const iso = dim === 3, names = A.paneTitles ? A.paneTitles(dim) : { geometry: iso ? 'The quarter in 3D, to scale' : dim === 2 ? 'The section, to scale' : 'The line through it', mesh: iso ? 'The mesh on the quarter\'s outer faces' : 'The mesh', solve: 'The faces and what holds there' };
   let panes = [], extra = '';
   if (!o) {
-    view.innerHTML = moduleFrame({ steps: stepBar('swb', step, swbStatus(A, dim, null)), panes: [], extra: `<p class="fv-why swb-empty">${A.why()}</p>` });
-    document.getElementById('st').innerHTML = pill(A.why(), 'warn');
+    // (what it needs is not solved: one panel saying so, its Solve solving that first, then this -- Phase 0, on request)
+    const pend = solvePending(A.sid + dim);
+    view.innerHTML = moduleFrame({ steps: stepBar('swb', step, swbStatus(A, dim, null)), panes: [], extra: `<div class="mod-extra">${emptyHint(pend ? 'Solving what it needs first…' : 'Not solved yet', `${A.why()}${pend ? '' : ' Solve solves that first, then this.'}`, pend ? '' : `<button type="button" class="btn btn-primary btn-sm" id="swbSolve">${uiIco('play')}Solve</button>`)}</div>` });
+    document.getElementById('st').innerHTML = pill(`${A.t} ${SWB_DIMS[dim]}: ${pend ? 'solving what it needs first' : 'not solved yet'}`, 'muted');
+    const sb = document.getElementById('swbSolve'); if (sb) sb.onclick = () => { A.request(dim); render(); };
     return;
   }
   if (step !== 'results') panes = [pane('swbCv', step === 'geometry' ? 'section' : step === 'mesh' ? 'mesh' : 'flow', names[step], `${names[step]}: ${A.domain(dim, o)}`)];

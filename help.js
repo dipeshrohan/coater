@@ -41,7 +41,7 @@ const HELP = {
   // CFD: blade geometry
   // MP-W: a stage's multiphysics pages (Pre heat treatment, Furnace: 1D, 2D, 3D, each Geometry › Mesh › Solve › Results)
   'swb.step': { t: 'Steps of the solve', d: 'Geometry: the domain drawn to scale, its parts and their materials. Mesh: the mesh the solve uses, its numbers and its settings. Solve: the equations, the boundary conditions on each face, the time, the solver; Solve and its progress. Results: the answers, the fields and the charts.', u: 'Drying, Pre heat treatment, Furnace' },
-  'swb.solve': { t: 'Solve', d: 'Solves this dimension for the inputs as they are, in the background (1D and 2D also by themselves when their page opens; 3D on this button).', e: 'Its answers on Results; a solve already running finishes first.', u: 'Drying, Pre heat treatment, Furnace' },
+  'swb.solve': { t: 'Solve', d: 'Solves this dimension for the inputs as they are, in the background, when you press it -- and first what it needs (the stages before it) if they are not solved. Nothing solves by itself: an input change marks the answers out of date and asks whether to solve again.', e: 'Its answers on Results; a solve already running finishes first.', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.stop': { t: 'Stop', d: 'Stops the solve running now; nothing of it is kept.', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.csv': { t: 'Export CSV', d: 'The answers against time of this dimension\'s solve, as a CSV file.', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.reset': { t: 'Default mesh', d: 'Puts this dimension\'s mesh and time steps back to the solver\'s own (one undo step).', u: 'Drying, Pre heat treatment, Furnace' },

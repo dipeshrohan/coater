@@ -47,8 +47,12 @@ const mpCurrent = dim => !!MPS.res[dim] && MPS.key[dim] === mpKeyNow(dim);
 /** Solve a dimension (one at a time; a request while busy runs next). */
 function mpStackRequest(dim) {
   const key = mpKeyNow(dim);
-  if (!key || MPS.key[dim] === key && MPS.res[dim]) return;
+  if (!key) return;
+  if (MPS.key[dim] === key && MPS.res[dim]) { solveTake('mps' + dim); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveAsked('mps' + dim)) return;
   if (MPS.busy) { if (MPS.pending !== key) MPS.again = dim; return; }
+  solveTake('mps' + dim);
   const o = mpStackInputs(dim);
   MPS.busy = true; MPS.bdim = dim; MPS.pending = key; MPS.prog = null; MPS.again = null;
   const id = ++MPS.id;
@@ -75,7 +79,7 @@ function mpStackStop() {
 async function mpStackWait(dim = MPS.dim) {
   if (typeof stackWait === 'function' && !(await stackWait())) return false;
   for (let k = 0; k < 6000; k++) {
-    if (!MPS.busy) { if (mpCurrent(dim)) return true; if (MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim)) return false; mpStackRequest(dim); }
+    if (!MPS.busy) { if (mpCurrent(dim)) return true; if (MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim)) return false; if (!solveAsked('mps' + dim)) return false; mpStackRequest(dim); }   // (Phase 0: only when asked for)
     await new Promise(r => setTimeout(r, 50));
   }
   return false;
@@ -117,7 +121,7 @@ function mpStackWire(sec) {
     if (t.dataset.mpdim) { MPS.dim = +t.dataset.mpdim; MPS.snap = null; if (MPS.field === 'pull' && MPS.dim === 1) MPS.field = 'T'; mpStackRender(); return; }
     if (t.dataset.mpfield) { MPS.field = t.dataset.mpfield; mpStackField(); return; }
     if (t.dataset.mpsnap) { MPS.snap = +t.dataset.mpsnap; mpStackField(); return; }
-    if (t.id === 'mpSolve') { mpStackRequest(MPS.dim); mpStackRender(); return; }
+    if (t.id === 'mpSolve') { solveArm('mps' + MPS.dim); mpStackRender(); return; }
     if (t.id === 'mpCsv') mpStackCsv();
   });
 }
@@ -387,12 +391,12 @@ function mpStackCsv() {
 // ---- MP-W: the stack's pages 1D, 2D, 3D (mp-bench-ui.js): its domain, mesh, faces and answers ----
 const MP_AL_C = '#8d96a3';   // (the aluminium plate, drawn: a mid grey that reads in either theme)
 SWB_ADAPT['film:stack'] = {
-  key: 'stack', sk: 'film:stack', t: 'Pre heat treatment', ready: 'mp1',
+  key: 'stack', sk: 'film:stack', t: 'Pre heat treatment', ready: 'mp1', sid: 'mps',
   S: () => MPS,
   inputs: dim => mpStackInputs(dim),
   current: dim => mpCurrent(dim),
   failed: dim => !!(MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim)),
-  request: dim => mpStackRequest(dim),
+  request: dim => solveArm('mps' + dim),
   // (1D and 2D solve by themselves when their page is shown, as before; 3D on Solve)
   auto: dim => { if (dim < 3 && !mpCurrent(dim) && !(MPS.error[dim] && MPS.key[dim] === mpKeyNow(dim))) mpStackRequest(dim); },
   stop: () => mpStackStop(),

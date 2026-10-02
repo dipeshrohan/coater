@@ -2742,3 +2742,22 @@ canvas { box-shadow: none; border-radius: 0; }
 @media (max-width: 1365px) { .vp-bar .seg button { padding: 0 7px; } }
 /* (a phone: the Materials page's buttons on their own row under its tabs, not a column beside them) */
 @media (max-width: 600px) { .pg-tools:has(> .hub-tools) { flex-wrap: wrap; } .pg-tools > .hub-tools { margin-left: 0; } }
+
+/* ---- Phase 0: solving only on request -- the out-of-date bar, a page's solve control, pages without a solver ---- */
+.solve-bar { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  max-width: min(960px, calc(100vw - 32px)); padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+  border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.14), var(--card-shadow); font-size: 13px; color: var(--ink); }
+.solve-bar[hidden] { display: none; }
+.solve-bar .sb-ico { display: inline-flex; color: var(--warn); }
+.solve-bar .sb-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.solve-bar .sb-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--soft); font-size: 12.5px; cursor: pointer; }
+.solve-bar .sb-chip input { margin: 0; accent-color: var(--accent); }
+.solve-bar .sb-acts { display: inline-flex; gap: 6px; margin-left: auto; }
+.solve-ctl { display: inline-flex; align-items: center; gap: 8px; margin: 2px 6px 2px 0; vertical-align: middle; }
+.solve-ctl .pill { margin: 0; }
+.proc-head .proc-solve { margin-left: 2px; }
+.ln-solving .pill { margin: 0; }
+.no-solver { margin: 10px 0 4px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--soft); max-width: 880px; }
+.no-solver b { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+.no-solver p { margin: 6px 0 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.no-solver .ns-shown { color: var(--ink); }

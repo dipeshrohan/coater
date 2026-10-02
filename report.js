@@ -649,6 +649,9 @@ function printReport(html) {
 }
 async function makeReport(o, fmt) {
   try {
+    // (Phase 0: nothing solves unasked -- models the sections show that are not solved are asked about first)
+    const need = o.sections.includes('proc') ? SOLVE_LINE : o.sections.some(k => ['m0', 'm1', 'm2', 'm3', 'm1d', 'meas'].includes(k)) ? ['1d'] : [];
+    if (need.length && typeof solveBeforeReport === 'function' && (await solveBeforeReport(need)) === null) return null;
     const html = await buildReport(o);
     if (fmt === 'html') {
       const name = `${repSlug(o.title)}-${imgStamp()}.html`;

@@ -59,8 +59,12 @@ const fmpPieceName = (i, N) => (i === 0 ? (N > 1 ? 'bottom piece' : 'the piece')
 /** Solve a dimension (one at a time; a request while busy runs next). */
 function fmpRequest(dim) {
   const key = fmpKeyNow(dim);
-  if (!key || FMS.key[dim] === key && FMS.res[dim]) return;
+  if (!key) return;
+  if (FMS.key[dim] === key && FMS.res[dim]) { solveTake('fmp' + dim); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveAsked('fmp' + dim)) return;
   if (FMS.busy) { if (FMS.pending !== key) FMS.again = dim; return; }
+  solveTake('fmp' + dim);
   const o = fmpInputs(dim);
   FMS.busy = true; FMS.bdim = dim; FMS.pending = key; FMS.prog = null; FMS.again = null;
   const id = ++FMS.id;
@@ -87,7 +91,7 @@ function fmpStop() {
 async function fmpWait(dim = FMS.dim) {
   if (typeof sheetWait === 'function' && !(await sheetWait())) return false;
   for (let k = 0; k < 12000; k++) {
-    if (!FMS.busy) { if (fmpCurrent(dim)) return true; if (!fmpKeyNow(dim)) return false; if (FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim)) return false; fmpRequest(dim); }
+    if (!FMS.busy) { if (fmpCurrent(dim)) return true; if (!fmpKeyNow(dim)) return false; if (FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim)) return false; if (!solveAsked('fmp' + dim)) return false; fmpRequest(dim); }   // (Phase 0: only when asked for)
     await new Promise(r => setTimeout(r, 50));
   }
   return false;
@@ -133,7 +137,7 @@ function fmpWire(sec) {
     if (t.dataset.fmrun) { FMS.run = +t.dataset.fmrun; fmpRender(); return; }
     if (t.dataset.fmfield) { FMS.field = t.dataset.fmfield; fmpField(); return; }
     if (t.dataset.fmsnap) { FMS.snap = +t.dataset.fmsnap; fmpField(); return; }
-    if (t.id === 'fmpSolve') { fmpRequest(FMS.dim); fmpRender(); return; }
+    if (t.id === 'fmpSolve') { solveArm('fmp' + FMS.dim); fmpRender(); return; }
     if (t.id === 'fmpCsv') { fmpCsv(); return; }
     // (the materials it reads: the hub's readiness, the multiphysics' own opened -- MH-5)
     if (t.dataset.mat === 'furn') hubShow({ view: 'ready', ready: 'mp2' });
@@ -379,12 +383,12 @@ function fmpIso(r, sn) {
 
 // ---- MP-W: the furnace's pages 1D, 2D, 3D (mp-bench-ui.js): its domain, mesh, faces and answers ----
 SWB_ADAPT['furn:runs'] = {
-  key: 'furn', sk: 'furn:runs', t: 'Furnace', ready: 'mp2',
+  key: 'furn', sk: 'furn:runs', t: 'Furnace', ready: 'mp2', sid: 'fmp',
   S: () => FMS,
   inputs: dim => fmpInputs(dim),
   current: dim => fmpCurrent(dim),
   failed: dim => !!(FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim)),
-  request: dim => fmpRequest(dim),
+  request: dim => solveArm('fmp' + dim),
   // (1D and 2D solve by themselves when their page is shown, as before; 3D on Solve)
   auto: dim => { if (dim < 3 && !fmpCurrent(dim) && !(FMS.error[dim] && FMS.key[dim] === fmpKeyNow(dim))) fmpRequest(dim); },
   stop: () => fmpStop(),
