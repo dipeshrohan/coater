@@ -1,5 +1,5 @@
 /*
- * ui-1d.js — Coating › 1D (Gap flow, To the oven, Across the web; Start-up is the animation, ui.js's
+ * ui-1d.js — Coating › 1D (Gap flow, To the oven, Across the web, Pool and feed; Start-up is the animation, ui.js's
  * viewA), its solves in cfd-1d-worker.js, the 1D / 2D / 3D comparison, and Coating › 3D (not built yet).
  *
  * The 1D uses the 2D's inputs (cfd-ui.js's cfdGeometry: the blade shape, exit face, rheology model,
@@ -52,9 +52,9 @@ function oneDRequest(needAcross) {
       ONE_D.res = { locs: e.data.locs }; ONE_D.key = key; ONE_D.error = null; ONE_D.ms = e.data.ms;
       if (e.data.across) { ONE_D.across = e.data.across; ONE_D.acrossKey = aKey; }
     } else ONE_D.error = e.data.error;
-    if (ONE_D.again || [1, 2, 3, 6, 7, 8, 9, 10, 11, 12].includes(tab)) render();
+    if (ONE_D.again || [1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15].includes(tab)) render();
   };
-  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([1, 2, 3, 6, 7, 8, 9, 10, 11, 12].includes(tab)) render(); };
+  ONE_D.worker.onerror = e => { ONE_D.busy = false; ONE_D.error = e.message || 'the 1D worker failed'; if ([1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15].includes(tab)) render(); };
   ONE_D.worker.postMessage({ id, locs, across: needAcross && aKey !== ONE_D.acrossKey ? across : null, ripple });
 }
 /** The 1D across the web, if it is for the inputs as they are (else null). */
@@ -340,3 +340,173 @@ function view1DAcross() {
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
 }
 
+
+// ---------------------------------------------------------------------
+// Pool and feed: the paste falling from the outlets in pulses, the pool's level through a cycle, the film it leaves
+// ---------------------------------------------------------------------
+/** The pool's cycle from the 1D (feed-pulse.js): the four locations' films and their sensitivity to the bead pressure. */
+function feedNow() {
+  const R = ONE_D.res;
+  if (!R || R.locs.some(L => !Number.isFinite(L.dfdP))) return null;
+  const g0 = oneDGeo(0), n = R.locs.length, mean = f => R.locs.reduce((a, L) => a + f(L), 0) / n, W = ACROSS_W / 1000;
+  const round = g0.shape === 'round' && !g0.blade;
+  const o = { W, U: R.locs[0].U, film0: mean(L => L.film), dfdP: mean(L => L.dfdP), rho: g0.rho, g: g0.g, Pup: g0.Pup, R: g0.R, H: mean(L => L.H),
+    xBack: P.fBack / 1000, V: P.fV * 1e-6, tau: P.fTau, ...(round ? {} : { meets: () => g0.Xup }) };
+  const c = feedCycle(o);
+  if (c.error) return { error: c.error, o, round };
+  const zs = feedZs().map(z => z / 1000);
+  const out = feedOutlets({ V: o.V, tau: o.tau, n: P.fN, d: P.fD / 1000, tip: P.fTip / 1000, x: P.fX / 1000, zs, W, g: o.g, rho: o.rho, xBack: o.xBack }, c);
+  return { c, o, out, zs, round };
+}
+/** The pool and its outlets seen from the side (x along the web, y up; mm, true scale): the blade, the pool at its mean
+ *  level and the two levels a cycle moves between, an outlet and its falling stream, with their dimensions. */
+function feedSideSVG(F, w, h) {
+  const { c, o } = F, R = o.R * 1e3, H = o.H * 1e3, tip = P.fTip, xO = -P.fX, d = P.fD, xB = -P.fBack;
+  const meetsMm = hh => (F.round ? feedMeetsBlade(hh / 1e3, o.R, o.H) : o.meets(0)) * 1e3;
+  const xMin = Math.min(xB, xO - d) - 22, xMax = 26, yMax = Math.max(tip + 16, c.hHigh * 1e3 + 18);
+  const L = 10, Rg = 10, T = 10, B = 58, s = Math.min((w - L - Rg) / (xMax - xMin), (h - T - B) / yMax);
+  const X = x => L + (x - xMin) * s, Y = y => h - B - y * s, f = v => v.toFixed(1), g = [];
+  const under = x => F.round ? H + R - Math.sqrt(Math.max(0, R * R - x * x)) : (x >= -o.meets(0) * 1e3 ? H : yMax);
+  // the pool at its mean level: from its back edge to the blade, down the blade's face to the edge
+  const lev = c.hBar * 1e3, xm = -meetsMm(lev);
+  let pool = `M${f(X(xB))} ${f(Y(0))} L${f(X(xB))} ${f(Y(lev))} L${f(X(xm))} ${f(Y(lev))}`;
+  for (let k = 1; k <= 60; k++) { const x = xm * (1 - k / 60); pool += ` L${f(X(x))} ${f(Y(Math.min(lev, under(x))))}`; }
+  g.push(`<path class="fd-paste" d="${pool} L${f(X(0))} ${f(Y(0))} Z"/>`);
+  // the blade: from the drawing's top down its face to the metering edge, then its face square to the web
+  const x0 = F.round ? -Math.sqrt(Math.max(0, R * R - (R + H - yMax) ** 2)) : -o.meets(0) * 1e3;
+  let bl = `M${f(X(Math.max(xMin, x0)))} ${f(Y(yMax))}`;
+  for (let k = 0; k <= 80; k++) { const x = Math.max(xMin, x0) * (1 - k / 80); bl += ` L${f(X(x))} ${f(Y(Math.min(yMax, under(x))))}`; }
+  g.push(`<path class="fd-blade" d="${bl} L${f(X(0))} ${f(Y(yMax))} Z"/>`);
+  // the levels a cycle moves between (tags left of the pool's back edge: after a pulse above, the camera's below)
+  for (const [hh, up] of [[c.hHigh, true], [c.hLow, false]]) {
+    const y = hh * 1e3;
+    g.push(`<line class="fd-lev" x1="${f(X(xB))}" x2="${f(X(-meetsMm(y)))}" y1="${f(Y(y))}" y2="${f(Y(y))}"/><text class="fd-t" x="${f(X(xB) - 3)}" y="${f(Y(y) + (up ? -2 : 10))}" text-anchor="end">${y.toFixed(1)}</text>`);
+  }
+  g.push(`<line class="fd-web" x1="${f(X(xMin))}" x2="${f(X(xMax))}" y1="${f(Y(0))}" y2="${f(Y(0))}"/>`);
+  g.push(`<line class="fd-wall" x1="${f(X(xB))}" x2="${f(X(xB))}" y1="${f(Y(0))}" y2="${f(Y(Math.max(lev, c.hHigh * 1e3) + 3))}"/>`);
+  // the outlet and its falling stream (it narrows as it speeds up)
+  const dl = F.out.dLand * 1e3, yL = c.hHigh * 1e3;
+  g.push(`<rect class="fd-pipe" x="${f(X(xO - d / 2 - 1.5))}" y="${f(Y(yMax))}" width="${f((d + 3) * s)}" height="${f((yMax - tip) * s)}"/><rect class="fd-bore" x="${f(X(xO - d / 2))}" y="${f(Y(yMax))}" width="${f(d * s)}" height="${f((yMax - tip) * s)}"/>`);
+  if (tip > yL) g.push(`<path class="fd-stream" d="M${f(X(xO - d / 2))} ${f(Y(tip))} L${f(X(xO - dl / 2))} ${f(Y(yL))} L${f(X(xO + dl / 2))} ${f(Y(yL))} L${f(X(xO + d / 2))} ${f(Y(tip))} Z"/>`);
+  // dimensions: the tip's height (beside the stream), the outlet before the edge, the pool's back edge
+  const xd = xO + d / 2 + 5, yb = Y(0);
+  g.push(`<line class="fd-dim" x1="${f(X(xd))}" x2="${f(X(xd))}" y1="${f(Y(0))}" y2="${f(Y(tip))}"/><line class="fd-dim" x1="${f(X(xd) - 3)}" x2="${f(X(xd) + 3)}" y1="${f(Y(tip))}" y2="${f(Y(tip))}"/>`);
+  g.push(`<text class="fd-t fd-dt" x="${f(X(xd) + 4)}" y="${f(Y((tip + yL) / 2) + 4)}">tip ${tip} mm</text>`);
+  const dimH = (a, b, y, t) => `<line class="fd-dim" x1="${f(X(a))}" x2="${f(X(b))}" y1="${f(y)}" y2="${f(y)}"/><line class="fd-dim" x1="${f(X(a))}" x2="${f(X(a))}" y1="${f(y - 3)}" y2="${f(y + 3)}"/><line class="fd-dim" x1="${f(X(b))}" x2="${f(X(b))}" y1="${f(y - 3)}" y2="${f(y + 3)}"/><text class="fd-t fd-dt" x="${f((X(a) + X(b)) / 2)}" y="${f(y - 4)}" text-anchor="middle">${t}</text>`;
+  g.push(dimH(xO, 0, yb + 30, `outlets ${P.fX} mm before the edge`), dimH(xB, 0, yb + 50, `back edge ${P.fBack} mm`));
+  g.push(`<text class="fd-t" x="${f(X(0))}" y="${f(yb + 13)}" text-anchor="middle">edge · gap ${H.toFixed(3)} mm</text><text class="fd-t" x="${f(X(xMax))}" y="${f(yb - 4)}" text-anchor="end">web →</text>`);
+  return `<svg class="fd-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="The pool and an outlet seen from the side, true scale, with their dimensions">${g.join('')}</svg>`;
+}
+/** The pool and its outlets seen from above (across the web to the right, along it downward: the web moves down; mm, true
+ *  scale): the side plates, the pool, the blade from where the pool meets it to the edge, the outlets. */
+function feedPlanSVG(F, w, h) {
+  const { c } = F, W = ACROSS_W, xB = -P.fBack, xO = -P.fX, d = P.fD, xm = -c.meetsLow * 1e3, xMin = Math.min(xB, xO - d) - 6, xMax = 14;
+  const L = 12, Rg = 40, T = 16, B = 22, s = Math.min((w - L - Rg) / (W + 16), (h - T - B) / (xMax - xMin));
+  const Z = z => L + (z + 8) * s, X = x => T + (x - xMin) * s, f = v => v.toFixed(1), g = [];
+  g.push(`<rect class="fd-webp" x="${f(Z(-8))}" y="${f(X(xMin))}" width="${f((W + 16) * s)}" height="${f((xMax - xMin) * s)}"/>`);
+  g.push(`<rect class="fd-pastep" x="${f(Z(0))}" y="${f(X(xB))}" width="${f(W * s)}" height="${f((xm - xB) * s)}"/>`);
+  g.push(`<rect class="fd-bladep" x="${f(Z(0))}" y="${f(X(xm))}" width="${f(W * s)}" height="${f(-xm * s)}"/><line class="fd-edge" x1="${f(Z(-8))}" x2="${f(Z(W + 8))}" y1="${f(X(0))}" y2="${f(X(0))}"/>`);
+  for (const z of [0, W]) g.push(`<line class="fd-dam" x1="${f(Z(z))}" x2="${f(Z(z))}" y1="${f(X(xB))}" y2="${f(X(0))}"/>`);
+  const r = Math.max(2.5, d / 2 * s);
+  F.zs.forEach((z, i) => g.push(`<circle class="fd-out" cx="${f(Z(z * 1e3))}" cy="${f(X(xO))}" r="${f(r)}"/><text class="fd-t fd-dt" x="${f(Z(z * 1e3))}" y="${f(X(xO) - r - 3)}" text-anchor="middle">${i + 1}</text>`));
+  g.push(`<text class="fd-t" x="${f(Z(W / 2))}" y="${f(X(xB) - 4)}" text-anchor="middle">pool ${(xm - xB).toFixed(0)} × ${W} mm between the side plates</text>`);
+  g.push(`<text class="fd-t" x="${f(Z(W + 8) + 3)}" y="${f(X(0) + 4)}">edge</text><text class="fd-t" x="${f(Z(W + 8) + 3)}" y="${f(X(xm) + 4)}">blade</text><text class="fd-t" x="${f(Z(W / 2))}" y="${f(X(xMax) + 14)}" text-anchor="middle">the web moves down the page</text>`);
+  return `<svg class="fd-svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="The pool and its outlets seen from above, true scale">${g.join('')}</svg>`;
+}
+/** The outlets' table: each one's position across the web (editable), and the stream it gives. */
+function feedPanelHTML(F) {
+  const zs = feedZs(), placed = !!(FEED_POS.z && FEED_POS.z.length === P.fN);
+  const rows = zs.map((z, i) => `<div class="acr-row"><span class="acr-l">Outlet ${i + 1}</span><span class="acr-v"><input class="acr-in" type="number" step="0.5" min="0" max="${ACROSS_W}" value="${z}" data-feedz="${i}" aria-label="Outlet ${i + 1} position across the web, mm"><span class="u">mm</span></span></div>`).join('');
+  const o = F && F.out;
+  return `<div class="acr-grp">Outlets across the web</div>
+    <div class="acr-row"><span class="acr-l">${P.fN} outlet${P.fN === 1 ? '' : 's'}, ${placed ? 'placed' : 'equidistant'}</span><span class="acr-v"><button type="button" class="btn btn-secondary btn-sm" id="feedEq"${placed ? '' : ' disabled'}>Equidistant</button></span></div>
+    ${rows}
+    <p class="acr-note">Positions from the web's edge at z = 0 (the side plates at 0 and ${ACROSS_W} mm). The count, the tip's height, the distance before the edge, the bore and the pulse are on the left.</p>
+    ${o ? `<div class="acr-grp">Each outlet during a pulse</div>
+    <div class="acr-row"><span class="acr-l">Flow</span><span class="acr-v">${(o.q * 1e6).toFixed(2)} <span class="u">ml/s</span></span></div>
+    <div class="acr-row"><span class="acr-l">Speed out of the tip</span><span class="acr-v">${(o.v0 * 1e3).toFixed(1)} <span class="u">mm/s</span></span></div>
+    <div class="acr-row"><span class="acr-l">Fall to the highest level</span><span class="acr-v">${(o.fall * 1e3).toFixed(1)} <span class="u">mm</span></span></div>
+    <div class="acr-row"><span class="acr-l">Landing speed, at most</span><span class="acr-v">${(o.vLand * 1e3).toFixed(0)} <span class="u">mm/s</span></span></div>
+    <p class="acr-note">Landing: free fall without drag, an upper bound; the stream thins to ${(o.dLand * 1e3).toFixed(1)} mm as it speeds up.</p>` : ''}`;
+}
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (!t || !t.dataset || t.dataset.feedz == null) return;
+  const zs = feedZs(), i = +t.dataset.feedz, v = Math.min(ACROSS_W, Math.max(0, +t.value));
+  // (a render after this event, not in it: the input being replaced still has the focus)
+  if (!Number.isFinite(v)) { queueRender(); return; }
+  zs[i] = +v.toFixed(3); FEED_POS.z = zs; queueRender();
+});
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#feedEq')) { FEED_POS.z = null; queueRender(); } });
+
+/** The report's part for Pool and feed: the feed as set (each value assumed until measured), and each outlet. */
+function feedReportHTML() {
+  const F = ONE_D.res ? feedNow() : null, u = (v, d, unit) => `${(+v).toFixed(d)} ${unit}`;
+  const rows = [['Outlets', `${P.fN}, ${FEED_POS.z && FEED_POS.z.length === P.fN ? 'placed' : 'equidistant'} at ${feedZs().join(', ')} mm across the web`],
+    ['Outlet tip above the web', u(P.fTip, 0, 'mm')], ['Outlets upstream of the blade edge', u(P.fX, 0, 'mm')], ['Outlet inner diameter', u(P.fD, 1, 'mm')],
+    ['Paste per pulse, all outlets', u(P.fV, 0, 'ml')], ['Pulse length', u(P.fTau, 1, 's')], ['Pool back edge upstream of the blade edge', u(P.fBack, 0, 'mm')]];
+  if (F && !F.error) rows.push(['Each outlet during a pulse', `${(F.out.q * 1e6).toFixed(2)} ml/s, ${(F.out.v0 * 1e3).toFixed(1)} mm/s out of the tip, at most ${(F.out.vLand * 1e3).toFixed(0)} mm/s landing`]);
+  return '<h3>The feed</h3>' + repRows(rows.map(([a, b]) => [repEsc(a), repEsc(b)]), ['Input', 'Value']);
+}
+function view1DFeed() {
+  oneDSetupTree();
+  oneDRequest(false);
+  const acc = cssVar('--accent'), mut = cssVar('--muted'), warn = cssVar('--warn'), ok = cssVar('--ok');
+  const F = ONE_D.res ? feedNow() : null;
+  view.innerHTML = moduleFrame({
+    tools: oneDLocTools(),
+    cols: workbenchFits() ? 2 : 1,
+    top: `<div class="acr-top fd-top"><section class="acr-view"><h3>${uiBadge(15)}The pool and its outlets <span class="acr-sub">from the side, and from above; the levels a pulse cycle moves between</span></h3><div class="fd-draw" id="feedDraw"></div></section>
+      <aside class="acr-panel" aria-label="The outlets">${feedPanelHTML(F && !F.error ? F : null)}</aside></div>`,
+    panes: [
+      { id: 'p1', icon: 'pool', title: 'Pool level through a pulse cycle', aria: 'Pool level against time over two pulse cycles', legend: oneDLegend([['level at the web', acc], ['its mean: the bead pressure input', mut, 'dash']]),
+        note: 'The pool\'s volume balance: a pulse adds its paste over its length, the web carries paste away under the blade all the time (the 1D\'s flow, which grows with the level). Its mean is the level the bead pressure input gives (Pup = ρ g h).' },
+      { id: 'p2', icon: 'film', title: 'Wet film along the web', aria: 'Wet film against distance along the web over three pulse cycles', legend: oneDLegend([['wet film at the location shown', acc]]),
+        note: 'The film the blade leaves follows the pool\'s level (the 1D\'s sensitivity of the film to the bead pressure at this location) and moves away on the web: the cycle repeats along the web every web speed × cycle.' },
+      { id: 'p3', icon: 'drop', title: 'Paste into and out of the pool', aria: 'Flow into the pool and out under the blade against time', legend: oneDLegend([['in: the pulse, all outlets', warn], ['out: under the blade, the whole width', ok]]),
+        note: 'Over a cycle the two areas are equal: the pulse\'s paste. Out under the blade: the 1D\'s flow at the four locations times the width between the side plates.' },
+    ],
+  });
+  const host = document.getElementById('feedDraw');
+  if (!ONE_D.res) { if (host) host.innerHTML = ''; oneDWaiting(); return; }
+  if (!F) { document.getElementById('st').innerHTML = pill('The 1D results predate the pool\'s sensitivity: solve the 1D again', 'warn') + solveCtl('1d'); return; }
+  if (F.error) { document.getElementById('st').innerHTML = pill('The pulse cycle could not be found: ' + F.error, 'bad') + (oneDCurrent() ? '' : solveCtl('1d')); return; }
+  const { c, out } = F, i = ONE_D.loc, Lc = ONE_D.res.locs[i], rhoG = F.o.rho * F.o.g, filmAt = hh => Lc.film + Lc.dfdP * rhoG * (hh - c.hBar);
+  if (host) { const w = Math.max(420, host.clientWidth), wide = w >= 620, wS = wide ? Math.round(w * 0.56) : w, wP = wide ? w - wS - 12 : w;
+    host.innerHTML = `<div class="fd-two">${feedSideSVG(F, wS, 250)}${feedPlanSVG(F, wP, wide ? 250 : 200)}</div><p class="fd-cap">Dashed: the level just after a pulse (${(c.hHigh * 1e3).toFixed(1)} mm) and when the camera fires (${(c.hLow * 1e3).toFixed(1)} mm); the paste drawn at the mean level, ${(c.hBar * 1e3).toFixed(1)} mm, the bead pressure input's. The blade's ${F.round ? `round entry (R ${(F.o.R * 1e3).toFixed(0)} mm) continued up to the pool's level` : 'pool edge as in the 2D'}. True scale.</p>`; }
+  // the level over two cycles, the flows, and the film along the web over three repeats
+  const T = c.T, two = [], qin = [], qout = [];
+  for (const k of [0, 1]) c.t.forEach((t, j) => { two.push([t + k * T, c.h[j] * 1e3]); qin.push([t + k * T, c.Qin[j] * 1e6]); qout.push([t + k * T, c.Qout[j] * 1e6]); });
+  const hLo = c.hLow * 1e3, hHi = c.hHigh * 1e3, padH = Math.max(0.2, (hHi - hLo) * 0.25);
+  const c1 = document.getElementById('p1');
+  plotChart(c1, fitAspect(c1, 0.5), { x0: 0, x1: 2 * T, y0: hLo - padH, y1: hHi + padH, yticks: niceTicks(hLo - padH, hHi + padH, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 2 * T, 6), xf: v => String(+v.toPrecision(6)), yl: 'pool level (mm)', xl: 'time from a pulse (s)', yd: 2, s: [{ p: two, c: acc, w: 2.2 }], hl: [{ y: c.hBar * 1e3, c: mut, t: 'mean' }] });
+  const nA = 600, band = c.band, along = [];
+  for (let k = 0; k <= nA; k++) {
+    const sPos = 3 * band * k / nA, tb = ((-sPos / F.o.U) % T + T) % T;
+    let j = 1; while (j < c.t.length - 1 && c.t[j] < tb) j++;
+    const wgt = (tb - c.t[j - 1]) / ((c.t[j] - c.t[j - 1]) || 1), hh = c.h[j - 1] + wgt * (c.h[j] - c.h[j - 1]);
+    along.push([sPos * 1e3, filmAt(hh) * 1e6]);
+  }
+  const fLo = Math.min(...along.map(q => q[1])), fHi = Math.max(...along.map(q => q[1])), padF = Math.max(2, (fHi - fLo) * 0.3);
+  const c2 = document.getElementById('p2');
+  plotChart(c2, fitAspect(c2, 0.5), { x0: 0, x1: 3 * band * 1e3, y0: fLo - padF, y1: fHi + padF, yticks: niceTicks(fLo - padF, fHi + padF, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 3 * band * 1e3, 6), xf: v => String(+v.toPrecision(6)), yl: 'wet film (µm)', xl: 'distance along the web, from the edge (mm)', yd: 0, s: [{ p: along, c: acc, w: 2.2 }],
+    vl: [1, 2].map(k => ({ x: k * band * 1e3, c: mut, t: `${k} × ${(band * 1e3).toFixed(0)} mm` })) });
+  const c3 = document.getElementById('p3');
+  plotChart(c3, fitAspect(c3, 0.5), { x0: 0, x1: 2 * T, y0: 0, y1: Math.max(...qin.map(q => q[1])) * 1.1, yticks: niceTicks(0, Math.max(...qin.map(q => q[1])) * 1.1, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 2 * T, 6), xf: v => String(+v.toPrecision(6)), yl: 'flow (ml/s)', xl: 'time from a pulse (s)', yd: 1, s: [{ p: qin, c: warn, w: 2 }, { p: qout, c: ok, w: 2 }] });
+  // the answer, the numbers
+  const fMin = filmAt(c.hLow) * 1e6, fMax = filmAt(c.hHigh) * 1e6, fMid = (fMin + fMax) / 2, bad = out.checks.filter(k => !k.ok);
+  let st = pill(`A pulse every ${T.toFixed(1)} s: the pool's level swings ${(c.swing * 1e3).toFixed(2)} mm, the wet film at L${i + 1} ±${((fMax - fMin) / 2).toFixed(1)} µm (±${((fMax - fMin) / 2 / fMid * 100).toFixed(2)} %)`, '');
+  st += bad.length ? bad.map(k => pill(k.text, 'bad')).join('') : pill('The outlets are placed well: the paste falls onto the pool', 'ok');
+  st += pill('1D: the film and its sensitivity to the pool from the 1D at the four locations', '');
+  if (!F.round) st += pill('This blade\'s pool meets it at the 2D\'s pool edge', 'warn');
+  if (!oneDCurrent()) st += solvePending('1d') ? pill('Solving for the inputs as they are…', '') : solveCtl('1d');
+  document.getElementById('st').innerHTML = st;
+  document.getElementById('ss').innerHTML = [
+    ['Cycle: a pulse every', T.toFixed(1) + ' s'],
+    ['Pool level, camera to after a pulse', `${hLo.toFixed(2)} to ${hHi.toFixed(2)} mm`],
+    ['Bead pressure through a cycle', `${(c.hLow * rhoG / 1000).toFixed(3)} to ${(c.hHigh * rhoG / 1000).toFixed(3)} kPa`],
+    [`Wet film at L${i + 1}`, `${(fMin / 1000).toFixed(4)} to ${(fMax / 1000).toFixed(4)} mm`],
+    ['The film repeats along the web every', (band * 1e3).toFixed(0) + ' mm'],
+    ['Pool top', `${(c.area(c.hLow) * 1e4).toFixed(0)} to ${(c.area(c.hHigh) * 1e4).toFixed(0)} cm²`],
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
+}

@@ -45,13 +45,14 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
 // (the SEM images by their name and what was marked on them, not their pixels: a key cheap to make on every redraw)
 const projMatKey = () => ({ ...MAT, sem: MAT.sem ? { tables: MAT.sem.tables, images: MAT.sem.images.map(({ url, auto, ...q }) => ({ ...q, n: url ? url.length : 0, auto: !!auto })) } : null });
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
+const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), FEED_POS.z, CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, orientKey: r.orientKey || null } : null;
   return {
     app: PROJ_APP, format: PROJ_FORMAT, saved: new Date().toISOString(), name: PROJ.name,
     inputs: Object.fromEntries(CFG.map(c => [c.k, P[c.k]])),
+    feed: { z: FEED_POS.z ? FEED_POS.z.slice() : null },   // (the pool's outlets across the web: as placed, or null: equidistant)
     cfdSetup: { ...CFDG }, solver: { ...CFDS }, across: JSON.parse(JSON.stringify(ACR)),
     materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
     locations: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
@@ -295,6 +296,7 @@ function applyProject(p) {
   rheoHold(() => { for (const c of CFG) setInput(c.k, p.inputs && c.k in p.inputs ? p.inputs[c.k] : c.v); });   // (an input the project predates: its default)
   Object.assign(CFDG, CFDG_DEFAULTS); for (const k of Object.keys(CFDG)) if (p.cfdSetup && k in p.cfdSetup) CFDG[k] = p.cfdSetup[k];
   Object.assign(CFDS, SOLVER_DEFAULTS, p.solver || {});
+  FEED_POS.z = p.feed && Array.isArray(p.feed.z) ? p.feed.z.map(Number) : null;   // (a project from before: equidistant)
   applyMaterials(p.materials); applyOven(p.oven, p.cfdSetup);
   applyAcross(p.across);   // (a project from before: the blade across the web as it was, no new part)
   CFD_LOCS.forEach((l, i) => { const s = (p.locations || [])[i] || {}; l.z = s.z ?? LOC_Z_DEFAULTS[i]; l.over = { ...(s.over || {}) }; l.solver = { ...(s.solver || {}) }; });

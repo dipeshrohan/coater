@@ -31,6 +31,9 @@ function oneLocation(geo, ripple, full) {
   out.filmToOven = { x: f.x, h: f.h, hInf: f.hInf, converged: f.converged, error: f.error || null, mu: f.mu };
   const up = gapFlow1D({ ...geo, H: geo.H + 1e-5 }), dn = gapFlow1D({ ...geo, H: geo.H - 1e-5 });
   const dhdH = (up.film - dn.film) / 2e-5;
+  // (and to the bead pressure, from it +- 20 Pa: the pool's level through a pulse cycle moves it, Coating › 1D › Pool and feed)
+  const pu = gapFlow1D({ ...geo, Pup: geo.Pup + 20 }), pd = gapFlow1D({ ...geo, Pup: geo.Pup - 20 });
+  out.dfdP = (pu.film - pd.film) / 40;
   // (the structure: carried along the blade to the edge, then rebuilding at rest on the web as the ripple levels)
   const sb = geo.struct ? struct1D(r, geo.struct) : null;
   if (sb) out.struct = { exit: sb.exit, lines: sb.lines, x: r.x, along: sb.along, tAlong: sb.tAlong, tMean: sb.tMean, S: geo.struct };

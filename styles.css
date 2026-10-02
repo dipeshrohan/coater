@@ -1573,6 +1573,27 @@ body:has(#pgScope) #scope { display: none; }
 .acr-side .acr-row { padding-left: 8px; }
 .acr-side .acr-note { margin-left: 8px; }
 @media (max-width: 1100px) { .acr-top { grid-template-columns: minmax(0, 1fr); } .acr-panel { max-height: none; } }
+/* Coating › 1D › Pool and feed: the pool and its outlets, from the side and from above */
+.fd-draw { min-width: 0; }
+.fd-two { display: flex; gap: 12px; align-items: flex-start; }
+.fd-cap { margin: 4px 0 0; color: var(--muted); font-size: 11.5px; }
+.fd-svg { display: block; }
+.fd-svg .fd-t { font: 11px Inter, system-ui, sans-serif; fill: var(--muted); }
+.fd-svg .fd-dt { fill: var(--ink); }
+.fd-svg .fd-paste, .fd-svg .fd-pastep { fill: var(--go-film); fill-opacity: .55; }
+.fd-svg .fd-blade, .fd-svg .fd-bladep { fill: var(--blade); stroke: var(--graphite); stroke-width: 1; }
+.fd-svg .fd-bladep { fill-opacity: .7; stroke: none; }
+.fd-svg .fd-web { stroke: #16a34a; stroke-width: 2.5; }
+.fd-svg .fd-webp { fill: var(--fibre); fill-opacity: .5; }
+.fd-svg .fd-wall, .fd-svg .fd-dam { stroke: var(--graphite); stroke-width: 3; }
+.fd-svg .fd-edge { stroke: var(--graphite); stroke-width: 1.5; }
+.fd-svg .fd-lev { stroke: var(--accent); stroke-dasharray: 5 4; stroke-width: 1.2; }
+.fd-svg .fd-pipe { fill: var(--graphite); }
+.fd-svg .fd-bore { fill: var(--go-film); fill-opacity: .8; }
+.fd-svg .fd-stream { fill: var(--go-film); fill-opacity: .8; }
+.fd-svg .fd-out { fill: var(--surface); stroke: var(--graphite); stroke-width: 1.5; }
+.fd-svg .fd-dim { stroke: var(--ink); stroke-width: .8; }
+@media (max-width: 900px) { .fd-two { flex-direction: column; } }
 .acr-crown { margin: 4px 0 2px 18px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }
 .acr-crown.stale { opacity: .7; }
 .acr-crown .acr-note { margin-left: 0; }

@@ -36,7 +36,7 @@ function reportSections() {
     { k: 'm1', l: TABS[1], note: 'results, plots, checks' },
     { k: 'm2', l: TABS[2], note: 'results, plots, checks' },
     { k: 'm3', l: TABS[3], note: 'results, plots, checks' },
-    { k: 'm1d', l: '1D: gap flow, to the oven, across the web', note: 'results, plots, checks, the 1D / 2D table' },
+    { k: 'm1d', l: '1D: gap flow, to the oven, across the web, pool and feed', note: 'results, plots, checks, the 1D / 2D table, the outlets and the pulse' },
     { k: 'cfd', l: TABS[4], note: solved ? `${solved} of 4 locations solved${stale ? `, ${stale} out of date` : ''}` : 'nothing solved yet: setup and checks only' },
     { k: 'mesh', l: 'Mesh study', note: meshStudy ? `location ${meshStudy.loc + 1}, ${meshStudy.runs.filter(r => r.status === 'done').length} of ${meshStudy.runs.length} meshes solved` : 'not run', off: !meshStudy },
     { k: 'm3d', l: '3D: geometry and mesh', note: C3D.source === 'file' && !C3D_FILE ? 'no blade file imported' : 'setup, the 3D view, checks' },
@@ -136,6 +136,7 @@ async function repModule(m, statsTitle = 'Results') {
     html += '<h3>Scenario</h3>' + repRows(ANIM_UNDO.map(([k, l, f]) => [repEsc(l), repEsc(f(ANIM[k]))]), ['Setting', 'Value']);
   }
   if (m === 11) html += acrossReportHTML();
+  if (m === 15) html += feedReportHTML();
   // (a tile's note under its number, e.g. the 3D's "plain flow curve", goes with its value)
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => { const t = s.querySelector('small.stat-tag'); return [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')) + (t ? ` (${cleanText(t)})` : ''))]; });
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
@@ -618,7 +619,7 @@ async function buildReport(o) {
         for (let m = 0; m < 4; m++) if (want.has('m' + m)) out.push({ id: 'm' + m, title: TABS[m], html: await repModule(m) });
         if (want.has('m1d')) {
           await oneDWait(true);   // (the 1D solves in its worker: its results for the inputs as they are)
-          for (const v of [8, 10, 11]) {
+          for (const v of [8, 10, 11, 15]) {
             let html = await repModule(v);
             const t = v === 8 && document.querySelector('#oneDTable table');
             if (t) html += '<h3>1D, 2D and 3D</h3>' + repTable(t);

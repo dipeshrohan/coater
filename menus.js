@@ -145,7 +145,7 @@ mbA('mesh.3d.acc', { l: '3D mesh to an accuracy…', tip: 'Its settings (method,
 mbA('mesh.3d.accStop', { l: 'Stop the 3D mesh to an accuracy', tip: 'As its Stop button.', run: () => acc3Stop(), on: () => ACC3.status === 'running', why: () => 'It is not running.' });
 
 // ===================================================================== Simulation
-[[8, '1D'], [4, '2D CFD'], [9, '3D CFD']].forEach(([t, l]) => mbA('sim.dim.' + t, { l, tip: `Coating › ${l}.`, run: () => mbTab(t), chk: () => t === 8 ? [8, 10, 11, 0].includes(tab) : tab === t }));
+[[8, '1D'], [4, '2D CFD'], [9, '3D CFD']].forEach(([t, l]) => mbA('sim.dim.' + t, { l, tip: `Coating › ${l}.`, run: () => mbTab(t), chk: () => t === 8 ? [8, 10, 11, 15, 0].includes(tab) : tab === t }));
 STEPS.forEach(([k, l]) => mbA('sim.2d.' + k, { l: `${l}${k === 'solve' ? ' (boundary conditions, solver settings)' : ''}`, tip: `The 2D's ${l.toLowerCase()} step.`, run: () => mb2D(k), chk: () => tab === 4 && step2D() === k }));
 mbA('sim.2d.runAll', { l: 'Run all four locations', tip: 'Solve the 2D at the four locations.', key: 'run.run', run: () => { mb2D(); runAllLocations(); }, on: () => !cfdRuns.every(r => r.status === 'running'), why: () => 'They are all running.' });
 [0, 1, 2, 3].forEach(i => mbA('sim.2d.run' + i, { l: `Run location ${i + 1}`, tip: `Solve the 2D at location ${i + 1} only.`, run: () => { mb2D(); runLocation(i); }, on: () => cfdRuns[i].status !== 'running', why: () => 'It is running.' }));
@@ -184,7 +184,7 @@ mbA('res.3d.stream', { l: '3D streamlines', tip: 'Streamlines through the solved
 [['yz', 'Y–Z section at an x'], ['xz', 'X–Z section, half the gap']].forEach(([v, l]) => mbA('res.3d.uz.' + v, { l, tip: 'The cross-web velocity u_z on a section (3D Results).',
   run: () => { mb3D('results'); if (C3D.uzView !== v) c3dSet('uzView', v); const el = mbEl('.m3-uz'); if (el) el.scrollIntoView({ block: 'start' }); }, chk: () => C3D.uzView === v, on: mbRes3D, why: () => NEED_3D }));
 mbA('res.3d.xflow', { l: 'Cross-flow diagnostic', tip: 'The largest u_x, u_y, u_z and what drives the flow across the web.', run: () => { mb3D('results'); const el = mbEl('.m3-xflow'); if (el) el.scrollIntoView({ block: 'start' }); }, on: mbRes3D, why: () => NEED_3D });
-[[8, 'Gap flow'], [10, 'To the oven'], [11, 'Across the web'], [0, 'Start-up']].forEach(([t, l]) => mbA('res.1d.' + t, { l, tip: TAB_Q[t], run: () => mbTab(t), chk: () => tab === t }));
+[[8, 'Gap flow'], [10, 'To the oven'], [11, 'Across the web'], [15, 'Pool and feed'], [0, 'Start-up']].forEach(([t, l]) => mbA('res.1d.' + t, { l, tip: TAB_Q[t], run: () => mbTab(t), chk: () => tab === t }));
 mbA('res.meas', { l: 'Measured data…', tip: TAB_Q[6], run: () => mbTab(6), chk: () => tab === 6 });
 
 // ===================================================================== Tools
