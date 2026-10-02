@@ -1,0 +1,8 @@
+{
+ "title": "aluminium block clamped below, its top held at a sine temperature profile (2D, plane strain)",
+ "dim": 2,
+ "L": [0.1, 0.02, 0.05],
+ "n": [50, 10, 25],
+ "E": 70e9, "nu": 0.33, "alpha": 23e-6, "rho": 2700, "cp": 900, "k": 200,
+ "dT": 100
+}

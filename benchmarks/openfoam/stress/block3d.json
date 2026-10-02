@@ -1,0 +1,21 @@
+{
+ "title": "aluminium block clamped below, its top held at a sine temperature profile (3D: the top a sine both ways)",
+ "dim": 3,
+ "L": [
+  0.1,
+  0.02,
+  0.05
+ ],
+ "n": [
+  30,
+  8,
+  16
+ ],
+ "E": 70000000000.0,
+ "nu": 0.33,
+ "alpha": 2.3e-05,
+ "rho": 2700,
+ "cp": 900,
+ "k": 200,
+ "dT": 100
+}

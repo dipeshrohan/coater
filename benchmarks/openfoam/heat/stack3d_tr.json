@@ -1,0 +1,72 @@
+{
+ "title": "three-layer stack, hot air over a quarter of its top, cool air below (3D; the Furnace stage's solver)",
+ "dim": 3,
+ "x": {
+  "breaks": [
+   0,
+   0.03,
+   0.06
+  ],
+  "n": [
+   15,
+   15
+  ]
+ },
+ "z": {
+  "breaks": [
+   0,
+   0.02,
+   0.04
+  ],
+  "n": [
+   10,
+   10
+  ]
+ },
+ "layers": [
+  {
+   "name": "plate",
+   "t": 0.005,
+   "n": 10,
+   "k": 200,
+   "rho": 2700,
+   "cp": 900
+  },
+  {
+   "name": "film",
+   "t": 0.002,
+   "n": 8,
+   "k": 0.5,
+   "rho": 1500,
+   "cp": 1000
+  },
+  {
+   "name": "paper",
+   "t": 0.001,
+   "n": 6,
+   "k": 0.1,
+   "rho": 800,
+   "cp": 1300
+  }
+ ],
+ "heat": {
+  "x1": 0.03,
+  "z1": 0.02,
+  "h": 50,
+  "Tinf": 200
+ },
+ "cool": {
+  "h": 10,
+  "Tinf": 20
+ },
+ "T0": 20,
+ "times": [
+  10,
+  60,
+  300,
+  1200
+ ],
+ "dt": 2.0,
+ "solver": "transport",
+ "ddt": "Euler"
+}
