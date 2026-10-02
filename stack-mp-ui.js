@@ -50,7 +50,7 @@ function mpStackRequest(dim) {
   if (!key) return;
   if (MPS.key[dim] === key && MPS.res[dim]) { solveTake('mps' + dim); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('mps' + dim)) return;
+  if (!solveMay('mps' + dim)) return;
   if (MPS.busy) { if (MPS.pending !== key) MPS.again = dim; return; }
   solveTake('mps' + dim);
   const o = mpStackInputs(dim);

@@ -18,6 +18,9 @@
 const SOLVE_ASK = new Set();
 const solveAsked = k => SOLVE_ASK.has(k);
 const solveTake = k => { SOLVE_ASK.delete(k); };
+/** Whether a model may start now: asked for, and nothing it needs first still asked for or solving (it never starts on
+ *  part of its inputs; the pump starts it once they are done). */
+const solveMay = k => SOLVE_ASK.has(k) && !((SOLVE_M[k] || { up: [] }).up.some(u => SOLVE_ASK.has(u) || solveState(u) === 'busy'));
 
 const fnOk = f => typeof f === 'function';
 /** The models (id → what it is called, the page it is on, what it needs first, and its state). */
@@ -77,6 +80,7 @@ function solvePump() {
     const m = SOLVE_M[k];
     if (solveSafe(m.busy, false)) continue;
     if (solveSafe(m.cur, false)) { SOLVE_ASK.delete(k); continue; }
+    if (!solveMay(k)) continue;                                                  // (what it needs first: asked for or solving)
     if (m.ready && !solveSafe(m.ready, false)) {
       // (waiting for what it needs: while that is asked for or solving; else it can't be solved now)
       const waiting = m.up.some(u => SOLVE_ASK.has(u) || solveState(u) === 'busy');

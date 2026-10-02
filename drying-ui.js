@@ -81,7 +81,7 @@ function dryRequest() {
   const base = dryBase(), key = JSON.stringify([base, films]);
   if (key === DRY.key || key === DRY.pending) { solveTake('dry'); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('dry')) return;
+  if (!solveMay('dry')) return;
   if (DRY.busy) { DRY.again = true; return; }
   solveTake('dry');
   DRY.busy = true; DRY.again = false; DRY.pending = key; DRY.prog = null;

@@ -86,7 +86,7 @@ function furnRequest() {
   const key = JSON.stringify(q);
   if (key === FURN.key || key === FURN.pending) { solveTake('furn'); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('furn')) return;
+  if (!solveMay('furn')) return;
   if (FURN.fit && FURN.fit.done) FURN.fit = null;   // (a fit that could not be made: its words were for the inputs before)
   if (FURN.busy) { FURN.again = true; return; }
   solveTake('furn');

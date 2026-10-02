@@ -26,7 +26,7 @@ function sheetRequest() {
   const key = JSON.stringify(q);
   if (key === SHEET.key || key === SHEET.pending) { solveTake('sheet'); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('sheet')) return;
+  if (!solveMay('sheet')) return;
   if (SHEET.busy) { SHEET.again = true; return; }
   solveTake('sheet');
   SHEET.busy = true; SHEET.again = false; SHEET.pending = key; SHEET.prog = null;
@@ -88,7 +88,7 @@ function stackRequest() {
   const key = JSON.stringify(q);
   if (key === STACK.key || key === STACK.pending) { solveTake('stack'); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('stack')) return;
+  if (!solveMay('stack')) return;
   if (STACK.busy) { STACK.again = true; return; }
   solveTake('stack');
   STACK.busy = true; STACK.again = false; STACK.pending = key; STACK.prog = {};

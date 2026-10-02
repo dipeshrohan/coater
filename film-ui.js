@@ -95,7 +95,7 @@ function filmRequest() {
   const base = filmBase(), fo = filmOpts(), key = JSON.stringify([base, films, fo]);
   if (key === FILM.key || key === FILM.pending) { solveTake('film'); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('film')) return;
+  if (!solveMay('film')) return;
   if (FILM.busy) { FILM.again = true; return; }
   solveTake('film');
   FILM.busy = true; FILM.again = false; FILM.pending = key; FILM.prog = null;

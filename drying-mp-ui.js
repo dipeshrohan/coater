@@ -58,7 +58,7 @@ function dmpRequest(dim) {
   if (!key) return;
   if (DMS.key[dim] === key && DMS.res[dim]) { solveTake('dmp' + dim); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('dmp' + dim)) return;
+  if (!solveMay('dmp' + dim)) return;
   if (DMS.busy) { if (DMS.pending !== key) DMS.again = dim; return; }
   solveTake('dmp' + dim);
   const o = dmpInputs(dim);

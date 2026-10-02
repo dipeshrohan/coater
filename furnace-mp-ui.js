@@ -62,7 +62,7 @@ function fmpRequest(dim) {
   if (!key) return;
   if (FMS.key[dim] === key && FMS.res[dim]) { solveTake('fmp' + dim); return; }
   // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
-  if (!solveAsked('fmp' + dim)) return;
+  if (!solveMay('fmp' + dim)) return;
   if (FMS.busy) { if (FMS.pending !== key) FMS.again = dim; return; }
   solveTake('fmp' + dim);
   const o = fmpInputs(dim);
