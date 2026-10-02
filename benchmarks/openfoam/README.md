@@ -50,7 +50,7 @@ Two findings came out of the benchmarks:
 |---|---|---|---|---|---|
 | Default blade, OpenFOAM 7,040 cells | 3.39 % | 4.11 % | 0.012 / 0.023 | 0.22 % / 0.41 % | 0.79 |
 | Default blade, OpenFOAM 56,320 cells | 2.18 % | 2.88 % | 0.012 / 0.019 | 0.22 % / 0.35 % | 0.82 |
-| Default blade, OpenFOAM 450,560 cells (iteration 1,000 of a run still converging: initial residuals p 2 × 10⁻⁶, u 2 × 10⁻⁷) | 1.39 % | 1.98 % | 0.012 / 0.015 | 0.22 % / 0.28 % | 0.85 |
+| Default blade, OpenFOAM 450,560 cells (iteration 1,500: the fields moved 0.02 % RMS (u) and 0.2 Pa RMS (p) since iteration 1,000) | 1.39 % | 1.97 % | 0.012 / 0.014 | 0.22 % / 0.26 % | 0.86 |
 | Wavy blade (gap 1.41–2.00 mm across the strip), 56,320 cells | 2.12 % | 2.68 % | 0.233 / 0.233 | 4.11 % / 4.15 % | 0.995 |
 | Blade skewed 5°, 56,320 cells | 2.24 % | 2.81 % | 0.407 / 0.407 | 7.68 % / 7.64 % | 0.9994 |
 
@@ -59,15 +59,15 @@ gap under the blade, the metering corner with the exit face and the contact line
 
 | Region | Default u / p, 7,040 cells | Default u / p, 56,320 cells | Default u / p, 450,560 cells | Wavy u / p | Skewed u / p |
 |---|---|---|---|---|---|
-| The pool upstream | 0.96 % / 0.64 % | 0.30 % / 0.29 % | 0.16 % / 0.21 % | 0.30 % / 0.27 % | 0.29 % / 0.21 % |
-| Under the blade | 0.72 % / 0.70 % | 0.34 % / 0.30 % | 0.19 % / 0.21 % | 0.35 % / 0.30 % | 0.33 % / 0.23 % |
-| The metering corner, exit face and contact line | 6.56 % / 6.69 % | 4.26 % / 4.99 % | 2.72 % / 3.71 % | 4.16 % / 4.67 % | 4.38 % / 4.92 % |
-| The film after the contact line | 0.22 % / 4.77 % | 0.22 % / 2.84 % | 0.23 % / 1.24 % | 0.22 % / 2.60 % | 0.22 % / 2.69 % |
+| The pool upstream | 0.96 % / 0.64 % | 0.30 % / 0.29 % | 0.16 % / 0.18 % | 0.30 % / 0.27 % | 0.29 % / 0.21 % |
+| Under the blade | 0.72 % / 0.70 % | 0.34 % / 0.30 % | 0.19 % / 0.18 % | 0.35 % / 0.30 % | 0.33 % / 0.23 % |
+| The metering corner, exit face and contact line | 6.56 % / 6.69 % | 4.26 % / 4.99 % | 2.72 % / 3.69 % | 4.16 % / 4.67 % | 4.38 % / 4.92 % |
+| The film after the contact line | 0.22 % / 4.77 % | 0.22 % / 2.84 % | 0.23 % / 1.22 % | 0.22 % / 2.60 % | 0.22 % / 2.69 % |
 
 - Where the flow is smooth, the two codes agree to about 0.3 %. The differences sit at the sharp metering corner and
   the contact line, where the flow is singular; they fall as OpenFOAM's mesh is refined (7,040 → 56,320 → 450,560 cells: u
   3.4 → 2.2 → 1.4 %, p 4.1 → 2.9 → 2.0 %), and OpenFOAM's largest cross-web speed falls toward the app's
-  (0.023 → 0.019 → 0.015 mm/s against 0.012).
+  (0.023 → 0.019 → 0.014 mm/s against 0.012).
 - Cross-web flow: in the default case both codes find almost none (w ≈ 0.2–0.4 % of u): the strip's gap varies only
   1.718–1.727 mm across it and its sides are symmetry planes, so the flow is nearly two-dimensional, and the 3D
   streamlines run straight. Where the geometry drives cross-web flow — a gap varying across the web, a skewed blade —
