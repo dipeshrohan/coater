@@ -47,8 +47,8 @@ function poolBase(dim) {
     ...(feedEntry() !== 'fall' ? { entry: feedEntry(), pipe: { d: P.fD / 1000, Do: P.fDo / 1000, tip: P.fTip / 1000 } } : {}) };
 }
 /** The words for where the paste enters the pool, by how it enters (base.entry). */
-const poolEntry = base => (base.entry === 'dip' ? { from: 'it leaves the pipe', start: 'the pipe\'s tip', starts: 'just under a pipe\'s tip', at: 'the pipe', tile: 'Most pressure under the top' }
-  : base.entry === 'heap' ? { from: 'it enters', start: 'the heap\'s foot', starts: 'just under a heap\'s foot', at: 'the heap', tile: 'Push under each heap' }
+const poolEntry = base => (base.entry === 'dip' ? { from: 'it leaves the pipe', start: 'the pipe\'s tip', starts: 'just under a pipe\'s tip', at: 'the pipe', tile: 'Pressure under the top' }
+  : base.entry === 'heap' ? { from: 'it enters', start: 'the heap\'s foot', starts: 'just under a heap\'s foot', at: 'the heap', tile: 'Pressure under the top' }
     : { from: 'it lands', start: 'the landing', starts: 'just under a landing', at: 'the stream', tile: 'Push under each stream' });
 const poolKeyNow = dim => { const b = poolBase(dim); return b ? JSON.stringify(b) : null; };
 const poolCurrent = dim => !!POOL[dim].res && POOL[dim].key === poolKeyNow(dim);
@@ -168,14 +168,16 @@ function poolSectionDraw(cv, res, base) {
   //  its tip up, the paste down its bore (the tips in the paste) or onto the top over the heap's foot (a heap)
   const warnC = cssVar('--warn'), arrow = (x, y0, y1) => { c.strokeStyle = warnC; c.lineWidth = 2; c.beginPath(); c.moveTo(X(x), Y(y0)); c.lineTo(X(x), Y(y1) - 3); c.stroke();
     c.beginPath(); c.moveTo(X(x), Y(y1) - 1); c.lineTo(X(x) - 4, Y(y1) - 8); c.lineTo(X(x) + 4, Y(y1) - 8); c.closePath(); c.fillStyle = warnC; c.fill(); };
-  if (base.entry && base.pipe.tip < yMax) {
+  if (base.entry) {
     const pp = base.pipe, top = Math.max(yMax, pp.tip);
-    c.fillStyle = cssVar('--blade'); c.strokeStyle = ink; c.lineWidth = 1;
-    for (const sg of [-1, 1]) { const a = ox + sg * pp.d / 2, b = ox + sg * pp.Do / 2; c.beginPath(); c.rect(Math.min(X(a), X(b)), Y(top), Math.abs(X(b) - X(a)), Y(pp.tip) - Y(top)); c.fill(); c.stroke(); }
+    // (the pipe where it shows: its walls from its tip up)
+    if (pp.tip < yMax) { c.fillStyle = cssVar('--blade'); c.strokeStyle = ink; c.lineWidth = 1;
+      for (const sg of [-1, 1]) { const a = ox + sg * pp.d / 2, b = ox + sg * pp.Do / 2; c.beginPath(); c.rect(Math.min(X(a), X(b)), Y(top), Math.abs(X(b) - X(a)), Y(pp.tip) - Y(top)); c.fill(); c.stroke(); } }
     if (POOL.state === 0) {
       // (down to the bore's channel: the 2D's stands above the top to its entry, 2 bores above the tip; the 3D's shown to the top)
       if (base.entry === 'dip') arrow(ox, yMax, Math.min(yMax - 10 / sc, res.dim === 2 ? pp.tip + 2 * pp.d : I.h));
-      else { arrow(ox, pp.tip, I.h); c.strokeStyle = warnC; c.lineWidth = 3; c.beginPath(); c.moveTo(X(ox - base.r), Y(I.h)); c.lineTo(X(ox + base.r), Y(I.h)); c.stroke(); }
+      // (a heap: from the tip down onto the top, over the heap's foot -- where the paste enters the pool)
+      else { arrow(ox, Math.min(pp.tip, yMax), I.h); c.strokeStyle = warnC; c.lineWidth = 3; c.beginPath(); c.moveTo(X(ox - base.r), Y(I.h)); c.lineTo(X(ox + base.r), Y(I.h)); c.stroke(); }
     }
   } else if (POOL.state === 0) arrow(ox, yMax, I.h);
   // the paths from where the paste enters (the outlet shown; the 2D's all)
@@ -311,8 +313,11 @@ function viewPoolFeed(dim) {
   // (the tips in the paste: in through the pipes' bores, the rest of it raising the top)
   const ml = q => (q * 1e6).toFixed(3), inWords = base.entry === 'dip' ? `${ml(-(s0.flows.bore || 0) / share)} ml/s in through the pipes, ${ml(s0.flows.top / share)} ml/s raising the top` : `${ml(qTop)} ml/s through the top`;
   html += Math.abs(qOut / base.Qout - 1) < 1e-3 ? pill(`Paste in = out: ${inWords}, ${ml(qOut)} ml/s to the blade, the 1D's ${ml(base.Qout)}`, 'ok') : pill(`Paste out ${ml(qOut)} ml/s against the 1D's ${ml(base.Qout)}`, 'warn');
-  html += base.entry === 'dip' ? pill(`The top held at the level: it carries at most ${(pushMax / 1000).toFixed(2)} kPa — the paste enters under it, through the pipes`, '')
-    : pill(`The top held at the level: under ${E.at === 'the heap' ? 'each heap' : 'each stream'} it carries ${(pushMax / 1000).toFixed(2)} kPa — a free top there rises into the heap`, 'warn');
+  // (the pressure the top holds, over the pool's weight: a stream's push where it lands; with the paste entering slowly over a
+  //  heap's foot or under the top through the pipes, its range)
+  const pushMin = Math.min(...t0.map(q => q[1])), kPa = v => (v / 1000).toFixed(2), range = `${kPa(pushMin)} to ${kPa(pushMax)} kPa`;
+  html += !base.entry && pushMax > 0 ? pill(`The top held at the level: under each stream it carries ${kPa(pushMax)} kPa — a free top there rises into the heap`, 'warn')
+    : pill(`The top held at the level: the pressure under it, over the pool's weight, ${range}${base.entry === 'dip' ? ' — the paste enters under it, through the pipes' : base.entry === 'heap' ? ' — the paste enters over each heap\'s foot' : ''}`, '');
   if (res.mirror) html += pill('The outlets are in mirror pairs: half the pool solved, mirrored at its middle', '');
   if (typeof matStruct === 'function' && matStruct()) html += pill('The paste\'s flow curve: the structure model is not carried in the pool', 'warn');
   if (!poolCurrent(dim)) html += solvePending(id) ? pill('Solving for the inputs as they are…', '') + `<span class="pl-prog" id="plProg"></span>` : solveCtl(id);
@@ -321,7 +326,7 @@ function viewPoolFeed(dim) {
     ['Paste reaches the pool edge', ps.out ? `${ps.tMin.toFixed(0)} to ${ps.tMax.toFixed(0)} s` : '—'],
     ['Pulses it stays in the pool', ps.out ? `${(ps.tMin / base.T).toFixed(1)} to ${(ps.tMax / base.T).toFixed(1)}` : '—'],
     ['Height at the pool edge', ps.out ? `${(ps.yMin * 1e3).toFixed(1)} to ${(ps.yMax * 1e3).toFixed(1)} mm` : '—'],
-    [E.tile, `${(pushMax / 1000).toFixed(2)} kPa`],
+    [E.tile, base.entry ? range : `${kPa(pushMax)} kPa`],
     ['Out to the blade', `${(qOut * 1e6).toFixed(3)} ml/s`],
     ['Mesh', I.mirror ? `${I.nESolved} Q2 hexahedra, half the pool` : `${I.nE} Q2 hexahedra`],
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
