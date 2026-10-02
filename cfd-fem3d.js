@@ -78,7 +78,8 @@ const F3_SIDE_LO = f3FaceRule('zeta', -1), F3_SIDE_HI = f3FaceRule('zeta', 1);
  *     st = { h: Float64Array(NC*NL) (free spines' heights, index c*NL + l), s: Float64Array(NL) (contact line up the face) }
  *   U (web speed, along x), webW (the web's speed along z: a blade skewed across the web, whose frame this is; 0),
  *   rho, g, gamma, mu(gd), gdMin, Hr, Ur (length and speed scales)
- *   inlet: { type: 'traction', p(y) } | { type: 'wall' }; outlet: { type: 'plug' } | { type: 'traction', p(y) } | { type: 'wall' }
+ *   inlet: { type: 'traction', p(y) } | { type: 'wall' } | { type: 'velocity', at(z, y, l, k) -> [u, v, w] (m/s: a given inflow,
+ *     between the web and the blade) }; outlet: { type: 'plug' } | { type: 'traction', p(y) } | { type: 'wall' }
  *   sides: 'symmetry' (default) | 'wall'; topSpeed (moving top wall, along x); webSlip (Beavers–Joseph alpha / sqrt k, 1/m)
  *   sideData: { lo, hi } a side held at a neighbouring strip's solution instead: { u, v, w (at the station's nodes c*NR + k,
  *     m/s), p (Pa, there), h (the free spines' heights, m, per c), s (the contact line, m) } (a region solved strip by strip;
@@ -241,10 +242,13 @@ function solveFEM3D(o) {
       }
       setDir(dW[nid(c, E.lOut, NR - 1)], 0);                                     // (the contact line moves with the web)
     }
+    if (o.inlet.type === 'velocity') placeNodes();                              // (a given inflow: its nodes' places first)
     for (let l = 0; l < NL; l++) for (let k = 0; k < NR; k++) {
       const i = nid(0, l, k), e = nid(NC - 1, l, k);
       setDir(dV[i], 0); if (!Ws) setDir(dW[i], 0);                               // inlet: no cross-flow (the web moving along the blade: free)
       if (o.inlet.type === 'wall') setDir(dU[i], 0);
+      // (a given inflow, between the web and the blade: the region upstream solved on its own, its flow here)
+      if (o.inlet.type === 'velocity' && k > 0 && k < NR - 1) { const q = o.inlet.at(Z[i] * Hr, Y[i] * Hr, l, k); setDir(dU[i], q[0] / Ur); setDir(dV[i], q[1] / Ur); setDir(dW[i], q[2] / Ur); }
       if (o.outlet.type === 'plug') { setDir(dU[e], Us); setDir(dV[e], 0); setDir(dW[e], Ws); }   // (the film moves with the web)
       else if (o.outlet.type === 'wall') { setDir(dU[e], 0); setDir(dV[e], 0); setDir(dW[e], 0); }
       else { setDir(dV[e], 0); setDir(dW[e], 0); }
@@ -1193,7 +1197,7 @@ function coaterStrip3D(opts, S, l0, l1, state, sideLo = false, sideHi = false, e
   }
   return solveFEM3D({
     mesh, U: opts.U, webW: opts.webW || 0, rho: opts.rho, g: opts.g, gamma: opts.gamma, mu: opts.mu, gdMin: opts.gdMin, Hr: S.H, Ur: Math.abs(opts.U) || 1e-3,
-    inlet: { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
+    inlet: opts.inletAt ? { type: 'velocity', at: opts.inletAt } : { type: 'traction', p: y => opts.Pup - opts.rho * opts.g * y }, outlet: { type: 'plug' }, webSlip: opts.webSlip, sides: 'symmetry',
     sideData: sideLo || sideHi ? { lo: sideLo ? side(state[l0]) : null, hi: sideHi ? side(state[l1]) : null } : null,
     h0: (c, j) => state[l0 + j].h[c], s0: S.climbed || S.k ? j => state[l0 + j].s : 0, initNodal: { u, v, w, p },
     contactLine: S.climbed ? { spine: S.cCL, faceFrom: S.cBase ?? S.cCorner, alphaDeg: Array.from({ length: NL }, (_, j) => S.alphaL ? S.alphaL[l0 + j] : S.thl[l0 + j] + opts.faceDeg - 180) } : null,
