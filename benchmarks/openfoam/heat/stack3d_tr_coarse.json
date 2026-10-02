@@ -1,5 +1,5 @@
 {
- "title": "three-layer stack, hot air over half its top, cool air below (3D: a quarter of the top heated)",
+ "title": "three-layer stack, hot air over a quarter of its top, cool air below (3D; the Furnace stage's solver)",
  "dim": 3,
  "x": {
   "breaks": [
@@ -66,5 +66,7 @@
   300,
   1200
  ],
- "dt": 2.0
+ "dt": 2.0,
+ "solver": "transport",
+ "ddt": "Euler"
 }

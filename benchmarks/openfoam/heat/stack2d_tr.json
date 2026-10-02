@@ -1,6 +1,6 @@
 {
- "title": "three-layer stack, hot air over half its top, cool air below (3D: a quarter of the top heated)",
- "dim": 3,
+ "title": "three-layer stack, hot air over half its top, cool air below (2D; the Furnace stage's solver)",
+ "dim": 2,
  "x": {
   "breaks": [
    0,
@@ -8,8 +8,8 @@
    0.06
   ],
   "n": [
-   8,
-   8
+   30,
+   30
   ]
  },
  "z": {
@@ -19,15 +19,15 @@
    0.04
   ],
   "n": [
-   5,
-   5
+   20,
+   20
   ]
  },
  "layers": [
   {
    "name": "plate",
    "t": 0.005,
-   "n": 5,
+   "n": 10,
    "k": 200,
    "rho": 2700,
    "cp": 900
@@ -35,7 +35,7 @@
   {
    "name": "film",
    "t": 0.002,
-   "n": 4,
+   "n": 8,
    "k": 0.5,
    "rho": 1500,
    "cp": 1000
@@ -43,7 +43,7 @@
   {
    "name": "paper",
    "t": 0.001,
-   "n": 3,
+   "n": 6,
    "k": 0.1,
    "rho": 800,
    "cp": 1300
@@ -66,5 +66,7 @@
   300,
   1200
  ],
- "dt": 2.0
+ "dt": 0.1,
+ "solver": "transport",
+ "ddt": "Euler"
 }

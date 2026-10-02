@@ -11,8 +11,8 @@ node by node. The scripts that make, run and compare every case are in this fold
 |---|---|---|---|---|
 | Coating flow under the blade, free surface and contact line | `cfd-fem3d.js` (Taylor–Hood Q2–Q1 FEM, Newton) | `simpleFoam` (finite volumes, SIMPLEC) | 3D | u 1.4 %, p 2.0 % RMS (450,560 cells), falling with refinement; 0.3 % where the flow is smooth; the cross-web flow of the same size and pattern (correlation 0.995–0.999) |
 | The same, in 2D | `cfd-fem.js` (Q2–Q1 FEM, Newton) | `simpleFoam` | 2D | u 0.8 %, p 1.6 % RMS (25,344 cells), falling with refinement; 0.1 % in the pool and under the blade; the film's flow rate OpenFOAM's own to 4 digits (1.5157 mm) |
-| Heat through a three-layer stack (plate, film, paper), hot air on part of the top | `mp-core.js` `mpHeatMoisture` (linear FEM, BDF2) — the Pre heat, Furnace and Drying stages' solver | `chtMultiRegionFoam` (one solid region per layer, coupled interfaces) | 2D, 3D | 2D: 0.07–0.24 % RMS of the temperature rise (5,760 cells), the hottest point within 0.03 K; 3D: HEAT3D_SUMMARY |
-| Thermal stress in a clamped aluminium block | `mp-core.js` `mpScalar` + `mpElastic` (linear FEM) — the stages' stress solver | `solidDisplacementFoam` (thermal stress) | 2D (plane strain), 3D | 2D: displacement 0.07 %, stresses 0.1–0.15 % RMS (8,000 cells); 3D: displacement 0.3–0.4 %, stresses 0.4–1.3 % (30,720 cells); falling 2.5–3× per refinement |
+| Heat through a three-layer stack (plate, film, paper), hot air on part of the top | `mp-core.js` `mpHeatMoisture` (the Pre heat and Drying stages' solver) and `mpTransport` (the Furnace's); linear FEM | `chtMultiRegionFoam` (one solid region per layer, coupled interfaces) | 2D, 3D | 2D: 0.07–0.24 % RMS of the temperature rise (5,760 cells), the hottest point within 0.03 K; 3D: HEAT3D_SUMMARY |
+| Thermal stress in a clamped aluminium block | `mp-core.js` `mpScalar` + `mpElastic` (linear FEM) — the stages' stress solver | `solidDisplacementFoam` (thermal stress) | 2D (plane strain), 3D | 2D: displacement 0.07 %, stresses 0.1–0.15 % RMS (8,000 cells); 3D: displacement 0.3–0.4 %, stresses 0.4–1.3 % (30,720 cells); falling 2–3.5× per refinement |
 | The free surface itself (film thickness, meniscus) | `cfd-fem.js` | `interFoam` (volume of fluid) | 2D | **not achieved**: interFoam diverges on this flow (see *The free surface*) |
 
 Two findings came out of the benchmarks:
@@ -127,11 +127,13 @@ check; none is available here.
 
 ## Heat
 
-`heat/heat_app.js` runs the app's heat solver — `mp-core.js` `mpHeatMoisture`, with the options the Pre heat,
-Furnace and Drying stages use (linear elements, the conduction integrated at the nodes, BDF2 in time) — on a dry
-stack, heat only. `heat/heat_of.py` writes and runs the same stack as an OpenFOAM `chtMultiRegionFoam` case: one solid
-region per layer, the interfaces coupled (`turbulentTemperatureCoupledBaffleMixed`: the temperature and the heat flux
-continuous), the same cells (one per element), second order in time (`backward`) at the same step.
+`heat/heat_app.js` runs the app's two heat solvers on a dry stack, heat only: `mp-core.js` `mpHeatMoisture` with the
+options the Pre heat and Drying stages use (linear elements, the conduction integrated at the nodes, BDF2 in time), and
+`mpTransport` as the Furnace stage uses it (`"solver": "transport"`: lumped capacity, implicit Euler).
+`heat/heat_of.py` writes and runs the same stack as an OpenFOAM `chtMultiRegionFoam` case: one solid region per layer,
+the interfaces coupled (`turbulentTemperatureCoupledBaffleMixed`: the temperature and the heat flux continuous), the
+same cells (one per element), the same time scheme's order (`backward` against BDF2, `Euler` against implicit Euler)
+at the same step.
 
 | | |
 |---|---|
@@ -139,18 +141,24 @@ continuous), the same cells (one per element), second order in time (`backward`)
 | Top | hot air 200 °C, h = 50 W/m² K, over x < 30 mm (2D) or x < 30, z < 20 mm (3D: a quarter of the top); the rest insulated |
 | Bottom | cool air 20 °C, h = 10 W/m² K |
 | Sides | insulated |
-| Domain, mesh | 60 mm (× 40 mm in 3D) × 8 mm; 60 × 24 cells (2D), 120 × 48 (2D refined), 30 × 24 × 20 (3D) |
-| Time | from 20 °C; compared at 10, 60, 300 and 1200 s; step 0.1 s (2D), 0.5 s (3D) |
+| Domain, mesh | 60 mm (× 40 mm in 3D) × 8 mm; 60 × 24 cells (2D), 120 × 48 (2D refined); 16 × 12 × 10 and 30 × 24 × 20 (3D) |
+| Time | from 20 °C; compared at 10, 60, 300 and 1200 s; step 0.1 s (2D), 2 s (3D) |
 
 RMS difference over all cells, as a share of the temperature rise (T_max − 20 °C), and the hottest point:
 
-| Case | 10 s | 60 s | 300 s | 1200 s | hottest point at 1200 s, app / OpenFOAM |
-|---|---|---|---|---|---|
-| 2D, 1,440 cells | 0.74 % | 0.56 % | 0.38 % | 0.21 % | 145.41 / 145.32 °C |
-| 2D, 5,760 cells | 0.24 % | 0.18 % | 0.13 % | 0.07 % | 146.47 / 146.44 °C |
-| 3D, 14,400 cells | HEAT3D_10 | HEAT3D_60 | HEAT3D_300 | HEAT3D_1200 | HEAT3D_TMAX |
+| App solver (stages) | Case | 10 s | 60 s | 300 s | 1200 s | hottest point at 1200 s, app / OpenFOAM |
+|---|---|---|---|---|---|---|
+| `mpHeatMoisture` (Pre heat, Drying) | 2D, 1,440 cells | 0.74 % | 0.56 % | 0.38 % | 0.21 % | 145.41 / 145.32 °C |
+| | 2D, 5,760 cells | 0.24 % | 0.18 % | 0.13 % | 0.07 % | 146.47 / 146.44 °C |
+| | 3D, 1,920 cells (step 2 s) | 3.37 % | 3.13 % | 2.69 % | 2.24 % | 122.04 / 120.86 °C |
+| `mpTransport` (Furnace) | 2D, 1,440 cells | 0.65 % | 0.47 % | 0.32 % | 0.17 % | 145.38 / 145.32 °C |
+| | 3D, 1,920 cells (step 2 s) | 3.03 % | 2.54 % | 2.08 % | 1.59 % | 123.67 / 120.89 °C |
+| | 3D, 14,400 cells (step 2 s) | HEAT3D_10 | HEAT3D_60 | HEAT3D_300 | HEAT3D_1200 | HEAT3D_TMAX |
 
 - By layer (2D, 5,760 cells, 1200 s): plate 0.04 %, film 0.04 %, paper 0.12 %.
+- A cost found on the way: both heat solvers factor their band matrix anew at every time step (`mpHeatMoisture` a
+  non-symmetric one). At 30 × 24 × 20 elements and 2,400 steps that is hours to tens of hours, so the 3D benchmarks
+  run with 2 s steps (600 steps). Reusing the factors while the matrix does not change is listed as a task.
 - The largest local difference sits in the paper at the heated patch's edge (x = 30 mm), where the boundary condition
   steps from hot air to insulated: the finite elements carry a continuous temperature across that step, the finite
   volumes one value per cell. It halves when both meshes are refined (8.9 K → 5.1 K at 10 s; 4.5 K → 2.5 K at 1200 s).
@@ -182,7 +190,7 @@ largest stress, away from the clamped bottom corners (edges in 3D) where the ela
 | 3D, 3,840 cells | 0.24 % | 0.70 % | 1.32 % | 1.33 % | 1.93 % | 3.85 % | 2.18 % | 1.06 % | 30.24 / 28.74 µm |
 | 3D, 30,720 cells | 0.06 % | 0.28 % | 0.42 % | 0.42 % | 0.86 % | 1.30 % | 1.01 % | 0.41 % | 31.67 / 31.07 µm |
 
-The differences fall by about 2.5–3× each time both meshes are halved: the two codes converge to the same solution.
+The differences fall 2–3.5× each time both meshes are halved: the two codes converge to the same solution.
 The peak stress itself sits at a clamped corner, where it is singular and grows with refinement in both codes (2D:
 229 MPa in the app, 259 MPa in OpenFOAM at 8,000 cells); it is not a number either code can give.
 

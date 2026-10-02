@@ -63,14 +63,16 @@ def build(C, case, f):
     write(case, 'system/controlDict', 'dictionary', f"""application chtMultiRegionFoam; startFrom latestTime; startTime 0; stopAt endTime; endTime {seg_ends[0]};
 deltaT {C['dt']}; writeControl runTime; writeInterval {seg_ends[0]}; purgeWrite 0; writeFormat ascii; writePrecision 12;
 timeFormat general; timePrecision 8; runTimeModifiable true; adjustTimeStep no;""")
-    write(case, 'system/fvSchemes', 'dictionary', 'ddtSchemes { default backward; } gradSchemes { default Gauss linear; } divSchemes { default none; } laplacianSchemes { default Gauss linear corrected; } interpolationSchemes { default linear; } snGradSchemes { default corrected; }')
+    ddt = C.get('ddt', 'backward')        # the app's BDF2: backward; its implicit Euler (mpTransport): Euler
+    SCH = ' gradSchemes { default Gauss linear; } divSchemes { default none; } laplacianSchemes { default Gauss linear corrected; } interpolationSchemes { default linear; } snGradSchemes { default corrected; }'
+    write(case, 'system/fvSchemes', 'dictionary', 'ddtSchemes { default ' + ddt + '; }' + SCH)
     write(case, 'system/fvSolution', 'dictionary', f'PIMPLE {{ nOuterCorrectors {C.get("outer", 8)}; }}')
     for l in L:
         r = l['name']
         write(case, f'constant/{r}/thermophysicalProperties', 'dictionary', f"""thermoType {{ type heSolidThermo; mixture pureMixture; transport constIso; thermo hConst; equationOfState rhoConst; specie specie; energy sensibleEnthalpy; }}
 mixture {{ specie {{ molWeight 50; }} transport {{ kappa {l['k']}; }} thermodynamics {{ Hf 0; Cp {l['cp']}; }} equationOfState {{ rho {l['rho']}; }} }}""")
         write(case, f'constant/{r}/radiationProperties', 'dictionary', 'radiation off; radiationModel none;')
-        write(case, f'system/{r}/fvSchemes', 'dictionary', 'ddtSchemes { default backward; } gradSchemes { default Gauss linear; } divSchemes { default none; } laplacianSchemes { default Gauss linear corrected; } interpolationSchemes { default linear; } snGradSchemes { default corrected; }')
+        write(case, f'system/{r}/fvSchemes', 'dictionary', 'ddtSchemes { default ' + ddt + '; }' + SCH)
         write(case, f'system/{r}/fvSolution', 'dictionary', 'solvers { h { solver PCG; preconditioner DIC; tolerance 1e-12; relTol 0; } hFinal { $h; } } PIMPLE { nNonOrthogonalCorrectors 0; }')
     return names, T0
 

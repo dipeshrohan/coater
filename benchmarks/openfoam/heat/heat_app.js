@@ -1,5 +1,6 @@
-// The app's heat solver (mp-core.js mpHeatMoisture: linear elements, nodal integration, BDF2 -- as the Pre heat,
-// Furnace and Drying stages call it) on the benchmark stack, dry: heat only. Writes T at every element's centre at the
+// The app's heat solvers on the benchmark stack, heat only: mp-core.js mpHeatMoisture (linear elements, nodal
+// integration, BDF2 -- as the Pre heat and Drying stages call it) or, with "solver": "transport", mpTransport (as the
+// Furnace stage calls it: lumped capacity, implicit Euler). Writes T at every element's centre at the
 // output times. node heat_app.js <case.json> <out.json>
 const fs = require('fs'), path = require('path');
 const MP = require(path.join(__dirname, '../../../mp-core.js'));
@@ -14,16 +15,20 @@ const M = MP.mpMesh({ dim, p: 1, axes, mat: (ijk, s) => s[1] });
 // are exactly those of the patch)
 const heated = x => x[0] < C.heat.x1 && (dim === 2 || x[2] < C.heat.z1);
 const t0 = Date.now();
-const hm = MP.mpHeatMoisture(M, {
-  kT: m => L[m].k, CT: m => L[m].rho * L[m].cp,
-  Kv: () => 0, S: () => 0, L: 0, wet: () => false,
-  T0: C.T0, p0: 0,
-  bcT: [
-    { face: 'y1', type: 'robin', h: x => (heated(x) ? C.heat.h : 0), uInf: () => C.heat.Tinf },
-    { face: 'y0', type: 'robin', h: () => C.cool.h, uInf: () => C.cool.Tinf },
-  ],
-  iters: 40, tol: 1e-10, nodal: true, bdf2: true,
-});
+const bcT = [
+  { face: 'y1', type: 'robin', h: x => (heated(x) ? C.heat.h : 0), uInf: () => C.heat.Tinf },
+  { face: 'y0', type: 'robin', h: () => C.cool.h, uInf: () => C.cool.Tinf },
+];
+// the solver: 'heatMoisture' (default: the Pre heat and Drying stages' mpHeatMoisture, dry: heat only; BDF2) or
+// 'transport' (the Furnace stage's mpTransport: lumped capacity, the conduction assembled once a step; implicit Euler)
+const hm = C.solver === 'transport'
+  ? (() => { const T = MP.mpTransport(M, { K: m => L[m].k, C: m => L[m].rho * L[m].cp, lump: true, Kstep: true, bc: bcT, u0: C.T0, theta: 1 }); return { get T() { return T.u; }, step: (t, h) => T.step(t, h) }; })()
+  : MP.mpHeatMoisture(M, {
+    kT: m => L[m].k, CT: m => L[m].rho * L[m].cp,
+    Kv: () => 0, S: () => 0, L: 0, wet: () => false,
+    T0: C.T0, p0: 0, bcT,
+    iters: 40, tol: 1e-10, nodal: true, bdf2: true,
+  });
 // T at the element centres (the mean of a linear element's nodes is its value there)
 const cen = () => {
   const out = [];
