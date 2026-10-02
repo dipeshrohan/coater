@@ -13,7 +13,7 @@
 
 const REPORT_KEY = 'bladeCoatDefectLab.report.v1';
 const REP = (() => {
-  const d = { author: '', sections: ['inputs', 'proc', 'mat', 'm0', 'm1', 'm2', 'm3', 'm1d', 'cfd', 'mesh', 'm3d', 'doe', 'meas'] };
+  const d = { author: '', sections: ['inputs', 'proc', 'mat', 'm0', 'm1', 'm2', 'm3', 'm1d', 'pool', 'cfd', 'mesh', 'm3d', 'doe', 'meas'] };
   try { return { ...d, ...JSON.parse(localStorage.getItem(REPORT_KEY) || '{}') }; } catch (e) { return d; }
 })();
 const saveRepPrefs = () => { try { localStorage.setItem(REPORT_KEY, JSON.stringify(REP)); } catch (e) { /* not remembered */ } };
@@ -37,6 +37,8 @@ function reportSections() {
     { k: 'm2', l: TABS[2], note: 'results, plots, checks' },
     { k: 'm3', l: TABS[3], note: 'results, plots, checks' },
     { k: 'm1d', l: '1D: gap flow, to the oven, across the web, pool and feed', note: 'results, plots, checks, the 1D / 2D table, the outlets and the pulse' },
+    { k: 'pool', l: 'Pool and feed: 2D and 3D', note: [2, 3].map(d => `${d}D ${typeof poolCurrent === 'function' && poolCurrent(d) ? 'solved' : POOL[d].res ? 'out of date' : 'not solved'}`).join(', '),
+      off: !POOL[2].res && !POOL[3].res },   // (like the mesh study: off until a pool is solved -- the 3D's solve is long)
     { k: 'cfd', l: TABS[4], note: solved ? `${solved} of 4 locations solved${stale ? `, ${stale} out of date` : ''}` : 'nothing solved yet: setup and checks only' },
     { k: 'mesh', l: 'Mesh study', note: meshStudy ? `location ${meshStudy.loc + 1}, ${meshStudy.runs.filter(r => r.status === 'done').length} of ${meshStudy.runs.length} meshes solved` : 'not run', off: !meshStudy },
     { k: 'm3d', l: '3D: geometry and mesh', note: C3D.source === 'file' && !C3D_FILE ? 'no blade file imported' : 'setup, the 3D view, checks' },
@@ -137,6 +139,7 @@ async function repModule(m, statsTitle = 'Results') {
   }
   if (m === 11) html += acrossReportHTML();
   if (m === 15) html += feedReportHTML();
+  if (m === 16 || m === 17) html += poolReportHTML(m - 14);
   // (a tile's note under its number, e.g. the 3D's "plain flow curve", goes with its value)
   const stats = [...document.querySelectorAll('#ss .stat')].map(s => { const t = s.querySelector('small.stat-tag'); return [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')) + (t ? ` (${cleanText(t)})` : ''))]; });
   if (stats.length) html += `<h3>${statsTitle}</h3>` + repRows(stats, [statsTitle === 'Results' ? 'Result' : statsTitle, 'Value']);
@@ -626,6 +629,7 @@ async function buildReport(o) {
             out.push({ id: 'm1d-' + v, title: `1D: ${TABS[v]}`, html });
           }
         }
+        if (want.has('pool')) for (const v of [16, 17]) out.push({ id: 'pool-' + v, title: `${v - 14}D: ${TABS[v]}`, html: await repModule(v) });
         if (want.has('cfd')) out.push({ id: 'cfd', title: TABS[4], html: await repCfd(keep) });
         if (want.has('mesh') && meshStudy) out.push({ id: 'mesh', title: 'Mesh study', html: await repMesh() });
         if (want.has('m3d')) out.push({ id: 'm3d', title: '3D: geometry and mesh', html: await rep3D() });
@@ -651,7 +655,7 @@ function printReport(html) {
 async function makeReport(o, fmt) {
   try {
     // (Phase 0: nothing solves unasked -- models the sections show that are not solved are asked about first)
-    const need = o.sections.includes('proc') ? SOLVE_LINE : o.sections.some(k => ['m0', 'm1', 'm2', 'm3', 'm1d', 'meas'].includes(k)) ? ['1d'] : [];
+    const need = [...(o.sections.includes('proc') ? SOLVE_LINE : o.sections.some(k => ['m0', 'm1', 'm2', 'm3', 'm1d', 'meas'].includes(k)) ? ['1d'] : []), ...(o.sections.includes('pool') ? ['pool2', 'pool3'] : [])];
     if (need.length && typeof solveBeforeReport === 'function' && (await solveBeforeReport(need)) === null) return null;
     const html = await buildReport(o);
     if (fmt === 'html') {

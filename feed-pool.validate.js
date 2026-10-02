@@ -14,6 +14,11 @@
  *     elements' local mass error, a part of U: q is the small net flow of a larger one turning in the pool).
  *  5. Paths through the cycle: in a flow steady in each part of it (one speed in a pulse, another between), the time to the
  *     pool edge exact, never stepping across a switch.
+ *  6. The 2D page's pool: the same solver on a strip one element across with mirrors at its sides and the feed a band
+ *     across it is a slice along the web -- no flow across, the same flow at both sides, and strips of two widths giving
+ *     the same flow per width (to rounding).
+ *  7. The 3D page's pool with its outlets in mirror pairs: half the pool solved (a mirror at its middle) and rebuilt is the
+ *     whole pool solved on the same mesh -- every node's velocity and pressure, the flows, the paths' times.
  */
 const FP = require('./feed-pool.js'), PM = require('./feed-pool-mesh.js');
 let fails = 0;
@@ -105,6 +110,55 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
     P.forEach((p, j) => { const te = exact(starts[j][0], t0); err = Math.max(err, Math.abs(p.t - te)); ok = ok && p.out && p.pts.every(q => Math.abs(q[1] - starts[j][1]) < 1e-15 && Math.abs(q[2] - starts[j][2]) < 1e-15); info.push(`${p.t.toFixed(4)} s (exact ${te.toFixed(4)})`); });
   }
   check('paths through the cycle (2 mm/s in a pulse, 0.5 mm/s between): the time to the pool edge exact, never across a switch', ok && err < 1e-9, info.join(', ') + ` (off ${err.toExponential(1)} s)`);
+}
+
+// 6. the 2D page's pool: the 3D solver on a strip one element across, mirrors at its sides, the feed a band across it — a
+//  slice along the web: nothing across, the same flow at both sides, and the same flow per width for any strip
+{
+  const Qin = 20e-6, Qout = 2.14e-6, run = Ws => FP.fplSolve({ W: Ws, xBack, xEnd, h, blade, rho, g, outlets: [{ x: -0.1, z: Ws / 2 }], r: 6e-3, line: true, mu: newt,
+    U, Qin: Qin * Ws / W, Qout: Qout * Ws / W, pulse: true, sides: 'slip', mesh: { ...coarse, nz: 1, sideFine: false }, solve: { tol: 1e-12 } });
+  const A = run(0.02), B = run(0.045), I = A.M.info, NX = I.NX, NY = I.NY, rgh = rho * g * h;
+  let wMax = 0, side = 0, sideP = 0, wid = 0, widP = 0, same = I.NZ === 3 && B.M.info.NX === NX && B.M.info.NY === NY;
+  for (const r of [A, B]) for (let n = 0; n < r.M.nN; n++) wMax = Math.max(wMax, Math.abs(r.w[n]));
+  for (let j = 0; j < NY && same; j++) for (let i = 0; i < NX; i++) {
+    const a = j * NX + i;
+    same = same && A.M.X[a] === B.M.X[a] && A.M.Y[a] === B.M.Y[a];
+    // (the pressure where it lives: the elements' corner nodes, both sides)
+    const pd = (x, y) => (Number.isFinite(x) || Number.isFinite(y) ? Math.abs(x - y) : 0);
+    for (const r of [A, B]) for (const k of [1, 2]) { const b = (k * NY + j) * NX + i; side = Math.max(side, Math.abs(r.u[b] - r.u[a]), Math.abs(r.v[b] - r.v[a])); if (k === 2) sideP = Math.max(sideP, pd(r.p[b], r.p[a])); }
+    wid = Math.max(wid, Math.abs(A.u[a] - B.u[a]), Math.abs(A.v[a] - B.v[a])); widP = Math.max(widP, pd(A.p[a], B.p[a]));
+  }
+  const qa = A.flows.end / 0.02, qb = B.flows.end / 0.045;
+  check('the 2D page\'s pool (a strip one element across, mirrors at its sides, the feed a band across it): a slice along the web, the same for any strip', same && Number.isFinite(sideP + widP) && wMax < 1e-9 * U && side < 1e-9 * U && sideP < 1e-9 * rgh && wid < 1e-9 * U && widP < 1e-9 * rgh && Math.abs(qa / qb - 1) < 1e-9,
+    `across: ${(wMax / U).toExponential(1)} U; side to side: u, v ${(side / U).toExponential(1)} U, p ${(sideP / rgh).toExponential(1)} ρgh; strips 20 and 45 mm wide: u, v ${(wid / U).toExponential(1)} U, p ${(widP / rgh).toExponential(1)} ρgh, out per width ${(qa * 1e3).toFixed(9)} and ${(qb * 1e3).toFixed(9)} ml/s per mm; ${A.M.nE} elements`);
+}
+
+// 7. the 3D page's pool with its outlets in mirror pairs: half the pool solved, mirrored at the middle, and rebuilt -- the
+//  same as the whole pool solved on the same mesh (fields at every node, flows, paths)
+{
+  const cyc = { dim: 3, W, xBack, xEnd, R, H, rho, g, U, law: { muRef: 10.5, ty: 0, n: 1 }, outlets, r: 6e-3, Qin: 20e-6, Qout: 2.14e-6,
+    hP: h + 1.5e-3, hD: h - 1.5e-3, T: 28, tau: 3, tMax: 3000, solveTol: 1e-11 };
+  const half = outlets.filter(q => q.z < W / 2), zsH = PM.fpmMesh({ W: W / 2, xBack, xEnd, h: cyc.hP, blade, outlets: half, r: 6e-3, ...coarse, sideFine: [true, false] }).info.zs;
+  const zsF = [...zsH, ...zsH.slice(0, -1).reverse().map(z => W - z)];
+  const A = FP.fplCycle({ ...cyc, mesh: coarse }), B = FP.fplCycle({ ...cyc, mirror: false, mesh: { ...coarse, zs: zsF } });
+  let same = A.mirror && !B.mirror, du = 0, dp = 0, dq = 0, umax = 0, dt = 0, nP = 0;
+  for (let s = 0; s < 2; s++) {
+    const a = A.states[s], b = B.states[s], rgh = rho * g * a.info.h;
+    same = same && a.X.length === b.X.length;
+    for (let n = 0; n < Math.min(a.X.length, b.X.length); n++) {
+      // (the nodes kept to single precision: one unit in its last place at 0.3 m is 3e-8 m)
+      same = same && Math.abs(a.X[n] - b.X[n]) < 1e-7 && Math.abs(a.Y[n] - b.Y[n]) < 1e-7 && Math.abs(a.Z[n] - b.Z[n]) < 1e-7;
+      umax = Math.max(umax, Math.hypot(b.u[n], b.v[n], b.w[n]));
+      du = Math.max(du, Math.abs(a.u[n] - b.u[n]), Math.abs(a.v[n] - b.v[n]), Math.abs(a.w[n] - b.w[n]));
+      if (Number.isFinite(a.p[n]) && Number.isFinite(b.p[n])) dp = Math.max(dp, Math.abs(a.p[n] - b.p[n]) / rgh);
+    }
+    for (const t of ['top', 'end', 'back', 'web', 'blade']) dq = Math.max(dq, Math.abs(a.flows[t] - b.flows[t]) / cyc.Qout);
+  }
+  // (each path and its partner: the same outlet, the same start)
+  const key = p => `${p.outlet}:${p.out}:${Math.round(p.pts[0] * 1e7)}:${Math.round(p.pts[2] * 1e7)}`, bm = new Map(B.paths.map(p => [key(p), p]));
+  for (const p of A.paths) { const q = bm.get(key(p)); if (!q) { same = false; continue; } nP++; if (p.out) dt = Math.max(dt, Math.abs(p.t - q.t) / q.t); }
+  check('the 3D page\'s pool with its outlets in mirror pairs: half solved and mirrored is the whole pool solved (fields, flows, paths)', same && nP === B.paths.length && du < 1e-6 * umax && dp < 1e-6 && dq < 1e-9 && dt < 1e-4,
+    `${A.states[0].info.nESolved} of ${B.states[0].info.nE} elements solved; velocity off ${(du / umax).toExponential(1)} of its largest, pressure ${dp.toExponential(1)} ρgh (the fields kept to single precision), flows ${dq.toExponential(1)} of the web's; ${nP} paths, times off ${dt.toExponential(1)}`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

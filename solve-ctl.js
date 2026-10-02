@@ -45,8 +45,11 @@ const SOLVE_M = {
   for (const d of [1, 2, 3]) SOLVE_M[p + d] = { l: `${l} ${d}D`, nav: nav + d + 'd', up, dim: d, has: () => !!S().res[d], cur: () => cur(d), busy: () => S().busy && S().bdim === d,
     err: () => !!(S().error[d] && S().key[d] === key(d)), key: () => key(d), ready: () => key(d) != null, go: () => go(d) };
 });
+// (the pool behind the blade in 2D and 3D, Coating › 2D and 3D › Pool and feed: from the 1D's pulse cycle)
+for (const d of [2, 3]) SOLVE_M['pool' + d] = { l: `Pool and feed ${d}D`, nav: `feed${d}d`, up: ['1d'], dim: d, has: () => !!POOL[d].res, cur: () => poolCurrent(d), busy: () => POOL[d].busy,
+  err: () => !!(POOL[d].error && POOL[d].key === poolKeyNow(d)), key: () => poolKeyNow(d), ready: () => poolBase(d) != null, go: () => poolRequest(d) };
 /** The order a pump starts them in (each after what it needs). */
-const SOLVE_ORDER = ['1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3'];
+const SOLVE_ORDER = ['1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'pool2', 'pool3'];
 /** The line's chain, for "Solve the line". */
 const SOLVE_LINE = ['1d', 'dry', 'film', 'sheet', 'stack', 'furn'];
 
