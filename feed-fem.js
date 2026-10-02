@@ -18,7 +18,16 @@
  *   { tag: { type: 'velocity', u: [ux, uy, uz] or (x, y, z) -> [..] } }   no-slip walls, the moving web, an inflow
  *   { tag: { type: 'slip', normal: 'x' | 'y' | 'z', over } }             no flow through an axis-aligned face (a mirror, a lid);
  *                                                                        over: it wins at corners with walls (a scraping corner)
+ *   { tag: { type: 'slip', normal: 'surface', un } }                     a curved (or any) surface: nothing through it along its
+ *                                                                        own normal, no shear along it; un: instead the velocity
+ *                                                                        through it, outward, given ((x, y, z) -> m/s, or a number):
+ *                                                                        a moving free top, paste falling into it
  *   { tag: { type: 'traction', t: [tx, ty, tz] or (x, y, z, n) -> [..] } } given traction (do-nothing: zero)
+ *   { tag: { type: 'free', sigma, t, kn, vn } }                         a free surface: its tension σ (N/m), a traction on it
+ *                                                                        (t, as above), and over a pseudo-time step Δt its
+ *                                                                        implicit weight kn = ρ g Δt (Pa·s/m) with vn ((x, y, z,
+ *                                                                        n) -> m/s, or a number) the velocity through it, outward,
+ *                                                                        at which it stands still (ffRobinFace)
  * Units: SI; solved in scaled units (Lr, Ur, μr). Pure computation, no DOM.
  */
 
@@ -90,18 +99,20 @@ function ffSetup(o) {
   //  through the face, a scraping corner, instead of leaking the wall's speed through it)
   const rank = b => b.type === 'velocity' ? 1 : b.type === 'slip' && b.over ? 2 : 0;
   const order = Object.entries(o.bc).sort((p, q) => rank(p[1]) - rank(q[1]));
-  const sNorm = new Map(), fFaces = [];   // (a curved surface's slip: the outward normal summed at its nodes; free surfaces)
+  const sNorm = new Map(), sUn = new Map(), fFaces = [];   // (a curved surface's slip: the outward normal summed at its nodes, its
+  //  velocity through it where given; free surfaces)
   for (const [tag, b] of order) for (const F of M.faces) {
     if (F.tag !== tag) continue;
     const ids = faceNodes(F.e, F.f);
     if (b.type === 'velocity') for (const n of ids) {
       const u = typeof b.u === 'function' ? b.u(M.X[n], M.Y[n], M.Z[n]) : b.u;
       for (let c = 0; c < 3; c++) { fix[3 * n + c] = 1; val[3 * n + c] = u[c] / Ur; }
-    } else if (b.type === 'slip' && b.normal === 'surface') ffFaceNormals(M, X, Y, Z, F, (n, v) => { const a = sNorm.get(n) || [0, 0, 0]; for (let c = 0; c < 3; c++) a[c] += v[c]; sNorm.set(n, a); });
+    } else if (b.type === 'slip' && b.normal === 'surface') { ffFaceNormals(M, X, Y, Z, F, (n, v) => { const a = sNorm.get(n) || [0, 0, 0]; for (let c = 0; c < 3; c++) a[c] += v[c]; sNorm.set(n, a); });
+      if (b.un != null) for (const n of ids) sUn.set(n, b.un); }
     else if (b.type === 'slip') { const c = { x: 0, y: 1, z: 2 }[b.normal]; for (const n of ids) if (b.over || !fix[3 * n + c] || val[3 * n + c] === 0) { fix[3 * n + c] = 1; val[3 * n + c] = 0; } }
     else if (b.type === 'traction') tFaces.push({ e: F.e, f: F.f, t: b.t });
     else if (b.type === 'free') {
-      fFaces.push({ e: F.e, f: F.f, sigma: b.sigma || 0, tag }); if (b.t) tFaces.push({ e: F.e, f: F.f, t: b.t });
+      fFaces.push({ e: F.e, f: F.f, sigma: b.sigma || 0, tag, knS: b.kn ? b.kn * Ur / Pr : 0, vn: b.vn ?? 0 }); if (b.t) tFaces.push({ e: F.e, f: F.f, t: b.t });
     }
     else throw new Error(`unknown boundary condition ${b.type} on ${tag}`);
   }
@@ -123,6 +134,8 @@ function ffSetup(o) {
     if (E.length === 2) { const [p, q] = E; E.push([p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]]); }
     rot[n] = frm.length / 9; for (const e of E) frm.push(...e);
     for (let k = 0; k < 3; k++) { fix[3 * n + k] = k < K ? 1 : 0; val[3 * n + k] = 0; }
+    // (the velocity through the surface, where given: along e0, its outward normal)
+    const un = sUn.get(n); if (un != null) val[3 * n] = (typeof un === 'function' ? un(M.X[n], M.Y[n], M.Z[n]) : un) / Ur;
     let best = -1, bp = null;
     for (const pp of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) { const sc = pp.reduce((s, c, k) => s + Math.abs(E[k][c]), 0); if (sc > best) { best = sc; bp = pp; } }
     for (let k = 0; k < 3; k++) { perm[3 * n + k] = bp[k]; slot[3 * n + bp[k]] = k; }
@@ -219,6 +232,7 @@ function ffResidual(S, x, R = new Float64Array(S.nD), opts = {}) {
   // given tractions: − ∫ t · v dA (scaled by Pr); a free surface's tension
   for (const F of S.tFaces) ffTractionFace(S, F, R);
   for (const F of S.fFaces) if (F.sigma) ffTensionFace(S, F, R);
+  for (const F of S.fFaces) if (F.knS) ffRobinFace(S, F, x, R, false);
   // (opts.raw: the fixed rows kept -- on a slip surface, the force the surface holds the paste with along its normal)
   if (!opts.raw) for (let i = 0; i < S.nD; i++) if (S.fix[i]) R[i] = 0;
   return R;
@@ -292,6 +306,41 @@ function ffTractionFace(S, F, R) {
   }
 }
 
+/**
+ * A free surface's implicit weight (the free-surface stabilization of Kaus, Mühlhaus and May 2010): over a pseudo-time step
+ * Δt the surface moves by Δt (u·n − vn) along its normal, and the paste it adds there weighs on it, the traction
+ * −kn (u·n − vn) n with kn = ρ g Δt. Into R: + ∫ kn (u·n − vn) (v·n) dA; lin: the Jacobian's part (x a direction: its
+ * fixed components taken as zero, no vn). It vanishes once the surface stands still (u·n = vn): the steady state is the
+ * free surface's own.
+ */
+function ffRobinFace(S, F, x, R, lin) {
+  const el = S.M.elems.subarray(27 * F.e, 27 * F.e + 27), fixed = [[0, -1], [0, 1], [1, -1], [1, 1], [2, -1], [2, 1]][F.f], free = [0, 1, 2].filter(k => k !== fixed[0]);
+  const FM = (typeof FM_FACES !== 'undefined' ? FM_FACES : require('./feed-mesh.js').FM_FACES)[F.f], fix = S.fix, Uk = new Float64Array(81);
+  for (const k of FM) {
+    const n = el[k], m = c => (lin && fix[3 * n + c] ? 0 : x[3 * n + c]);
+    if (S.rot[n] < 0) { Uk[3 * k] = m(0); Uk[3 * k + 1] = m(1); Uk[3 * k + 2] = m(2); }
+    else { const f = S.frm, o = 9 * S.rot[n], a = m(0), b = m(1), c = m(2); for (let d = 0; d < 3; d++) Uk[3 * k + d] = a * f[o + d] + b * f[o + 3 + d] + c * f[o + 6 + d]; }
+  }
+  let cx = 0, cy = 0, cz = 0; for (let k = 0; k < 27; k++) { cx += S.X[el[k]]; cy += S.Y[el[k]]; cz += S.Z[el[k]]; }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const ref = [0, 0, 0]; ref[fixed[0]] = fixed[1]; ref[free[0]] = FF_G[i]; ref[free[1]] = FF_G[j];
+    const A = ffQ2(ref[0]), B = ffQ2(ref[1]), C = ffQ2(ref[2]), dA = ffDQ2(ref[0]), dB = ffDQ2(ref[1]), dC = ffDQ2(ref[2]);
+    const t1 = [0, 0, 0], t2 = [0, 0, 0], pos = [0, 0, 0], Nv = new Float64Array(27), u = [0, 0, 0];
+    for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+      const k = (g * 3 + b) * 3 + a, n = el[k], P = [S.X[n], S.Y[n], S.Z[n]], d = [dA[a] * B[b] * C[g], A[a] * dB[b] * C[g], A[a] * B[b] * dC[g]];
+      Nv[k] = A[a] * B[b] * C[g];
+      for (let c = 0; c < 3; c++) { t1[c] += d[free[0]] * P[c]; t2[c] += d[free[1]] * P[c]; pos[c] += Nv[k] * P[c]; }
+    }
+    for (const k of FM) for (let c = 0; c < 3; c++) u[c] += Nv[k] * Uk[3 * k + c];
+    let nr = [t1[1] * t2[2] - t1[2] * t2[1], t1[2] * t2[0] - t1[0] * t2[2], t1[0] * t2[1] - t1[1] * t2[0]];
+    const dA_ = Math.hypot(...nr); nr = nr.map(v => v / dA_);
+    if (nr[0] * (pos[0] - cx / 27) + nr[1] * (pos[1] - cy / 27) + nr[2] * (pos[2] - cz / 27) < 0) nr = nr.map(v => -v);
+    const vn = lin ? 0 : (typeof F.vn === 'function' ? F.vn(pos[0] * S.Lr, pos[1] * S.Lr, pos[2] * S.Lr, nr) : F.vn) / S.Ur;
+    const r = F.knS * (u[0] * nr[0] + u[1] * nr[1] + u[2] * nr[2] - vn) * FF_W[i] * FF_W[j] * dA_;
+    for (const k of FM) ffAddNodal(S, R, el[k], r * Nv[k] * nr[0], r * Nv[k] * nr[1], r * Nv[k] * nr[2]);
+  }
+}
+
 /** y = J x (the Newton Jacobian at the state last given to ffResidual), element by element. Fixed rows: y = x. */
 function ffJacVec(S, x, y = new Float64Array(S.nD)) {
   y.fill(0);
@@ -342,6 +391,7 @@ function ffJacVec(S, x, y = new Float64Array(S.nD)) {
     for (let a = 0; a < 27; a++) ffAddNodal(S, y, el[a], re[3 * a], re[3 * a + 1], re[3 * a + 2]);
     for (let c = 0; c < 8; c++) y[nU + pOf[el[FF_CORNER[c]]]] += rp[c];
   }
+  for (const F of S.fFaces) if (F.knS) ffRobinFace(S, F, x, y, true);
   for (let i = 0; i < S.nD; i++) if (fix[i]) y[i] = x[i];
   return y;
 }
@@ -500,11 +550,14 @@ function ffPrecond(S, opts = {}) {
     for (let i = 0; i < 8; i++) { Sp[pe[i]] += Me[i * 8 + i]; for (let j = 0; j < 8; j++) { MI.push(pe[i]); MJ.push(pe[j]); MV.push(Me[i * 8 + j]); } }
   }
   const L = ffCSR(nN, I, J, V), Mp = ffCSR(S.nP, MI, MJ, MV);
+  // (a free surface's implicit weight, lumped onto each axis's diagonal: kn ∫ N dA n_c²)
+  const rob = [0, 1, 2].map(() => new Float64Array(nN));
+  for (const F of S.fFaces) if (F.knS) { let k = 0; ffFaceNormals(M, S.X, S.Y, S.Z, F, (n, v) => { const a = Math.hypot(...v), w = [1 / 3, 4 / 3, 1 / 3][Math.floor(k / 3)] * [1 / 3, 4 / 3, 1 / 3][k % 3]; k++; for (let c = 0; c < 3; c++) rob[c][n] += F.knS * w * a * (v[c] / a) ** 2; }); }
   const comp = [0, 1, 2].map(c => {
     // fixed nodes of this component: identity rows and columns
     const A = { ...L, val: Float64Array.from(L.val) };
     const fixC = S.fixC;
-    for (let i = 0; i < nN; i++) for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (fixC[3 * i + c] || fixC[3 * j + c]) A.val[p] = i === j ? 1 : 0; }
+    for (let i = 0; i < nN; i++) for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (fixC[3 * i + c] || fixC[3 * j + c]) A.val[p] = i === j ? 1 : 0; else if (i === j) A.val[p] += rob[c][i]; }
     return { A, H: ffAMG(A) };
   });
   const lub = opts.lub === false ? null : ffLubrication(S, ffCSR(nN, I, J, VG), m1, muN.map((m, n) => m / cntN[n]), Mp);
@@ -690,4 +743,4 @@ function ffFlow(S, x, tag) {
   return Q * S.Ur * S.Lr * S.Lr;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { ffNodeU, ffFaceNormals, ffTensionFace, ffSetup, ffResidual, ffJacVec, ffSolve, ffPrecond, ffApplyPrec, ffLubrication, ffPCG, ffFGMRES, ffAMG, ffVcycle, ffCSR, ffMatVec, ffFlow, FF_REF, FF_CORNER };
+if (typeof module !== 'undefined' && module.exports) module.exports = { ffNodeU, ffFaceNormals, ffTensionFace, ffRobinFace, ffSetup, ffResidual, ffJacVec, ffSolve, ffPrecond, ffApplyPrec, ffLubrication, ffPCG, ffFGMRES, ffAMG, ffVcycle, ffCSR, ffMatVec, ffFlow, FF_REF, FF_CORNER };

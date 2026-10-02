@@ -14,6 +14,12 @@
  *  7. Slip along a curved surface's own normal (a tilted channel): exact; nothing through the lid; the lid's normal stress.
  *  8. A free surface's tension: paste at rest under a dome, the pressure σ/R.
  *  9. Gravity tilted and a free top with its tension: Nusselt's film down an incline, exact.
+ * 10. A slip surface with a given velocity through it (a pool's top moving, paste falling into it): u = b(x² + y²),
+ *     v = −2bxy, p = 4μbx (shear-free everywhere) with the top's normal velocity −2bxH given; exact, level and tilted.
+ * 11. A free top relaxing (a wave on a layer of paste, its bottom a wall, its weight and its tension pulling it flat): the
+ *     speed of its top against the exact one (Stokes flow in the layer by hand: a 4 × 4 system for the stream function),
+ *     γ = (ρ g + σ k²) G(k, d, μ); and with the free top's implicit weight over a step Δt, γ / (1 + γ_g Δt), γ_g its
+ *     weight's part.
  */
 const FF = require('./feed-fem.js');
 let fails = 0;
@@ -246,6 +252,73 @@ function ffForce(S, M, force) {
   let eu = 0, um = 0, ep = 0; for (let n = 0; n < M.nN; n++) { const u = ue(M.X[n], M.Y[n]); eu = Math.max(eu, Math.abs(R.u[n] - u[0]), Math.abs(R.v[n]), Math.abs(R.w[n])); um = Math.max(um, u[0]); if (!isNaN(R.p[n])) ep = Math.max(ep, Math.abs(R.p[n] - pe(M.Y[n]))); }
   check('gravity tilted, a free top with its tension: Nusselt\'s film exact (velocity, pressure); nothing through the surface', eu / um < 1e-9 && ep / pe(0) < 1e-8 && Math.abs(FF.ffFlow(S, R.x, 'y1')) < 1e-12 * FF.ffFlow(S, R.x, 'x1'),
     `velocity ${(eu / um).toExponential(1)}, pressure ${(ep / pe(0)).toExponential(1)} (relative); through the surface ${FF.ffFlow(S, R.x, 'y1').toExponential(1)} m³/s`);
+}
+
+// 10. a slip surface with a given velocity through it: u = b (x² + y²), v = −2 b x y, w = 0, p = 4 μ b x -- Stokes, and its
+//     shear stress is zero everywhere, so the top (y = H) is shear-free with the velocity through it −2 b x H, varying along
+//     it; the bottom (y = 0) no flow through it, shear-free; x = 0 the velocity given; x = L traction-free (the exact one).
+//     Quadratic velocity, linear pressure: in the elements, so exact to round-off -- level, and tilted 20° (the surfaces then
+//     not along the axes: their own normals)
+{
+  const L = 4e-3, H = 1.5e-3, Wz = 1e-3, mu = 3, b = 2;   // (1/(m s))
+  for (const deg of [0, 20]) {
+    const th = deg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const rot = (x, y) => [c * x - sn * y, sn * x + c * y], back = (X, Y) => [c * X + sn * Y, -sn * X + c * Y];
+    const M = box(L, H, Wz, 4, 3, 1, (x, y, z) => [...rot(x, y), z]);
+    const uL = (x, y) => [b * (x * x + y * y), -2 * b * x * y], uE = (X, Y) => { const [x, y] = back(X, Y), [u, v] = uL(x, y); return [c * u - sn * v, sn * u + c * v, 0]; };
+    const S = FF.ffSetup({ mesh: M, mu: () => mu, rho: 0, g: 0, Lr: 1e-3, Ur: 1e-5, bc: {
+      x0: { type: 'velocity', u: (X, Y) => uE(X, Y) }, x1: { type: 'traction', t: [0, 0, 0] },
+      y0: deg ? { type: 'slip', normal: 'surface' } : { type: 'slip', normal: 'y' },
+      y1: { type: 'slip', normal: 'surface', un: (X, Y) => -2 * b * back(X, Y)[0] * H },
+      z0: { type: 'slip', normal: 'z' }, z1: { type: 'slip', normal: 'z' } } });
+    const R = FF.ffSolve(S, { tol: 1e-13, linTol: 1e-13 });
+    let eu = 0, um = 0, ep = 0;
+    for (let n = 0; n < M.nN; n++) {
+      const e = uE(M.X[n], M.Y[n]); um = Math.max(um, Math.hypot(...e));
+      eu = Math.max(eu, Math.hypot(R.u[n] - e[0], R.v[n] - e[1], R.w[n]));
+      if (!isNaN(R.p[n])) ep = Math.max(ep, Math.abs(R.p[n] - 4 * mu * b * back(M.X[n], M.Y[n])[0]));
+    }
+    const qTop = FF.ffFlow(S, R.x, 'y1'), qEx = -b * L * L * H * Wz;   // (∫ −2 b x H dx dz over the top)
+    check(`a slip surface with a given velocity through it (${deg ? `tilted ${deg}°` : 'level'}): exact; the flow through it the given one`,
+      eu / um < 1e-9 && ep / (4 * mu * b * L) < 1e-8 && Math.abs(qTop / qEx - 1) < 1e-9,
+      `velocity ${(eu / um).toExponential(1)}, pressure ${(ep / (4 * mu * b * L)).toExponential(1)} of their scales; through the top ${(qTop * 1e9).toFixed(6)} mm³/s (exact ${(qEx * 1e9).toFixed(6)})`);
+  }
+}
+
+// 11. a free top relaxing: η = A cos(k x) on a layer d deep (its bottom a wall; mirrors at the ends and the sides), the
+//     paste at rest at first; the top's speed down, by hand: ψ = f(y) sin kx, f = (a + b y) cosh ky + (c + e y) sinh ky,
+//     f(0) = f'(0) = 0 (the wall), f'' + k² f = 0 at d (no shear), (μ/k)(f''' − k² f') − 2 μ k f' = −(ρ g + σ k²) at d
+//     (the normal stress the top's weight and tension leave): γ = k f(d)
+{
+  const mu = 10.5, rho = 1360, g = 9.81, sg = 0.07, d = 0.0367, L = 0.09, k = Math.PI / L, A = 5e-5, Dt = 0.05;
+  const G = (() => {   // (the top's speed for a unit load: unknowns b, c, e; a = 0, b = −k c)
+    const ch = Math.cosh(k * d), sh = Math.sinh(k * d);
+    // f, f', f'', f''' at d as linear forms in (c, e), with b = −k c
+    const fv = [-k * d * ch + sh, d * sh], f1 = [-k * ch - k * k * d * sh + k * ch, sh + k * d * ch];
+    const f2 = [-2 * k * k * sh - k ** 3 * d * ch + k * k * sh, 2 * k * ch + k * k * d * sh], f3 = [-3 * k ** 3 * ch - k ** 4 * d * sh + k ** 3 * ch, 3 * k * k * sh + k ** 3 * d * ch];
+    const r1 = [f2[0] + k * k * fv[0], f2[1] + k * k * fv[1]], r2 = [(mu / k) * (f3[0] - k * k * f1[0]) - 2 * mu * k * f1[0], (mu / k) * (f3[1] - k * k * f1[1]) - 2 * mu * k * f1[1]];
+    const det = r1[0] * r2[1] - r1[1] * r2[0], c = (0 * r2[1] - r1[1] * -1) / det, e = (r1[0] * -1 - 0 * r2[0]) / det;
+    return k * (fv[0] * c + fv[1] * e);
+  })();
+  const gG = rho * g * G, gS = sg * k * k * G, gam = gG + gS;
+  const M = box(L, d, 4e-3, 10, 5, 1, (x, y, z) => [x, y / d * (d + A * Math.cos(k * x)), z]), out = [];
+  for (const kn of [0, rho * g * Dt]) {
+    const S = FF.ffSetup({ mesh: M, mu: () => mu, rho, g, Lr: 1e-3, Ur: 1e-3, bc: { y0: { type: 'velocity', u: [0, 0, 0] }, x0: { type: 'slip', normal: 'x' }, x1: { type: 'slip', normal: 'x' },
+      z0: { type: 'slip', normal: 'z' }, z1: { type: 'slip', normal: 'z' }, y1: { type: 'free', sigma: sg, kn, vn: 0 } } });
+    const R = FF.ffSolve(S, { tol: 1e-10 });
+    // the top's speed through it, over its slope (the top's rise), projected on cos kx along the top (Simpson)
+    const NX = 21, NY = 11, top = i => (0 * NY + NY - 1) * NX + i;
+    let num = 0, den = 0;
+    for (let i = 0; i < NX; i++) {
+      const n = top(i), x = M.X[n], w = (i === 0 || i === NX - 1 ? 1 : i % 2 ? 4 : 2) * L / (NX - 1) / 3, sl = -A * k * Math.sin(k * x);
+      const V = (R.v[n] - R.u[n] * sl);   // (u·n / n_y, n ∝ (−η′, 1))
+      num += w * V * Math.cos(k * x); den += w * Math.cos(k * x) ** 2;
+    }
+    out.push({ kn, amp: num / den, exact: kn ? -gam * A / (1 + gG * Dt) : -gam * A, conv: R.converged });
+  }
+  const errs = out.map(o => Math.abs(o.amp / o.exact - 1));
+  check('a free top relaxing (a wave on a layer of paste: its weight and tension): its speed exact; with its implicit weight over a step, γ/(1 + γ_g Δt)', errs.every(e => e < 2e-3) && out.every(o => o.conv),
+    `γ = ${gam.toFixed(4)} 1/s (weight ${gG.toFixed(4)}, tension ${gS.toFixed(4)}); the top's speed ${out.map((o, i) => `${(o.amp * 1e6).toFixed(4)} µm/s (exact ${(o.exact * 1e6).toFixed(4)}, off ${errs[i].toExponential(1)})`).join('; ')}`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
