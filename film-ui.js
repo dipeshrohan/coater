@@ -93,8 +93,11 @@ function filmRequest() {
   const films = dryFilms();
   if (!films.length) return;
   const base = filmBase(), fo = filmOpts(), key = JSON.stringify([base, films, fo]);
-  if (key === FILM.key || key === FILM.pending) return;
+  if (key === FILM.key || key === FILM.pending) { solveTake('film'); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveMay('film')) return;
   if (FILM.busy) { FILM.again = true; return; }
+  solveTake('film');
   FILM.busy = true; FILM.again = false; FILM.pending = key; FILM.prog = null;
   if (!FILM.worker) FILM.worker = makeWorker('cfd-film-worker.js');
   const id = ++FILM.id;
@@ -114,6 +117,8 @@ function filmRequest() {
 /** Wait for the film of the inputs as they are (the report). */
 async function filmWait() {
   for (let k = 0; k < 2400; k++) {
+    // (Phase 0: not asked for and not solving -- nothing to wait for; the report marks it not solved)
+    if (!['film', 'dry', '1d'].some(solveAsked) && !FILM.busy && !DRY.busy && !ONE_D.busy) return filmCurrent();
     if (typeof oneDRequest === 'function') oneDRequest(true);
     filmRequest();
     if (!FILM.busy && filmCurrent()) return true;
@@ -198,13 +203,14 @@ function filmRender() {
   if (typeof mpStackRender === 'function' && PROC_ALL && mpCurrent(MPS.dim)) mpStackRender();
   sec.querySelectorAll('[data-film]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.film === DRY.sel)));
   const st = document.getElementById('filmState');
-  if (!dryFilms().length) { st.innerHTML = `<p class="dry-msg">${pill('Waiting for the 1D: the film starts from the wet film', '')}</p>`; filmClear(); return; }
+  if (!dryFilms().length) { st.innerHTML = `<p class="dry-msg">${solvePending('film') ? pill('Solving the 1D and the drying first: the film starts from the wet film', '') : solveCtl('film') + ' <span class="fv-why">(the 1D and the drying first: the film starts from the wet film)</span>'}</p>`; filmClear(); return; }
   filmRequest();
   if (!filmCurrent()) {
     if (FILM.busy) filmStatusPaint();
     else if (FILM.error) st.innerHTML = `<p class="dry-msg">${pill('The film could not be solved: ' + dryEsc(FILM.error), 'bad')}</p>`;
+    else st.innerHTML = `<p class="dry-msg">${solvePending('film') ? pill('Solving the film…', '') : solveCtl('film')}</p>`;
     if (!FILM.res) { filmClear(); return; }
-    st.insertAdjacentHTML('beforeend', `<p class="dry-msg">${pill('Showing the previous inputs\' film while the new one solves', 'warn')}</p>`);
+    st.insertAdjacentHTML('beforeend', `<p class="dry-msg">${pill('Showing the film for the previous inputs', 'warn')}</p>`);
   } else st.innerHTML = '';
   if (!FILM.res.runs.some(r => r.key === DRY.sel)) { filmClear(); return; }
   const [rt, rb] = filmRuns(DRY.sel);

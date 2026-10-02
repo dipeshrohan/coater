@@ -84,9 +84,12 @@ function furnRequest() {
   const q = furnInputs();
   if (!q) return;
   const key = JSON.stringify(q);
-  if (key === FURN.key || key === FURN.pending) return;
+  if (key === FURN.key || key === FURN.pending) { solveTake('furn'); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveMay('furn')) return;
   if (FURN.fit && FURN.fit.done) FURN.fit = null;   // (a fit that could not be made: its words were for the inputs before)
   if (FURN.busy) { FURN.again = true; return; }
+  solveTake('furn');
   FURN.busy = true; FURN.again = false; FURN.pending = key; FURN.prog = null;
   if (!FURN.worker) FURN.worker = makeWorker('cfd-furnace-worker.js');
   const id = ++FURN.id;
@@ -112,6 +115,8 @@ function furnStop() {
 async function furnWait() {
   if (typeof sheetWait === 'function' && !(await sheetWait())) return false;
   for (let k = 0; k < 2400; k++) {
+    // (Phase 0: not asked for and not solving -- nothing to wait for; the report marks it not solved)
+    if (!solveAsked('furn') && !FURN.busy) return furnCurrent();
     furnRequest();
     if (!FURN.busy && furnCurrent()) return true;
     if (!FURN.busy && FURN.error && FURN.key === furnKeyNow()) return false;

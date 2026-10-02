@@ -2,7 +2,9 @@
 /*
  * answers.js — one answer per quantity (WF-1). The coating's wet film, flow rate and contact line, each from the most
  * detailed model solved for the inputs as they are, and saying which:
- *  - at a location (L1–L4): the 3D (a strip there, or the full width's station nearest it), else the 2D, else the 1D;
+ *  - at a location (L1–L4): the 3D (a strip there, or the full width's station nearest it), else the 2D, else the 1D --
+ *    the 3D only while the structure (thixotropy) model is off: the 3D has the plain flow curve and the 2D the structure,
+ *    and models are never mixed (the owner's choice), so with the structure on every location takes the 2D;
  *  - across the web: the 1D's profile (61 positions), scaled at each position to the more detailed models where they
  *    are solved -- the ratio (theirs / the 1D's at that place, like for like) interpolated linearly between those places
  *    and held beyond them; with none solved, the 1D's own.
@@ -13,10 +15,17 @@
 /** A model's name as the pages show it. */
 const ANS_SRC = { '3D': '3D', '2D': '2D CFD', '1D': '1D' };
 
+/** The 3D has the slurry's own physics: true with the structure (thixotropy) model off. With it on, the 3D solves the
+ *  plain flow curve (the structure is the 2D's), so its numbers are labelled so and never feed the answers. */
+const ans3DSameModel = () => !(typeof matStruct === 'function' && matStruct());
+/** The 3D's numbers' label while the structure model is on ('' while off: the 3D then has the same physics as the 2D). */
+const ans3DTag = () => ans3DSameModel() ? '' : 'plain flow curve';
+
 /** At location i: { film (m), q (m²/s), s (m up the exit face; 0 pinned at the metering edge), src ('3D' | '2D' | '1D') }
- *  from the most detailed model solved for the inputs as they are; null while the 1D solves. */
+ *  from the most detailed model solved for the inputs as they are (the 3D only with the structure model off); null while
+ *  the 1D solves. */
 function ansAt(i) {
-  const th = threeDAt(i), st = th && !th.stale && Number.isInteger(th.m) && th.m >= 0 ? th.R.stations[th.m] : null;
+  const th = ans3DSameModel() ? threeDAt(i) : null, st = th && !th.stale && Number.isInteger(th.m) && th.m >= 0 ? th.R.stations[th.m] : null;
   if (st && Number.isFinite(st.film)) return { film: st.film, q: st.q, s: Number.isFinite(st.s) ? st.s : 0, src: '3D' };   // (a station's s is 0 unless it climbed)
   const two = twoDAt(i);
   if (two && !two.stale) return { film: two.r.Q / two.geo.U, q: two.r.Q, s: two.r.mode === 'climbed' ? two.r.sCL : 0, src: '2D' };

@@ -24,8 +24,11 @@ function sheetRequest() {
   const q = sheetInputs();
   if (!q) return;
   const key = JSON.stringify(q);
-  if (key === SHEET.key || key === SHEET.pending) return;
+  if (key === SHEET.key || key === SHEET.pending) { solveTake('sheet'); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveMay('sheet')) return;
   if (SHEET.busy) { SHEET.again = true; return; }
+  solveTake('sheet');
   SHEET.busy = true; SHEET.again = false; SHEET.pending = key; SHEET.prog = null;
   if (!SHEET.worker) SHEET.worker = makeWorker('cfd-sheet-worker.js');
   const id = ++SHEET.id;
@@ -46,6 +49,8 @@ function sheetRequest() {
 async function sheetWait() {
   for (let k = 0; k < 2400; k++) {
     if (typeof filmWait === 'function' && !filmCurrent()) { if (!(await filmWait())) return false; }
+    // (Phase 0: not asked for and not solving -- nothing to wait for; the report marks it not solved)
+    if (!solveAsked('sheet') && !SHEET.busy) return sheetCurrent();
     sheetRequest();
     if (!SHEET.busy && sheetCurrent()) return true;
     if (!SHEET.busy && SHEET.error && SHEET.key === sheetKeyNow()) return false;
@@ -81,8 +86,11 @@ function stackRequest() {
   const q = stackInputs();
   if (!q) return;
   const key = JSON.stringify(q);
-  if (key === STACK.key || key === STACK.pending) return;
+  if (key === STACK.key || key === STACK.pending) { solveTake('stack'); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveMay('stack')) return;
   if (STACK.busy) { STACK.again = true; return; }
+  solveTake('stack');
   STACK.busy = true; STACK.again = false; STACK.pending = key; STACK.prog = {};
   const id = ++STACK.id, runs = [], t0 = Date.now();
   let left = q.pieces.length, failed = null;
@@ -111,6 +119,8 @@ function stackRequest() {
 async function stackWait() {
   if (!(await sheetWait())) return false;
   for (let k = 0; k < 4800; k++) {
+    // (Phase 0: not asked for and not solving -- nothing to wait for; the report marks it not solved)
+    if (!solveAsked('stack') && !STACK.busy) return stackCurrent();
     stackRequest();
     if (!STACK.busy && stackCurrent()) return true;
     if (!STACK.busy && STACK.error && STACK.key === stackKeyNow()) return false;

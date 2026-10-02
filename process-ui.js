@@ -13,7 +13,7 @@
 
 // ---- the films the chain starts from ----
 /** At location i, the wet film (m) of the most detailed model solved for the inputs as they are (answers.js: 3D, else 2D,
- *  else the 1D) and which; null while the 1D solves. */
+ *  else the 1D; the 3D only with the structure model off) and which; null while the 1D solves. */
 function processFilmAt(i) {
   const a = ansAt(i);
   return a ? { h: a.film, src: a.src } : null;
@@ -34,7 +34,7 @@ const lineSpeed = () => P.U / 60;
 const um0 = v => (v * 1e6).toFixed(0), gm2 = v => v.toFixed(0);
 
 // ---- the chain ----
-const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], todo: ['Not solved yet', 'muted'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'], none: ['Not modelled yet', 'muted'] };
+const STAGE_ST = { set: ['Set', 'ok'], solved: ['Solved', 'ok'], busy: ['Solving', 'muted'], failed: ['Not solved', 'bad'], part: ['Mass balance', 'accent'], todo: ['Not solved yet', 'muted'], stale: ['Out of date', 'warn'], wait: ['Run the 2D', 'muted'], later: ['Later phase', 'muted'], none: ['Not modelled yet', 'muted'] };
 // (the drying stage, go 'dry': scrolls to its section under the chain; 'oven' kept for the zones in the inputs bar)
 function processStages() {
   const c = MAT.slurry;
@@ -43,8 +43,8 @@ function processStages() {
   const one = ONE_D.res && oneDCurrent(), o = ovenTime(lineSpeed());
   return [
     { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids, flakes ${c.dMin.v}–${c.dMax.v} µm` },
-    { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : 'busy',
-      s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : '1D solving…', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}` : ''].filter(Boolean).join(' · ') },
+    { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : solvePending('1d') ? 'busy' : ONE_D.res ? 'stale' : 'todo',
+      s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : solvePending('1d') ? '1D solving…' : ONE_D.res ? '1D out of date' : '1D not solved', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}${ans3DTag() ? ` (${ans3DTag()}, not used)` : ''}` : ''].filter(Boolean).join(' · ') },
     (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
       return { k: 'align', t: 'Flake alignment', go: 4, st: !MAT.orient.on ? 'set' : o.length ? 'solved' : 'wait',
         s: !MAT.orient.on ? 'off (Materials)' : o.length ? `flatness at the oven ${o.map(q => q.film.oven.Sy.toFixed(2)).join(', ')}${o.every(q => q.film.dried) ? `, dried ${o.map(q => q.film.dried.Sy.toFixed(2)).join(', ')}` : ''} (2D at ${o.length} of 4 locations)` : `${OR_MODELS[MAT.orient.model].charAt(0).toLowerCase() + OR_MODELS[MAT.orient.model].slice(1)}: computed with each 2D run` }; })(),
@@ -69,24 +69,36 @@ const procStepKey = (k = PROC.stage) => k === 'film' ? `film:${FILM.view || 'fil
 const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results'],
   'furn:runs': ['setup', 'solve', 'results'], 'furn:product': ['results'] };
 const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results', multi: 'Multiphysics' };
-/** A solve's state as a stage's: solved, solving, failed or not yet. */
-const procSolveSt = (cur, R) => cur ? 'solved' : R.busy ? 'busy' : R.error ? 'failed' : 'todo';
+/** A solve's state as a stage's: solved, solving, failed, out of date (solved for other inputs) or not yet. */
+const procSolveSt = (cur, R) => cur ? 'solved' : R.busy ? 'busy' : R.error ? 'failed' : R.res ? 'stale' : 'todo';
 /** The Line's rows for a stage, as one line (the cut piece, the stack, the graphene film: the same words as the Line's map). */
 const procLineOf = k => { try { const L = lineStages().find(q => q.k === k); return L && L.rows.length ? L.rows.map(([l, v]) => `${l}: ${v}`).join('; ') : ''; } catch (e) { return ''; } };
 /** The page shown: its name, icon, where it stands and its line. */
 function procPageHead() {
   const pg = navNow(), g = processStages().find(q => q.k === PROC.stage) || processStages()[1], name = navTitle(pg), icon = NAV[pg].icon || STAGE_ICON[g.k];
   if (pg === 'mix') return { t: name, icon, st: 'none', s: `the mixer is not modelled yet; the slurry it makes: ${g.s}` };
-  if (pg === 'cut') { const st = procSolveSt(typeof sheetCurrent === 'function' && sheetCurrent(), SHEET); return { t: name, icon, st, s: st === 'solved' ? procLineOf('cut') : st === 'busy' ? 'the piece in 3D, solving…' : 'the piece in 3D: after the film' }; }
-  if (pg === 'stack') { const st = procSolveSt(typeof stackCurrent === 'function' && stackCurrent(), STACK); return { t: name, icon, st, s: st === 'solved' ? procLineOf('stack') : st === 'busy' ? 'the pressed stack, solving…' : 'the pressed stack: after the film and its cut piece' }; }
+  if (pg === 'cut') { const st = procSolveSt(typeof sheetCurrent === 'function' && sheetCurrent(), SHEET); return { t: name, icon, st, s: st === 'solved' ? procLineOf('cut') : st === 'busy' ? 'the piece in 3D, solving…' : st === 'stale' ? 'the piece in 3D, solved for the previous inputs' : 'the piece in 3D: after the film (Solve solves the film first)' }; }
+  if (pg === 'stack') { const st = procSolveSt(typeof stackCurrent === 'function' && stackCurrent(), STACK); return { t: name, icon, st, s: st === 'solved' ? procLineOf('stack') : st === 'busy' ? 'the pressed stack, solving…' : st === 'stale' ? 'the pressed stack, solved for the previous inputs' : 'the pressed stack: after the film and its cut piece (Solve solves them first)' }; }
   if (pg === 'gfilm') return { t: name, icon, st: g.st, s: g.st === 'solved' ? procLineOf('gfilm') : g.s };
   return { t: name, icon, st: g.st, s: g.s };
 }
 /** The page shown: its line (where it stands) under the tabs, and its steps (none when it has one). */
+/** Pages without a solver of their own yet (the owner's choice: kept, clearly marked; nothing on them looks like a result
+ *  of a model that does not exist): what is missing, and what the page shows instead. */
+const PROC_NOSOLVER = {
+  mix: ['No solver yet', 'The double planetary mixer is not modelled: its flow, shear and heat in the vessel, and the flake size and viscosity they give, come in a later phase (its dimensions are asked first).', 'Shown here: the slurry as you set it on Materials (its inputs, not a result).'],
+  cut: ['No solver of its own yet for the cut', 'The cut itself (the knife along a ruler: the edge stress, cracks or tearing at the cut) is not modelled yet: a later phase.', 'Shown here: the piece after cutting, solved by the piece-in-3D model (its curl and corners).'],
+  gfilm: ['No solver of its own yet', 'The graphene film\'s own analysis (heat spreading, flatness after release, bending and folding) is not modelled yet: a later phase.', 'Shown here: the furnace\'s result for the film (its thickness, density, C/O, heat along it).'],
+};
+const procNoSolverHTML = pg => { const q = PROC_NOSOLVER[pg]; return q ? `<div class="no-solver" role="note"><b>${uiBadge('warn')}${q[0]}</b><p>${q[1]}</p><p class="ns-shown">${q[2]}</p></div>` : ''; };
+/** The page's model (Phase 0: solved only when asked -- its Solve beside its state). */
+const PROC_MODEL = { wetdry: '1d', dry: 'dry', peel: 'film', cut: 'sheet', stack: 'stack', furn: 'furn', gfilm: 'furn' };
 function processStageHead() {
   const g = procPageHead(), [stT, stC] = STAGE_ST[g.st], key = procStepKey(), steps = PROC_STEPS[key], now = processStep(key);
+  const mk = PROC_MODEL[navNow()], ms = mk ? solveState(mk) : null;
+  const solveBtn = mk && !solvePending(mk) && ms !== 'solved' ? `<button type="button" class="btn btn-primary btn-sm proc-solve" data-solve="${mk}" title="Solve ${SOLVE_M[mk].l}${SOLVE_M[mk].up.length ? ' (and first what it needs)' : ''}">${uiIco('play')}${ms === 'stale' ? 'Solve again' : 'Solve'}</button>` : '';
   const bar = steps && steps.length > 1 ? `<div class="step-bar proc-steps" role="tablist" aria-label="${g.t}: its steps">${steps.map((k, i) => `<button type="button" role="tab" data-pstepgo="${k}" aria-selected="${k === now}"><b>${i + 1}</b><span>${PROC_STEP_T[k]}</span></button>`).join('<span class="step-sep" aria-hidden="true">›</span>')}</div>` : '';
-  return `<div class="proc-head"><h2 class="proc-h">${uiBadge(g.icon)}${g.t}</h2><span class="ch-st ch-${stC}">${stT}</span><span class="proc-line">${g.s}</span>${bar}</div>`;
+  return `<div class="proc-head"><h2 class="proc-h">${uiBadge(g.icon)}${g.t}</h2><span class="ch-st ch-${stC}">${stT}</span>${solveBtn}<span class="proc-line">${g.s}</span>${bar}</div>${procNoSolverHTML(navNow())}`;
 }
 /** A page's step (k: its key, procStepKey's; a stage's name: its part shown): as chosen, else Results once it is solved,
  *  else Setup. */
@@ -291,14 +303,14 @@ function processPageBody() {
   // (the web: across it (answers.js); until the 1D across it is solved, the four locations' mean)
   const locs = CFD_LOCS.map((_, i) => processFilmAt(i));
   const known = locs.filter(Boolean), hWeb = web ? web.mean : known.length ? known.reduce((a, q) => a + q.h, 0) / known.length : null;
-  if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') : pill('Solving the 1D…', ''); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); filmRender(); furnRender(); return; }
+  if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') + solveCtl('1d') : solvePending('1d') ? pill('Solving the 1D…', '') : solveCtl('1d'); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); filmRender(); furnRender(); return; }
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
   let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film${web ? ` (${web.tag})` : ''}`, '');
   pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${ACROSS_W} mm web at ${P.U} m/min`, '');
   if (wetTooLoose) pills += pill(`Dry film packing ${c.phiDry.v} is below the slurry's solids fraction (${c.phi.v} vol%): the film would not shrink as it dries`, 'bad');
   const fib = FIBRES[CFDG.fibre], hot = OVEN.zones.filter(z => z.airT > fib.tUse);
   if (hot.length) pills += pill(`Oven air above the fibre's ${fib.tUse} °C continuous limit in ${hot.length} zone${hot.length === 1 ? '' : 's'}`, 'warn');
-  if (!web) pills += pill('Solving the 1D across the web…', 'warn');
+  if (!web) pills += solvePending('1d') ? pill('Solving the 1D across the web…', '') : solveCtl('1d', 'Coating 1D across the web');
   st.innerHTML = pills;
   const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${uiBadge(a[2])}${a[0]}</span><strong>${a[1]}</strong></div>`;
   ss.innerHTML = [
@@ -316,7 +328,7 @@ function processPageBody() {
     const hi = Math.max(...wet, ...dry);
     plotChart(cv, fitAspect(cv, 0.4), { x0: Math.min(0, z[0]), x1: Math.max(ACROSS_W, z[z.length - 1]), y0: 0, y1: hi * 1.12, yl: 'film (mm)', xl: 'position across the web (mm)', yd: 2,
       s: [{ p: z.map((x, k) => [x, wet[k]]), c: mut, w: 1.6, dash: [6, 4] }, { p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }] });
-  } else { const cx = setupCanvas(cv, fitAspect(cv, 0.4)); cx.c.fillStyle = mut; cx.c.font = '13px ' + cssVar('--sans'); cx.c.fillText('Solving the 1D across the web…', 16, 28); }
+  } else { const cx = setupCanvas(cv, fitAspect(cv, 0.4)); cx.c.fillStyle = mut; cx.c.font = '13px ' + cssVar('--sans'); cx.c.fillText(solvePending('1d') ? 'Solving the 1D across the web…' : 'The 1D across the web is not solved: Solve it (above).', 16, 28); }
   drawProcessTable(locs, web);
   dryRender();
   filmRender();
@@ -340,7 +352,7 @@ function drawProcessTable(locs, web) {
     <thead><tr><th scope="col">Quantity</th>${cols.map(c => `<th scope="col"${c.tip ? ` title="${c.tip}"` : ''}>${c.head}</th>`).join('')}</tr></thead>
     ${rows.map(([t, u, f]) => `<tr><th scope="row">${t} <small>${u}</small></th>${cols.map(c => c.h != null ? `<td>${f(c.h)}</td>` : '<td class="na" title="solving">—</td>').join('')}</tr>`).join('')}
   </table></div>
-  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
+  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D${ans3DTag() ? '; the structure model is on and the 3D has the plain flow curve, so the 3D is not used (models are not mixed)' : ''}. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
 }
 
 // ---- Materials ----
@@ -364,7 +376,7 @@ function matRheoRows() {
   return [
     ...matRheoBase(),
     ...MAT_RHEO.filter(q => q[10] === 'law').map(row),
-    ['Structure (thixotropy)', r.structOn ? 'on' : 'off', '', 'given', r.structOn ? 'the 2D carries it along its flow; the 1D along the blade; it rebuilds at rest on the web' : 'off: every result from the steady flow curve'],
+    ['Structure (thixotropy)', r.structOn ? 'on' : 'off', '', 'given', r.structOn ? 'the 2D carries it along its flow; the 1D along the blade; it rebuilds at rest on the web; the 3D has the plain flow curve, so the answers take the 2D' : 'off: every result from the steady flow curve'],
     ...MAT_RHEO.filter(q => q[10] === 'struct').map(row),
   ];
 }

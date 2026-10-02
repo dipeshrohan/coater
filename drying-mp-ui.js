@@ -55,8 +55,12 @@ const dmpFailed = dim => !!(DMS.error[dim] && DMS.key[dim] === dmpKeyNow(dim));
 /** Solve a dimension (one at a time; a request while busy runs next). */
 function dmpRequest(dim) {
   const key = dmpKeyNow(dim);
-  if (!key || DMS.key[dim] === key && DMS.res[dim]) return;
+  if (!key) return;
+  if (DMS.key[dim] === key && DMS.res[dim]) { solveTake('dmp' + dim); return; }
+  // (Phase 0, solving only on request: a solve starts when asked for -- a Solve button, Solve the line, Re-solve)
+  if (!solveMay('dmp' + dim)) return;
   if (DMS.busy) { if (DMS.pending !== key) DMS.again = dim; return; }
+  solveTake('dmp' + dim);
   const o = dmpInputs(dim);
   DMS.busy = true; DMS.bdim = dim; DMS.pending = key; DMS.prog = null; DMS.again = null;
   const id = ++DMS.id;
@@ -82,7 +86,7 @@ function dmpStop() {
 async function dmpWait(dim = DMS.dim) {
   if (typeof dryWait === 'function' && !(await dryWait())) return false;
   for (let k = 0; k < 12000; k++) {
-    if (!DMS.busy) { if (dmpCurrent(dim)) return true; if (dmpFailed(dim)) return false; dmpRequest(dim); }
+    if (!DMS.busy) { if (dmpCurrent(dim)) return true; if (dmpFailed(dim)) return false; if (!solveAsked('dmp' + dim)) return false; dmpRequest(dim); }   // (Phase 0: only when asked for)
     await new Promise(r => setTimeout(r, 50));
   }
   return false;
@@ -196,12 +200,12 @@ function dmpDrawLine(cv, o, what, z) {
 
 // ---- the stage's pages (mp-bench-ui.js) ----
 SWB_ADAPT.dry = {
-  key: 'dry', sk: 'dry', t: 'Drying', ready: 'mp5',
+  key: 'dry', sk: 'dry', t: 'Drying', ready: 'mp5', sid: 'dmp',
   S: () => DMS,
   inputs: dim => dmpInputs(dim),
   current: dim => dmpCurrent(dim),
   failed: dim => dmpFailed(dim),
-  request: dim => { DMS.dim = dim; dmpRequest(dim); },
+  request: dim => { DMS.dim = dim; solveArm('dmp' + dim); },   // (asked for: with what it needs first, Phase 0)
   auto: dim => { DMS.dim = dim; if (dim < 3 && !dmpCurrent(dim) && !dmpFailed(dim)) dmpRequest(dim); },
   stop: () => dmpStop(),
   why: () => 'The drying is solved after the coating: the wet film across the web (Coating, 1D Across the web).',

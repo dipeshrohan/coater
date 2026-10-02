@@ -86,6 +86,7 @@ function setInput(k, v) {
 }
 /** Stop whatever is solving: every solve and fit, on every page (New, Open: their answers belong to the project being left). */
 function projStopAll() {
+  if (typeof SOLVE_ASK !== 'undefined') SOLVE_ASK.clear();   // (Phase 0: nothing asked for goes on)
   cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
   m3StudyStop(true); acc3Stop(); c3dStop();
   oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop();
