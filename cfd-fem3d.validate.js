@@ -30,6 +30,9 @@
  *  9. Open ends on a region solved strip by strip (each end first on its own, then the region's end strip): converges to
  *     the whole region solved at once with both sides open; an edge solved from its 2D or from another pressure's solution
  *     is the same solution.
+ * 10. The band in blocks of rows (a matrix over 2^31 bytes): the same solve, bit for bit.
+ * 11. A given inflow at the inlet (the pile's flow under the blade): the strip's own inflow given back is already the solution;
+ *     an inflow 0.9 times as fast: the film carries what comes in.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -335,6 +338,23 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const open = both(() => { const S = coaterStations(eb, zs); return coaterStrip3D(eb, S, 0, NL - 1, zs.map((_, l) => stationState(S, l)), false, false, { maxIter: 60, open: { hi: { m: 2, zEnd: W / 2, thWeb: 35, thBlade: 35 } } }); });
   check('the band in blocks of rows (for a matrix over 2^31 bytes): the same solve, every number bit for bit', strip.ok && open.ok && strip.d === 0 && open.d === 0 && strip.nb > 1 && open.nb > 1,
     `coating strip ${strip.n} numbers in ${strip.nb} blocks, ${strip.d} differ; open side ${open.n} in ${open.nb} blocks, ${open.d} differ`);
+}
+
+// 11. a given inflow at the inlet (how the strip takes the pile's flow under the blade, Coating › 3D with the feed): the
+// strip's own inflow (from a solve with the pool's pressure there) given back is already the solution (no Newton step, the
+// same film); an inflow 0.9 times as fast (the web's row kept at the web's speed): Newton converges and the film carries what
+// comes in (U · film · width = the inflow, to the mesh's accuracy)
+{
+  const H = 1.7e-3, base = { hFn: () => H, xe: 5e-3, faceDeg: 90, contactDeg: 35, U: 0.1, Pup: 300, rho: 1020, g: 9.81, gamma: 0.07, mu: () => 1, Ld: 12e-3, nEb: 5, nEf: 3, nEs: 12, nEy: 3, fInfGuess: 0.5 * H, width: 0.02, nEz: 2 };
+  const a = solveCoater3D(base), r = a.r3, NR = r.NR, prof = [];
+  for (let k = 0; k < NR; k++) prof.push([r.y[k], r.u[k]]);
+  const at = (z, y) => { let k = 0; while (k < NR - 2 && prof[k + 1][0] < y) k++; const t = (y - prof[k][0]) / (prof[k + 1][0] - prof[k][0]); return [prof[k][1] + t * (prof[k + 1][1] - prof[k][1]), 0, 0]; };
+  const b = solveCoater3D({ ...base, inletAt: at }), c = solveCoater3D({ ...base, inletAt: (z, y) => at(z, y).map(v => 0.9 * v) });
+  const dF = Math.max(...a.stations.map((s, l) => Math.abs(s.film - b.stations[l].film))), mc = c.r3.massBalance, carried = base.U * c.stations[0].film * base.width;
+  check('a given inflow (the pile\'s flow under the blade): the strip\'s own inflow given back is the solution, no Newton step, the same film', a.r3.converged && b.r3.converged && b.r3.iterations === 0 && dF < 1e-12,
+    `film ${(a.stations[0].film * 1e6).toFixed(3)} µm both ways (differ by ${dF.toExponential(0)} m), ${b.r3.iterations} Newton steps`);
+  check('  an inflow 0.9 times as fast: Newton converges, the film carries what comes in (U · film · width = the inflow)', c.r3.converged && Math.abs(carried / mc.inlet - 1) < 5e-4 && Math.abs(mc.inlet / a.r3.massBalance.inlet - 0.9) < 0.03,
+    `film ${(c.stations[0].film * 1e6).toFixed(3)} µm; in ${(mc.inlet * 1e9).toFixed(4)} mm³/s (${(mc.inlet / a.r3.massBalance.inlet).toFixed(4)} of the pool's), carried ${(carried * 1e9).toFixed(4)}, ${c.r3.iterations} Newton steps`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
