@@ -114,18 +114,20 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
 //  slice along the web: nothing across, the same flow at both sides, and the same flow per width for any strip
 {
   const Qin = 20e-6, Qout = 2.14e-6, run = Ws => FP.fplSolve({ W: Ws, xBack, xEnd, h, blade, rho, g, outlets: [{ x: -0.1, z: Ws / 2 }], r: 6e-3, line: true, mu: newt,
-    U, Qin: Qin * Ws / W, Qout: Qout * Ws / W, pulse: true, sides: 'slip', mesh: { ...coarse, nz: 1, sideFine: false } });
+    U, Qin: Qin * Ws / W, Qout: Qout * Ws / W, pulse: true, sides: 'slip', mesh: { ...coarse, nz: 1, sideFine: false }, solve: { tol: 1e-12 } });
   const A = run(0.02), B = run(0.045), I = A.M.info, NX = I.NX, NY = I.NY, rgh = rho * g * h;
   let wMax = 0, side = 0, sideP = 0, wid = 0, widP = 0, same = I.NZ === 3 && B.M.info.NX === NX && B.M.info.NY === NY;
   for (const r of [A, B]) for (let n = 0; n < r.M.nN; n++) wMax = Math.max(wMax, Math.abs(r.w[n]));
   for (let j = 0; j < NY && same; j++) for (let i = 0; i < NX; i++) {
     const a = j * NX + i;
     same = same && A.M.X[a] === B.M.X[a] && A.M.Y[a] === B.M.Y[a];
-    for (const r of [A, B]) for (const k of [1, 2]) { const b = (k * NY + j) * NX + i; side = Math.max(side, Math.abs(r.u[b] - r.u[a]), Math.abs(r.v[b] - r.v[a])); sideP = Math.max(sideP, Math.abs(r.p[b] - r.p[a])); }
-    wid = Math.max(wid, Math.abs(A.u[a] - B.u[a]), Math.abs(A.v[a] - B.v[a])); widP = Math.max(widP, Math.abs(A.p[a] - B.p[a]));
+    // (the pressure where it lives: the elements' corner nodes, both sides)
+    const pd = (x, y) => (Number.isFinite(x) || Number.isFinite(y) ? Math.abs(x - y) : 0);
+    for (const r of [A, B]) for (const k of [1, 2]) { const b = (k * NY + j) * NX + i; side = Math.max(side, Math.abs(r.u[b] - r.u[a]), Math.abs(r.v[b] - r.v[a])); if (k === 2) sideP = Math.max(sideP, pd(r.p[b], r.p[a])); }
+    wid = Math.max(wid, Math.abs(A.u[a] - B.u[a]), Math.abs(A.v[a] - B.v[a])); widP = Math.max(widP, pd(A.p[a], B.p[a]));
   }
   const qa = A.flows.end / 0.02, qb = B.flows.end / 0.045;
-  check('the 2D page\'s pool (a strip one element across, mirrors at its sides, the feed a band across it): a slice along the web, the same for any strip', same && wMax < 1e-9 * U && side < 1e-9 * U && sideP < 1e-9 * rgh && wid < 1e-9 * U && widP < 1e-9 * rgh && Math.abs(qa / qb - 1) < 1e-9,
+  check('the 2D page\'s pool (a strip one element across, mirrors at its sides, the feed a band across it): a slice along the web, the same for any strip', same && Number.isFinite(sideP + widP) && wMax < 1e-9 * U && side < 1e-9 * U && sideP < 1e-9 * rgh && wid < 1e-9 * U && widP < 1e-9 * rgh && Math.abs(qa / qb - 1) < 1e-9,
     `across: ${(wMax / U).toExponential(1)} U; side to side: u, v ${(side / U).toExponential(1)} U, p ${(sideP / rgh).toExponential(1)} ρgh; strips 20 and 45 mm wide: u, v ${(wid / U).toExponential(1)} U, p ${(widP / rgh).toExponential(1)} ρgh, out per width ${(qa * 1e3).toFixed(9)} and ${(qb * 1e3).toFixed(9)} ml/s per mm; ${A.M.nE} elements`);
 }
 

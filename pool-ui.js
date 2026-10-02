@@ -28,14 +28,14 @@ function poolBase(dim) {
   if (typeof ONE_D === 'undefined' || !ONE_D.res || typeof feedNow !== 'function') return null;
   const F = feedNow();
   if (!F || F.error) return null;
-  const { c, o, zs, out } = F, g = cfdGeometry(0);
+  const { c, o, zs, out } = F, g = cfdGeometry(0);   // (zs: the outlets across the web, m)
   // (each part's mean level: the pulse's, between pulses')
   const mean = (a, b) => { let s = 0, d = 0; for (let i = 1; i < c.t.length; i++) if (c.t[i] > a + 1e-12 && c.t[i] <= b + 1e-12) { const dt = c.t[i] - c.t[i - 1]; s += dt * (c.h[i] + c.h[i - 1]) / 2; d += dt; } return d ? s / d : c.hBar; };
   const mesh = dim === 2 ? { hFine: P.f2H / 1000, hMax: P.f2Hm / 1000, ny: P.f2Ny } : { hFine: P.f3H / 1000, hMax: P.f3Hm / 1000, ny: P.f3Ny };
   return { dim, W: o.W, xBack: o.xBack, xEnd: g.Xup, R: F.round ? o.R : 0, H: o.H, rho: o.rho, g: o.g, U: o.U,
     law: { muRef: g.muRef, ty: g.ty || 0, n: g.n ?? 1, ...(g.rheoX ? { rheoX: g.rheoX } : {}) },
     // (the landing's radius: the stream's at landing, the smooth disc's half-height radius)
-    outlets: zs.map(z => ({ x: -P.fX / 1000, z: z / 1000 })), r: out.dLand / 2 / 0.5412, Qin: o.V / o.tau, Qout: c.Qmean,
+    outlets: zs.map(z => ({ x: -P.fX / 1000, z })), r: out.dLand / 2 / 0.5412, Qin: o.V / o.tau, Qout: c.Qmean,
     hP: mean(0, o.tau), hD: mean(o.tau, c.T), T: c.T, tau: o.tau, mesh };
 }
 const poolKeyNow = dim => { const b = poolBase(dim); return b ? JSON.stringify(b) : null; };
