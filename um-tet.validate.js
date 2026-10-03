@@ -3,7 +3,9 @@
  * Run: node um-tet.validate.js
  *  1. The predicates' conventions (the unit tetrahedron positive; a point inside, on and outside its sphere), and their
  *     signs exact where floating point alone cannot tell: points one unit in the last place off a plane and off a sphere,
- *     and exactly on them, against the exact integer evaluation.
+ *     and exactly on them, against the exact integer evaluation; and the two quick answers: four points sharing one
+ *     coordinate exactly (on a plane x, y or z = const: zero, without the integers) and one of them an ulp off it, and three
+ *     points on a line (exactly, on lattice lines) or an ulp off it, against the exact evaluation.
  *  2. Delaunay of random points, of a regular grid (every cube's 8 corners on one sphere, faces of many points on the
  *     hull's planes), of points on a sphere, and of a set with duplicates:
  *       every tetrahedron positive (exactly); neighbours symmetric, across a shared face;
@@ -44,6 +46,28 @@ let seed = 1; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 21474836
   }
   check('near-degenerate orientations: the filtered sign always the exact one (points on a plane and an ulp off it)', agreeO === nO, `${agreeO}/${nO}, ${zeros} exactly on the plane`);
   check('near-degenerate spheres: the filtered sign always the exact one (points on a sphere and an ulp off it)', agreeS === nS, `${agreeS}/${nS}`);
+  // the quick answers: points on a plane x, y or z = const (and one an ulp off it); points on a line (and one an ulp off)
+  let agreeP = 0, nP = 0, onP = 0, agreeL = 0, nL = 0, onL = 0;
+  const exactCollinear = (a, b, c) => { const [Ax, Ay, Az, Bx, By, Bz, Cx, Cy, Cz] = T.umtExact([...a, ...b, ...c]), ux = Bx - Ax, uy = By - Ay, uz = Bz - Az, vx = Cx - Ax, vy = Cy - Ay, vz = Cz - Az;
+    return uy * vz - uz * vy === 0n && uz * vx - ux * vz === 0n && ux * vy - uy * vx === 0n; };
+  for (let k = 0; k < 600; k++) {
+    const ax = k % 3, h = rnd() * 0.1, P4 = [0, 1, 2, 3].map(() => { const p = [rnd() * 0.05, rnd() * 0.05, rnd() * 0.05]; p[ax] = h; return p; });
+    for (const dd of [-1, 0, 1]) {
+      const Q = P4.map(p => p.slice()); Q[k % 4][ax] = dd ? h * (1 + dd * 2.3e-16) : h;
+      const f = Math.sign(T.umtOrient(...Q[0], ...Q[1], ...Q[2], ...Q[3])), e = -T.umtOrientExact(...Q[0], ...Q[1], ...Q[2], ...Q[3]);
+      nP++; if ((f === 0 ? 0 : f) === (e === 0 ? 0 : e)) agreeP++; if (e === 0) onP++;
+    }
+    // (a lattice line: a + m d, every coordinate a multiple of 2^-12, exactly collinear; then c an ulp off it)
+    const g = 1 / 4096, a = [0, 1, 2].map(() => Math.floor(rnd() * 200) * g), d = [0, 1, 2].map(i => (k % 4 === i ? 0 : Math.floor(rnd() * 9) - 4) * g);
+    const b = a.map((x, i) => x + 3 * d[i]), c0 = a.map((x, i) => x + 7 * d[i]);
+    for (const dd of [-1, 0, 1]) {
+      const c = c0.slice(); if (dd) c[k % 3] = c[k % 3] === 0 ? dd * 1e-300 : c[k % 3] * (1 + dd * 2.3e-16);
+      const f = T.umtCollinear(...a, ...b, ...c), e = exactCollinear(a, b, c);
+      nL++; if (f === e) agreeL++; if (e) onL++;
+    }
+  }
+  check('the quick answers: four points on a plane x, y or z = const zero, one an ulp off it signed, as the exact evaluation', agreeP === nP && onP > 0 && onP < nP, `${agreeP}/${nP}, ${onP} on the plane`);
+  check('  three points on a line collinear, one an ulp off it not, as the exact evaluation', agreeL === nL && onL > 0 && onL < nL, `${agreeL}/${nL}, ${onL} on the line`);
 }
 
 /** Everything a Delaunay tetrahedralization must satisfy; returns a line for the report. */

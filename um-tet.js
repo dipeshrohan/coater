@@ -17,7 +17,7 @@
 const UMT_INF = -1;
 // (each face k of a tetrahedron, its vertices ordered so their normal points away from vertex k)
 const UMT_OUT = [[1, 2, 3], [0, 3, 2], [0, 1, 3], [0, 2, 1]];
-const UMT_EPS = Math.pow(2, -53), UMT_O3D = (7 + 56 * UMT_EPS) * UMT_EPS, UMT_ISP = (16 + 224 * UMT_EPS) * UMT_EPS;
+const UMT_EPS = Math.pow(2, -53), UMT_O3D = (7 + 56 * UMT_EPS) * UMT_EPS, UMT_ISP = (16 + 224 * UMT_EPS) * UMT_EPS, UMT_C2D = (3 + 16 * UMT_EPS) * UMT_EPS;
 
 // ---- exact arithmetic: a double as mantissa × 2^exponent ----
 const umtF64 = new Float64Array(1), umtU32 = new Uint32Array(umtF64.buffer);
@@ -45,6 +45,8 @@ function umtOrient(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) {
   const det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
   const perm = (Math.abs(bdxcdy) + Math.abs(cdxbdy)) * Math.abs(adz) + (Math.abs(cdxady) + Math.abs(adxcdy)) * Math.abs(bdz) + (Math.abs(adxbdy) + Math.abs(bdxady)) * Math.abs(cdz);
   if (det > UMT_O3D * perm || -det > UMT_O3D * perm) return -det;
+  // (four points with one coordinate the same lie on one plane: zero, exactly -- the flat faces' points, most of the doubtful)
+  if ((adz === 0 && bdz === 0 && cdz === 0) || (ady === 0 && bdy === 0 && cdy === 0) || (adx === 0 && bdx === 0 && cdx === 0)) return 0;
   return -umtOrientExact(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz);
 }
 function umtOrientExact(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) {
@@ -81,6 +83,10 @@ function umtInSphereExact(...v) {
 }
 /** Whether three points lie on one line (exactly). */
 function umtCollinear(ax, ay, az, bx, by, bz, cx, cy, cz) {
+  // (a component of (b − a) × (c − a) surely not zero -- beyond its rounding (Shewchuk's 2D bound) -- says not; else exactly)
+  { const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
+    const n1 = uy * vz, n2 = uz * vy, n3 = uz * vx, n4 = ux * vz, n5 = ux * vy, n6 = uy * vx;
+    if (Math.abs(n1 - n2) > UMT_C2D * (Math.abs(n1) + Math.abs(n2)) || Math.abs(n3 - n4) > UMT_C2D * (Math.abs(n3) + Math.abs(n4)) || Math.abs(n5 - n6) > UMT_C2D * (Math.abs(n5) + Math.abs(n6))) return false; }
   const [Ax, Ay, Az, Bx, By, Bz, Cx, Cy, Cz] = umtExact([ax, ay, az, bx, by, bz, cx, cy, cz]);
   const ux = Bx - Ax, uy = By - Ay, uz = Bz - Az, vx = Cx - Ax, vy = Cy - Ay, vz = Cz - Az;
   return uy * vz - uz * vy === 0n && uz * vx - ux * vz === 0n && ux * vy - uy * vx === 0n;
@@ -124,8 +130,8 @@ function umtTri(X, Y, Z, opts = {}) {
   const side = (t, k, p) => { const f = UMT_OUT[k], a = tv[4 * t + f[0]], b = tv[4 * t + f[1]], c = tv[4 * t + f[2]];
     return umtOrient(X[a], Y[a], Z[a], X[b], Y[b], Z[b], X[c], Y[c], Z[c], X[p], Y[p], Z[p]); };
   const infAt = t => { for (let k = 0; k < 4; k++) if (tv[4 * t + k] === UMT_INF) return k; return -1; };
-  const inSph = (t, p) => { const v = tv.subarray(4 * t, 4 * t + 4);
-    return umtInSphere(X[v[0]], Y[v[0]], Z[v[0]], X[v[1]], Y[v[1]], Z[v[1]], X[v[2]], Y[v[2]], Z[v[2]], X[v[3]], Y[v[3]], Z[v[3]], X[p], Y[p], Z[p]); };
+  const inSph = (t, p) => { const a = tv[4 * t], b = tv[4 * t + 1], c = tv[4 * t + 2], d = tv[4 * t + 3];
+    return umtInSphere(X[a], Y[a], Z[a], X[b], Y[b], Z[b], X[c], Y[c], Z[c], X[d], Y[d], Z[d], X[p], Y[p], Z[p]); };
   /** Whether p conflicts with t: inside its sphere; a ghost: beyond its hull face, or on its plane inside its circle. */
   const conflict = (t, p) => {
     const j = infAt(t); if (j < 0) return inSph(t, p) > 0;
@@ -164,8 +170,21 @@ function umtTri(X, Y, Z, opts = {}) {
   }
   const inFirst = new Set(first);
   let last = 0;
-  let markArr = new Int32Array(cap).fill(-1), stamp = 0;
-  const edgeMap = new Map();
+  let markArr = new Int32Array(cap), stamp = 0, cavStamp = -1;
+  // (the new tetrahedra's edges, matched in pairs: an open-addressed table of (lower point, higher point) → tetrahedron
+  //  and face, cleared by a stamp; sized for the cavity at hand)
+  let hCap = 1024, hA = new Int32Array(hCap), hB = new Int32Array(hCap), hV = new Int32Array(hCap), hS = new Int32Array(hCap), hStamp = 0, hOpen = 0;
+  const hReset = need => { hStamp++; hOpen = 0; if (2 * need > hCap) { while (2 * need > hCap) hCap *= 2; hA = new Int32Array(hCap); hB = new Int32Array(hCap); hV = new Int32Array(hCap); hS = new Int32Array(hCap); hStamp = 1; } };
+  /** Edge a < b of new tetrahedron-face v (4 t + q): the one met before on it (−1 if none, this one kept). */
+  const hMatch = (a, b, v) => {
+    for (let i = (Math.imul(a, 0x9e3779b1) ^ Math.imul(b, 0x85ebca77)) & (hCap - 1); ; i = (i + 1) & (hCap - 1)) {
+      if (hS[i] !== hStamp) { hS[i] = hStamp; hA[i] = a; hB[i] = b; hV[i] = v; hOpen++; return -1; }
+      if (hA[i] === a && hB[i] === b && hV[i] >= 0) { const o = hV[i]; hV[i] = -1; hOpen--; return o; }
+    }
+  };
+  // (for corners k and q of a tetrahedron, its other two, in order)
+  const REST = [];
+  for (let k = 0; k < 4; k++) for (let q = 0; q < 4; q++) REST.push([0, 1, 2, 3].filter(i => i !== k && i !== q));
   /** The tetrahedron (or ghost) holding point p: a walk across any face p is beyond. */
   const locate = p => {
     let t = last, guard = 0;
@@ -184,44 +203,42 @@ function umtTri(X, Y, Z, opts = {}) {
     // a duplicate point: skipped
     if (infAt(t) < 0) { let d = -1; for (let k = 0; k < 4; k++) { const v = tv[4 * t + k]; if (X[v] === X[p] && Y[v] === Y[p] && Z[v] === Z[p]) d = v; } if (d >= 0) { dup[p] = d; return -1; } }
     // the cavity: every tetrahedron in conflict, connected to t; then grown over any face a new tetrahedron would be flat on
-    if (markArr.length < cap) { const m2 = new Int32Array(cap).fill(-1); m2.set(markArr); markArr = m2; }
+    if (markArr.length < cap) { const m2 = new Int32Array(cap); m2.set(markArr); markArr = m2; }
     stamp++;
     const cav = [t]; markArr[t] = stamp;
     for (let i = 0; i < cav.length; i++) { const c = cav[i]; for (let k = 0; k < 4; k++) { const nb = tn[4 * c + k]; if (markArr[nb] !== stamp && conflict(nb, p)) { markArr[nb] = stamp; cav.push(nb); } } }
     let faces;
     for (let pass = 0; ; pass++) {
       faces = []; let grew = false;
-      for (const c of cav) for (let k = 0; k < 4; k++) {
+      for (let ci = 0; ci < cav.length; ci++) { const c = cav[ci], j = infAt(c); for (let k = 0; k < 4; k++) {
         const nb = tn[4 * c + k]; if (markArr[nb] === stamp) continue;
-        const j = infAt(c);
         let ok;
         if (j < 0 || j === k) ok = side(c, k, p) < 0;
         else { const f = UMT_OUT[k].filter(i => i !== j).map(i => tv[4 * c + i]); ok = !umtCollinear(X[f[0]], Y[f[0]], Z[f[0]], X[f[1]], Y[f[1]], Z[f[1]], X[p], Y[p], Z[p]); }
         if (!ok) { markArr[nb] = stamp; cav.push(nb); grew = true; }
         else faces.push(c, k);
-      }
+      } }
       if (!grew) break;
       if (pass > 1000) throw new Error('um-tet: the cavity did not close');
     }
     // the new tetrahedra: each boundary face joined to p
-    edgeMap.clear();
+    hReset(3 * faces.length / 2);
     const made = [];
     for (let i = 0; i < faces.length; i += 2) {
       const c = faces[i], k = faces[i + 1], nb = tn[4 * c + k], t2 = newTet();
-      if (markArr.length < cap) { const m2 = new Int32Array(cap).fill(-1); m2.set(markArr); markArr = m2; }
+      if (markArr.length < cap) { const m2 = new Int32Array(cap); m2.set(markArr); markArr = m2; }
       for (let q = 0; q < 4; q++) tv[4 * t2 + q] = q === k ? p : tv[4 * c + q];
-      alive[t2] = 1; markArr[t2] = -1;
+      alive[t2] = 1; markArr[t2] = 0;
       tn[4 * t2 + k] = nb;
       for (let q = 0; q < 4; q++) if (tn[4 * nb + q] === c) tn[4 * nb + q] = t2;
       made.push(t2);
       // (its other faces each hold p and an edge of the boundary face: matched with the new tetrahedron on the other side)
       for (let q = 0; q < 4; q++) if (q !== k) {
-        const e = [0, 1, 2, 3].filter(i => i !== k && i !== q).map(i => tv[4 * t2 + i]), key = e[0] < e[1] ? `${e[0]},${e[1]}` : `${e[1]},${e[0]}`;
-        const o = edgeMap.get(key);
-        if (o) { tn[4 * t2 + q] = o[0]; tn[4 * o[0] + o[1]] = t2; edgeMap.delete(key); } else edgeMap.set(key, [t2, q]);
+        const r = REST[4 * k + q], e0 = tv[4 * t2 + r[0]], e1 = tv[4 * t2 + r[1]], o = e0 < e1 ? hMatch(e0, e1, 4 * t2 + q) : hMatch(e1, e0, 4 * t2 + q);
+        if (o >= 0) { tn[4 * t2 + q] = o >> 2; tn[4 * (o >> 2) + (o & 3)] = t2; }
       }
     }
-    if (edgeMap.size) throw new Error('um-tet: the cavity\'s new tetrahedra do not close');
+    if (hOpen) throw new Error('um-tet: the cavity\'s new tetrahedra do not close');
     for (const c of cav) { alive[c] = 0; free.push(c); }
     last = made.find(q => infAt(q) < 0) ?? made[0];
     return made;
@@ -238,13 +255,16 @@ function umtTri(X, Y, Z, opts = {}) {
   return {
     insert: p => { if (dup.length <= p) { const d2 = new Int32Array(Math.max(2 * dup.length, p + 1)).fill(-1); d2.set(dup); dup = d2; } return insert(p); },
     locate: (x, y, z) => { const p = X.length; X.push(x); Y.push(y); Z.push(z); const t = locate(p); X.pop(); Y.pop(); Z.pop(); return t; },
-    /** The tetrahedra a point at (x, y, z) would replace (its conflict cavity), without inserting it: [located, …]. */
+    /** The tetrahedra a point at (x, y, z) would replace (its conflict cavity), without inserting it: [located, …]. Until
+     *  the next cavityOf or insert, inCavity(t) says whether t is in it. */
     cavityOf: (x, y, z) => {
       const p = X.length; X.push(x); Y.push(y); Z.push(z);
-      const t = locate(p), cav = [t], seen = new Set(cav);
-      for (let i = 0; i < cav.length; i++) { const c = cav[i]; for (let k = 0; k < 4; k++) { const nb = tn[4 * c + k]; if (!seen.has(nb) && conflict(nb, p)) { seen.add(nb); cav.push(nb); } } }
-      X.pop(); Y.pop(); Z.pop(); return cav;
+      if (markArr.length < cap) { const m2 = new Int32Array(cap); m2.set(markArr); markArr = m2; }
+      const t = locate(p), cav = [t]; stamp++; markArr[t] = stamp;
+      for (let i = 0; i < cav.length; i++) { const c = cav[i]; for (let k = 0; k < 4; k++) { const nb = tn[4 * c + k]; if (markArr[nb] !== stamp && conflict(nb, p)) { markArr[nb] = stamp; cav.push(nb); } } }
+      X.pop(); Y.pop(); Z.pop(); cavStamp = stamp; return cav;
     },
+    inCavity: t => markArr[t] === cavStamp && cavStamp === stamp,
     finite, infAt, conflict,
     get tv() { return tv; }, get tn() { return tn; }, get alive() { return alive; }, get nT() { return nT; }, get dup() { return dup; },
   };
