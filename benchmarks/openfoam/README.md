@@ -13,6 +13,7 @@ node by node. The scripts that make, run and compare every case are in this fold
 | The same, in 2D | `cfd-fem.js` (Q2–Q1 FEM, Newton) | `simpleFoam` | 2D | u 0.8 %, p 1.6 % RMS (25,344 cells), falling with refinement; 0.1 % in the pool and under the blade; the film's flow rate OpenFOAM's own to 4 digits (1.5157 mm) |
 | Heat through a three-layer stack (plate, film, paper), hot air on part of the top | `mp-core.js` `mpHeatMoisture` (the Pre heat and Drying stages' solver) and `mpTransport` (the Furnace's); linear FEM | `chtMultiRegionFoam` (one solid region per layer, coupled interfaces) | 2D, 3D | 2D: 0.07–0.24 % RMS of the temperature rise (5,760 cells), the hottest point within 0.03 K; 3D: 1.6–3.0 % on 1,920 cells, 0.8–1.7 % on 14,400 (the mesh about twice as fine each way), the hottest point 2.8 K → 0.4 K apart |
 | Thermal stress in a clamped aluminium block | `mp-core.js` `mpScalar` + `mpElastic` (linear FEM) — the stages' stress solver | `solidDisplacementFoam` (thermal stress) | 2D (plane strain), 3D | 2D: displacement 0.07 %, stresses 0.1–0.15 % RMS (8,000 cells); 3D: displacement 0.3–0.4 %, stresses 0.4–1.3 % (30,720 cells); falling 2–3.5× per refinement |
+| The pool behind the blade with two pipes feeding it, on the tetrahedral mesher's mesh | `feed-pool-tet.js` on `feed-fem.js` (Taylor–Hood P2–P1 tetrahedra, curved walls, Newton) | `simpleFoam` on the same tetrahedra, each split in 8 | 3D | see *The pool on tetrahedra*: in the pool and under the blade 0.06–0.12 % RMS (the block mesh 0.16–0.21 %); in the bores the app follows Poiseuille's exact flow (0.05–0.19 %) where OpenFOAM is 1.8–5.7 % off |
 | The free surface itself (film thickness, meniscus) | `cfd-fem.js` | `interFoam` (volume of fluid) | 2D | **not achieved**: interFoam diverges on this flow (see *The free surface*) |
 
 Two findings came out of the benchmarks:
@@ -200,6 +201,97 @@ The peak stress itself sits at a clamped corner, where it is singular and grows 
 
 ![convergence](results/convergence.png)
 
+## The pool on tetrahedra
+
+`pooltet.js` solves the pool of `feed-pool.validate.js`'s "tips in the paste in 3D" with the app's tetrahedral path —
+um-tetgeom.js's solid, um-tetmesh.js's tetrahedra made quadratic (the pipes' walls and the blade's underside on their true
+surfaces), feed-fem.js's P2–P1 elements — and writes the same case for OpenFOAM: the app's tetrahedra each split in 8 at
+its edges' middles, so every node of the app's mesh is a point of OpenFOAM's. Half the 300 mm pool (the middle a mirror),
+two pipes (10 mm bore, 14 mm outside, tips 30 mm above the web, bores 60 mm) feeding 10 ml/s, 1.07 ml/s out at the pool
+edge, a Newtonian paste of 10.5 Pa·s and 1360 kg/m³, the web at 0.28 m/min.
+
+| Patch | App | OpenFOAM |
+|---|---|---|
+| web | moving at U | `fixedValue` (U, 0, 0) |
+| blade, side plate, pipes (outside, end, bore) | no slip | `noSlip` |
+| the middle (z = W/2) | mirror | `symmetryPlane` |
+| back edge (the cut) | no flow through it, no shear | `slip` |
+| top (a lid at the level) | rising at ḣ through it, no shear | `fixedNormalSlip`, (0, ḣ, 0) with ḣ from OpenFOAM's own top area |
+| bores' tops | a plug inside each bore's rim (the wall holds the rim), each pipe's equal share of the flow in exact | `fixedValue`, the flow in exact on OpenFOAM's own area |
+| pool edge | the traction −ρg(h − y) | the app's velocity there, each face's mean (the app's flow out exactly); the pressure compared about its volume mean |
+
+Gravity is in the app's pressure: OpenFOAM's (kinematic, no gravity) times ρ is compared with p − ρg(h − y). Each
+solution is compared at every OpenFOAM cell centre (the app's value there from its own elements), RMS over the cells
+weighted by their volumes, the velocity as a share of OpenFOAM's largest speed (123–129 mm/s, in the bores), the pressure
+of its range (17.7–23.6 kPa, mostly the bores' drop). Where the bores' flow is developed (10 mm below their tops to 10 mm
+above the tips) the exact answer is known, Poiseuille's: v = −2V̄(1 − r²/R²) and a pressure gradient of 8μV̄/R² (213.9
+kPa/m for p − ρg(h − y)); every solution, OpenFOAM's too, is measured against it there. OpenFOAM's simpleFoam runs to
+residuals below 1e-11 with two non-orthogonal correctors and U relaxed to 0.7 on every mesh: with one and 0.9 the finest
+diverged, and its converged answer moves with U's relaxation (0.9 against 0.7 on the 10 mm mesh: 0.7 % of the largest
+speed at most, the tables' figures by 0.26 points at most).
+
+OpenFOAM's three meshes are the app's tetrahedra split in 8: 10 mm and 7 mm with 2 elements across a bore (5 mm round
+the pipes), and 10 mm with 3 across (3.3 mm). Velocity / pressure RMS off OpenFOAM:
+
+OpenFOAM on the 10 mm mesh, 2 across a bore (96,856 cells, 2,975 iterations):
+
+| Region | Tetrahedra 10 mm (12,107 P2–P1, 60,279 unknowns; OpenFOAM's own) | Tetrahedra 7 mm (28,210; 134,836) | Block mesh (3,072 Q2–Q1; 86,943; the Pool and feed page's) |
+|---|---|---|---|
+| Everywhere | 1.05 % / 1.00 % | 1.06 % / 0.99 % | 1.15 % / 1.04 % |
+| The pool away from the pipes and the pool edge | 0.11 % / 0.13 % | 0.10 % / 0.13 % | 0.21 % / 0.14 % |
+| Round the pipes, outside the bores (within 15 mm of an axis) | 1.05 % / 0.19 % | 1.09 % / 0.18 % | 1.12 % / 0.19 % |
+| In the bores | 6.56 % / 6.62 % | 6.59 % / 6.54 % | 7.12 % / 6.94 % |
+| Under the blade near the pool edge | 0.09 % / 0.12 % | 0.09 % / 0.11 % | 0.18 % / 0.13 % |
+
+OpenFOAM on the 7 mm mesh, 2 across (225,680 cells, 5,152 iterations):
+
+| Region | Tetrahedra 10 mm | Tetrahedra 7 mm (OpenFOAM's own) | Block mesh |
+|---|---|---|---|
+| Everywhere | 1.05 % / 0.97 % | 1.04 % / 0.96 % | 1.17 % / 1.02 % |
+| The pool away from the pipes and the pool edge | 0.12 % / 0.13 % | 0.11 % / 0.12 % | 0.21 % / 0.14 % |
+| Round the pipes, outside the bores | 1.10 % / 0.18 % | 1.02 % / 0.18 % | 1.21 % / 0.19 % |
+| In the bores | 6.56 % / 6.44 % | 6.50 % / 6.37 % | 7.18 % / 6.75 % |
+| Under the blade near the pool edge | 0.08 % / 0.11 % | 0.08 % / 0.11 % | 0.17 % / 0.12 % |
+
+OpenFOAM on the 10 mm mesh, 3 across a bore (265,376 cells, 3,468 iterations):
+
+| Region | Tetrahedra 10 mm, 3 across (33,172; 160,129; OpenFOAM's own) | Tetrahedra 10 mm, 2 across | Block mesh |
+|---|---|---|---|
+| Everywhere | 0.44 % / 0.93 % | 0.75 % / 0.94 % | 0.85 % / 0.98 % |
+| The pool away from the pipes and the pool edge | 0.11 % / 0.12 % | 0.12 % / 0.12 % | 0.20 % / 0.13 % |
+| Round the pipes, outside the bores | 0.61 % / 0.14 % | 0.87 % / 0.16 % | 1.09 % / 0.16 % |
+| In the bores | 2.51 % / 6.16 % | 4.54 % / 6.26 % | 4.96 % / 6.48 % |
+| Under the blade near the pool edge | 0.06 % / 0.11 % | 0.06 % / 0.11 % | 0.16 % / 0.12 % |
+
+Against the exact flow where the bores' flow is developed (the app's solutions at each OpenFOAM mesh's cell centres, the
+range over the meshes):
+
+| Solution | Velocity off Poiseuille (RMS, of its peak 127.3 mm/s) | Pressure gradient off 8μV̄/R² |
+|---|---|---|
+| The app: tetrahedra 10 mm, 3 across a bore | 0.05 % | +0.02 % |
+| The app: tetrahedra 10 mm, 2 across | 0.17–0.19 % | +0.11–0.12 % |
+| The app: tetrahedra 7 mm, 2 across | 0.17–0.19 % | +0.12–0.13 % |
+| The app: block mesh | 2.11–2.13 % | +0.63–0.76 % |
+| OpenFOAM, 10 mm, 2 across | 5.68 % | +14.6 % |
+| OpenFOAM, 7 mm, 2 across | 5.73 % | +15.6 % |
+| OpenFOAM, 10 mm, 3 across | 1.83 % | +19.0 % |
+
+- In the pool and under the blade the tetrahedra's velocity is 0.06–0.12 % RMS from OpenFOAM on all three of its
+  meshes, the block mesh's 0.16–0.21 %; the pressure 0.11–0.14 % for every mesh.
+- In the bores the differences are OpenFOAM's. There the exact flow is known and the app's tetrahedra follow it (velocity
+  0.05–0.19 % off Poiseuille, the pressure gradient 0.02–0.13 %). OpenFOAM's velocity is 5.7 % off with two elements
+  across a bore and 1.8 % with three, and the app–OpenFOAM difference in the bores falls with it, 6.6 % to 2.5 %;
+  refining the pool from 10 to 7 mm leaves the bores' elements as they were and changes neither. OpenFOAM's pressure
+  gradient down the bores is 15–19 % too steep on all three meshes and does not come down with three across: that is the
+  bores' pressure difference (6.2–6.9 % of the range, growing steadily up the bore from the tip).
+- Round the pipes outside the bores the tetrahedra are 1.0–1.1 % from OpenFOAM's 2-across meshes and 0.6 % from its
+  3-across one (0.9 % for the 2-across tetrahedra), 71–75 % of it in the jet below the tip (a tenth of the region).
+- The cross-width flow (w, 15 mm above the web behind the pipes; at most 1.3 mm/s): the tetrahedra 5.0–6.6 % RMS from
+  OpenFOAM along the line, the block mesh 14.8–15.6 %, its few elements across between the pipes putting bumps near
+  z = 70 and 85 mm that neither OpenFOAM nor the tetrahedra have (`results/pool_tet.png`, OpenFOAM's 3-across mesh).
+
+![pool on tetrahedra](results/pool_tet.png)
+
 ## Running it
 
 Needs OpenFOAM v1912 (`apt install openfoam` on Ubuntu 24.04), Python 3 with numpy and matplotlib, Node with
@@ -232,6 +324,15 @@ python3 heat/compare_heat.py heat/stack2d.json heat_app2d.json heat_of2d/of.json
 node stress/stress_app.js stress/block2d.json stress_app2d.json 1
 python3 stress/stress_of.py stress/block2d.json stress_of2d 1
 python3 stress/compare_stress.py stress/block2d.json stress_app2d.json stress_of2d/of.json
+
+# the pool on tetrahedra (no browser: the app's solvers in Node)
+node pooltet.js make pt10 0.01 2               # the app's solve and the case: 96,856 cells (0.007: 225,680)
+./runof.sh pt10 2
+node pooltet.js make pa3 0.01 3 3              # 3 elements across a bore: 265,376 cells
+./runof.sh pa3 3
+node pooltet.js compare pt10 pt10.json hex,tet:0.007   # the first table; with the block mesh and the 7 mm tetrahedra
+node pooltet.js compare pa3 pa3.json tet:0.01,hex      # the third
+python3 pooltet_plot.py pa3.json results/pool_tet.png
 
 # the free surface by volume of fluid (diverges on this flow; kept to show what was tried)
 node exp2d.js d2_newt.json 8795 '{"rheo":{"structOn":false},"cfdg":{"model":"newtonian"}}'
