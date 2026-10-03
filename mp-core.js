@@ -30,57 +30,27 @@ const MP_SIGMA = 5.670374419e-8;   // Stefan–Boltzmann, W/(m² K⁴)
 /** The Voigt index of a tensor's component i, j (xx yy zz yz xz xy). */
 const MP_VO = [[0, 5, 4], [5, 1, 3], [4, 3, 2]];
 
-// ---- Gauss–Legendre on [-1, 1] ----
-const MP_GAUSS = {
-  1: [[0], [2]],
-  2: [[-0.5773502691896257, 0.5773502691896257], [1, 1]],
-  3: [[-0.7745966692414834, 0, 0.7745966692414834], [0.5555555555555556, 0.8888888888888888, 0.5555555555555556]],
-  4: [[-0.8611363115940526, -0.3399810435848563, 0.3399810435848563, 0.8611363115940526],
-      [0.3478548451374538, 0.6521451548625461, 0.6521451548625461, 0.3478548451374538]],
-};
+// ---- the elements (um-fe.js, the element library every model shares): Gauss–Legendre on [-1, 1], the tensor-product
+//      Lagrange functions, the rules ----
+const MP_UFE = typeof ufeShape === 'function' ? { UFE_GAUSS, ufeLag1, ufeShape, ufePoints, ufeJac } : require('./um-fe.js');
+const MP_GAUSS = MP_UFE.UFE_GAUSS;
+/** The element type of order p in dim dimensions. */
+const MP_TYPE = { 1: ['line2', 'line3'], 2: ['quad4', 'quad9'], 3: ['hex8', 'hex27'] };
+const mpType = (p, dim) => { if (p !== 1 && p !== 2) throw new Error('mp-core: elements of order 1 or 2 only'); return MP_TYPE[dim][p - 1]; };
 
 /** The 1D Lagrange shape functions of order p on [-1, 1] (nodes equally spaced) and their slopes at s. */
-function mpLag1(p, s) {
-  if (p === 1) return [[(1 - s) / 2, (1 + s) / 2], [-0.5, 0.5]];
-  if (p === 2) return [[s * (s - 1) / 2, 1 - s * s, s * (s + 1) / 2], [s - 0.5, -2 * s, s + 0.5]];
-  throw new Error('mp-core: elements of order 1 or 2 only');
-}
+const mpLag1 = (p, s) => MP_UFE.ufeLag1(p, s);
 
 /**
  * The element's shape functions (tensor products, the local x index fastest) at the local point xi (dim numbers).
  * Returns { N (npe), dN (npe × dim, row-major) }.
  */
-function mpShape(p, dim, xi) {
-  const n1 = p + 1, npe = Math.pow(n1, dim), N = new Float64Array(npe), dN = new Float64Array(npe * dim);
-  const L = []; for (let d = 0; d < dim; d++) L.push(mpLag1(p, xi[d]));
-  for (let a = 0; a < npe; a++) {
-    const ix = [a % n1, Math.floor(a / n1) % n1, Math.floor(a / (n1 * n1))];
-    let v = 1; for (let d = 0; d < dim; d++) v *= L[d][0][ix[d]];
-    N[a] = v;
-    for (let g = 0; g < dim; g++) {
-      let w = 1; for (let d = 0; d < dim; d++) w *= d === g ? L[d][1][ix[d]] : L[d][0][ix[d]];
-      dN[a * dim + g] = w;
-    }
-  }
-  return { N, dN };
-}
+const mpShape = (p, dim, xi) => MP_UFE.ufeShape(mpType(p, dim), xi);
 
-/** The element's Gauss points (nq per axis): [{ xi, w, N, dN }]. Cached per (p, dim, nq). nq 'nodes': at the linear
- *  element's nodes (Gauss–Lobatto, weights 1: its stiffness on a rectangle is the 5- or 7-point stencil, which never
- *  overshoots -- however long and thin the element). */
-const MP_RULES = {};
-function mpRule(p, dim, nq) {
-  const key = `${p}.${dim}.${nq}`;
-  if (MP_RULES[key]) return MP_RULES[key];
-  const [s, w] = nq === 'nodes' ? [[-1, 1], [1, 1]] : MP_GAUSS[nq], out = [], m = Math.pow(s.length, dim);
-  nq = s.length;
-  for (let q = 0; q < m; q++) {
-    const iq = [q % nq, Math.floor(q / nq) % nq, Math.floor(q / (nq * nq))], xi = [], wt = [1];
-    for (let d = 0; d < dim; d++) { xi.push(s[iq[d]]); wt[0] *= w[iq[d]]; }
-    out.push({ xi, w: wt[0], ...mpShape(p, dim, xi) });
-  }
-  return (MP_RULES[key] = out);
-}
+/** The element's Gauss points (nq per axis): [{ xi, w, N, dN }]. Cached. nq 'nodes': at the linear element's nodes
+ *  (Gauss–Lobatto, weights 1: its stiffness on a rectangle is the 5- or 7-point stencil, which never overshoots --
+ *  however long and thin the element). */
+const mpRule = (p, dim, nq) => MP_UFE.ufePoints(mpType(p, dim), nq);
 
 // ---- the mesh ----
 
@@ -174,36 +144,8 @@ function mpFaceElems(M, face) {
   return { elems: out, axis: d, side: hi ? 1 : -1 };
 }
 
-/** The element's Jacobian at a rule point: fills dNdx (npe × dim), returns det J and the point's x. */
-function mpJac(M, e, q, dNdx) {
-  const dim = M.dim, npe = M.npe, J = [0, 0, 0, 0, 0, 0, 0, 0, 0], x = [0, 0, 0];
-  for (let a = 0; a < npe; a++) {
-    const n = M.conn[e * npe + a];
-    for (let i = 0; i < dim; i++) {
-      const xi = M.X[n * dim + i];
-      x[i] += q.N[a] * xi;
-      for (let j = 0; j < dim; j++) J[i * 3 + j] += xi * q.dN[a * dim + j];   // ∂x_i/∂ξ_j
-    }
-  }
-  let det, inv;
-  if (dim === 1) { det = J[0]; inv = [1 / det]; }
-  else if (dim === 2) {
-    det = J[0] * J[4] - J[1] * J[3];
-    inv = [J[4] / det, -J[1] / det, -J[3] / det, J[0] / det];   // ∂ξ_i/∂x_j, row-major 2×2
-  } else {
-    const a = J[0], b = J[1], c = J[2], d = J[3], f = J[4], g = J[5], h = J[6], k = J[7], l = J[8];
-    det = a * (f * l - g * k) - b * (d * l - g * h) + c * (d * k - f * h);
-    inv = [(f * l - g * k) / det, (c * k - b * l) / det, (b * g - c * f) / det,
-           (g * h - d * l) / det, (a * l - c * h) / det, (c * d - a * g) / det,
-           (d * k - f * h) / det, (b * h - a * k) / det, (a * f - b * d) / det];
-  }
-  if (!(det > 0)) throw new Error(`mp-core: element ${e} is inverted or flat`);
-  for (let a = 0; a < npe; a++) for (let j = 0; j < dim; j++) {
-    let s = 0; for (let i = 0; i < dim; i++) s += q.dN[a * dim + i] * inv[i * dim + j];
-    dNdx[a * dim + j] = s;
-  }
-  return { det, x: x.slice(0, dim) };
-}
+/** The element's Jacobian at a rule point: fills dNdx (npe × dim), returns det J and the point's x (um-fe.js's ufeJac). */
+const mpJac = (M, e, q, dNdx) => MP_UFE.ufeJac(M, e, q, dNdx);
 
 /**
  * The Gauss points on one face of an element (the element's own shape functions there): [{ N, w (the face's area

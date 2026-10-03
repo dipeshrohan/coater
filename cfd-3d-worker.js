@@ -20,7 +20,7 @@
  *   open, the bead pressure raised in steps from none; messages { id, step } after each step; the result as a strip's (at the
  *   highest pressure the edge held) with { region: 'edge', held, P, Pset, limit, steps, valid, squeeze, open (the surface round the edge) }.
  */
-importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-fem3d.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-blade.js', 'cfd-1d.js', 'um-fe.js', 'cfd-fem3d.js');
 
 /** Linear interpolation in a sorted table of [x, y]. */
 function interp(tab, x) {

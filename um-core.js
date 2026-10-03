@@ -12,13 +12,17 @@
  * The internal faces are in OpenFOAM's order (by owner, then neighbour), the boundary faces by patch then owner.
  *
  * umBuild(points, cells, bfaces, types): from cells [{ t (UM_*), v: [points] }] and boundary faces [{ v, tag }].
+ * umFromFE(M, { split }): a finite-element mesh in the common form (um-fe.js: feed-mesh.js's, mp-core.js's, hex8, hex27,
+ *   tet4, tet10), each element by its corners, or (split) a 27-node hexahedron as the 8 linear ones on its nodes.
  * umFromFm(M): feed-mesh.js's Q2 mesh, each hexahedron as 8 linear ones on its 27 nodes (as fmFoam).
  * umFromFoam(files): an OpenFOAM polyMesh (the text of points, faces, owner, neighbour, boundary).
  * umGeometry(U): face centres and area vectors, cell centres and volumes -- OpenFOAM's construction (each face a fan of
  *   triangles about its points' mean, each cell a fan of pyramids about its faces' centres' mean), exact for any planar
  *   polygon and any polyhedron with planar faces.
- * umQuality(U, G): OpenFOAM's checkMesh measures (non-orthogonality, skewness, aspect ratio, openness, volumes) and the
- *   tetrahedra's own (radius ratio 3 r_in / r_circ, dihedral angles), and the face counts of the polyhedra.
+ * umQuality(U, G, { cells }): OpenFOAM's checkMesh measures (non-orthogonality, skewness, aspect ratio, openness, volumes) and the
+ *   tetrahedra's own (radius ratio 3 r_in / r_circ, dihedral angles), and the face counts of the polyhedra; cells: each
+ *   cell's own as well (Q.cell: its faces' largest non-orthogonality and skewness, its aspect ratio, openness, radius
+ *   ratio, face count, volume), the worst of them the totals'.
  * umToFoam(U), umToVTK(U) (XML .vtu, polyhedra with their faces), umToFluent(U) (ASCII .msh).
  */
 
@@ -117,21 +121,38 @@ function umBuild(points, cells, bfaces, types = {}) {
     patches, cType, cOff: Int32Array.from(cOff), cV: Int32Array.from(cV) };
 }
 
-/** feed-mesh.js's Q2 hexahedra, each as 8 linear hexahedra on its 27 nodes; the boundary faces' tags its own. */
-function umFromFm(M, types = {}) {
-  const L = (a, b, g) => (g * 3 + b) * 3 + a, cells = [], bfaces = [];
-  for (let e = 0; e < M.nE; e++) for (let g = 0; g < 2; g++) for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) {
-    const n = (aa, bb, gg) => M.elems[27 * e + L(a + aa, b + bb, g + gg)];
-    // (VTK's hexahedron: a quad, then the one above it; the right-handedness is fixed by the faces' orientation)
-    cells.push({ t: UM_HEX, v: [n(0, 0, 0), n(1, 0, 0), n(1, 0, 1), n(0, 0, 1), n(0, 1, 0), n(1, 1, 0), n(1, 1, 1), n(0, 1, 1)] });
+/**
+ * A finite-element mesh in the common form (um-fe.js's ufeMesh: feed-mesh.js's, mp-core.js's block, or { type, conn, … }) as
+ * cells and faces. Each element by its corners (straight-sided: hex8 and hex27 as hexahedra, tet4 and tet10 as tetrahedra);
+ * split: a 27-node hexahedron as the 8 linear ones on its nodes instead (as fmFoam), so every node is a point of the mesh.
+ * The boundary faces' tags the mesh's own.
+ */
+function umFromFE(M0, { split = false, types = {} } = {}) {
+  const UF = typeof ufeMesh === 'function' ? { ufeMesh, ufeElement } : require('./um-fe.js');
+  const M = UF.ufeMesh(M0), E = UF.ufeElement(M.type), npe = E.npe, cells = [], bfaces = [];
+  const L = (a, b, g) => (g * 3 + b) * 3 + a, L2 = (a, b, g) => (g * 2 + b) * 2 + a;
+  // (VTK's hexahedron: a quad, then the one above it; the right-handedness is fixed by the faces' orientation)
+  const hex = n => [n(0, 0, 0), n(1, 0, 0), n(1, 0, 1), n(0, 0, 1), n(0, 1, 0), n(1, 1, 0), n(1, 1, 1), n(0, 1, 1)];
+  for (let e = 0; e < M.nE; e++) {
+    const c = M.conn, o = npe * e;
+    if (M.type === 'hex27' && split) {
+      for (let g = 0; g < 2; g++) for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) cells.push({ t: UM_HEX, v: hex((aa, bb, gg) => c[o + L(a + aa, b + bb, g + gg)]) });
+    } else if (M.type === 'hex27') cells.push({ t: UM_HEX, v: hex((a, b, g) => c[o + L(2 * a, 2 * b, 2 * g)]) });
+    else if (M.type === 'hex8') cells.push({ t: UM_HEX, v: hex((a, b, g) => c[o + L2(a, b, g)]) });
+    else if (M.type === 'tet4' || M.type === 'tet10') cells.push({ t: UM_TET, v: [c[o], c[o + 1], c[o + 2], c[o + 3]] });
+    else throw new Error(`um-core: no cells from ${M.type}`);
   }
-  const FMF = (typeof FM_FACES !== 'undefined' ? FM_FACES : require('./feed-mesh.js').FM_FACES);
   for (const { e, f, tag } of M.faces) {
-    const ids = FMF[f].map(i => M.elems[27 * e + i]);
-    for (let t = 0; t < 2; t++) for (let s = 0; s < 2; s++) bfaces.push({ v: [ids[t * 3 + s], ids[t * 3 + s + 1], ids[(t + 1) * 3 + s + 1], ids[(t + 1) * 3 + s]], tag });
+    const ids = E.faces[f].nodes.map(i => M.conn[npe * e + i]);
+    if (M.type === 'hex27' && split) { for (let t = 0; t < 2; t++) for (let s = 0; s < 2; s++) bfaces.push({ v: [ids[t * 3 + s], ids[t * 3 + s + 1], ids[(t + 1) * 3 + s + 1], ids[(t + 1) * 3 + s]], tag }); }
+    else if (M.type === 'hex27') bfaces.push({ v: [ids[0], ids[2], ids[8], ids[6]], tag });
+    else if (M.type === 'hex8') bfaces.push({ v: [ids[0], ids[1], ids[3], ids[2]], tag });
+    else bfaces.push({ v: ids.slice(0, 3), tag });
   }
   return umBuild({ X: M.X, Y: M.Y, Z: M.Z }, cells, bfaces, types);
 }
+/** feed-mesh.js's Q2 hexahedra, each as 8 linear hexahedra on its 27 nodes; the boundary faces' tags its own. */
+const umFromFm = (M, types = {}) => umFromFE(M, { split: true, types });
 
 /** Every face's centre and area vector, every cell's centre and volume (OpenFOAM's primitiveMesh construction). */
 function umGeometry(U) {
@@ -181,8 +202,11 @@ function umTetQuality(p) {
 /** OpenFOAM checkMesh's measures (primitiveMeshTools: faceOrthogonality -- its average the angle of the internal faces'
  *  mean cosine, as checkMesh prints it -- faceSkewness, cellClosedness), the volumes,
  *  the tetrahedra's radius ratios and dihedral angles, the polyhedra's face counts. */
-function umQuality(U, G = umGeometry(U)) {
+function umQuality(U, G = umGeometry(U), opts = {}) {
   const { nF, nIF, nC, own, nbr, fOff, fV, X, Y, Z } = U, { fc, fa, cc, cv } = G;
+  // (opts.cells: each cell's own measures too, for a viewer: the largest non-orthogonality and skewness of its faces, its
+  //  aspect ratio and openness, its tetrahedron's radius ratio)
+  const PC = opts.cells ? { nonOrtho: new Float64Array(nC), skewness: new Float64Array(nC), aspect: new Float64Array(nC), openness: new Float64Array(nC), rho: new Float64Array(nC).fill(NaN), faces: null } : null;
   const d3 = (i, A, j, B) => [A[3 * i] - B[3 * j], A[3 * i + 1] - B[3 * j + 1], A[3 * i + 2] - B[3 * j + 2]];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], mag = a => Math.hypot(a[0], a[1], a[2]);
   let noMax = 0, noSum = 0, noSevere = 0, skMax = 0;
@@ -201,10 +225,12 @@ function umQuality(U, G = umGeometry(U)) {
     if (f < nIF) {
       const d = d3(nbr[f], cc, own[f], cc), c = dot(d, S) / (mag(d) * mag(S)), ang = Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
       noMax = Math.max(noMax, ang); noSum += Math.max(-1, Math.min(1, c)); if (ang > 70) noSevere++;
-      skMax = Math.max(skMax, skew(f, Cpf(f), d, 0.2));
+      const sk = skew(f, Cpf(f), d, 0.2); skMax = Math.max(skMax, sk);
+      if (PC) for (const c2 of [own[f], nbr[f]]) { PC.nonOrtho[c2] = Math.max(PC.nonOrtho[c2], ang); PC.skewness[c2] = Math.max(PC.skewness[c2], sk); }
     } else {
-      const C = Cpf(f), n = S.map(x => x / (mag(S) + 1e-300)), dn = dot(n, C);
-      skMax = Math.max(skMax, skew(f, C, n.map(x => x * dn), 0.4));
+      const C = Cpf(f), n = S.map(x => x / (mag(S) + 1e-300)), dn = dot(n, C), sk = skew(f, C, n.map(x => x * dn), 0.4);
+      skMax = Math.max(skMax, sk);
+      if (PC) PC.skewness[own[f]] = Math.max(PC.skewness[own[f]], sk);
     }
   }
   // (closedness and aspect ratio: each cell's face area vectors summed, and their components' magnitudes summed)
@@ -220,6 +246,7 @@ function umQuality(U, G = umGeometry(U)) {
     const v = Math.max(1e-150, cv[c]);
     const ar = Math.max(mx / (mn + 1e-150), (sM[3 * c] + sM[3 * c + 1] + sM[3 * c + 2]) / 6 / Math.pow(v, 2 / 3));
     openMax = Math.max(openMax, op); arMax = Math.max(arMax, ar);
+    if (PC) { PC.aspect[c] = ar; PC.openness[c] = op; }
     vMin = Math.min(vMin, cv[c]); vMax = Math.max(vMax, cv[c]); vTot += cv[c]; if (!(cv[c] > 0)) neg++;
   }
   // the cell types; each tetrahedron's radius ratio and dihedral angles; each polyhedron's face count
@@ -230,6 +257,7 @@ function umQuality(U, G = umGeometry(U)) {
     if (U.cType[c] === UM_TET && U.cOff[c + 1] - U.cOff[c] === 4) {
       const p = [0, 1, 2, 3].map(k => { const v = U.cV[U.cOff[c] + k]; return [X[v], Y[v], Z[v]]; }), q = umTetQuality(p);
       rhoMin = Math.min(rhoMin, q.rho); rhoSum += q.rho; nTet++; dMin = Math.min(dMin, ...q.dih); dMax = Math.max(dMax, ...q.dih);
+      if (PC) PC.rho[c] = q.rho;
     } else if (U.cType[c] === UM_POLY) { pfMin = Math.min(pfMin, nFc[c]); pfMax = Math.max(pfMax, nFc[c]); pfSum += nFc[c]; nPoly++; }
   }
   return {
@@ -238,6 +266,7 @@ function umQuality(U, G = umGeometry(U)) {
     volumeMin: vMin, volumeMax: vMax, volumeTotal: vTot, negativeVolumes: neg,
     ...(nTet ? { tet: { n: nTet, rhoMin, rhoMean: rhoSum / nTet, dihedralMin: dMin, dihedralMax: dMax } } : {}),
     ...(nPoly ? { poly: { n: nPoly, facesMin: pfMin, facesMax: pfMax, facesMean: pfSum / nPoly } } : {}),
+    ...(PC ? { cell: { ...PC, faces: nFc, volume: cv } } : {}),
   };
 }
 
@@ -370,4 +399,4 @@ function umToFluent(U, name = 'fluid') {
   return out.join('\n') + '\n';
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { UM_TET, UM_HEX, UM_WEDGE, UM_PYR, UM_POLY, UM_FACES, umFace, umOrient, umBuild, umFromFm, umGeometry, umTetQuality, umQuality, umToFoam, umFromFoam, umToVTK, umToFluent };
+if (typeof module !== 'undefined' && module.exports) module.exports = { UM_TET, UM_HEX, UM_WEDGE, UM_PYR, UM_POLY, UM_FACES, umFace, umOrient, umBuild, umFromFE, umFromFm, umGeometry, umTetQuality, umQuality, umToFoam, umFromFoam, umToVTK, umToFluent };
