@@ -34,6 +34,13 @@ function mixOpts() {
 }
 /** The page's inputs in SI with the slurry card's densities (the recipe's batch: its volume, its level). */
 const mixSetup = () => { const c = MAT.slurry; return { ...mixInSI(mixIn()), rhoS: c.rhoS.v * 1000, rhoL: c.rhoL.v }; };
+/** The slurry's solids from the recipe (MIX-1c: the mixed slurry goes straight to the coater), unless Materials types
+ *  its own (MAT.mixLink off); a recipe without GO leaves them as they are. */
+function mixSyncSlurry() {
+  if (!MAT.mixLink) return;
+  const v = mixRecipe(mixSetup()).phiEnd * 100;
+  if (Number.isFinite(v) && v > 0 && MAT.slurry.phi.v !== v) MAT.slurry = { ...MAT.slurry, phi: { ...MAT.slurry.phi, v, src: 'the Mixing recipe' } };
+}
 const mixProps = () => (typeof matSolverProps === 'function' ? matSolverProps() : null);
 function mixKeyNow() {
   const c = MAT.slurry;
@@ -229,7 +236,8 @@ function mixPageHTML() {
       <canvas id="mxProg" class="mx-strip" role="img" aria-label="The program's steps along the time"></canvas>${mixProgramTable()}</div>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The recipe</h4><span class="fv-why">the batch weighed in; the paste soaked first, its pieces swelling</span>
         <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" data-chain="mixrecipe">${uiIco('tune')}Its amounts (inputs bar)</button></div>${mixRecipeHTML()}</div>
-    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The mixed slurry</h4><span class="fv-why">Materials: the slurry the coater takes, its flow law and flakes</span></div>${procSlurryHTML()}</div>
+    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The mixed slurry</h4><span class="fv-why">${MAT.mixLink ? 'what the coater takes: its solids from the recipe, its flow law and flakes from Materials' : 'what the coater takes: Materials\' slurry'}</span></div>
+      ${MAT.mixLink ? '' : `<p class="dry-msg">${pill(`Materials types its own solids, ${+MAT.slurry.phi.v.toFixed(3)} vol%: the recipe gives ${(mixRecipe(q).phiEnd * 100).toFixed(3)} vol%`, 'warn')}<button type="button" class="btn btn-secondary btn-sm" id="mxUseRecipe">Use the recipe's</button></p>`}${procSlurryHTML()}</div>
     <div id="mxState" data-pstep="solve results"></div>
     <div class="furn-block" data-pstep="solve"><div class="furn-bh"><h4>How it is solved</h4></div>
       <table class="cfd-table mx-how"><tbody>
@@ -405,6 +413,7 @@ function mixWire(sec) {
   sec.addEventListener('click', e => {
     const del = e.target.closest && e.target.closest('[data-mxdel]');
     if (del) { mixIn().steps.splice(+del.dataset.mxdel, 1); processPage(true); return; }
+    if (e.target.closest && e.target.closest('#mxUseRecipe')) { undoHint('Materials: the solids from the Mixing recipe'); MAT.mixLink = true; render(); return; }
     if (e.target.closest && e.target.closest('#mxAddStep')) { const S = mixIn().steps, last = S[S.length - 1] || MIX_STEPS[0]; S.push({ ...last, name: `Step ${S.length + 1}`, dose: null }); processPage(true); }
   });
 }

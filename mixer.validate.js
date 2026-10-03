@@ -18,7 +18,8 @@
  *     through every step and at its end, each record with its own step's speeds, the ammonia's jump in pH and heat at
  *     its step's start; the run's time.
  *  9. The recipe: the batch's totals against the recipe sheet's own (SOP 1.3, 100 L: 3104 g of paste at 45 %, 10 + 70 kg
- *     of water, 242 g of 25 % ammonia water -- 83,346 g in all, 81,949.2 g of liquid, 98.3 % liquid).
+ *     of water, 242 g of 25 % ammonia water -- 83,346 g in all, 81,949.2 g of liquid, 98.3 % liquid); Materials' default
+ *     solids the recipe's.
  * 10. Turbulence: the Kolmogorov length of water at 1 W/kg (31.6 µm, (ν³/ε)^¼); the eddies' stress C ρ (ε a)^⅔ meeting
  *     C μ (ε/ν)^½ at that length; without turbulence the mean shear's stress.
  * 11. The grind gauge: hard pieces alone, nothing turning -- the reading against the size where Ns pieces of their
@@ -172,8 +173,10 @@ const integrate = (pbe, N0, rates, T, n) => { const N = Float64Array.from(N0), K
   const g = x => x * 1000, got = [['batch', g(R.mTot), 83346], ['liquid, the paste\'s water in', g(R.mLiq), 81949.2], ['dry GO', g(R.mGO), 1396.8],
     ['water and ammonia water added', g(o.mSoak + o.mWat + o.mN), 80242]];
   const worst = Math.max(...got.map(([, a, b]) => Math.abs(a - b)));
-  check('the recipe: the batch\'s totals against the recipe sheet\'s (SOP 1.3, 100 L)', worst < 1e-6 && Math.abs(R.mLiq / R.mTot * 100 - 98.3) < 0.05,
-    `${got.map(([n, a, b]) => `${n} ${a.toFixed(1)} g (sheet ${b})`).join(', ')}; liquid ${(R.mLiq / R.mTot * 100).toFixed(2)} % (sheet 98.3 %); GO ${(R.wGO * 100).toFixed(3)} wt%, ${(R.phiEnd * 100).toFixed(3)} vol%, ${(R.Vend * 1000).toFixed(2)} L`);
+  // (Materials' slurry solids by default: the recipe's, MIX-1c)
+  const MATS = require('./materials.js'), phiDef = MATS.MAT_SLURRY.find(q => q[0] === 'phi')[7];
+  check('the recipe: the batch\'s totals against the recipe sheet\'s (SOP 1.3, 100 L); Materials\' default solids the recipe\'s', worst < 1e-6 && Math.abs(R.mLiq / R.mTot * 100 - 98.3) < 0.05 && phiDef === +(R.phiEnd * 100).toFixed(3),
+    `${got.map(([n, a, b]) => `${n} ${a.toFixed(1)} g (sheet ${b})`).join(', ')}; liquid ${(R.mLiq / R.mTot * 100).toFixed(2)} % (sheet 98.3 %); GO ${(R.wGO * 100).toFixed(3)} wt%, ${(R.phiEnd * 100).toFixed(3)} vol% (Materials' default ${phiDef}), ${(R.Vend * 1000).toFixed(2)} L`);
 }
 
 // 10. turbulence: the Kolmogorov scale and the eddies' stress

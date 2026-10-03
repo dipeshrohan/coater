@@ -883,6 +883,7 @@ function render() {
   // (the built-in laws on this page's own calls -- a dew point, the pressed stack's vapour pressures: the hub's, MC-1b)
   if (typeof matSolverProps === 'function') { const pr = matSolverProps(); if (typeof drUse === 'function') drUse(pr); if (typeof fmpUse === 'function') fmpUse(pr); }
   rheoReadout();   // (the inputs bar's line under the slurry's law: its viscosity at 2.7 1/s against the measurement)
+  if (typeof mixSyncSlurry === 'function') mixSyncSlurry();   // (the slurry's solids from the Mixing recipe, MIX-1c)
   // (a redraw keeps the keyboard focus on a sub tab or 1D location button: arrow keys go on working)
   const af = document.activeElement, keepF = af && af.closest && (af.closest('.subtabs [data-view]') || af.closest('[data-l1d]'))
     ? (af.dataset.row ? `.subtabs [data-row="${af.dataset.row}"]` : '[data-l1d]') : null, keepV = af && (af.dataset.nav ?? af.dataset.view ?? af.dataset.l1d);

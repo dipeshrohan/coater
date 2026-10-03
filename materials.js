@@ -12,7 +12,7 @@
 
 /** The slurry card's values: [key, label, unit, min, max, step, decimals, default, flag, source]. */
 const MAT_SLURRY = [
-  ['phi', 'Solids', 'vol%', 1, 74, 0.5, 1, 40, 'given', 'you: over 40 vol% solids (the exact fraction not given)'],
+  ['phi', 'Solids', 'vol%', 0.01, 74, 0.01, 3, 0.889, 'given', 'the Mixing recipe (SOP 1.3, 100 L: 1.68 wt% GO)'],
   ['rhoS', 'Solids density (GO)', 'g/cm³', 1, 3, 0.05, 2, 1.9, 'assumed', 'you: GO particles; GO 1.8–2.2 g/cm³ reported'],
   ['rhoL', 'Liquid density (water)', 'kg/m³', 900, 1100, 1, 0, 1000, 'assumed', 'water-based (you)'],
   ['dMean', 'Particle size, mean', 'µm', 0.1, 100, 0.1, 1, 5, 'given', 'you: 2–8 µm particles (the mean not given)'],
@@ -202,13 +202,16 @@ const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, sr
 // sem: the measured alignment -- SEM images and tables of flake angles, orient-ui.js;
 // dry: the drying card; dryMeas: the drying measured -- temperatures in the oven and values at its exit, drying-ui.js;
 // film: the dry film's card; filmMeas: the film measured -- its curl, its cracks, the peel force, film-ui.js;
+// mixLink: the slurry's solids follow the Mixing recipe (the mixed slurry goes straight to the coater) -- off, typed here;
 // furn: the furnace's card; furnMeas: the graphene film measured -- its thickness, weight and heat conduction, furnace-ui.js;
 // prov: the provenance of the inputs bar's material values, { 'in.k': { kind, src } }, the material hub's (MH-5): a card value keeps
 // its own in its entry, as prov beside its flag)
 const matDefaults = () => ({ slurry: matCard(MAT_SLURRY), rheo: { ...matCard(MAT_RHEO), structOn: true, side: {} }, tests: [],
   orient: { ...matCard(MAT_ORIENT), on: true, model: 'dh' }, sem: { images: [], tables: [] }, dry: matCard(MAT_DRY), dryMeas: { temps: [], exit: [] },
-  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB), meta: {}, law: {}, inst: {}, assign: {}, xrec: matCard(MAT_XREC) });
+  film: matCard(MAT_FILM), filmMeas: { curl: [], cracks: [], peel: [], size: [] }, furn: matCard(MAT_FURN), furnMeas: { out: [] }, prov: {}, lib: matCard(MAT_LIB), meta: {}, law: {}, inst: {}, assign: {}, xrec: matCard(MAT_XREC), mixLink: true });
 let MAT = matDefaults();
+/** The slurry's solids as written (vol%): three significant figures (0.889, 40). */
+const matPhiTxt = (m = MAT) => String(+(+m.slurry.phi.v).toPrecision(3));
 /** A slurry card value (its number). */
 const matV = k => MAT.slurry[k].v;
 /** A rheology value (its number). */
@@ -315,4 +318,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matPhiTxt, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

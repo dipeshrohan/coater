@@ -42,7 +42,7 @@ function processStages() {
   const S3 = typeof C3D_RES !== 'undefined' && C3D_RES ? C3D_RES : null, stale3 = S3 && S3.key !== c3dSolveKey3(S3);
   const one = ONE_D.res && oneDCurrent(), o = ovenTime(lineSpeed());
   return [
-    { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${c.phi.v} vol% solids, flakes ${c.dMin.v}–${c.dMax.v} µm` },
+    { k: 'slurry', t: 'Slurry', go: 13, st: 'set', s: `GO in water, ${matPhiTxt()} vol% solids, flakes ${c.dMin.v}–${c.dMax.v} µm` },
     { k: 'coat', t: 'Coating under the blade', go: 8, st: one ? 'solved' : ONE_D.error ? 'failed' : solvePending('1d') ? 'busy' : ONE_D.res ? 'stale' : 'todo',
       s: [one ? `wet film ${ansFrom((processWeb() || { src: '1D' }).src)}` : ONE_D.error ? '1D not solved' : solvePending('1d') ? '1D solving…' : ONE_D.res ? '1D out of date' : '1D not solved', n2 ? `2D at ${n2} of 4 locations` : '', s2 ? `${s2} 2D out of date` : '', S3 ? `3D ${stale3 ? 'out of date' : 'solved'}${ans3DTag() ? ` (${ans3DTag()}, not used)` : ''}` : ''].filter(Boolean).join(' · ') },
     (() => { const o = CFD_LOCS.map((_, i) => cfdRuns[i] && cfdRuns[i].result && !cfdIsStale(i) ? cfdRuns[i].result.orient : null).filter(Boolean);
@@ -124,11 +124,13 @@ function procSlurryHTML() {
   const X0 = (1 - c.phi.v / 100) * c.rhoL.v / (c.phi.v / 100 * c.rhoS.v * 1000), g = procSlurryGap(), sig = v => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
   const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
   const pct = v => (v * 100).toFixed(1);
-  const bar = (label, go, w) => `<div class="mx-bar"><span class="mx-bar-l">${label}</span><span class="mx-bar-t"><span class="mx-go" style="width:${(go * 100).toFixed(2)}%">GO ${pct(go)} %</span><span class="mx-w" style="width:${(w * 100).toFixed(2)}%">water ${pct(w)} %</span></span></div>`;
+  // (a share too narrow for its words: both named on the water's part)
+  const bar = (label, go, w) => { const narrow = go < 0.12;
+    return `<div class="mx-bar"><span class="mx-bar-l">${label}</span><span class="mx-bar-t"><span class="mx-go${narrow ? ' mx-go-thin' : ''}" style="width:${(go * 100).toFixed(2)}%">${narrow ? '' : `GO ${pct(go)} %`}</span><span class="mx-w" style="width:${(w * 100).toFixed(2)}%">${narrow ? `GO ${pct(go)} % · water ${pct(w)} %` : `water ${pct(w)} %`}</span></span></div>`; };
   return `<div class="mx-page">
     <div class="stats mx-stats">${[
-      tile('Solids', `${c.phi.v} vol%`, `${pct(wt)} % by mass`, 'weight'),
-      tile('Water', `${(X0 * 100).toFixed(1)} %`, 'of the GO\'s mass', 'drop'),
+      tile('Solids', `${matPhiTxt()} vol%`, `${+(wt * 100).toPrecision(3)} % by mass`, 'weight'),
+      tile('Water', `${+X0.toPrecision(3)} kg`, 'per kg of GO', 'drop'),
       tile('Slurry density', `${slurryRho().toFixed(0)} kg/m³`, 'from its solids', 'weight'),
       tile('Viscosity in the gap', `${sig(g.mu)} Pa·s`, `at ${sig(g.gd)} 1/s (U/H)`, 'flow'),
       tile('Yield stress', g.ty > 0 ? `${g.ty.toFixed(1)} Pa` : 'none', RHEO_MODELS[CFDG.model].l, 'ratio'),
@@ -141,8 +143,8 @@ function procSlurryHTML() {
       <figure class="pane mx-pane"><figcaption>${uiBadge('bars')}What it is made of <button type="button" class="linkish mx-edit" data-chain="13">Edit in Materials</button></figcaption>
         <div class="mx-bars">${bar('By volume', c.phi.v / 100, 1 - c.phi.v / 100)}${bar('By mass', wt, 1 - wt)}</div>
         <table class="cfd-table mx-comp"><thead><tr><th scope="col">Component</th><th scope="col">Volume <small>%</small></th><th scope="col">Mass <small>%</small></th><th scope="col">Density <small>kg/m³</small></th></tr></thead>
-          <tbody><tr><th scope="row"><i class="mx-sw mx-sw-go"></i>Graphene oxide</th><td>${c.phi.v.toFixed(1)}</td><td>${pct(wt)}</td><td>${(c.rhoS.v * 1000).toFixed(0)}</td></tr>
-            <tr><th scope="row"><i class="mx-sw mx-sw-w"></i>Water</th><td>${(100 - c.phi.v).toFixed(1)}</td><td>${pct(1 - wt)}</td><td>${c.rhoL.v.toFixed(0)}</td></tr>
+          <tbody><tr><th scope="row"><i class="mx-sw mx-sw-go"></i>Graphene oxide</th><td>${+c.phi.v.toPrecision(3)}</td><td>${+(wt * 100).toPrecision(3)}</td><td>${(c.rhoS.v * 1000).toFixed(0)}</td></tr>
+            <tr><th scope="row"><i class="mx-sw mx-sw-w"></i>Water</th><td>${+(100 - c.phi.v).toPrecision(4)}</td><td>${+(100 - wt * 100).toPrecision(4)}</td><td>${c.rhoL.v.toFixed(0)}</td></tr>
             <tr class="mx-total"><th scope="row">Slurry</th><td>100.0</td><td>100.0</td><td>${slurryRho().toFixed(0)}</td></tr></tbody></table>
         <p class="mx-foot">Dry film packing ${c.phiDry.v}</p></figure>
     </div></div>`;
@@ -231,7 +233,7 @@ function processSidebar() {
     peel: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[part]}</summary>${ovenZonesTree({ zones: false, peel: part })}</details>`,
     furn: () => `<details class="grp cfd-grp" data-tree="furn"${FV.tree.furn !== false ? ' open' : ''}><summary>The furnace</summary>${furnTreeHTML()}</details>`,
     matro: () => `<details class="grp cfd-grp" data-tree="matro"${open('matro')}><summary>From the materials</summary>
-      ${row('Solids (GO)', `${c.phi.v} vol%`)}${row('GO density', `${c.rhoS.v} g/cm³`)}${row('Liquid (water)', `${c.rhoL.v} kg/m³`)}${row('Dry film packing', `${c.phiDry.v}`)}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`)}
+      ${row('Solids (GO)', `${matPhiTxt()} vol%`)}${row('GO density', `${c.rhoS.v} g/cm³`)}${row('Liquid (water)', `${c.rhoL.v} kg/m³`)}${row('Dry film packing', `${c.phiDry.v}`)}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`)}
       <p class="prop-note">The slurry's card, on Materials. Its density follows from the solids, and the flow models use it.</p>
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="procToMat">${uiIco(13)}Edit in Materials</button></div>
     </details>`,
@@ -258,6 +260,7 @@ function viewProcess() {
 }
 /** The Process page itself (redrawn alone after an oven zone's value, so the inputs bar keeps its focus). */
 function processPage(alone = false) {
+  if (typeof mixSyncSlurry === 'function') mixSyncSlurry();   // (a recipe's change reaches the slurry's solids, MIX-1c)
   if (alone) { processPageBody(); paneSweep(); wireModDock(); undoUI(); return; }
   processPageBody();
 }
@@ -274,9 +277,12 @@ function processPageBody() {
       + `<div class="proc-stage" data-stage-of="dry">${drySectionHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="film">${filmSectionHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="furn">${furnSectionHTML()}</div>`,
-    panes: [{ id: 'pr1', icon: 'film', title: 'Wet and dry film across the web', aria: 'Wet film and dry film against position across the web',
-      legend: oneDLegend([['wet film', mut, 'dash'], ['dry film (mass balance)', acc]]),
-      note: 'The wet film is the 1D gap flow at every position across the web (Coating › 1D › Across the web). The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials).' }],
+    panes: [{ id: 'pr1', icon: 'film', title: 'Wet film across the web', aria: 'Wet film against position across the web',
+      legend: oneDLegend([['wet film', mut, 'dash']]),
+      note: 'The wet film is the 1D gap flow at every position across the web (Coating › 1D › Across the web).' },
+    { id: 'pr2', icon: 'film', title: 'Dry film across the web', aria: 'Dry film against position across the web',
+      legend: oneDLegend([['dry film (mass balance)', acc]]),
+      note: 'The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials), at every position across the web.' }],
     extra: `<div class="proc-table" id="procTable"></div><div class="prop-actions proc-go"><button type="button" class="btn btn-secondary btn-sm" data-chain="8">${uiIco(8)}Coating › 1D: the gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-chain="11">${uiIco(11)}Across the web</button><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Coating › 2D</button></div>`,
   });
   processShowStage();
@@ -311,7 +317,7 @@ function processPageBody() {
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
   let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film${web ? ` (${web.tag})` : ''}`, '');
   pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${ACROSS_W} mm web at ${P.U} m/min`, '');
-  if (wetTooLoose) pills += pill(`Dry film packing ${c.phiDry.v} is below the slurry's solids fraction (${c.phi.v} vol%): the film would not shrink as it dries`, 'bad');
+  if (wetTooLoose) pills += pill(`Dry film packing ${c.phiDry.v} is below the slurry's solids fraction (${matPhiTxt()} vol%): the film would not shrink as it dries`, 'bad');
   const fib = FIBRES[CFDG.fibre], hot = OVEN.zones.filter(z => z.airT > fib.tUse);
   if (hot.length) pills += pill(`Oven air above the fibre's ${fib.tUse} °C continuous limit in ${hot.length} zone${hot.length === 1 ? '' : 's'}`, 'warn');
   if (!web) pills += solvePending('1d') ? pill('Solving the 1D across the web…', '') : solveCtl('1d', 'Coating 1D across the web');
@@ -326,13 +332,14 @@ function processPageBody() {
     ['Time in the oven', Number.isFinite(o.t) ? `${(o.t / 60).toFixed(1)} min` : '—', 'period'],
   ].map(stat).join('');
   // the film across the web
-  const cv = document.getElementById('pr1');
+  // (the wet film in mm, the dry film in µm, each on its own scale: a dilute slurry's dry film is a hundredth of its wet)
+  const cv = document.getElementById('pr1'), cv2 = document.getElementById('pr2');
   if (web) {
-    const z = web.A.map(r => r.z), wet = web.A.map(r => r.film * 1000), dry = web.A.map(r => massBalance(r.film, U, W).dry * 1000);
-    const hi = Math.max(...wet, ...dry);
-    plotChart(cv, fitAspect(cv, 0.4), { x0: Math.min(0, z[0]), x1: Math.max(ACROSS_W, z[z.length - 1]), y0: 0, y1: hi * 1.12, yl: 'film (mm)', xl: 'position across the web (mm)', yd: 2,
-      s: [{ p: z.map((x, k) => [x, wet[k]]), c: mut, w: 1.6, dash: [6, 4] }, { p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }] });
-  } else { const cx = setupCanvas(cv, fitAspect(cv, 0.4)); cx.c.fillStyle = mut; cx.c.font = '13px ' + cssVar('--sans'); cx.c.fillText(solvePending('1d') ? 'Solving the 1D across the web…' : 'The 1D across the web is not solved: Solve it (above).', 16, 28); }
+    const z = web.A.map(r => r.z), wet = web.A.map(r => r.film * 1000), dry = web.A.map(r => massBalance(r.film, U, W).dry * 1e6);
+    const xs = { x0: Math.min(0, z[0]), x1: Math.max(ACROSS_W, z[z.length - 1]), xl: 'position across the web (mm)' };
+    plotChart(cv, fitAspect(cv, 0.3), { ...xs, y0: 0, y1: Math.max(...wet) * 1.12, yl: 'wet film (mm)', yd: 2, s: [{ p: z.map((x, k) => [x, wet[k]]), c: mut, w: 1.6, dash: [6, 4] }] });
+    if (cv2) plotChart(cv2, fitAspect(cv2, 0.3), { ...xs, y0: 0, y1: Math.max(...dry) * 1.12, yl: 'dry film (µm)', yd: 1, s: [{ p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }] });
+  } else { const why = solvePending('1d') ? 'Solving the 1D across the web…' : 'The 1D across the web is not solved: press Solve'; for (const c of [cv, cv2]) if (c) { const cx = setupCanvas(c, fitAspect(c, 0.3)); cx.c.clearRect(0, 0, cx.w, cx.h); paneEmpty(c, why); } }
   drawProcessTable(locs, web);
   dryRender();
   filmRender();
@@ -356,7 +363,7 @@ function drawProcessTable(locs, web) {
     <thead><tr><th scope="col">Quantity</th>${cols.map(c => `<th scope="col"${c.tip ? ` title="${c.tip}"` : ''}>${c.head}</th>`).join('')}</tr></thead>
     ${rows.map(([t, u, f]) => `<tr><th scope="row">${t} <small>${u}</small></th>${cols.map(c => c.h != null ? `<td>${f(c.h)}</td>` : '<td class="na" title="solving">—</td>').join('')}</tr>`).join('')}
   </table></div>
-  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D${ans3DTag() ? '; the structure model is on and the 3D has the plain flow curve, so the 3D is not used (models are not mixed)' : ''}. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${MAT.slurry.phi.v} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
+  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D${ans3DTag() ? '; the structure model is on and the 3D has the plain flow curve, so the 3D is not used (models are not mixed)' : ''}. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${matPhiTxt()} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
 }
 
 // ---- Materials ----
