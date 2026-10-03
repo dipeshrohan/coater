@@ -14,7 +14,8 @@
  *   the tops 'layers:' + the wall's tag), map (S2's points → this object's), X, Y, Z (S's points, then the
  *   layers' points), stack (for each of S's wall points, its points from the wall to the top: n + 1), n (per point),
  *   thickness (per spec), volume (the solid's, from S's triangles) }. Errors said plainly: a wall point on three other
- *   planes, the layers too thick for the triangles next to them, a direction too slanted to the wall, two specs at a point.
+ *   planes, the layers too thick for the triangles next to them, a direction too slanted to the wall, two specs at a point,
+ *   layers that would end in the open at a convex edge (a pipe's bore meeting its end: layer the end too).
  * umlAssemble(L, V): the layers and the tetrahedra umtVolume made of L.S2 as one mesh. Where the tetrahedra's mesher split
  *   an edge of a layers' top (its middle), the layers under it are split the same (the middle of each layer's edge), so
  *   every face is shared whole. Returns { X, Y, Z, tet (4 each), wedge (6 each: the wall's triangle, then the next layer's,
@@ -51,12 +52,12 @@ function umlLayers(S, specs, o = {}) {
   const X = Array.from(S.X), Y = Array.from(S.Y), Z = Array.from(S.Z), stack = new Array(nP), nOf = new Int32Array(nP);
   for (let v = 0; v < nP; v++) if (pSpec[v] >= 0) {
     const p = P(v); let nw = [0, 0, 0];
-    const planes = [];
+    const planes = [], others = [];
     for (const t of at[v]) {
       if (tSpec[t] >= 0) { // (the angle at v)
         const k = [0, 1, 2].find(i => tri[3 * t + i] === v), a = P(tri[3 * t + (k + 1) % 3]), b = P(tri[3 * t + (k + 2) % 3]), ang = Math.acos(Math.max(-1, Math.min(1, dot(unit(sub(a, p)), unit(sub(b, p))))));
         nw = [nw[0] - ang * nrm[t][0], nw[1] - ang * nrm[t][1], nw[2] - ang * nrm[t][2]];
-      } else { const n = nrm[t]; if (!planes.some(q => Math.abs(dot(q, n)) > 1 - 1e-9)) planes.push(n); }   // (each other face's plane at v: the layers' sides on it)
+      } else { const n = nrm[t]; others.push(t); if (!planes.some(q => Math.abs(dot(q, n)) > 1 - 1e-9)) planes.push(n); }   // (each other face's plane at v: the layers' sides on it)
     }
     nw = unit(nw);
     let d;
@@ -64,6 +65,17 @@ function umlLayers(S, specs, o = {}) {
     else if (planes.length === 1) { const q = planes[0], s = dot(nw, q); d = unit([nw[0] - s * q[0], nw[1] - s * q[1], nw[2] - s * q[2]]); }
     else if (planes.length === 2) { d = unit(cross(planes[0], planes[1])); if (dot(d, nw) < 0) d = d.map(c => -c); }
     else throw new Error(`um-tetlayers: a wall point on three other planes at (${p.map(x => (x * 1e3).toFixed(3)).join(', ')}) mm`);
+    // (the layers' sides must lie on that face: the direction pointing into its triangles at v. At a convex edge -- the
+    //  face turning away from the solid, as a pipe's end from its bore -- they would lie beyond it, inside the solid,
+    //  and the face's tag would wall off the paste there: refused)
+    for (const q of planes) {
+      let m = [0, 0, 0]; for (const t of others) { if (Math.abs(dot(nrm[t], q)) < 1 - 1e-9) continue;
+        const a = P(tri[3 * t]), b = P(tri[3 * t + 1]), c = P(tri[3 * t + 2]);
+        for (let k = 0; k < 3; k++) m[k] += (a[k] + b[k] + c[k]) / 3 - p[k]; }
+      const s = dot(m, q); m = [m[0] - s * q[0], m[1] - s * q[1], m[2] - s * q[2]];
+      if (dot(d, m) < 0) { const tw = S.tag[at[v].find(t => tSpec[t] >= 0)], to = S.tag[others.find(t => Math.abs(dot(nrm[t], q)) > 1 - 1e-9)];
+        throw new Error(`um-tetlayers: the layers on '${tw}' would end in the open where it meets '${to}' at a convex edge, at (${p.map(x => (x * 1e3).toFixed(3)).join(', ')}) mm: put layers on '${to}' too`); }
+    }
     const cs = dot(d, nw);
     if (!(cs >= minCos)) throw new Error(`um-tetlayers: the layers would leave the wall at ${(Math.acos(Math.max(-1, Math.min(1, cs))) * 180 / Math.PI).toFixed(0)}° from its normal at (${p.map(x => (x * 1e3).toFixed(3)).join(', ')}) mm (a face meeting it too steeply)`);
     const sp = pSpec[v], n = specs[sp].n, st = [v];

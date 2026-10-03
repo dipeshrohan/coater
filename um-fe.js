@@ -5,23 +5,32 @@
  * tetrahedron) reaches each of them the same way. Pure computation, no DOM: the page, the workers and Node.
  *
  * The elements (type: dimension, nodes):
- *   line2, line3 (1D); quad4, quad9, tri3, tri6 (2D); hex8, hex27, tet4, tet10 (3D).
+ *   line2, line3 (1D); quad4, quad9, tri3, tri6 (2D); hex8, hex27, tet4, tet10, wedge6, wedge18 (3D).
  * Their nodes:
  *   tensor elements (line, quad, hex): ξ, η, ζ in [−1, 1], node (a, b, g) (0 … p along each) numbered (g n1 + b) n1 + a,
  *     the first axis fastest -- the order the solvers have always used;
  *   simplices: barycentric, VTK's order. tri3: 0 (0, 0), 1 (1, 0), 2 (0, 1); tri6 adds 3 (0–1), 4 (1–2), 5 (2–0).
  *     tet4: 0 (0, 0, 0), 1 (1, 0, 0), 2 (0, 1, 0), 3 (0, 0, 1) (right-handed: face 0 1 2 seen from 3 runs
  *     counter-clockwise); tet10 adds 4 (0–1), 5 (1–2), 6 (0–2), 7 (0–3), 8 (1–3), 9 (2–3).
+ *   prisms (wedges: the prism layers on walls): a triangle (ξ, η, barycentric as tri3's) times a line (ζ in [−1, 1]),
+ *     right-handed: wedge6: 0 1 2 the triangle at ζ = −1, counter-clockwise seen from 3 4 5 above them at ζ = +1 (VTK
+ *     lists its base the other way round, so a VTK wedge a b c d e f is this a c b d f e). wedge18 (tri6 × line3, VTK's
+ *     biquadratic-quadratic wedge's numbering on that base) adds 6 (0–1), 7 (1–2), 8 (2–0), 9 (3–4), 10 (4–5), 11 (5–3), 12 (0–3),
+ *     13 (1–4), 14 (2–5), and the quadrilateral faces' middles 15 (0 1 4 3), 16 (1 2 5 4), 17 (2 0 3 5); its functions
+ *     the products of tri6's and line3's, so its triangles are tet10's faces and its quadrilaterals hex27's.
  * Faces (3D) and sides (2D) of each element, each with its own element type (quad9 on hex27, tri6 on tet10, …) and
  *   its nodes in that type's order, and `out`: +1 when the face's own coordinates give the outward normal (∂x/∂s × ∂x/∂t
  *   on a face, (∂y/∂s, −∂x/∂s) on a side), −1 when they give the inward one.
  *   hex (quad): 0 ξ = −1, 1 ξ = +1, 2 η = −1, 3 η = +1, 4 ζ = −1, 5 ζ = +1, s and t along the other axes in order (the
  *   order feed-mesh.js and cfd-fem3d.js have always used); tet: 0 (corners 0 1 3), 1 (1 2 3), 2 (0 3 2), 3 (0 2 1), each
- *   counter-clockwise seen from outside (out = +1); tri: sides 0 (0 1), 1 (1 2), 2 (2 0).
+ *   counter-clockwise seen from outside (out = +1); prism: 0 the triangle at ζ = −1 (0 2 1), 1 at ζ = +1 (3 4 5), then
+ *   the quadrilaterals 2 (0 1 4 3), 3 (1 2 5 4), 4 (2 0 3 5), s along the triangle's side and t along ζ (out = +1 on
+ *   all five); tri: sides 0 (0 1), 1 (1 2), 2 (2 0).
  *
  * Quadrature: Gauss–Legendre (n points per axis, n = 1 … 5) on the tensor elements, in the same order as their nodes
  *   ('nodes': the two ends, weights 1, the lumped rule); on triangles degree 1, 2 or 5 (Radon's 7 points); on
- *   tetrahedra degree 1, 2 or 5 (Walkington's 14 points, all weights positive, all points inside).
+ *   tetrahedra degree 1, 2 or 5 (Walkington's 14 points, all weights positive, all points inside); on prisms the
+ *   triangle's rule of that degree times Gauss along ζ (1, 2 or 3 points: the same degree along ζ).
  */
 
 // ---- Gauss–Legendre on [−1, 1] ----
@@ -46,6 +55,15 @@ function ufeLag1(p, s) {
 // ---- the reference elements ----
 const UFE_TENSOR = { line2: [1, 1], line3: [1, 2], quad4: [2, 1], quad9: [2, 2], hex8: [3, 1], hex27: [3, 2] };
 const UFE_SIMPLEX = { tri3: [2, 1], tri6: [2, 2], tet4: [3, 1], tet10: [3, 2] };
+// (prisms: each node as [its triangle node (tri3's or tri6's), its line node (ufeLag1's order: −1, then +1 (order 1);
+//  −1, 0, +1 (order 2))]; the faces' nodes in their own types' orders)
+const UFE_PRISM = {
+  wedge6: { p: 1, map: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]],
+    faces: [['tri3', [0, 2, 1]], ['tri3', [3, 4, 5]], ['quad4', [0, 1, 3, 4]], ['quad4', [1, 2, 4, 5]], ['quad4', [2, 0, 5, 3]]], edges: [] },
+  wedge18: { p: 2, map: [[0, 0], [1, 0], [2, 0], [0, 2], [1, 2], [2, 2], [3, 0], [4, 0], [5, 0], [3, 2], [4, 2], [5, 2], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1]],
+    faces: [['tri6', [0, 2, 1, 8, 7, 6]], ['tri6', [3, 4, 5, 9, 10, 11]], ['quad9', [0, 6, 1, 12, 15, 13, 3, 9, 4]], ['quad9', [1, 7, 2, 13, 16, 14, 4, 10, 5]], ['quad9', [2, 8, 0, 14, 17, 12, 5, 11, 3]]],
+    edges: [[0, 1, 6], [1, 2, 7], [2, 0, 8], [3, 4, 9], [4, 5, 10], [5, 3, 11], [0, 3, 12], [1, 4, 13], [2, 5, 14]] },
+};
 // (a simplex's edges by their corners, in VTK's order of the mid-edge nodes)
 const UFE_TRI_EDGES = [[0, 1], [1, 2], [2, 0]], UFE_TET_EDGES = [[0, 1], [1, 2], [0, 2], [0, 3], [1, 3], [2, 3]];
 // (a tetrahedron's faces, each outward: its corners counter-clockwise seen from outside)
@@ -87,6 +105,11 @@ function ufeElement(type) {
     if (dim === 3) for (const f of UFE_TET_FACES) faces.push({ type: p === 1 ? 'tri3' : 'tri6', nodes: p === 1 ? f.slice() : [...f, edgeMid(f[0], f[1]), edgeMid(f[1], f[2]), edgeMid(f[2], f[0])], out: 1 });
     else for (const [i, j] of UFE_TRI_EDGES) faces.push({ type: p === 1 ? 'line2' : 'line3', nodes: p === 1 ? [i, j] : [i, edgeMid(i, j), j], out: 1 });
     E = { type, dim, npe, p, kind: 'simplex', xi, corners, linear: dim === 2 ? 'tri3' : 'tet4', faces, edges: EDG.map(([i, j], k) => [i, j, p === 2 ? nc + k : -1]) };
+  } else if (UFE_PRISM[type]) {
+    const D = UFE_PRISM[type], T = ufeElement(D.p === 1 ? 'tri3' : 'tri6'), npe = D.map.length, xi = new Float64Array(npe * 3), zs = D.p === 1 ? [-1, 1] : [-1, 0, 1];
+    D.map.forEach(([t, l], a) => { xi[3 * a] = T.xi[2 * t]; xi[3 * a + 1] = T.xi[2 * t + 1]; xi[3 * a + 2] = zs[l]; });
+    E = { type, dim: 3, npe, p: D.p, kind: 'prism', xi, corners: [0, 1, 2, 3, 4, 5], linear: 'wedge6', map: D.map, tri: T.type,
+      faces: D.faces.map(([ft, nodes]) => ({ type: ft, nodes: nodes.slice(), out: 1 })), edges: D.edges.map(e => e.slice()) };
   } else throw new Error(`um-fe: no element ${type}`);
   return (UFE_CACHE[type] = E);
 }
@@ -106,6 +129,12 @@ function ufeShape(type, xi) {
       N[a] = v;
       for (let g = 0; g < dim; g++) { let w = 1; for (let d = 0; d < dim; d++) w *= d === g ? L[d][1][ix[d]] : L[d][0][ix[d]]; dN[a * dim + g] = w; }
     }
+    return { N, dN };
+  }
+  // prism: the triangle's functions (ξ, η) times the line's (ζ)
+  if (E.kind === 'prism') {
+    const T = ufeShape(E.tri, [xi[0], xi[1]]), L = ufeLag1(E.p, xi[2]);
+    E.map.forEach(([t, l], a) => { N[a] = T.N[t] * L[0][l]; dN[3 * a] = T.dN[2 * t] * L[0][l]; dN[3 * a + 1] = T.dN[2 * t + 1] * L[0][l]; dN[3 * a + 2] = T.N[t] * L[1][l]; });
     return { N, dN };
   }
   // simplex: barycentric λ0 = 1 − Σ ξ, λd = ξ_{d−1}; ∂λ0/∂ξ_d = −1, ∂λ_{d+1}/∂ξ_d = 1
@@ -155,6 +184,12 @@ function ufeRule(type, n) {
       for (let d = 0; d < dim; d++) { xi.push(s[iq[d]]); wt *= w[iq[d]]; }
       pts.push(xi); ws.push(wt);
     }
+  } else if (E.kind === 'prism') {
+    // (the triangle's rule of degree n times Gauss along ζ, as exact in ζ: 1, 2 or 3 points)
+    const T = ufeRule('tri3', n), G = UFE_GAUSS[{ 1: 1, 2: 2, 5: 3 }[n]];
+    if (!G) throw new Error(`um-fe: no prism rule of degree ${n}`);
+    pts = []; ws = [];
+    for (let k = 0; k < G[0].length; k++) for (let q = 0; q < T.nq; q++) { pts.push([T.xi[2 * q], T.xi[2 * q + 1], G[0][k]]); ws.push(T.w[q] * G[1][k]); }
   } else if (dim === 2) {
     if (n === 1) { pts = [[1 / 3, 1 / 3]]; ws = [0.5]; }
     else if (n === 2) { pts = [[1 / 6, 1 / 6], [2 / 3, 1 / 6], [1 / 6, 2 / 3]]; ws = [1 / 6, 1 / 6, 1 / 6]; }
@@ -222,9 +257,14 @@ function ufeFaceRule(type, f, n, ptype) {
     const N2 = S.N, Ns = new Float64Array(m), Nt = new Float64Array(m);
     for (let a = 0; a < m; a++) { Ns[a] = S.dN[2 * a]; Nt[a] = S.dN[2 * a + 1]; }
     // (the point in the element's coordinates: on a tensor face, the fixed axis and the others in order; on a
-    //  tetrahedron's face, the corners' coordinates weighted by the face's own barycentric coordinates)
+    //  triangular face, the corners' coordinates weighted by the face's own barycentric coordinates)
     let xi;
     if (E.kind === 'tensor') { xi = [0, 0, 0]; xi[F.axis] = F.sign; xi[F.others[0]] = st[0]; xi[F.others[1]] = st[1]; }
+    else if (F.type.startsWith('quad')) {
+      // (a prism's quadrilateral: its four corners' coordinates, bilinear in s and t -- the face is flat there)
+      const c = F.type === 'quad4' ? F.nodes : [0, 2, 6, 8].map(k => F.nodes[k]), b = [(1 - st[0]) * (1 - st[1]), (1 + st[0]) * (1 - st[1]), (1 - st[0]) * (1 + st[1]), (1 + st[0]) * (1 + st[1])].map(v => v / 4);
+      xi = [0, 1, 2].map(d => b[0] * E.xi[c[0] * 3 + d] + b[1] * E.xi[c[1] * 3 + d] + b[2] * E.xi[c[2] * 3 + d] + b[3] * E.xi[c[3] * 3 + d]);
+    }
     else { const c = F.nodes.slice(0, 3), l = [1 - st[0] - st[1], st[0], st[1]]; xi = [0, 1, 2].map(d => l[0] * E.xi[c[0] * 3 + d] + l[1] * E.xi[c[1] * 3 + d] + l[2] * E.xi[c[2] * 3 + d]); }
     const el = ufeShape(type, xi), o = { N: el.N, Na: new Float64Array(E.npe), Nb: new Float64Array(E.npe), Ng: new Float64Array(E.npe) };
     for (let a = 0; a < E.npe; a++) { o.Na[a] = el.dN[3 * a]; o.Nb[a] = el.dN[3 * a + 1]; o.Ng[a] = el.dN[3 * a + 2]; }

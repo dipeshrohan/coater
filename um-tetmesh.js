@@ -28,7 +28,7 @@
  */
 const UMM_T = typeof umtTri === 'function' ? { umtTri, umtOrient, UMT_INF } : require('./um-tet.js');
 const UMM_2 = typeof utMesh === 'function' ? { utMesh } : require('./um-tri.js');
-const UMM_F = typeof ufeShape === 'function' ? { ufeShape, ufeRule } : require('./um-fe.js');
+const UMM_F = typeof ufeShape === 'function' ? { ufeShape, ufeRule, ufeElement } : require('./um-fe.js');
 
 /** The surface of a solid with flat faces, meshed (see the header). */
 function umtSurface(G, o = {}) {
@@ -617,35 +617,66 @@ function umtImprove(M, o = {}) {
  * positive at the solver's quadrature points and its ten nodes), short (the farthest one held short, m) }.
  */
 function umtQuadratic(V, o = {}) {
-  const nP = V.X.length, nT = V.tet.length / 4, proj = o.project || {};
+  const nP = V.X.length, nT = V.tet.length / 4, nW = V.wedge ? V.wedge.length / 6 : 0, proj = o.project || {};
+  // (the surface's faces -- triangles, and with layers quadrilaterals too -- each as its corners' list)
+  const BF = Array.isArray(V.bface) ? V.bface : Array.from({ length: V.bface.length / 3 }, (_, f) => [V.bface[3 * f], V.bface[3 * f + 1], V.bface[3 * f + 2]]);
   // (the surface's edges and points, and the walls they lie on)
   const ek = (a, b) => (a < b ? a * nP + b : b * nP + a), edgeTags = new Map(), ptTags = new Map();
-  for (let f = 0; f < V.bface.length / 3; f++) for (let k = 0; k < 3; k++) {
-    const key = ek(V.bface[3 * f + k], V.bface[3 * f + (k + 1) % 3]), l = edgeTags.get(key) || edgeTags.set(key, []).get(key); if (!l.includes(V.btag[f])) l.push(V.btag[f]);
-    const v = V.bface[3 * f + k], m = ptTags.get(v) || ptTags.set(v, []).get(v); if (!m.includes(V.btag[f])) m.push(V.btag[f]); }
+  for (let f = 0; f < BF.length; f++) { const F = BF[f], m3 = F.length; for (let k = 0; k < m3; k++) {
+    const key = ek(F[k], F[(k + 1) % m3]), l = edgeTags.get(key) || edgeTags.set(key, []).get(key); if (!l.includes(V.btag[f])) l.push(V.btag[f]);
+    const v = F[k], m = ptTags.get(v) || ptTags.set(v, []).get(v); if (!m.includes(V.btag[f])) m.push(V.btag[f]); } }
   const onWall = (p, tags) => { let q = p; for (const tg of tags || []) if (proj[tg]) q = proj[tg](q[0], q[1], q[2]); return q; };
   // each node: its straight place (a corner: where the mesher put it; a mid-edge node: its edge's middle, from its ends as
-  // they stand) and its move onto the curved wall (a corner on a curved wall's facet lies on the chord: it moves too, so
-  // the wall is the true surface at its corners and its edges' middles alike)
+  // they stand; a prism's quadrilateral's middle: its four edges' middles less half its corners, the face's own centre)
+  // and its move onto the curved wall (a corner on a curved wall's facet lies on the chord: it moves too, so the wall is
+  // the true surface at its corners and its edges' middles alike)
   const X = Array.from(V.X), Y = Array.from(V.Y), Z = Array.from(V.Z), X0 = X.slice(), Y0 = Y.slice(), Z0 = Z.slice();
-  const disp = new Map(), ends = new Map(), wallMoved = new Set(), onSurf = new Set();
+  const disp = new Map(), ends = new Map(), quads = new Map(), wallMoved = new Set(), onSurf = new Set();
   for (const [v, tags] of ptTags) { const q = onWall([X[v], Y[v], Z[v]], tags); if (q[0] !== X[v] || q[1] !== Y[v] || q[2] !== Z[v]) { disp.set(v, [q[0] - X[v], q[1] - Y[v], q[2] - Z[v]]); wallMoved.add(v); } }
   const mid = new Map(), conn = new Int32Array(10 * nT), EDG = [[0, 1], [1, 2], [0, 2], [0, 3], [1, 3], [2, 3]];
   const at = (v, s) => { const d = disp.get(v), f = s.get(v) ?? 1; return d ? [X0[v] + f * d[0], Y0[v] + f * d[1], Z0[v] + f * d[2]] : [X0[v], Y0[v], Z0[v]]; };
   const scale = new Map();
+  const midOf = (vi, vj) => {
+    const key = ek(vi, vj); let m = mid.get(key);
+    if (m === undefined) {
+      const a = at(vi, scale), b = at(vj, scale), c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], tags = edgeTags.get(key);
+      m = X.length; X.push(c[0]); Y.push(c[1]); Z.push(c[2]); X0.push(0); Y0.push(0); Z0.push(0); mid.set(key, m); ends.set(m, [vi, vj]);
+      if (tags) { onSurf.add(m); const q = onWall(c, tags); if (q[0] !== c[0] || q[1] !== c[1] || q[2] !== c[2]) { disp.set(m, [q[0] - c[0], q[1] - c[1], q[2] - c[2]]); wallMoved.add(m); } }
+    }
+    return m;
+  };
   for (let t = 0; t < nT; t++) {
     const v = [V.tet[4 * t], V.tet[4 * t + 1], V.tet[4 * t + 2], V.tet[4 * t + 3]];
     for (let k = 0; k < 4; k++) conn[10 * t + k] = v[k];
-    EDG.forEach(([i, j], k) => {
-      const key = ek(v[i], v[j]); let m = mid.get(key);
+    EDG.forEach(([i, j], k) => { conn[10 * t + 4 + k] = midOf(v[i], v[j]); });
+  }
+  // (the prisms: um-tetlayers.js's in VTK's order, its wall's triangle turned away from the layer above, as um-fe.js's
+  //  wedge18 -- that triangle turned over: VTK's [a, b, c, d, e, f] is [a, c, b, d, f, e]; its 9 edges' middles, its 3
+  //  quadrilaterals' middles)
+  const connW = new Int32Array(18 * nW), WE = [[0, 1], [1, 2], [2, 0], [3, 4], [4, 5], [5, 3], [0, 3], [1, 4], [2, 5]], WQ = [[0, 1, 4, 3], [1, 2, 5, 4], [2, 0, 3, 5]];
+  const qkey = q => [...q].sort((x, y) => x - y).join(','), ctr = new Map();
+  for (let w = 0; w < nW; w++) {
+    const s = V.wedge.subarray ? V.wedge.subarray(6 * w, 6 * w + 6) : V.wedge.slice(6 * w, 6 * w + 6), v = [s[0], s[2], s[1], s[3], s[5], s[4]];
+    for (let k = 0; k < 6; k++) connW[18 * w + k] = v[k];
+    WE.forEach(([i, j], k) => { connW[18 * w + 6 + k] = midOf(v[i], v[j]); });
+    WQ.forEach((q, k) => {
+      const c4 = q.map(i => v[i]), key = qkey(c4); let m = ctr.get(key);
       if (m === undefined) {
-        const a = at(v[i], scale), b = at(v[j], scale), c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], tags = edgeTags.get(key);
-        m = X.length; X.push(c[0]); Y.push(c[1]); Z.push(c[2]); X0.push(0); Y0.push(0); Z0.push(0); mid.set(key, m); ends.set(m, [v[i], v[j]]);
-        if (tags) { onSurf.add(m); const q = onWall(c, tags); if (q[0] !== c[0] || q[1] !== c[1] || q[2] !== c[2]) { disp.set(m, [q[0] - c[0], q[1] - c[1], q[2] - c[2]]); wallMoved.add(m); } }
+        const e4 = [0, 1, 2, 3].map(i => mid.get(ek(c4[i], c4[(i + 1) % 4])));
+        m = X.length; X.push(0); Y.push(0); Z.push(0); X0.push(0); Y0.push(0); Z0.push(0); ctr.set(key, m); quads.set(m, [c4, e4]);
       }
-      conn[10 * t + 4 + k] = m;
+      connW[18 * w + 15 + k] = m;
     });
   }
+  // (a quadrilateral's middle where it stands: its edges' middles' sum halved less its corners' sum quartered -- the
+  //  centre of the face its edges bound, straight or bent -- plus its own move)
+  const placeQ = n => { const [c4, e4] = quads.get(n), d = disp.get(n), f = scale.get(n) ?? 1; let x = 0, y = 0, z = 0;
+    for (const m of e4) { x += X[m] / 2; y += Y[m] / 2; z += Z[m] / 2; } for (const c of c4) { const a = at(c, scale); x -= a[0] / 4; y -= a[1] / 4; z -= a[2] / 4; }
+    X[n] = x + (d ? f * d[0] : 0); Y[n] = y + (d ? f * d[1] : 0); Z[n] = z + (d ? f * d[2] : 0); };
+  // (a quadrilateral on a curved wall -- a layer's side along a pipe, say -- its middle onto the wall too)
+  if (nW) { const bq = new Map(); BF.forEach((F, f) => { if (F.length === 4) bq.set(qkey(F), V.btag[f]); });
+    for (const [n, [c4]] of quads) { const tag = bq.get(qkey(c4)); if (tag === undefined) continue;
+      onSurf.add(n); placeQ(n); const c = [X[n], Y[n], Z[n]], q = onWall(c, [tag]); if (q[0] !== c[0] || q[1] !== c[1] || q[2] !== c[2]) { disp.set(n, [q[0] - c[0], q[1] - c[1], q[2] - c[2]]); wallMoved.add(n); } } }
   let moved = 0, maxMove = 0; for (const n of wallMoved) { moved++; maxMove = Math.max(maxMove, Math.hypot(...disp.get(n))); }
   // (the walls' bend carried into the elements beside them: each inner mid-edge node moved by the mean of its elements'
   //  other nodes' moves -- the inner corners not moving, the surface's nodes as set (moved or not) -- a few sweeps: an
@@ -654,51 +685,68 @@ function umtQuadratic(V, o = {}) {
     const nb = new Map();
     for (let e = 0; e < nT; e++) { let near = false; for (let i = 0; i < 10; i++) if (wallMoved.has(conn[10 * e + i])) near = true; if (!near) continue;
       for (let i = 4; i < 10; i++) { const n = conn[10 * e + i]; if (onSurf.has(n)) continue; const l = nb.get(n) || nb.set(n, []).get(n); for (let j = 0; j < 10; j++) if (j !== i) l.push(conn[10 * e + j]); } }
+    for (let e = 0; e < nW; e++) { let near = false; for (let i = 0; i < 18; i++) if (wallMoved.has(connW[18 * e + i])) near = true; if (!near) continue;
+      for (let i = 6; i < 15; i++) { const n = connW[18 * e + i]; if (onSurf.has(n)) continue; const l = nb.get(n) || nb.set(n, []).get(n); for (let j = 0; j < 15; j++) if (j !== i) l.push(connW[18 * e + j]); } }
     for (let sweep = 0; sweep < (o.bendSweeps ?? 8); sweep++) {
       const next = new Map();
       for (const [n, l] of nb) { let dx = 0, dy = 0, dz = 0; for (const m of l) { const d = disp.get(m); if (d) { dx += d[0]; dy += d[1]; dz += d[2]; } } next.set(n, [dx / l.length, dy / l.length, dz / l.length]); }
       for (const [n, d] of next) disp.set(n, d);
     }
   }
-  // (each node where it stands: a corner its place plus its move; a mid-edge node its ends' middle plus its own)
-  const place = n => { if (ends.has(n)) { const [i, j] = ends.get(n), a = at(i, scale), b = at(j, scale), d = disp.get(n), f = scale.get(n) ?? 1;
+  // (each node where it stands: a corner its place plus its move; a mid-edge node its ends' middle plus its own; a
+  //  quadrilateral's middle after its edges')
+  const place = n => { if (quads.has(n)) { placeQ(n); return; } if (ends.has(n)) { const [i, j] = ends.get(n), a = at(i, scale), b = at(j, scale), d = disp.get(n), f = scale.get(n) ?? 1;
       X[n] = (a[0] + b[0]) / 2 + (d ? f * d[0] : 0); Y[n] = (a[1] + b[1]) / 2 + (d ? f * d[1] : 0); Z[n] = (a[2] + b[2]) / 2 + (d ? f * d[2] : 0); }
     else { const q = at(n, scale); X[n] = q[0]; Y[n] = q[1]; Z[n] = q[2]; } };
-  for (let n = 0; n < X.length; n++) if (disp.has(n) || ends.has(n)) place(n);
+  for (let n = 0; n < X.length; n++) if (disp.has(n) || ends.has(n)) { if (!quads.has(n)) place(n); }
+  for (const n of quads.keys()) placeQ(n);
   // (every element with a moved node positive throughout -- its Jacobian at the solver's quadrature points and at its
-  //  ten nodes; one that is not has its moves halved, again until it is: counted, never left folded)
-  const pts = []; { const R = UMM_F.ufeRule('tet10', 5); for (let q = 0; q < R.nq; q++) pts.push(Array.from(R.xi.subarray(3 * q, 3 * q + 3)));
-    for (const xi of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.5, 0, 0], [0.5, 0.5, 0], [0, 0.5, 0], [0, 0, 0.5], [0.5, 0, 0.5], [0, 0.5, 0.5]]) pts.push(xi); }
-  const dN = pts.map(xi => UMM_F.ufeShape('tet10', xi).dN);
-  const ok = e => { for (const d of dN) { let a = 0, b = 0, c = 0, f = 0, g = 0, h = 0, k = 0, l = 0, m = 0;
-      for (let i = 0; i < 10; i++) { const n = conn[10 * e + i], x = X[n], y = Y[n], z = Z[n], d0 = d[3 * i], d1 = d[3 * i + 1], d2 = d[3 * i + 2];
+  //  nodes; one that is not has its moves halved, again until it is: counted, never left folded)
+  const chk = type => { const E = UMM_F.ufeElement(type), R = UMM_F.ufeRule(type, 5), pts = [];
+    for (let q = 0; q < R.nq; q++) pts.push(Array.from(R.xi.subarray(3 * q, 3 * q + 3)));
+    for (let a = 0; a < E.npe; a++) pts.push(Array.from(E.xi.subarray(3 * a, 3 * a + 3)));
+    return pts.map(xi => UMM_F.ufeShape(type, xi).dN); };
+  const dNT = chk('tet10'), dNW = nW ? chk('wedge18') : null;
+  const elNodes = e => (e < nT ? conn.subarray(10 * e, 10 * e + 10) : connW.subarray(18 * (e - nT), 18 * (e - nT) + 18));
+  const ok = e => { const el = elNodes(e), npe = el.length; for (const d of (e < nT ? dNT : dNW)) { let a = 0, b = 0, c = 0, f = 0, g = 0, h = 0, k = 0, l = 0, m = 0;
+      for (let i = 0; i < npe; i++) { const n = el[i], x = X[n], y = Y[n], z = Z[n], d0 = d[3 * i], d1 = d[3 * i + 1], d2 = d[3 * i + 2];
         a += x * d0; b += x * d1; c += x * d2; f += y * d0; g += y * d1; h += y * d2; k += z * d0; l += z * d1; m += z * d2; }
       if (!(a * (g * m - h * l) - b * (f * m - h * k) + c * (f * l - g * k) > 0)) return false; } return true; };
   let limited = 0, short = 0;
   if (disp.size) {
-    const touch = [], users = new Map();
-    for (let e = 0; e < nT; e++) { let near = false; for (let i = 0; i < 10; i++) { const n = conn[10 * e + i]; if (disp.has(n)) near = true; } if (near) touch.push(e); }
-    for (const [m, [i, j]] of ends) for (const v of [i, j]) if (disp.has(v)) (users.get(v) || users.set(v, []).get(v)).push(m);
+    const touch = [], users = new Map(), use = (v, m) => (users.get(v) || users.set(v, []).get(v)).push(m);
+    for (let e = 0; e < nT + nW; e++) { let near = false; for (const n of elNodes(e)) if (disp.has(n)) near = true; if (near) touch.push(e); }
+    for (const [m, [i, j]] of ends) for (const v of [i, j]) if (disp.has(v)) use(v, m);
+    for (const [m, [c4, e4]] of quads) for (const v of [...c4, ...e4]) use(v, m);
     for (let it = 0; it < 40; it++) {
       const bad = touch.filter(e => !ok(e)); if (!bad.length) break;
       const redo = new Set();
-      for (const e of bad) for (let i = 0; i < 10; i++) { const n = conn[10 * e + i]; if (!disp.has(n)) continue; scale.set(n, (scale.get(n) ?? 1) / 2); redo.add(n); for (const m of users.get(n) || []) redo.add(m); }
-      for (const n of redo) place(n);
+      for (const e of bad) for (const n of elNodes(e)) { if (!disp.has(n)) continue; scale.set(n, (scale.get(n) ?? 1) / 2); redo.add(n); for (const m of users.get(n) || []) { redo.add(m); for (const q of users.get(m) || []) if (quads.has(q)) redo.add(q); } }
+      for (const n of redo) if (!quads.has(n)) place(n);
+      for (const n of redo) if (quads.has(n)) place(n);
     }
     for (const [n, f] of scale) { if (!wallMoved.has(n)) continue; limited++; short = Math.max(short, (1 - f) * Math.hypot(...disp.get(n))); }
-    { const still = touch.filter(e => !ok(e)); if (still.length) { const e = still[0], c = [0, 1, 2, 3].map(i => conn[10 * e + i]);
+    { const still = touch.filter(e => !ok(e)); if (still.length) { const e = still[0];
+        if (e >= nT) throw new Error(`um-tetmesh: ${still.length} curved elements stayed folded (the first a prism of the layers)`);
+        const c = [0, 1, 2, 3].map(i => conn[10 * e + i]);
         const P = i => [X0[i], Y0[i], Z0[i]], [a, b, c2, d] = c.map(P), u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c2[0] - a[0], c2[1] - a[1], c2[2] - a[2]], w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
         const v6 = u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]);
         throw new Error(`um-tetmesh: ${still.length} curved elements stayed folded (the first: its straight volume × 6 ${v6.toExponential(2)}, scales ${Array.from(conn.subarray(10 * e, 10 * e + 10)).map(n => (scale.get(n) ?? (disp.has(n) ? 1 : '-'))).join(' ')})`); } }
   }
-  // the surface's triangles as faces of their tetrahedra (um-fe.js's: 0 (0 1 3), 1 (1 2 3), 2 (0 3 2), 3 (0 2 1))
+  // the surface's triangles as faces of their tetrahedra (um-fe.js's: 0 (0 1 3), 1 (1 2 3), 2 (0 3 2), 3 (0 2 1)) or of the
+  // prisms (wedge18's: 0 the wall's triangle, 1 the one above; its quadrilaterals 2 (0 1 4 3), 3 (1 2 5 4), 4 (2 0 3 5))
   const FACE = [[0, 1, 3], [1, 2, 3], [0, 3, 2], [0, 2, 1]], fkey = (a, b, c) => { const s3 = [a, b, c].sort((x, y) => x - y); return s3[0] * nP * nP + s3[1] * nP + s3[2]; };
   const fat = new Map();
   for (let t = 0; t < nT; t++) for (let f = 0; f < 4; f++) fat.set(fkey(...FACE[f].map(i => V.tet[4 * t + i])), [t, f]);
+  const qat = new Map(), WF = [[0, 2, 1], [3, 4, 5]];
+  for (let w = 0; w < nW; w++) { const c = connW.subarray(18 * w, 18 * w + 6);
+    WF.forEach((F, f) => fat.set(fkey(...F.map(i => c[i])), [nT + w, f])); WQ.forEach((F, f) => qat.set(qkey(F.map(i => c[i])), [nT + w, 2 + f])); }
   const faces = [];
-  for (let f = 0; f < V.bface.length / 3; f++) { const ef = fat.get(fkey(V.bface[3 * f], V.bface[3 * f + 1], V.bface[3 * f + 2]));
-    if (!ef) throw new Error('um-tetmesh: a surface triangle that is no tetrahedron\'s face'); faces.push({ e: ef[0], f: ef[1], tag: V.btag[f] }); }
-  return { type: 'tet10', nN: X.length, nE: nT, X: Float64Array.from(X), Y: Float64Array.from(Y), Z: Float64Array.from(Z), conn, faces, moved, maxMove, limited, short };
+  for (let f = 0; f < BF.length; f++) { const F = BF[f], ef = F.length === 3 ? fat.get(fkey(F[0], F[1], F[2])) : qat.get(qkey(F));
+    if (!ef) throw new Error(`um-tetmesh: a surface ${F.length === 3 ? 'triangle' : 'quadrilateral'} that is no element's face`); faces.push({ e: ef[0], f: ef[1], tag: V.btag[f] }); }
+  if (!nW) return { type: 'tet10', nN: X.length, nE: nT, X: Float64Array.from(X), Y: Float64Array.from(Y), Z: Float64Array.from(Z), conn, faces, moved, maxMove, limited, short };
+  return { type: 'mixed', nN: X.length, nE: nT + nW, X: Float64Array.from(X), Y: Float64Array.from(Y), Z: Float64Array.from(Z),
+    blocks: [{ type: 'tet10', nE: nT, conn }, { type: 'wedge18', nE: nW, conn: connW }], faces, moved, maxMove, limited, short };
 }
 
 /** A graded size over space (see the header): (x, y, z) → h. */

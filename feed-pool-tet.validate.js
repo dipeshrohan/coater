@@ -14,6 +14,9 @@
  *  5. The paste's own law (Herschel–Bulkley, the yield stress, the app's default) on tetrahedra through the cycle's
  *     continuation (the viscosity at 2.7 1/s, then the law with its γ̇ floor brought down): every stage converged, every
  *     flow balanced.
+ *  6. Prism layers on the pipes (um-tetlayers.js; three, 0.3 mm first, ×1.3, on the bores, the outer walls and the ends,
+ *     so the layers turn the tips' convex edges): every flow balanced; down each bore Poiseuille's flow; the jet below a
+ *     tip as on the tetrahedra alone (3 % RMS), never faster than the bore's own peak.
  * The independent check against OpenFOAM is benchmarks/openfoam/pooltet.js (README: "The pool on tetrahedra").
  */
 const FT = require('./feed-pool-tet.js'), FP = require('./feed-pool.js'), PO = require('./feed-post.js'), UFE = require('./um-fe.js');
@@ -72,18 +75,21 @@ const differ = (A, B) => Object.fromEntries(Object.keys(lines).map(k => { const 
   const dd = a.map((v, i) => (ok[i] ? b[i] - v : 0)), scale = k.endsWith('(p)') ? Math.max(...a.filter(Number.isFinite)) - Math.min(...a.filter(Number.isFinite)) : Math.max(...a.filter(Number.isFinite).map(Math.abs));
   return [k, { rms: Math.sqrt(dd.reduce((s, v) => s + v * v, 0) / ok.filter(Boolean).length) / scale, n: ok.filter(Boolean).length, of: a.length, scale }]; }));
 let RT, RH;
-{
-  const t = Date.now(); RT = FT.fptSolve({ ...base, mu: () => 10.5, Mt, solve: { tol: 1e-10 } });
-  const ms = Date.now() - t, rb = d / 2, V = Qin / 2 / (Math.PI * rb * rb), yq = tip + bore - 3 * d;
-  // (down each bore, a bore's length round three bores below its entry -- the flow there developed: Poiseuille's parabola
-  //  at every node inside the bore's wall; each pipe its equal share of the flow in, so each bore's parabola fitted by
-  //  least squares has Poiseuille's peak)
-  let e = 0, n = 0; const peaks = [];
-  for (const q of Mt.pipes) {
+// (down each bore, a bore's length round three bores below its entry -- the flow there developed: Poiseuille's parabola
+//  at every node inside the bore's wall; each pipe its equal share of the flow in, so each bore's parabola fitted by
+//  least squares has Poiseuille's peak)
+function borePoiseuille(Mq, r) {
+  const Mm = Mq.M, rb = d / 2, V = Qin / 2 / (Math.PI * rb * rb), yq = tip + bore - 3 * d; let e = 0, n = 0; const peaks = [];
+  for (const q of Mq.pipes) {
     let sv = 0, sf = 0, nq = 0;
-    for (let i = 0; i < M.nN; i++) { const rr = Math.hypot(M.X[i] - q.x, M.Z[i] - q.z), f = 1 - rr * rr / (rb * rb); if (rr > rb * (1 - 1e-6) || Math.abs(M.Y[i] - yq) > d / 2) continue; e = Math.max(e, Math.abs(RT.v[i] + 2 * V * f) / (2 * V)); sv -= RT.v[i] * f; sf += f * f; n++; nq++; }
+    for (let i = 0; i < Mm.nN; i++) { const rr = Math.hypot(Mm.X[i] - q.x, Mm.Z[i] - q.z), f = 1 - rr * rr / (rb * rb); if (rr > rb * (1 - 1e-6) || Math.abs(Mm.Y[i] - yq) > d / 2) continue; e = Math.max(e, Math.abs(r.v[i] + 2 * V * f) / (2 * V)); sv -= r.v[i] * f; sf += f * f; n++; nq++; }
     peaks.push(nq ? sv / sf / (2 * V) : NaN);
   }
+  return { e, n, peaks };
+}
+{
+  const t = Date.now(); RT = FT.fptSolve({ ...base, mu: () => 10.5, Mt, solve: { tol: 1e-10 } });
+  const ms = Date.now() - t, { e, n, peaks } = borePoiseuille(Mt, RT);
   check('the pool with its pipes on tetrahedra (half the pool, two pipes): every flow balanced, the top rising with the rest; down each bore, Poiseuille\'s flow',
     balance(RT.flows) < 1e-9 && RT.converged && e < 0.02 && peaks.every(a => Math.abs(a - 1) < 0.005),
     `${M.nE} tetrahedra, ${RT.S.nD} unknowns, Newton ${RT.hist.length}, ${(ms / 1000).toFixed(0)} s; flows off ${balance(RT.flows).toExponential(1)} of the web's; ${n} nodes inside the bores, off Poiseuille by ${pc(e)} of its peak at most; each bore's fitted peak ${peaks.map(a => a.toFixed(4)).join(', ')} of Poiseuille's`);
@@ -113,6 +119,23 @@ let RT, RH;
   }
   check('the paste\'s own law (Herschel–Bulkley, 5 Pa yield stress) on tetrahedra through the cycle\'s continuation: every stage converged, every flow balanced',
     all && bal < 1e-9, `${rows.join(', ')} (${((Date.now() - t) / 1000).toFixed(0)} s); flows off ${bal.toExponential(1)} of the web's`);
+}
+
+// 6. prism layers on the pipes
+{
+  // (three layers, 0.3 mm first, ×1.3, on the bores, the pipes' outer walls and their ends -- the ends layered too, so
+  //  the layers turn the tips' convex edges instead of ending in the paste there)
+  const lay = { n: 3, first: 0.3e-3, growth: 1.3 }, t = Date.now();
+  const ML = FT.fptMesh({ ...base, mesh: { ...TET, layers: [{ tags: ['bore', 'pipe-wall', 'pipe-end'], ...lay }] } });
+  const RL = FT.fptSolve({ ...base, mu: () => 10.5, Mt: ML, solve: { tol: 1e-10 } }), ms = Date.now() - t, { e, n, peaks } = borePoiseuille(ML, RL);
+  // (down the first pipe's axis from the web to its tip, against the tetrahedra alone; the jet out of a tip never faster
+  //  than the bore's own Poiseuille peak)
+  const k = 'down a pipe\'s axis (v)', A = onTet(RL)[k], B = onTet(RT)[k], ok = A.map((v, i) => Number.isFinite(v) && Number.isFinite(B[i]));
+  const sc = Math.max(...B.filter(Number.isFinite).map(Math.abs)), rms = Math.sqrt(A.reduce((s2, v, i) => s2 + (ok[i] ? (v - B[i]) ** 2 : 0), 0) / ok.filter(Boolean).length) / sc;
+  const peak2 = 2 * Qin / 2 / (Math.PI * (d / 2) ** 2), jet = Math.max(...A.filter(Number.isFinite).map(Math.abs));
+  check('prism layers on the pipes (their tips wrapped): every flow balanced; down each bore Poiseuille\'s flow; the jet below a tip as on tetrahedra alone, never faster than the bore\'s peak',
+    RL.converged && balance(RL.flows) < 1e-9 && e < 0.005 && peaks.every(a => Math.abs(a - 1) < 0.001) && ok.every(Boolean) && rms < 0.03 && jet < peak2,
+    `${ML.nT} tetrahedra, ${ML.nW} prisms, ${RL.S.nD} unknowns, Newton ${RL.hist.length}, ${(ms / 1000).toFixed(0)} s; flows off ${balance(RL.flows).toExponential(1)}; ${n} nodes inside the bores, off Poiseuille by ${pc(e)} at most, fitted peaks ${peaks.map(a => a.toFixed(5)).join(', ')}; down the axis ${pc(rms)} RMS from the tetrahedra alone, its fastest ${(jet * 1e3).toFixed(1)} mm/s (the bore's peak ${(peak2 * 1e3).toFixed(1)} mm/s)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
