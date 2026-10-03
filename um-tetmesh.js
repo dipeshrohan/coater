@@ -12,9 +12,10 @@
  *   from it gets its longest edge split (on the surface: its points stay on its faces and edges) until every one is a face;
  *   then Delaunay refinement: each tetrahedron too big for the size or too badly shaped (circumradius over its shortest
  *   edge above o.ratio, default 2) gets its circumcentre, unless that point would fall in a surface triangle's diametral
- *   sphere -- then that surface triangle is split instead, so the surface stays in the mesh; then slivers (tetrahedra flat
+ * *   sphere -- then that surface triangle is split instead, so the surface stays in the mesh; then slivers (tetrahedra flat
  *   though their edges are fine) removed by points put near their circumcentres. Returns { X, Y, Z, tet (4 each, positive),
- *   bface (the surface's triangles, outward), btag, stats }.
+ *   bface (the surface's triangles, outward), btag, src (each point's index in S, or ≥ S's count for a new one), mid (the
+ *   surface's new points, each the middle of an edge: triples p, a, b), stats }.
  * umtSizeField(spec): a size over space, (x, y, z) → h, graded: spec = { h (everywhere), grow (each size at most this
  *   many times its neighbour's, default 1.3), boxes: [{ min: [x, y, z], max: [x, y, z], h }], lines: [{ a: [x, y, z], b:
  *   [x, y, z], h, r (the size held to this distance, default 0) }], points: [{ at: [x, y, z], h, r }] }. Inside a box, or
@@ -141,6 +142,7 @@ function umtVolume(S, o = {}) {
   /** Surface triangle f split, by Rivara's longest-edge propagation: along the path of longest edges to one shared as the
    *  longest by both its triangles, that edge halved, again until f itself is split (the angles stay bounded below). */
   let nSplit = 0;
+  const midOf = [];   // (each surface point made by halving an edge, and that edge's two points)
   const splitSurface = f => {
     for (let guard = 0; alive[f] && guard < 1000; guard++) {
       let g = f, e = longest(f);
@@ -165,6 +167,7 @@ function umtVolume(S, o = {}) {
       const g1 = F.length / 3; F.push(e0, p, c); Ftag.push(Ftag[g]); alive.push(true); eAdd(g1);
       const g2 = F.length / 3; F.push(p, e1, c); Ftag.push(Ftag[g]); alive.push(true); eAdd(g2);
     }
+    midOf.push(p, a, b);
     const made = D.insert(p); nSplit++;
     if (made !== -1 && inside.length) for (const m of made) if (m < inside.length) inside[m] = 255;   // (on the surface: its new tetrahedra on both sides, unknown till classified)
     return p;
@@ -388,12 +391,16 @@ function umtVolume(S, o = {}) {
     if (tryRound([...moves])) perturbed++;
   }
   // 4. the mesh: the inside tetrahedra, renumbered; the surface's triangles
-  const used = new Int32Array(X.length).fill(-1), PX = [], PY = [], PZ = [], tet = [];
-  const use = v => { if (used[v] < 0) { used[v] = PX.length; PX.push(X[v]); PY.push(Y[v]); PZ.push(Z[v]); } return used[v]; };
+  const used = new Int32Array(X.length).fill(-1), PX = [], PY = [], PZ = [], tet = [], src = [];
+  const use = v => { if (used[v] < 0) { used[v] = PX.length; PX.push(X[v]); PY.push(Y[v]); PZ.push(Z[v]); src.push(v); } return used[v]; };
   for (let t = 0; t < D.nT; t++) if (D.alive[t] && inside[t] === 1) for (let k = 0; k < 4; k++) tet.push(use(D.tv[4 * t + k]));
   const bface = [], btag = [];
   for (let f = 0; f < F.length / 3; f++) if (alive[f]) { bface.push(use(F[3 * f]), use(F[3 * f + 1]), use(F[3 * f + 2])); btag.push(Ftag[f]); }
+  // (where each point came from: S's point (its index), or new (≥ S's count); the surface's new points each the middle of
+  //  two others, in the mesh's numbering)
+  const mid = []; for (let i = 0; i < midOf.length; i += 3) if (used[midOf[i]] >= 0) mid.push(used[midOf[i]], used[midOf[i + 1]], used[midOf[i + 2]]);
   const out = { X: Float64Array.from(PX), Y: Float64Array.from(PY), Z: Float64Array.from(PZ), tet: Int32Array.from(tet), bface: Int32Array.from(bface), btag,
+    src: Int32Array.from(src), mid: Int32Array.from(mid),
     stats: { surfacePoints: S.X.length, points: PX.length, tets: tet.length / 4, surfaceSplits: nSplit, refined, skipped, smoothed, perturbed } };
   if (o.improve !== false) Object.assign(out.stats, umtImprove(out, o));
   return out;
@@ -402,8 +409,8 @@ function umtVolume(S, o = {}) {
 /**
  * The finished mesh improved in place, its connectivity no longer held to Delaunay's: flips (two tetrahedra on a face into
  * three round an edge, and three into two) and moves of the inner points, each kept only if it raises the smallest
- * dihedral angle among the tetrahedra it touches; a bad tetrahedron with every corner on the surface (none of them can
- * move) gets a new inner point -- in it, or below a crease where two of its faces are on the surface -- with the cavity of
+ * dihedral angle among the tetrahedra it touches; a bad tetrahedron none of those mend (every corner on the surface,
+ * or its inner ones held by their other tetrahedra) gets a new inner point -- in it, or below a crease where two of its faces are on the surface -- with the cavity of
  * tetrahedra the point sees, kept only if the tetrahedra it leaves are better than those it took away, else undone. The
  * surface's points and faces never change. M = { X, Y, Z, tet, bface } (umtVolume's); the tetrahedra rewritten (and the
  * new points added). Returns { flips23, flips32, moves, splits (new points kept), dihedralMin }.
@@ -529,7 +536,7 @@ function umtImprove(M, o = {}) {
     };
     return { old, now, undo };
   };
-  /** A bad tetrahedron with every corner on the surface (no flip or move mends it): a point tried at its middle (its
+  /** A bad tetrahedron no flip or move mends (every corner on the surface, or its inner ones held): a point tried at its middle (its
    *  cavity at least the tetrahedron: four at least) and, where two of its faces are on the surface, below their common
    *  edge, into the solid along the two faces' inward bisector -- a crease's only tetrahedron has the crease's dihedral
    *  there whatever its corners do, and a point inside it, as flat as it is, only makes flat ones. The best kept if the
@@ -583,8 +590,9 @@ function umtImprove(M, o = {}) {
       for (let k = 0; k < 4 && !done; k++) done = flip23(t, k);
       for (let i = 0; i < 4 && !done; i++) for (let j = i + 1; j < 4 && !done; j++) done = flip32(T[4 * t + i], T[4 * t + j]);
       if (!done) for (let k = 0; k < 4 && !done; k++) done = smooth(T[4 * t + k]);
-      // (every corner on the surface and no flip helps: a new point, in it or below a crease it spans)
-      if (!done && [0, 1, 2, 3].every(k => fixed[T[4 * t + k]])) done = insertFor(t);
+      // (no flip or move helps -- every corner on the surface, or the inner ones held where they are: a new point, in it
+      //  or below a crease it spans, kept only if better)
+      if (!done) done = insertFor(t);
       if (done) any = true;
     }
     if (!any) break;
