@@ -7,11 +7,11 @@
  *     p along each axis on a tensor element).
  *  3. Quadrature: Gauss with n points integrates degree 2n − 1 exactly on [−1, 1], and the tensor rules every product of
  *     those; the triangle and tetrahedron rules every monomial up to their degree (1, 2, 5), with positive weights and
- *     every point inside.
+ *     every point inside; the prism rules every product of the triangle's degree and the same degree along ζ.
  *  4. Faces: each face's functions are the element's own on that face (the element's functions at a face point are the
  *     face's on the face's nodes and zero elsewhere); each face's area on the reference element; `out` gives the outward
  *     normal.
- *  5. The divergence theorem on curved elements (a hex27 and a tet10 with every node moved): the volume by the element's
+ *  5. The divergence theorem on curved elements (a hex27, a tet10 and a wedge18 with every node moved): the volume by the element's
  *     rule equals a third of the flux of x through its faces by the face rules, to round-off.
  *  6. The geometry: a parallelepiped's volume and inverse Jacobian exact; ufeGeometry and ufeJac agree on a curved
  *     element.
@@ -23,11 +23,12 @@
 const U = require('./um-fe.js');
 let fails = 0;
 const check = (name, ok, info = '') => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); };
-const TYPES = ['line2', 'line3', 'quad4', 'quad9', 'tri3', 'tri6', 'hex8', 'hex27', 'tet4', 'tet10'];
+const TYPES = ['line2', 'line3', 'quad4', 'quad9', 'tri3', 'tri6', 'hex8', 'hex27', 'tet4', 'tet10', 'wedge6', 'wedge18'];
 let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 /** A random point inside the reference element. */
 function inside(E) {
   if (E.kind === 'tensor') return Array.from({ length: E.dim }, () => 2 * rnd() - 1);
+  if (E.kind === 'prism') for (;;) { const a = rnd(), b = rnd(); if (a + b < 1) return [a, b, 2 * rnd() - 1]; }
   for (;;) { const p = Array.from({ length: E.dim }, () => rnd()); if (p.reduce((a, b) => a + b, 0) < 1) return p; }
 }
 const fact = n => (n <= 1 ? 1 : n * fact(n - 1));
@@ -60,10 +61,11 @@ const fact = n => (n <= 1 ? 1 : n * fact(n - 1));
   const rows = [];
   for (const t of TYPES) {
     const E = U.ufeElement(t), dim = E.dim, p = E.p;
-    // the monomials the element must reproduce: simplex x^i y^j z^k with i + j + k ≤ p; tensor each exponent ≤ p
+    // the monomials the element must reproduce: simplex x^i y^j z^k with i + j + k ≤ p; tensor each exponent ≤ p; prism
+    // i + j ≤ p (the triangle's) and k ≤ p (the line's)
     const mons = [];
     for (let i = 0; i <= p; i++) for (let j = 0; j <= (dim > 1 ? p : 0); j++) for (let k = 0; k <= (dim > 2 ? p : 0); k++)
-      if (E.kind === 'tensor' || i + j + k <= p) mons.push([i, j, k]);
+      if (E.kind === 'tensor' || (E.kind === 'prism' ? i + j <= p : i + j + k <= p)) mons.push([i, j, k]);
     let worst = 0, worstD = 0;
     for (const [i, j, k] of mons) {
       const f = x => x[0] ** i * (dim > 1 ? x[1] ** j : 1) * (dim > 2 ? x[2] ** k : 1);
@@ -117,12 +119,25 @@ const fact = n => (n <= 1 ? 1 : n * fact(n - 1));
     if (!(w < 1e-13 && pos && ins)) check(`${t} rule of degree ${deg}`, false, `${w}, weights positive ${pos}, inside ${ins}`);
   }
   check('the triangle and tetrahedron rules integrate every monomial up to their degree; weights positive, points inside', true, rows.join('; '));
+  // prisms: ∫ x^i y^j z^k = i! j! / (i + j + 2)! × ∫ z^k over [−1, 1], i + j and k up to the degree (1, 2, 5)
+  const prow = [];
+  for (const deg of [1, 2, 5]) {
+    const R = U.ufeRule('wedge18', deg); let w = 0, nm = 0, pos = true, ins = true;
+    for (let i = 0; i <= deg; i++) for (let j = 0; j <= deg - i; j++) for (let k = 0; k <= deg; k++) {
+      let s = 0; for (let q = 0; q < R.nq; q++) s += R.w[q] * R.xi[3 * q] ** i * R.xi[3 * q + 1] ** j * R.xi[3 * q + 2] ** k;
+      const ex = fact(i) * fact(j) / fact(i + j + 2) * (k % 2 ? 0 : 2 / (k + 1)); w = Math.max(w, Math.abs(s - ex)); nm++;
+    }
+    for (let q = 0; q < R.nq; q++) { if (!(R.w[q] > 0)) pos = false; if (!(R.xi[3 * q] > 0 && R.xi[3 * q + 1] > 0 && R.xi[3 * q] + R.xi[3 * q + 1] < 1 && Math.abs(R.xi[3 * q + 2]) < 1)) ins = false; }
+    prow.push(`degree ${deg} (${R.nq} points): ${nm} monomials within ${w.toExponential(0)}`);
+    if (!(w < 1e-14 && pos && ins)) check(`prism rule of degree ${deg}`, false, `${w}, weights positive ${pos}, inside ${ins}`);
+  }
+  check('the prism rules (the triangle\'s times Gauss along ζ) integrate every monomial up to their degree in each; weights positive, points inside', true, prow.join('; '));
 }
 
 // 4. faces: the element's functions on a face are the face's own; areas; the outward flag
 {
   let wTrace = 0, wArea = 0, bad = [];
-  for (const t of ['hex8', 'hex27', 'tet4', 'tet10']) {
+  for (const t of ['hex8', 'hex27', 'tet4', 'tet10', 'wedge6', 'wedge18']) {
     const E = U.ufeElement(t);
     E.faces.forEach((F, f) => {
       const R = U.ufeFaceRule(t, f, F.type.startsWith('tri') ? 5 : 3), FE = U.ufeElement(F.type);
@@ -135,16 +150,16 @@ const fact = n => (n <= 1 ? 1 : n * fact(n - 1));
         const c = [ts[1] * tt[2] - ts[2] * tt[1], ts[2] * tt[0] - ts[0] * tt[2], ts[0] * tt[1] - ts[1] * tt[0]];
         area += P.w * Math.hypot(...c);
         // outward: from the element's centre toward the face point
-        const ctr = E.kind === 'tensor' ? [0, 0, 0] : [0.25, 0.25, 0.25], o = [0, 1, 2].map(d => P.xi[d] - ctr[d]);
+        const ctr = E.kind === 'tensor' ? [0, 0, 0] : E.kind === 'prism' ? [1 / 3, 1 / 3, 0] : [0.25, 0.25, 0.25], o = [0, 1, 2].map(d => P.xi[d] - ctr[d]);
         if (Math.sign(F.out * (c[0] * o[0] + c[1] * o[1] + c[2] * o[2])) !== 1) bad.push(`${t} face ${f}`);
       }
-      const exact = E.kind === 'tensor' ? 4 : f === 1 ? Math.sqrt(3) / 2 : 0.5;
+      const exact = E.kind === 'tensor' ? 4 : E.kind === 'prism' ? [0.5, 0.5, 2, 2 * Math.SQRT2, 2][f] : f === 1 ? Math.sqrt(3) / 2 : 0.5;
       wArea = Math.max(wArea, Math.abs(area - exact));
     });
   }
   check('each face: the element\'s functions there are the face\'s own on its nodes, zero elsewhere', wTrace < 1e-15, `worst ${wTrace.toExponential(1)}`);
-  check('each face\'s area on the reference element (4 on a hexahedron; ½ and √3/2 on the tetrahedron)', wArea < 1e-14, `worst ${wArea.toExponential(1)}`);
-  check('each face\'s `out` gives the outward normal (hexahedra and tetrahedra, every face point)', bad.length === 0, bad.join(', '));
+  check('each face\'s area on the reference element (4 on a hexahedron; ½ and √3/2 on the tetrahedron; ½, 2 and 2√2 on the prism)', wArea < 1e-14, `worst ${wArea.toExponential(1)}`);
+  check('each face\'s `out` gives the outward normal (hexahedra, tetrahedra and prisms, every face point)', bad.length === 0, bad.join(', '));
 }
 
 /** A curved element: the reference nodes mapped through a smooth bend, then each node moved a little at random. */
@@ -162,12 +177,12 @@ function curved(t, scale = 1e-3) {
 // 5. the divergence theorem on curved elements: V = (1/3) ∮ x · n dA
 {
   const rows = [];
-  for (const [t, nv, nf] of [['hex27', 3, 3], ['hex8', 2, 2], ['tet10', 5, 5], ['tet4', 1, 1]]) {
+  for (const [t, nv, nf] of [['hex27', 3, 3], ['hex8', 2, 2], ['tet10', 5, 5], ['tet4', 1, 1], ['wedge18', 5, 5], ['wedge6', 2, 2]]) {
     const C = curved(t), T = U.ufeTable(t, nv), G = U.ufeGeometry(T, C.X, C.Y, C.Z, C.conn, 1);
     let V = 0; for (let q = 0; q < T.nq; q++) V += G.geo[q * 10 + 9];
     let flux = 0;
     C.E.faces.forEach((F, f) => {
-      for (const P of U.ufeFaceRule(t, f, nf)) {
+      for (const P of U.ufeFaceRule(t, f, F.type.startsWith('quad') && C.E.kind === 'prism' ? Math.min(nf, 3) : nf)) {
         const ts = [0, 0, 0], tt = [0, 0, 0], x = [0, 0, 0], FE = U.ufeElement(F.type);
         for (let k = 0; k < FE.npe; k++) { const n = F.nodes[k], p = [C.X[n], C.Y[n], C.Z[n]]; for (let d = 0; d < 3; d++) { ts[d] += P.Ns[k] * p[d]; tt[d] += P.Nt[k] * p[d]; x[d] += P.N2[k] * p[d]; } }
         const c = [ts[1] * tt[2] - ts[2] * tt[1], ts[2] * tt[0] - ts[0] * tt[2], ts[0] * tt[1] - ts[1] * tt[0]];

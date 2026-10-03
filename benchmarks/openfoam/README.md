@@ -289,6 +289,11 @@ range over the meshes):
 - The cross-width flow (w, 15 mm above the web behind the pipes; at most 1.3 mm/s): the tetrahedra 5.0–6.6 % RMS from
   OpenFOAM along the line, the block mesh 14.8–15.6 %, its few elements across between the pipes putting bumps near
   z = 70 and 85 mm that neither OpenFOAM nor the tetrahedra have (`results/pool_tet.png`, OpenFOAM's 3-across mesh).
+- With prism layers (three, 0.3 mm first, ×1.3, the app's P2 prisms; `feed-pool-tet.validate.js` check 6) the developed
+  bores' flow is within 0.04 % of Poiseuille at every node (the tetrahedra alone: 0.69 %). Along the lines, at OpenFOAM's
+  3-across cells: down a pipe's axis 2.6 % RMS with layers on the pipes, 2.7 % with them on every wall (the tetrahedra
+  alone 3.3 %); across the width 4.9 % and 5.0 % (5.4 %). Layers on a bore and its pipe's outer wall alone would end in
+  the paste at the tip, a convex edge: the mesher refuses them there, and the tips are layered too.
 
 ![pool on tetrahedra](results/pool_tet.png)
 

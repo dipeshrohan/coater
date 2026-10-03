@@ -46,12 +46,49 @@ const FF_CORNER = FF_UFE.ufeElement('hex27').corners;
 // ---- or P2–P1 tetrahedra (um-fe.js's tet10, as umtQuadratic makes them): velocity at the 10 nodes, pressure at the 4
 //      corners, the degree-5 rule (14 points: the viscous terms on a curved element, the inertia) ----
 const FF_TET = { T: FF_UFE.ufeTable('tet10', 5, 'tet4'), corner: [0, 1, 2, 3], faces: FF_UFE.ufeElement('tet10').faces.map(f => f.nodes) };
-/** The mesh's element: { tet, npe (velocity nodes), nq (quadrature points), npp (pressure nodes), T (the tables),
- *  corner (the pressure nodes' local numbers), conn (npe per element), faces (each face's local nodes) }. */
-function ffKind(M) {
-  if (M.type === 'tet10') return { tet: true, npe: 10, nq: FF_TET.T.nq, npp: 4, T: FF_TET.T, corner: FF_TET.corner, conn: M.conn, faces: FF_TET.faces };
-  return { tet: false, npe: 27, nq: 27, npp: 8, T: FF_REF, corner: FF_CORNER, conn: M.elems, faces: null };
+// ---- or P2–P1 prisms (um-fe.js's wedge18 with the wedge6 pressure: the prism layers on walls), the triangle's degree-5
+//      rule times 3 Gauss points along the layer ----
+/** A tetrahedron's 8 linear sub-tetrahedra (its 10 nodes' local numbers): the corners' four, then the inner octahedron's
+ *  four round its diagonal 6–8. */
+const FF_TET_SUB = [[0, 4, 6, 7], [4, 1, 5, 8], [6, 5, 2, 9], [7, 8, 9, 3], [6, 8, 4, 5], [6, 8, 5, 9], [6, 8, 9, 7], [6, 8, 7, 4]];
+/** A wedge18's 24 linear sub-tetrahedra: its triangle in 4 (tri6's corners and middles), each of the 2 layers along ζ a
+ *  linear prism, each prism in 3 tetrahedra. */
+const FF_WEDGE_SUB = (() => {
+  const E = FF_UFE.ufeElement('wedge18'), at = (t, l) => E.map.findIndex(([a, b]) => a === t && b === l), out = [];
+  for (const [a, b, c] of [[0, 3, 5], [3, 1, 4], [5, 4, 2], [3, 4, 5]]) for (const [l0, l1] of [[0, 1], [1, 2]]) {
+    const A0 = at(a, l0), B0 = at(b, l0), C0 = at(c, l0), A1 = at(a, l1), B1 = at(b, l1), C1 = at(c, l1);
+    out.push([A0, B0, C0, A1], [B0, C0, A1, B1], [C0, A1, B1, C1]);
+  }
+  return out;
+})();
+const FF_KINDS = {};
+/** An element type's kind: { type, hex, tet, npe (velocity nodes), nq (quadrature points), npp (pressure nodes), T (the
+ *  tables), corner (the pressure nodes' local numbers), faces (each face's local nodes), out (each face's outward sign),
+ *  ftype (each face's type), sub (the linear sub-tetrahedra the preconditioner's Laplacian takes) }. */
+function ffKindOf(type) {
+  if (FF_KINDS[type]) return FF_KINDS[type];
+  let K;
+  if (type === 'hex27') K = { type, hex: true, tet: false, npe: 27, nq: 27, npp: 8, T: FF_REF, corner: FF_CORNER, faces: null };
+  else if (type === 'tet10') K = { type, hex: false, tet: true, npe: 10, nq: FF_TET.T.nq, npp: 4, T: FF_TET.T, corner: FF_TET.corner, faces: FF_TET.faces, sub: FF_TET_SUB };
+  else if (type === 'wedge18') { const T = FF_UFE.ufeTable('wedge18', 5, 'wedge6'), E = FF_UFE.ufeElement('wedge18'), cols = [];
+    E.map.forEach(([t], k) => (cols[t] = cols[t] || []).push(k));   // (its nodes on one line across the layer: the triangle's node t at each level)
+    K = { type, hex: false, tet: false, npe: 18, nq: T.nq, npp: 6, T, corner: [0, 1, 2, 3, 4, 5], faces: E.faces.map(f => f.nodes), sub: FF_WEDGE_SUB, cols }; }
+  else throw new Error(`feed-fem: no ${type} elements`);
+  const E = FF_UFE.ufeElement(type); K.ftype = E.faces.map(f => f.type); K.out = E.faces.map(f => f.out);
+  return (FF_KINDS[type] = K);
 }
+/** The mesh's elements in blocks of one type each: [{ K, e0 (the first's number in the mesh), nE, conn, g0 (its first
+ *  quadrature point's number) }]. A mesh of one type (feed-mesh.js's hex27, umtQuadratic's tet10) is one block; a mixed
+ *  one gives M.blocks: [{ type, nE, conn }] (the faces' e counted over the blocks in order). */
+function ffBlocks(M) {
+  if (M.blocks) { let e0 = 0, g0 = 0; return M.blocks.map(b => { const K = ffKindOf(b.type), B = { K, e0, nE: b.nE, conn: b.conn, g0 }; e0 += b.nE; g0 += b.nE * K.nq; return B; }); }
+  if (M.type === 'tet10') return [{ K: ffKindOf('tet10'), e0: 0, nE: M.nE, conn: M.conn, g0: 0 }];
+  return [{ K: ffKindOf('hex27'), e0: 0, nE: M.nE, conn: M.elems, g0: 0 }];
+}
+/** Element e of a mesh: { B (its block), le (its number there), el (its nodes) }. */
+function ffElem(S, e) { const B = S.B[S.eB[e]], le = e - B.e0; return { B, le, el: B.conn.subarray(B.K.npe * le, B.K.npe * le + B.K.npe) }; }
+/** The mesh's element when it has one type (as before blocks): { ...kind, conn } (null for a mixed mesh). */
+function ffKind(M) { const B = ffBlocks(M); return B.length === 1 ? { ...B[0].K, conn: B[0].conn } : null; }
 
 /**
  * Set up a problem on a mesh (feed-mesh.js's): the unknowns, the elements' geometry at their quadrature points (in
@@ -59,19 +96,24 @@ function ffKind(M) {
  * o: { mesh, bc (by tag, above), mu(gd) (Pa·s), gdMin (regularization, 1/s), rho, g (gravity, down y), Lr, Ur, fixPressure }
  */
 function ffSetup(o) {
-  const M = o.mesh, nE = M.nE, nN = M.nN, Lr = o.Lr, Ur = o.Ur, K = ffKind(M), npe = K.npe, nq = K.nq;
+  const M = o.mesh, nE = M.nE, nN = M.nN, Lr = o.Lr, Ur = o.Ur, BL = ffBlocks(M);
   const muR = o.mu(Ur / Lr), Pr = muR * Ur / Lr;
+  // (each element's block)
+  const eB = new Int32Array(nE); BL.forEach((B, b) => eB.fill(b, B.e0, B.e0 + B.nE));
   // pressure unknowns: the corner nodes
   const pOf = new Int32Array(nN).fill(-1); let nP = 0;
-  for (let e = 0; e < nE; e++) for (const c of K.corner) { const n = K.conn[npe * e + c]; if (pOf[n] < 0) pOf[n] = nP++; }
+  for (const B of BL) for (let e = 0; e < B.nE; e++) for (const c of B.K.corner) { const n = B.conn[B.K.npe * e + c]; if (pOf[n] < 0) pOf[n] = nP++; }
   const nU = 3 * nN, nD = nU + nP;
   // each element's quadrature points: the inverse Jacobian (9) and det J × weight (um-fe.js's ufeGeometry)
   const X = new Float64Array(nN), Y = new Float64Array(nN), Z = new Float64Array(nN);
   for (let n = 0; n < nN; n++) { X[n] = M.X[n] / Lr; Y[n] = M.Y[n] / Lr; Z[n] = M.Z[n] / Lr; }
-  const { geo, minDet } = FF_UFE.ufeGeometry(K.T, X, Y, Z, K.conn, nE);
+  const nQ = BL.reduce((s, B) => s + B.nE * B.K.nq, 0);
+  let geo, minDet = Infinity;
+  if (BL.length === 1) ({ geo, minDet } = FF_UFE.ufeGeometry(BL[0].K.T, X, Y, Z, BL[0].conn, nE));
+  else { geo = new Float64Array(nQ * 10); for (const B of BL) { const G = FF_UFE.ufeGeometry(B.K.T, X, Y, Z, B.conn, B.nE); geo.set(G.geo, B.g0 * 10); minDet = Math.min(minDet, G.minDet); } }
   // boundary conditions: fixed velocity components (value in scaled units), tractions by face
   const fix = new Uint8Array(nD), val = new Float64Array(nD), tFaces = [];
-  const faceNodes = (e, f) => (K.tet ? K.faces : (typeof FM_FACES !== 'undefined' ? FM_FACES : require('./feed-mesh.js').FM_FACES))[f].map(i => K.conn[npe * e + i]);
+  const faceNodes = (e, f) => { const B = BL[eB[e]], le = e - B.e0; return (B.K.hex ? (typeof FM_FACES !== 'undefined' ? FM_FACES : require('./feed-mesh.js').FM_FACES) : B.K.faces)[f].map(i => B.conn[B.K.npe * le + i]); };
   // (slip first, then velocity: a node on both a wall and a mirror keeps the wall's velocity -- except a slip face marked
   //  'over', applied last: where a moving wall runs into it (the web under an upstream cut) the corner keeps no flow
   //  through the face, a scraping corner, instead of leaking the wall's speed through it)
@@ -90,7 +132,7 @@ function ffSetup(o) {
     else if (b.type === 'slip') { const c = { x: 0, y: 1, z: 2 }[b.normal]; for (const n of ids) if (b.over || !fix[3 * n + c] || val[3 * n + c] === 0) { fix[3 * n + c] = 1; val[3 * n + c] = 0; } }
     else if (b.type === 'traction') tFaces.push({ e: F.e, f: F.f, t: b.t });
     else if (b.type === 'free') {
-      if (K.tet) throw new Error(`a free surface (${tag}) on tetrahedra: not yet -- the free surface on them is MESH-T4`);
+      if (!BL[eB[F.e]].K.hex) throw new Error(`a free surface (${tag}) on ${BL[eB[F.e]].K.tet ? 'tetrahedra' : 'prisms'}: not yet -- the free surface on them is MESH-T4`);
       fFaces.push({ e: F.e, f: F.f, sigma: b.sigma || 0, tag, knS: b.kn ? b.kn * Ur / Pr : 0, vn: b.vn ?? 0 }); if (b.t) tFaces.push({ e: F.e, f: F.f, t: b.t });
     }
     else throw new Error(`unknown boundary condition ${b.type} on ${tag}`);
@@ -133,31 +175,42 @@ function ffSetup(o) {
   }
   // (nodes in no element -- a block with parts cut out of it, a pipe standing in the pool -- are out of the problem: held at
   //  rest, their rows the identity)
-  const inEl = new Uint8Array(nN); for (let i = 0; i < npe * nE; i++) inEl[K.conn[i]] = 1;
+  const inEl = new Uint8Array(nN); for (const B of BL) for (let i = 0; i < B.K.npe * B.nE; i++) inEl[B.conn[i]] = 1;
   for (let n = 0; n < nN; n++) if (!inEl[n]) { rot[n] = -1; for (let k = 0; k < 3; k++) { fix[3 * n + k] = 1; val[3 * n + k] = 0; } }
   if (o.fixPressure) { fix[nU] = 1; val[nU] = 0; }
   const muLaw = o.mu, epsR = (o.gdMin ?? 1e-3 * Ur / Lr) * Lr / Ur, gd = o.gdir || [0, -1, 0];
   const Gr = (o.rho || 0) * (o.g || 0) * Lr * Lr / (muR * Ur);
   // (the Cartesian unknowns each fixed node holds, for the per-axis multigrid and the thin-film part)
   const fixC = new Uint8Array(nU); for (let n = 0; n < nN; n++) for (let k = 0; k < 3; k++) fixC[3 * n + perm[3 * n + k]] = fix[3 * n + k];
-  return { M, o, K, nE, nN, nP, nU, nD, pOf, geo, X, Y, Z, fix, val, fixC, tFaces, fFaces, rot, frm: Float64Array.from(frm), perm, slot, Lr, Ur, muR, Pr, eps: epsR,
+  // (the prism layers' columns: each line of nodes across the layers, from the wall to the tetrahedra, one aggregate of
+  //  the preconditioner's multigrid -- the layers are thin, their strong couplings across them)
+  let cols = null;
+  if (BL.some(B => B.K.cols)) { cols = Int32Array.from({ length: nN }, (_, i) => i); const find = i => { while (cols[i] !== i) { cols[i] = cols[cols[i]]; i = cols[i]; } return i; };
+    for (const B of BL) if (B.K.cols) for (let e = 0; e < B.nE; e++) for (const c of B.K.cols) { const a = find(B.conn[B.K.npe * e + c[0]]); for (let k = 1; k < c.length; k++) { const b = find(B.conn[B.K.npe * e + c[k]]); if (a !== b) cols[b] = a; } }
+    for (let i = 0; i < nN; i++) cols[i] = find(i); }
+  return { M, o, K: BL.length === 1 ? { ...BL[0].K, conn: BL[0].conn } : null, B: BL, eB, cols, nE, nN, nP, nU, nD, pOf, geo, X, Y, Z, fix, val, fixC, tFaces, fFaces, rot, frm: Float64Array.from(frm), perm, slot, Lr, Ur, muR, Pr, eps: epsR,
     Re: (o.rho || 0) * Ur * Lr / muR, Gr, Gv: gd.map(v => -Gr * v),
     mu: gd => muLaw(gd * Ur / Lr) / muR, minDet,
-    st: new Float64Array(nE * nq * 20) };   // per quadrature point: μ, κ, D (6), u (3), ∇u (9)
+    st: new Float64Array(nQ * 20) };   // per quadrature point: μ, κ, D (6), u (3), ∇u (9)
 }
 
-/** A face's outward normal at each of its nodes (9 on a hexahedron, 6 on a tetrahedron; unnormalized: times the area
- *  element there), to visit(node, normal). */
+/** A face's outward normal at each of its nodes (9 on a hexahedron, 6 on a tetrahedron, 6 or 9 on a prism; unnormalized:
+ *  times the area element there), to visit(node, normal). */
+const FF_FACE_ST = { tri6: [[0, 0], [1, 0], [0, 1], [0.5, 0], [0.5, 0.5], [0, 0.5]], quad9: [-1, 0, 1].flatMap(t => [-1, 0, 1].map(s => [s, t])) };
 function ffFaceNormals(M, X, Y, Z, F, visit) {
-  if (M.type === 'tet10') {
-    // (at each of the face's 6 nodes, its own coordinates' tangents: ∂x/∂s × ∂x/∂t, outward on um-fe.js's faces)
-    const el = M.conn.subarray(10 * F.e, 10 * F.e + 10), fn = FF_TET.faces[F.f], ST = [[0, 0], [1, 0], [0, 1], [0.5, 0], [0.5, 0.5], [0, 0.5]];
-    for (let a = 0; a < 6; a++) {
-      const d = FF_UFE.ufeShape('tri6', ST[a]).dN, t1 = [0, 0, 0], t2 = [0, 0, 0];
-      for (let b = 0; b < 6; b++) { const n = el[fn[b]], P = [X[n], Y[n], Z[n]]; for (let c = 0; c < 3; c++) { t1[c] += d[2 * b] * P[c]; t2[c] += d[2 * b + 1] * P[c]; } }
-      visit(el[fn[a]], [t1[1] * t2[2] - t1[2] * t2[1], t1[2] * t2[0] - t1[0] * t2[2], t1[0] * t2[1] - t1[1] * t2[0]]);
+  if (M.type === 'tet10' || M.blocks) {
+    // (at each of the face's nodes, its own coordinates' tangents: ∂x/∂s × ∂x/∂t, times the face's outward sign)
+    const B = ffBlocks(M).find(b => F.e >= b.e0 && F.e < b.e0 + b.nE), K = B.K, le = F.e - B.e0;
+    if (!K.hex) {
+      const el = B.conn.subarray(K.npe * le, K.npe * le + K.npe), fn = K.faces[F.f], ft = K.ftype[F.f], sg = K.out[F.f], m = fn.length;
+      for (let a = 0; a < m; a++) {
+        const d = FF_UFE.ufeShape(ft, FF_FACE_ST[ft][a]).dN, t1 = [0, 0, 0], t2 = [0, 0, 0];
+        for (let b = 0; b < m; b++) { const n = el[fn[b]], P = [X[n], Y[n], Z[n]]; for (let c = 0; c < 3; c++) { t1[c] += d[2 * b] * P[c]; t2[c] += d[2 * b + 1] * P[c]; } }
+        visit(el[fn[a]], [sg * (t1[1] * t2[2] - t1[2] * t2[1]), sg * (t1[2] * t2[0] - t1[0] * t2[2]), sg * (t1[0] * t2[1] - t1[1] * t2[0])]);
+      }
+      return;
     }
-    return;
+    throw new Error('feed-fem: hexahedra in a mixed mesh: not yet');
   }
   const fixed = [[0, -1], [0, 1], [1, -1], [1, 1], [2, -1], [2, 1]][F.f], free = [0, 1, 2].filter(k => k !== fixed[0]), el = M.elems.subarray(27 * F.e, 27 * F.e + 27);
   let cx = 0, cy = 0, cz = 0; for (let k = 0; k < 27; k++) { cx += X[el[k]]; cy += Y[el[k]]; cz += Z[el[k]]; }
@@ -183,7 +236,9 @@ const ffAddNodal = (S, R, n, f0, f1, f2) => { const r = S.rot[n]; if (r < 0) { R
 /** The state's quantities at every quadrature point (stored for the Jacobian) and the residual R(x) (scaled). Returns R. */
 function ffResidual(S, x, R = new Float64Array(S.nD), opts = {}) {
   R.fill(0);
-  const { nE, geo, pOf, nU, st, K } = S, Ref = K.T, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = K.conn;
+  const { geo, pOf, nU, st } = S;
+  for (const B of S.B) {
+  const K = B.K, nE = B.nE, Ref = K.T, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = B.conn, g0 = B.g0;
   const dNx = new Float64Array(npe), dNy = new Float64Array(npe), dNz = new Float64Array(npe), ue = new Float64Array(3 * npe), pe = new Float64Array(npp), re = new Float64Array(3 * npe), rp = new Float64Array(npp);
   for (let e = 0; e < nE; e++) {
     const el = conn.subarray(npe * e, npe * e + npe);
@@ -191,7 +246,7 @@ function ffResidual(S, x, R = new Float64Array(S.nD), opts = {}) {
     for (let c = 0; c < npp; c++) pe[c] = x[nU + pOf[el[CORNER[c]]]];
     re.fill(0); rp.fill(0);
     for (let q = 0; q < nq; q++) {
-      const g = geo.subarray((e * nq + q) * 10, (e * nq + q) * 10 + 10), w = g[9];
+      const g = geo.subarray((g0 + e * nq + q) * 10, (g0 + e * nq + q) * 10 + 10), w = g[9];
       let u0 = 0, u1 = 0, u2 = 0, a00 = 0, a01 = 0, a02 = 0, a10 = 0, a11 = 0, a12 = 0, a20 = 0, a21 = 0, a22 = 0;   // a_ij = du_i/dx_j
       for (let a = 0; a < npe; a++) {
         const na = Ref.Na[q * npe + a], nb = Ref.Nb[q * npe + a], ng = Ref.Ng[q * npe + a], N = Ref.N[q * npe + a];
@@ -205,7 +260,7 @@ function ffResidual(S, x, R = new Float64Array(S.nD), opts = {}) {
       const D00 = a00, D11 = a11, D22 = a22, D01 = (a01 + a10) / 2, D02 = (a02 + a20) / 2, D12 = (a12 + a21) / 2;
       const s2 = 2 * (D00 * D00 + D11 * D11 + D22 * D22 + 2 * (D01 * D01 + D02 * D02 + D12 * D12));
       const gr = Math.sqrt(s2 + S.eps * S.eps), mu = S.mu(gr), h = 1e-6 * gr, dmu = (S.mu(gr + h) - S.mu(Math.max(gr - h, 1e-300))) / (gr + h - Math.max(gr - h, 1e-300));
-      const s = st.subarray((e * nq + q) * 20, (e * nq + q) * 20 + 20);
+      const s = st.subarray((g0 + e * nq + q) * 20, (g0 + e * nq + q) * 20 + 20);
       s[0] = mu; s[1] = 4 * dmu / gr; s[2] = D00; s[3] = D11; s[4] = D22; s[5] = D01; s[6] = D02; s[7] = D12;
       s[8] = u0; s[9] = u1; s[10] = u2; s[11] = a00; s[12] = a01; s[13] = a02; s[14] = a10; s[15] = a11; s[16] = a12; s[17] = a20; s[18] = a21; s[19] = a22;
       // stress: 2 μ D − p I; inertia Re (u·∇)u; gravity −Gr ŷ
@@ -222,6 +277,7 @@ function ffResidual(S, x, R = new Float64Array(S.nD), opts = {}) {
     }
     for (let a = 0; a < npe; a++) ffAddNodal(S, R, el[a], re[3 * a], re[3 * a + 1], re[3 * a + 2]);
     for (let c = 0; c < npp; c++) R[nU + pOf[el[CORNER[c]]]] += rp[c];
+  }
   }
   // given tractions: − ∫ t · v dA (scaled by Pr); a free surface's tension
   for (const F of S.tFaces) ffTractionFace(S, F, R);
@@ -276,22 +332,23 @@ function ffTensionFace(S, F, R) {
   }
 }
 
-/** A tetrahedron's face, at each point of a degree-5 rule: { w (weight × area element), n (unit, outward), pos (scaled),
- *  N (the element's functions, 10), idx (the face's local nodes) } -- for the faces' integrals on tetrahedra. */
-function ffTetFacePoints(S, F) {
-  const el = S.K.conn.subarray(10 * F.e, 10 * F.e + 10), fn = FF_TET.faces[F.f], out = [];
-  for (const q of FF_UFE.ufeFaceRule('tet10', F.f, 5)) {
+/** A tetrahedron's or a prism's face, at each point of its rule (degree 5 on a triangle, 3 × 3 Gauss on a
+ *  quadrilateral): { w (weight × area element), n (unit, outward), pos (scaled), N (the element's functions), idx (the
+ *  face's local nodes), el (the element's nodes) } -- for the faces' integrals off the hexahedra. */
+function ffFacePoints(S, F) {
+  const { B, el } = ffElem(S, F.e), K = B.K, fn = K.faces[F.f], m = fn.length, sg = K.out[F.f], out = [];
+  for (const q of FF_UFE.ufeFaceRule(K.type, F.f, K.ftype[F.f].startsWith('tri') ? 5 : 3)) {
     const t1 = [0, 0, 0], t2 = [0, 0, 0], pos = [0, 0, 0];
-    for (let b = 0; b < 6; b++) { const n = el[fn[b]], P = [S.X[n], S.Y[n], S.Z[n]]; for (let c = 0; c < 3; c++) { t1[c] += q.Ns[b] * P[c]; t2[c] += q.Nt[b] * P[c]; pos[c] += q.N2[b] * P[c]; } }
+    for (let b = 0; b < m; b++) { const n = el[fn[b]], P = [S.X[n], S.Y[n], S.Z[n]]; for (let c = 0; c < 3; c++) { t1[c] += q.Ns[b] * P[c]; t2[c] += q.Nt[b] * P[c]; pos[c] += q.N2[b] * P[c]; } }
     const nr = [t1[1] * t2[2] - t1[2] * t2[1], t1[2] * t2[0] - t1[0] * t2[2], t1[0] * t2[1] - t1[1] * t2[0]], dA = Math.hypot(...nr);
-    out.push({ w: q.w * dA, n: nr.map(v => v / dA), pos, N: q.el.N, idx: fn, el });
+    out.push({ w: q.w * dA, n: nr.map(v => sg * v / dA), pos, N: q.el.N, idx: fn, el });
   }
   return out;
 }
 /** A face's given traction into R (−∫ t·v dA). */
 function ffTractionFace(S, F, R) {
-  if (S.K.tet) {
-    for (const q of ffTetFacePoints(S, F)) { const tt = typeof F.t === 'function' ? F.t(q.pos[0] * S.Lr, q.pos[1] * S.Lr, q.pos[2] * S.Lr, q.n) : F.t;
+  if (!S.B[S.eB[F.e]].K.hex) {
+    for (const q of ffFacePoints(S, F)) { const tt = typeof F.t === 'function' ? F.t(q.pos[0] * S.Lr, q.pos[1] * S.Lr, q.pos[2] * S.Lr, q.n) : F.t;
       for (const k of q.idx) ffAddNodal(S, R, q.el[k], -q.w * q.N[k] * tt[0] / S.Pr, -q.w * q.N[k] * tt[1] / S.Pr, -q.w * q.N[k] * tt[2] / S.Pr); }
     return;
   }
@@ -355,9 +412,11 @@ function ffRobinFace(S, F, x, R, lin) {
 /** y = J x (the Newton Jacobian at the state last given to ffResidual), element by element. Fixed rows: y = x. */
 function ffJacVec(S, x, y = new Float64Array(S.nD)) {
   y.fill(0);
-  const { nE, geo, pOf, nU, st, K } = S, Ref = K.T, Re = S.Re, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = K.conn;
-  const dNx = new Float64Array(npe), dNy = new Float64Array(npe), dNz = new Float64Array(npe), ue = new Float64Array(3 * npe), pe = new Float64Array(npp), re = new Float64Array(3 * npe), rp = new Float64Array(npp);
+  const { geo, pOf, nU, st } = S, Re = S.Re;
   const fix = S.fix;
+  for (const B of S.B) {
+  const K = B.K, nE = B.nE, Ref = K.T, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = B.conn, g0 = B.g0;
+  const dNx = new Float64Array(npe), dNy = new Float64Array(npe), dNz = new Float64Array(npe), ue = new Float64Array(3 * npe), pe = new Float64Array(npp), re = new Float64Array(3 * npe), rp = new Float64Array(npp);
   for (let e = 0; e < nE; e++) {
     const el = conn.subarray(npe * e, npe * e + npe);
     for (let a = 0; a < npe; a++) {
@@ -369,7 +428,7 @@ function ffJacVec(S, x, y = new Float64Array(S.nD)) {
     for (let c = 0; c < npp; c++) { const i = nU + pOf[el[CORNER[c]]]; pe[c] = fix[i] ? 0 : x[i]; }
     re.fill(0); rp.fill(0);
     for (let q = 0; q < nq; q++) {
-      const g = geo.subarray((e * nq + q) * 10, (e * nq + q) * 10 + 10), w = g[9], s = st.subarray((e * nq + q) * 20, (e * nq + q) * 20 + 20);
+      const g = geo.subarray((g0 + e * nq + q) * 10, (g0 + e * nq + q) * 10 + 10), w = g[9], s = st.subarray((g0 + e * nq + q) * 20, (g0 + e * nq + q) * 20 + 20);
       let u0 = 0, u1 = 0, u2 = 0, b00 = 0, b01 = 0, b02 = 0, b10 = 0, b11 = 0, b12 = 0, b20 = 0, b21 = 0, b22 = 0;
       for (let a = 0; a < npe; a++) {
         const na = Ref.Na[q * npe + a], nb = Ref.Nb[q * npe + a], ng = Ref.Ng[q * npe + a], N = Ref.N[q * npe + a];
@@ -401,6 +460,7 @@ function ffJacVec(S, x, y = new Float64Array(S.nD)) {
     }
     for (let a = 0; a < npe; a++) ffAddNodal(S, y, el[a], re[3 * a], re[3 * a + 1], re[3 * a + 2]);
     for (let c = 0; c < npp; c++) y[nU + pOf[el[CORNER[c]]]] += rp[c];
+  }
   }
   for (const F of S.fFaces) if (F.knS) ffRobinFace(S, F, x, y, true);
   for (let i = 0; i < S.nD; i++) if (fix[i]) y[i] = x[i];
@@ -452,8 +512,10 @@ function ffMatMul(A, B) {
 }
 /** A smoothed-aggregation hierarchy for a symmetric positive (semi)definite A (rows of fixed unknowns: identity). */
 function ffAMG(A, opts = {}) {
-  // (θ: for 3D trilinear stencils the off-diagonals are ~6 % of the diagonal -- a 2D-style 0.08 would find no strong link)
-  const theta = opts.theta ?? 0.02, nCoarse = opts.nCoarse ?? 400, levels = [];
+  // (θ: for 3D trilinear stencils the off-diagonals are ~6 % of the diagonal -- a 2D-style 0.08 would find no strong link;
+  //  opts.agg0: the first level's aggregates given -- a prism layer's column of nodes, one; opts.smooth false: the
+  //  prolongator left unsmoothed, the coarse levels as sparse as the aggregates make them)
+  const theta = opts.theta ?? 0.02, nCoarse = opts.nCoarse ?? 400, smooth = opts.smooth ?? true, levels = [];
   let Ak = A;
   for (let lev = 0; lev < 20 && Ak.n > nCoarse; lev++) {
     const n = Ak.n, diag = new Float64Array(n);
@@ -466,19 +528,26 @@ function ffAMG(A, opts = {}) {
     const S = Array.from({ length: n }, (_, i) => strong(i));
     // aggregation: (1) a root and its strong neighbours, all unaggregated; (2) the rest join a neighbouring aggregate; (3) leftovers on their own
     const agg = new Int32Array(n).fill(-1); let nA = 0;
+    if (lev === 0 && opts.agg0) { const id = new Map(); for (let i = 0; i < n; i++) if (!isolated[i]) { const c = opts.agg0[i]; if (!id.has(c)) id.set(c, nA++); agg[i] = id.get(c); } }
+    else {
     for (let i = 0; i < n; i++) { if (isolated[i] || agg[i] >= 0 || !S[i].length) continue; if (S[i].some(j => agg[j] >= 0)) continue; agg[i] = nA; for (const j of S[i]) agg[j] = nA; nA++; }
     for (let i = 0; i < n; i++) if (agg[i] < 0 && !isolated[i]) { const j = S[i].find(j => agg[j] >= 0); if (j != null) agg[i] = agg[j]; }
     for (let i = 0; i < n; i++) if (agg[i] < 0 && !isolated[i]) agg[i] = nA++;
+    }
     if (nA >= (n - isolated.reduce((s, v) => s + v, 0)) * 0.9 || nA === 0) break;   // (not coarsening: stop here)
     const TI = [], TJ = []; for (let i = 0; i < n; i++) if (agg[i] >= 0) { TI.push(i); TJ.push(agg[i]); }
     const T = ffCSR(n, TI, TJ, new Array(TI.length).fill(1), nA);
     // the prolongator smoothed by damped Jacobi: P = (I − ω D⁻¹ A) T, ω = 4 / (3 ρ(D⁻¹A))
+    let P = T;
+    if (smooth) {
     let v = new Float64Array(n).map((_, i) => 1 + (i % 7) / 7), rho = 1;   // (a fixed start: the same hierarchy every run)
     for (let it = 0; it < 15; it++) { const w = ffMatVec(Ak, v); let nn = 0; for (let i = 0; i < n; i++) { w[i] /= diag[i]; nn += w[i] * w[i]; } nn = Math.sqrt(nn); rho = nn / Math.sqrt(v.reduce((s, t) => s + t * t, 0)); v = w.map(t => t / nn); }
     const om = 4 / (3 * rho);
     const DA = { ...Ak, val: Ak.val.map((a, p) => a) };
     for (let i = 0; i < n; i++) for (let p = DA.ptr[i]; p < DA.ptr[i + 1]; p++) DA.val[p] = (Ak.col[p] === i ? 1 : 0) - om * Ak.val[p] / diag[i];
-    const P = ffMatMul(DA, T), R = ffTranspose(P), Ac = ffMatMul(R, ffMatMul(Ak, P));
+    P = ffMatMul(DA, T);
+    }
+    const R = ffTranspose(P), Ac = ffMatMul(R, ffMatMul(Ak, P));
     levels.push({ A: Ak, P, R, diag });
     Ak = Ac;
   }
@@ -519,15 +588,12 @@ function ffVcycle(H, b, lev = 0) {
   return x;
 }
 
-/** A tetrahedron's 8 linear sub-tetrahedra (its 10 nodes' local numbers): the corners' four, then the inner octahedron's
- *  four round its diagonal 6–8. */
-const FF_TET_SUB = [[0, 4, 6, 7], [4, 1, 5, 8], [6, 5, 2, 9], [7, 8, 9, 3], [6, 8, 4, 5], [6, 8, 5, 9], [6, 8, 9, 7], [6, 8, 7, 4]];
 /**
  * The preconditioner's pieces at the current state: the viscosity-weighted Laplacian on the trilinear sub-hexahedra (one
  * per velocity component: its fixed nodes' rows set to identity), each with its multigrid; the lumped pressure mass over μ.
  */
 function ffPrecond(S, opts = {}) {
-  const { M, nE, nN, geo, st, nU, pOf, fix, K } = S, npe = K.npe, nq = K.nq, npp = K.npp, conn = K.conn, Ref = K.T;
+  const { M, nN, geo, st, nU, pOf, fix } = S;
   const I = [], J = [], V = [], VG = [], muN = new Float64Array(nN), cntN = new Float64Array(nN), m1 = new Float64Array(nN);
   const sub = [];
   for (let g = 0; g < 2; g++) for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) {
@@ -535,13 +601,15 @@ function ffPrecond(S, opts = {}) {
   }
   const G1 = [-1 / Math.sqrt(3), 1 / Math.sqrt(3)];
   const Sp = new Float64Array(S.nP), MI = [], MJ = [], MV = [];
+  for (const B of S.B) {
+  const K = B.K, nE = B.nE, npe = K.npe, nq = K.nq, npp = K.npp, conn = B.conn, Ref = K.T, g0 = B.g0;
   for (let e = 0; e < nE; e++) {
     const el = conn.subarray(npe * e, npe * e + npe);
     // the element's mean viscosity (over its quadrature points)
-    let mu = 0; for (let q = 0; q < nq; q++) mu += st[(e * nq + q) * 20] / nq;
-    // (a tetrahedron: its 8 linear sub-tetrahedra -- 4 at its corners, 4 round the inner octahedron's diagonal 6–8 --
-    //  each its exact P1 Laplacian and load)
-    if (K.tet) for (const c of FF_TET_SUB) {
+    let mu = 0; for (let q = 0; q < nq; q++) mu += st[(g0 + e * nq + q) * 20] / nq;
+    // (a tetrahedron: its 8 linear sub-tetrahedra -- 4 at its corners, 4 round the inner octahedron's diagonal 6–8; a
+    //  prism: its 24 -- each its exact P1 Laplacian and load)
+    if (!K.hex) for (const c of K.sub) {
       const n = c.map(k => el[k]), P = n.map(i => [S.X[i], S.Y[i], S.Z[i]]), Jm = [0, 1, 2].map(r => [0, 1, 2].map(d => P[r + 1][d] - P[0][d]));
       const det = Jm[0][0] * (Jm[1][1] * Jm[2][2] - Jm[1][2] * Jm[2][1]) - Jm[0][1] * (Jm[1][0] * Jm[2][2] - Jm[1][2] * Jm[2][0]) + Jm[0][2] * (Jm[1][0] * Jm[2][1] - Jm[1][1] * Jm[2][0]), V6 = Math.abs(det);
       // (the gradients: rows of J⁻ᵀ for the corners 1–3, the first their negative sum)
@@ -572,8 +640,9 @@ function ffPrecond(S, opts = {}) {
     for (const n of el) { muN[n] += mu; cntN[n]++; }
     // the pressure mass over μ (consistent): the Schur complement's stand-in
     const pe = K.corner.map(c => pOf[el[c]]), Me = new Float64Array(npp * npp);
-    for (let q = 0; q < nq; q++) { const w = geo[(e * nq + q) * 10 + 9] / st[(e * nq + q) * 20]; for (let i = 0; i < npp; i++) for (let j = 0; j < npp; j++) Me[i * npp + j] += w * Ref.P[q * npp + i] * Ref.P[q * npp + j]; }
+    for (let q = 0; q < nq; q++) { const w = geo[(g0 + e * nq + q) * 10 + 9] / st[(g0 + e * nq + q) * 20]; for (let i = 0; i < npp; i++) for (let j = 0; j < npp; j++) Me[i * npp + j] += w * Ref.P[q * npp + i] * Ref.P[q * npp + j]; }
     for (let i = 0; i < npp; i++) { Sp[pe[i]] += Me[i * npp + i]; for (let j = 0; j < npp; j++) { MI.push(pe[i]); MJ.push(pe[j]); MV.push(Me[i * npp + j]); } }
+  }
   }
   // (a node in no element -- cut out of a block -- an identity row: the multigrid needs every diagonal)
   for (let n = 0; n < nN; n++) if (!cntN[n]) { I.push(n); J.push(n); V.push(1); VG.push(1); }
@@ -586,7 +655,7 @@ function ffPrecond(S, opts = {}) {
     const A = { ...L, val: Float64Array.from(L.val) };
     const fixC = S.fixC;
     for (let i = 0; i < nN; i++) for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (fixC[3 * i + c] || fixC[3 * j + c]) A.val[p] = i === j ? 1 : 0; else if (i === j) A.val[p] += rob[c][i]; }
-    return { A, H: ffAMG(A) };
+    return { A, H: S.cols ? ffAMG(A, { agg0: S.cols, smooth: false }) : ffAMG(A) };
   });
   const lub = opts.lub === false ? null : ffLubrication(S, ffCSR(nN, I, J, VG), m1, muN.map((m, n) => m / (cntN[n] || 1)), Mp);
   return { comp, Sp, Mp, lub };
@@ -601,14 +670,21 @@ function ffPrecond(S, opts = {}) {
  * mass where the flow is thick (Ŝ_lub ≫ M/μ), the film's operator where it is thin.
  */
 function ffLubrication(S, Lg, m1, muN, Mp) {
-  const { nE, nN, nU, nP, geo, pOf, fix, K } = S, Ref = K.T, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = K.conn;
+  const { nN, nU, nP, geo, pOf, fix } = S;
   // φ: the geometric Laplacian (trilinear sub-hexahedra), φ = 0 where all three velocity components are given
   if (!S.phi) {
     const wall = new Uint8Array(nN); for (let n = 0; n < nN; n++) wall[n] = fix[3 * n] && fix[3 * n + 1] && fix[3 * n + 2] ? 1 : 0;
     const A = { ...Lg, val: Float64Array.from(Lg.val) };
     for (let i = 0; i < nN; i++) for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (wall[i] || wall[j]) A.val[p] = i === j ? 1 : 0; }
     const m = new Float64Array(nN);
-    for (let e = 0; e < nE; e++) for (let q = 0; q < nq; q++) { const w = geo[(e * nq + q) * 10 + 9]; for (let a = 0; a < npe; a++) m[conn[npe * e + a]] += w * Ref.N[q * npe + a]; }
+    // (each node's share of the volume: on hexahedra ∫ N dV; on tetrahedra and prisms, whose P2 corners' ∫ N dV is
+    //  negative or zero, the linear sub-tetrahedra's lumped quarters)
+    for (const B of S.B) { const K = B.K, Ref = K.T, npe = K.npe, nq = K.nq, conn = B.conn, g0 = B.g0;
+      if (K.hex) { for (let e = 0; e < B.nE; e++) for (let q = 0; q < nq; q++) { const w = geo[(g0 + e * nq + q) * 10 + 9]; for (let a = 0; a < npe; a++) m[conn[npe * e + a]] += w * Ref.N[q * npe + a]; } }
+      else for (let e = 0; e < B.nE; e++) for (const c of K.sub) {
+        const n = c.map(k => conn[npe * e + k]), d = [1, 2, 3].map(r => [S.X[n[r]] - S.X[n[0]], S.Y[n[r]] - S.Y[n[0]], S.Z[n[r]] - S.Z[n[0]]]);
+        const V = Math.abs(d[0][0] * (d[1][1] * d[2][2] - d[1][2] * d[2][1]) - d[0][1] * (d[1][0] * d[2][2] - d[1][2] * d[2][0]) + d[0][2] * (d[1][0] * d[2][1] - d[1][1] * d[2][0])) / 6;
+        for (const i of n) m[i] += V / 4; } }
     // (the load on the trilinear sub-hexahedra's own functions: a 1D profile comes out exact at the nodes)
     const b = m1.map((v, n) => wall[n] ? 0 : v), H = ffAMG(A);
     S.phi = ffPCG(v => ffMatVec(A, v), v => ffVcycle(H, v), b, 200, 1e-10);
@@ -618,15 +694,18 @@ function ffLubrication(S, Lg, m1, muN, Mp) {
   // B (pressure × free velocity), each column scaled by φ/(μ m); then B D⁻¹ Bᵀ
   const BI = [], BJ = [], BV = [], dinv = new Float64Array(nU);
   for (let n = 0; n < nN; n++) for (let c = 0; c < 3; c++) if (!S.fixC[3 * n + c]) dinv[3 * n + c] = Math.max(phi[n], 0) / (muN[n] * m[n]);
+  for (const B of S.B) {
+  const K = B.K, nE = B.nE, Ref = K.T, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = B.conn, g0 = B.g0;
   const be = new Float64Array(npp * 3 * npe), dNx = new Float64Array(npe), dNy = new Float64Array(npe), dNz = new Float64Array(npe);
   for (let e = 0; e < nE; e++) {
     const el = conn.subarray(npe * e, npe * e + npe); be.fill(0);
     for (let q = 0; q < nq; q++) {
-      const g = geo.subarray((e * nq + q) * 10, (e * nq + q) * 10 + 10), w = g[9];
+      const g = geo.subarray((g0 + e * nq + q) * 10, (g0 + e * nq + q) * 10 + 10), w = g[9];
       for (let a = 0; a < npe; a++) { const na = Ref.Na[q * npe + a], nb = Ref.Nb[q * npe + a], ng = Ref.Ng[q * npe + a]; dNx[a] = na * g[0] + nb * g[3] + ng * g[6]; dNy[a] = na * g[1] + nb * g[4] + ng * g[7]; dNz[a] = na * g[2] + nb * g[5] + ng * g[8]; }
       for (let c = 0; c < npp; c++) { const P = w * Ref.P[q * npp + c]; for (let a = 0; a < npe; a++) { be[c * 3 * npe + 3 * a] -= P * dNx[a]; be[c * 3 * npe + 3 * a + 1] -= P * dNy[a]; be[c * 3 * npe + 3 * a + 2] -= P * dNz[a]; } }
     }
     for (let c = 0; c < npp; c++) { const i = pOf[el[CORNER[c]]]; if (fix[nU + i]) continue; for (let a = 0; a < npe; a++) for (let d = 0; d < 3; d++) { const j = 3 * el[a] + d; if (dinv[j]) { BI.push(i); BJ.push(j); BV.push(be[c * 3 * npe + 3 * a + d]); } } }
+  }
   }
   const B = ffCSR(nP, BI, BJ, BV, nU), Bt = ffTranspose(B);
   for (let i = 0; i < Bt.n; i++) for (let p = Bt.ptr[i]; p < Bt.ptr[i + 1]; p++) Bt.val[p] *= dinv[i];
@@ -646,7 +725,7 @@ function ffLubrication(S, Lg, m1, muN, Mp) {
  *  block, each preconditioned by a multigrid V-cycle per component). FGMRES takes a preconditioner that varies. */
 function ffApplyPrec(S, PC, r, opts = {}) {
   const z = new Float64Array(S.nD), { nN, nU, nP, fix } = S;
-  const itP = opts.itP ?? 8, itU = opts.itU ?? 12;
+  const itP = opts.itP ?? 8, itU = opts.itU ?? (S.cols ? 25 : 12);   // (prism layers: the velocity block's inner solve longer)
   // pressure: −Ŝ⁻¹ r_p
   {
     const b = new Float64Array(nP); for (let i = 0; i < nP; i++) b[i] = fix[nU + i] ? 0 : r[nU + i];
@@ -747,10 +826,10 @@ function ffSolve(S, opts = {}) {
 
 /** The volume flow out through the faces of a tag (m³/s): ∫ u·n dA over them (n outward). */
 function ffFlow(S, x, tag) {
-  if (S.K.tet) {
+  if (!(S.B.length === 1 && S.B[0].K.hex)) {
     let Q = 0;
     for (const F of S.M.faces) { if (F.tag !== tag) continue;
-      for (const q of ffTetFacePoints(S, F)) { const uu = [0, 0, 0]; for (const k of q.idx) { const un = ffNodeU(S, x, q.el[k]); for (let c = 0; c < 3; c++) uu[c] += q.N[k] * un[c]; }
+      for (const q of ffFacePoints(S, F)) { const uu = [0, 0, 0]; for (const k of q.idx) { const un = ffNodeU(S, x, q.el[k]); for (let c = 0; c < 3; c++) uu[c] += q.N[k] * un[c]; }
         Q += q.w * (uu[0] * q.n[0] + uu[1] * q.n[1] + uu[2] * q.n[2]); } }
     return Q * S.Ur * S.Lr * S.Lr;
   }
@@ -778,4 +857,4 @@ function ffFlow(S, x, tag) {
   return Q * S.Ur * S.Lr * S.Lr;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { ffKind, ffNodeU, ffFaceNormals, ffTensionFace, ffRobinFace, ffSetup, ffResidual, ffJacVec, ffSolve, ffPrecond, ffApplyPrec, ffLubrication, ffPCG, ffFGMRES, ffAMG, ffVcycle, ffCSR, ffMatVec, ffFlow, FF_REF, FF_CORNER, FF_TET, FF_TET_SUB };
+if (typeof module !== 'undefined' && module.exports) module.exports = { ffKind, ffKindOf, ffBlocks, ffElem, ffFacePoints, ffNodeU, ffFaceNormals, ffTensionFace, ffRobinFace, ffSetup, ffResidual, ffJacVec, ffSolve, ffPrecond, ffApplyPrec, ffLubrication, ffPCG, ffFGMRES, ffAMG, ffVcycle, ffCSR, ffMatVec, ffFlow, FF_REF, FF_CORNER, FF_TET, FF_TET_SUB, FF_WEDGE_SUB };

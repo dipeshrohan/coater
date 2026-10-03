@@ -12,7 +12,8 @@
  *     0.05 mm ×1.3): positive, closed, the volume the faceted solid's, every patch; the web's layers exactly as high, their
  *     volume the web's area times their thickness; the blade's along its true normal to 1e-5; OpenFOAM's limits
  *     (non-orthogonality under 70°, skewness under 4); the tetrahedra within the mesher's limits. Then the pipes' walls
- *     with layers too.
+ *     with layers too: on the bore and the outer wall alone refused (they meet the pipe's end at convex edges, where the
+ *     layers would end in the open), with the end layered too accepted; every face's area as it was.
  */
 const M = require('./um-tetmesh.js'), L = require('./um-tetlayers.js'), UC = require('./um-core.js'), UG = require('./um-tetgeom.js');
 let fails = 0;
@@ -91,10 +92,20 @@ const box = (h, tags) => ({ X: [0, 0.02, 0.02, 0, 0, 0.02, 0.02, 0], Y: [0, 0, h
   check('  the web\'s layers exactly as high, their volume its area times their thickness; the blade\'s along its true normal to 1e-5',
     offW < 1e-18 && Math.abs(vw / (webArea * T) - 1) < 1e-12 && nB > 50 && offB < 1e-5, `web heights off ${offW.toExponential(1)} m, volume ${(vw / (webArea * T) - 1).toExponential(1)}; ${nB} blade points, heights off ${offB.toExponential(1)}`);
   check('  OpenFOAM\'s limits: non-orthogonality under 70°, skewness under 4', Q.nonOrthoMax < 70 && Q.skewnessMax < 4, `non-orthogonality ${Q.nonOrthoMax.toFixed(1)}° (mean ${Q.nonOrthoAvg.toFixed(1)}°), skewness ${Q.skewnessMax.toFixed(2)}, aspect ${Q.aspectMax.toFixed(1)}`);
-  const R2 = L.umlMesh(S, [{ tags: ['web'], ...lay }, { tags: ['blade', 'pile', 'pipe-wall', 'bore'], ...lay }], { size: P.size }), B2 = build(R2);
-  check('  the pipes\' walls with layers too: positive, closed, the volume the faceted solid\'s; the limits',
-    B2.Q.negativeVolumes === 0 && B2.Q.opennessMax < 1e-12 && Math.abs(B2.Q.volumeTotal / P.volumeFacets - 1) < 1e-12 && limits(B2.Q) && B2.Q.nonOrthoMax < 70 && B2.Q.skewnessMax < 4,
-    `${R2.wedge.length / 6} wedges (${R2.wedgeTag.filter(t => t === 'pipe-wall' || t === 'bore').length} on the pipe), ${R2.tet.length / 4} tetrahedra; non-orthogonality ${B2.Q.nonOrthoMax.toFixed(1)}°, skewness ${B2.Q.skewnessMax.toFixed(2)}`);
+  // (the pipe's walls: its bore and outer wall meet its end at convex edges -- layers on them alone would end in the open
+  //  there, their sides walled off as the end; refused, and with the end layered too they turn the corner)
+  let refused = ''; try { L.umlMesh(S, [{ tags: ['web'], ...lay }, { tags: ['blade', 'pile', 'pipe-wall', 'bore'], ...lay }], { size: P.size }); } catch (e) { refused = e.message; }
+  const R2 = L.umlMesh(S, [{ tags: ['web'], ...lay }, { tags: ['blade', 'pile', 'pipe-wall', 'pipe-end', 'bore'], ...lay }], { size: P.size }), B2 = build(R2);
+  // (every face's area as it was: a layer's side lies on the face it meets, never beyond it)
+  const areas = (X, Y, Z, faces, tags) => { const A = {}; faces.forEach((f, i) => { const q = f.map(k => [X[k], Y[k], Z[k]]); let a = 0;
+    for (let j = 1; j + 1 < q.length; j++) { const u = [0, 1, 2].map(c => q[j][c] - q[0][c]), w = [0, 1, 2].map(c => q[j + 1][c] - q[0][c]); a += Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2; }
+    A[tags[i]] = (A[tags[i]] || 0) + a; }); return A; };
+  const A0 = areas(S.X, S.Y, S.Z, Array.from({ length: S.tri.length / 3 }, (_, i) => [S.tri[3 * i], S.tri[3 * i + 1], S.tri[3 * i + 2]]), S.tag);
+  const offA = R0_ => { const A1 = areas(R0_.X, R0_.Y, R0_.Z, R0_.bface, R0_.btag); return Math.max(...Object.keys(A0).map(t => Math.abs((A1[t] || 0) / A0[t] - 1))); };
+  const aOff = Math.max(offA(R), offA(R2));
+  check('  the pipes\' walls with layers too: alone refused (they would end in the open at the pipe\'s end); with its end, turning the corner: positive, closed, the volume the faceted solid\'s; every face\'s area as it was; the limits',
+    /convex edge/.test(refused) && B2.Q.negativeVolumes === 0 && B2.Q.opennessMax < 1e-12 && Math.abs(B2.Q.volumeTotal / P.volumeFacets - 1) < 1e-12 && aOff < 1e-12 && limits(B2.Q) && B2.Q.nonOrthoMax < 70 && B2.Q.skewnessMax < 4,
+    `"${refused.replace(/^um-tetlayers: /, '')}"; ${R2.wedge.length / 6} wedges (${R2.wedgeTag.filter(t => ['pipe-wall', 'pipe-end', 'bore'].includes(t)).length} on the pipe), ${R2.tet.length / 4} tetrahedra; areas off ${aOff.toExponential(1)}; non-orthogonality ${B2.Q.nonOrthoMax.toFixed(1)}°, skewness ${B2.Q.skewnessMax.toFixed(2)}`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
