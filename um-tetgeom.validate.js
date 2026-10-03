@@ -11,6 +11,10 @@
  *     solid's exactly; the quality limits of um-tetmesh.validate.js (dihedral 15–155°, radius ratio ≥ 0.2); every
  *     patch there, the pipe's wall's area its facets'.
  *  5. The sizes: under the blade at most the gap over `across`, round the pipe at most the bore over `across`.
+ *  6. A shallow crease: the blade's underside meeting the pile's surface at 156° (a pool 14 mm wide, from x −55 to −20 mm,
+ *     3 mm, three across the gap -- a case where one tetrahedron takes both faces at the crease, its dihedral there the
+ *     crease's, and a point at its middle, as flat as it is, leaves four slivers of 7–8°): no tetrahedron with a face on the
+ *     blade and one on the pile; the quality limits of 4.
  */
 const UG = require('./um-tetgeom.js'), M = require('./um-tetmesh.js'), UC = require('./um-core.js');
 let fails = 0;
@@ -86,6 +90,22 @@ const pool = (o = {}) => UG.umgPool({ z0: 0, z1: 0.012, xCut: -0.07, xEnd: -0.00
   const pipe = Math.abs(P.size(-0.055, 0.008, 0.006) - 4e-3 / 3) < 1e-15 && P.size(-0.055, 0.008, 0.006 + 3e-3 + 1e-3) <= 4e-3 / 3 + 0.3 * 1e-3 + 1e-15;
   check('the sizes: under the blade the gap over `across`, round the pipe the bore over `across`, growing away from it', gap && pipe,
     `under the blade at x −30, −10, −3 mm: ${[-0.03, -0.01, -0.003].map(x => (P.size(x, 1e-3, 0.006) * 1e3).toFixed(3)).join(', ')} mm; in the pipe ${(P.size(-0.055, 0.008, 0.006) * 1e3).toFixed(3)} mm`);
+}
+
+// 6. a shallow crease
+{
+  const P = pool({ z1: 0.014, xCut: -0.055, xEnd: -0.02, outlets: [], size: 3e-3, across: 3 }), S = M.umtSurface(P.G, { size: P.size }), V = M.umtVolume(S, { size: P.size }), nT = V.tet.length / 4;
+  const slope = -P.xJ / Math.sqrt(R * R - P.xJ * P.xJ), crease = 180 - Math.atan(slope) * 180 / Math.PI;
+  const tagOf = new Map(); for (let f = 0; f < V.bface.length / 3; f++) tagOf.set(Array.from(V.bface.subarray(3 * f, 3 * f + 3)).sort((a, b) => a - b).join(','), V.btag[f]);
+  let both = 0;
+  for (let t = 0; t < nT; t++) { const v = Array.from(V.tet.subarray(4 * t, 4 * t + 4)), tg = new Set();
+    for (let k = 0; k < 4; k++) { const g = tagOf.get(v.filter((_, i) => i !== k).sort((a, b) => a - b).join(',')); if (g) tg.add(g); }
+    if (tg.has('blade') && tg.has('pile')) both++; }
+  const U = UC.umBuild({ X: V.X, Y: V.Y, Z: V.Z }, Array.from({ length: nT }, (_, i) => ({ t: UC.UM_TET, v: Array.from(V.tet.subarray(4 * i, 4 * i + 4)) })), Array.from({ length: V.bface.length / 3 }, (_, i) => ({ v: Array.from(V.bface.subarray(3 * i, 3 * i + 3)), tag: V.btag[i] })));
+  const Q = UC.umQuality(U, UC.umGeometry(U));
+  check(`a shallow crease (the blade meeting the pile's surface at ${crease.toFixed(1)}°): no tetrahedron on both; positive, closed, the volume the faceted solid's; dihedral 15–155°, radius ratio ≥ 0.2`,
+    both === 0 && Q.opennessMax < 1e-12 && Math.abs(Q.volumeTotal / P.volumeFacets - 1) < 1e-12 && Q.tet.dihedralMin >= 15 && Q.tet.dihedralMax <= 155 && Q.tet.rhoMin >= 0.2,
+    `${nT} tetrahedra, ${both} on both; dihedral ${Q.tet.dihedralMin.toFixed(1)}–${Q.tet.dihedralMax.toFixed(1)}°, radius ratio ${Q.tet.rhoMin.toFixed(3)}; points put in for creases and slivers ${V.stats.splits}`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
