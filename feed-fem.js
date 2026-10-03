@@ -519,13 +519,13 @@ function ffVcycle(H, b, lev = 0) {
   return x;
 }
 
+/** A tetrahedron's 8 linear sub-tetrahedra (its 10 nodes' local numbers): the corners' four, then the inner octahedron's
+ *  four round its diagonal 6–8. */
+const FF_TET_SUB = [[0, 4, 6, 7], [4, 1, 5, 8], [6, 5, 2, 9], [7, 8, 9, 3], [6, 8, 4, 5], [6, 8, 5, 9], [6, 8, 9, 7], [6, 8, 7, 4]];
 /**
  * The preconditioner's pieces at the current state: the viscosity-weighted Laplacian on the trilinear sub-hexahedra (one
  * per velocity component: its fixed nodes' rows set to identity), each with its multigrid; the lumped pressure mass over μ.
  */
-/** A tetrahedron's 8 linear sub-tetrahedra (its 10 nodes' local numbers): the corners' four, then the inner octahedron's
- *  four round its diagonal 6–8. */
-const FF_TET_SUB = [[0, 4, 6, 7], [4, 1, 5, 8], [6, 5, 2, 9], [7, 8, 9, 3], [6, 8, 4, 5], [6, 8, 5, 9], [6, 8, 9, 7], [6, 8, 7, 4]];
 function ffPrecond(S, opts = {}) {
   const { M, nE, nN, geo, st, nU, pOf, fix, K } = S, npe = K.npe, nq = K.nq, npp = K.npp, conn = K.conn, Ref = K.T;
   const I = [], J = [], V = [], VG = [], muN = new Float64Array(nN), cntN = new Float64Array(nN), m1 = new Float64Array(nN);

@@ -13,6 +13,7 @@ node by node. The scripts that make, run and compare every case are in this fold
 | The same, in 2D | `cfd-fem.js` (Q2–Q1 FEM, Newton) | `simpleFoam` | 2D | u 0.8 %, p 1.6 % RMS (25,344 cells), falling with refinement; 0.1 % in the pool and under the blade; the film's flow rate OpenFOAM's own to 4 digits (1.5157 mm) |
 | Heat through a three-layer stack (plate, film, paper), hot air on part of the top | `mp-core.js` `mpHeatMoisture` (the Pre heat and Drying stages' solver) and `mpTransport` (the Furnace's); linear FEM | `chtMultiRegionFoam` (one solid region per layer, coupled interfaces) | 2D, 3D | 2D: 0.07–0.24 % RMS of the temperature rise (5,760 cells), the hottest point within 0.03 K; 3D: 1.6–3.0 % on 1,920 cells, 0.8–1.7 % on 14,400 (the mesh about twice as fine each way), the hottest point 2.8 K → 0.4 K apart |
 | Thermal stress in a clamped aluminium block | `mp-core.js` `mpScalar` + `mpElastic` (linear FEM) — the stages' stress solver | `solidDisplacementFoam` (thermal stress) | 2D (plane strain), 3D | 2D: displacement 0.07 %, stresses 0.1–0.15 % RMS (8,000 cells); 3D: displacement 0.3–0.4 %, stresses 0.4–1.3 % (30,720 cells); falling 2–3.5× per refinement |
+| The pool behind the blade with two pipes feeding it, on the tetrahedral mesher's mesh | `feed-pool-tet.js` on `feed-fem.js` (Taylor–Hood P2–P1 tetrahedra, curved walls, Newton) | `simpleFoam` on the same tetrahedra, each split in 8 | 3D | see *The pool on tetrahedra*: 0.1 % RMS in the pool and under the blade (the block mesh 0.2 %); round the pipes 2.5–3 % for every mesh of the app alike |
 | The free surface itself (film thickness, meniscus) | `cfd-fem.js` | `interFoam` (volume of fluid) | 2D | **not achieved**: interFoam diverges on this flow (see *The free surface*) |
 
 Two findings came out of the benchmarks:
@@ -200,6 +201,49 @@ The peak stress itself sits at a clamped corner, where it is singular and grows 
 
 ![convergence](results/convergence.png)
 
+## The pool on tetrahedra
+
+`pooltet.js` solves the pool of `feed-pool.validate.js`'s "tips in the paste in 3D" with the app's tetrahedral path —
+um-tetgeom.js's solid, um-tetmesh.js's tetrahedra made quadratic (the pipes' walls and the blade's underside on their true
+surfaces), feed-fem.js's P2–P1 elements — and writes the same case for OpenFOAM: the app's tetrahedra each split in 8 at
+its edges' middles, so every node of the app's mesh is a point of OpenFOAM's. Half the 300 mm pool (the middle a mirror),
+two pipes (10 mm bore, 14 mm outside, tips 30 mm above the web, bores 60 mm) feeding 10 ml/s, 1.07 ml/s out at the pool
+edge, a Newtonian paste of 10.5 Pa·s and 1360 kg/m³, the web at 0.28 m/min.
+
+| Patch | App | OpenFOAM |
+|---|---|---|
+| web | moving at U | `fixedValue` (U, 0, 0) |
+| blade, side plate, pipes (outside, end, bore) | no slip | `noSlip` |
+| the middle (z = W/2) | mirror | `symmetryPlane` |
+| back edge (the cut) | no flow through it, no shear | `slip` |
+| top (a lid at the level) | rising at ḣ through it, no shear | `fixedNormalSlip`, (0, ḣ, 0) with ḣ from OpenFOAM's own top area |
+| bores' tops | plug, the flow in exact | `fixedValue`, the flow in exact on OpenFOAM's own area |
+| pool edge | the traction −ρg(h − y) | the app's velocity there, each face's mean (the app's flow out exactly); the pressure compared about its volume mean |
+
+Gravity is in the app's pressure: OpenFOAM's (kinematic, no gravity) times ρ is compared with p − ρg(h − y). Each
+solution is compared at every OpenFOAM cell centre (the app's value there from its own elements), RMS over the cells
+weighted by their volumes, the velocity as a share of OpenFOAM's largest speed (124 mm/s, in the bores), the pressure of
+its range (17.5 kPa, mostly the bores' drop).
+
+OpenFOAM on the 10 mm mesh's 96,856 cells (converged: 1,095 iterations, residuals below 1e-11):
+
+| Region | Tetrahedra 10 mm (12,107 P2–P1, 60,279 unknowns) | Tetrahedra 7 mm (28,210, 134,836) | Block mesh (3,072 Q2–Q1, 86,943; the Pool and feed page's) |
+|---|---|---|---|
+| Everywhere: u / p | 0.96 % / 0.94 % | 0.98 % / 0.93 % | 1.13 % / 1.01 % |
+| The pool away from the pipes and the pool edge | 0.11 % / 0.12 % | 0.10 % / 0.12 % | 0.21 % / 0.14 % |
+| Round the pipes (within 15 mm of an axis) | 2.55 % / 2.49 % | 2.60 % / 2.46 % | 2.97 % / 2.66 % |
+| Under the blade near the pool edge | 0.09 % / 0.11 % | 0.09 % / 0.11 % | 0.18 % / 0.12 % |
+
+- In the pool and under the blade the tetrahedra are within 0.1 % of OpenFOAM, half the block mesh's difference.
+- Round the pipes all three of the app's meshes are 2.5–3 % from OpenFOAM, the tetrahedra's not falling from 10 mm to
+  7 mm: the difference there is OpenFOAM's own (its cells are the coarse ones round the jet leaving each tip);
+  OPENFOAM_7MM
+- The cross-width flow (w, 15 mm above the web behind the pipes; at most 1.3 mm/s): the tetrahedra 6.5–6.8 % RMS from
+  OpenFOAM along the line, the block mesh 14.9 % — between the pipes the block mesh's few elements across give 0.50 mm/s
+  where OpenFOAM and the tetrahedra give 0.69 and 0.67–0.69 (`results/pool_tet.png`).
+
+![pool on tetrahedra](results/pool_tet.png)
+
 ## Running it
 
 Needs OpenFOAM v1912 (`apt install openfoam` on Ubuntu 24.04), Python 3 with numpy and matplotlib, Node with
@@ -232,6 +276,12 @@ python3 heat/compare_heat.py heat/stack2d.json heat_app2d.json heat_of2d/of.json
 node stress/stress_app.js stress/block2d.json stress_app2d.json 1
 python3 stress/stress_of.py stress/block2d.json stress_of2d 1
 python3 stress/compare_stress.py stress/block2d.json stress_app2d.json stress_of2d/of.json
+
+# the pool on tetrahedra (no browser: the app's solvers in Node)
+node pooltet.js make pt10 0.01 2               # the app's solve and the case: 96,856 cells (0.007: 225,680)
+./runof.sh pt10 2
+node pooltet.js compare pt10 pt10.json hex,tet:0.007   # the table; with the block mesh and the 7 mm tetrahedra
+python3 pooltet_plot.py pt10.json results/pool_tet.png
 
 # the free surface by volume of fluid (diverges on this flow; kept to show what was tried)
 node exp2d.js d2_newt.json 8795 '{"rheo":{"structOn":false},"cfdg":{"model":"newtonian"}}'
