@@ -10,6 +10,8 @@
  *  7. Shaped blades (cfd-blade.js): extruded, their underside by rays is the profile's; a side section of the
  *     triangles, opened (inlet, metering point, face), gives the profile back -- a bevel, an edge radius, a
  *     two-step with a vertical riser.
+ *  8. The blade's end faces: its side profile (not convex: the notch) cut into triangles covering it once, the solid's
+ *     volume its area times its width.
  */
 const G = require('./cfd-3d-geom.js');
 const { bladeShape } = require('./cfd-1d.js');
@@ -121,6 +123,31 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
     const nC = q.faceCorners.length, nP = p.faceCorners.length;
     check(`${label}: its section, opened, gives the profile back`, !q.err && Math.abs(q.xe - p.xe) < 2e-6 && dU < 5e-6 && Math.abs(q.face.len - p.face.len) < 0.02 * p.face.len && (label === 'edge radius' ? nC === 1 : nC === nP),
       `metering point ${(q.xe * 1e3).toFixed(4)} vs ${(p.xe * 1e3).toFixed(4)} mm, underside within ${(dU * 1e6).toFixed(2)} µm, face ${(q.face.len * 1e3).toFixed(3)} vs ${(p.face.len * 1e3).toFixed(3)} mm, corners on the face ${nC} vs ${nP}`);
+  }
+}
+// 8. the blade's end faces: its side profile -- with the notch (the exit face up to its corner, the bevel down to the dry
+//  edge), not convex -- cut into triangles that cover it once: each inside it, none turned over, their areas its area;
+//  the solid's volume (by its faces, the divergence theorem) the profile's area times its width
+{
+  const Bl = require('./cfd-blade.js');
+  const area = P => P.reduce((s, p, i) => { const q = P[(i + 1) % P.length]; return s + (p[0] * q[1] - q[0] * p[1]) / 2; }, 0);
+  const inside = (P, x, y) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+  const profiles = [['round entry', G.bladeSideOutline({ shape: 'round', H: 1.725e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 90, faceLen: 8e-3, top: 0.02 })],
+    ['flat land, exit face 60°', G.bladeSideOutline({ shape: 'flat', H: 1.7e-3, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: 60, faceLen: 8e-3, top: 0.02 })],
+    ['two-step', (() => { const p = Bl.bladeProfile({ H: 1.7e-3, exitDeg: 90, faceLen: 8e-3, shape: 'twostep', land1: 0.008, stepH: 0.5e-3, riserDeg: 90, L: 0.005 }); return G.bladeSideOutline({ faceLen: 8e-3, top: 0.02, shaped: { under: Bl.pathPoints(p.under), face: Bl.pathPoints(p.face) } }); })()]];
+  for (const [label, pr] of profiles) {
+    const P = pr.pts, A = area(P), T = G.polyTriangles(P);
+    let sumAbs = 0, turned = 0, out = 0;
+    for (const [i, j, k] of T) {
+      const a = P[i], b = P[j], c = P[k], t = area([a, b, c]);
+      sumAbs += Math.abs(t); if (t * A < 0) turned++;
+      if (!inside(P, (a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3)) out++;
+    }
+    const W = 0.01, tris = G.extrudeProfile(P, 0, W, 4);
+    let V = 0; for (let t = 0; t < tris.length; t += 9) { const [ax, ay, az, bx, by, bz, cx, cy, cz] = tris.subarray(t, t + 9); V += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6; }
+    check(`${label}: the end faces cover the profile once (each triangle inside it, none turned over, their areas its area); the solid's volume its area times its width`,
+      turned === 0 && out === 0 && Math.abs(sumAbs / Math.abs(A) - 1) < 1e-12 && Math.abs(Math.abs(V) / (Math.abs(A) * W) - 1) < 1e-6,
+      `${P.length} points, ${T.length} triangles, their areas ${(sumAbs / Math.abs(A) - 1).toExponential(1)} off; volume ${(Math.abs(V) / (Math.abs(A) * W) - 1).toExponential(1)} off`);
   }
 }
 
