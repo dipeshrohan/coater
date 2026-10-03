@@ -287,7 +287,11 @@ function c3dBuild() {
     const f = undersideField(tris, xsGap.map((x, i) => i === 0 ? x + 1e-7 : i === xsGap.length - 1 ? x - 1e-7 : x), zs);
     const nz = zs.length;
     let open = 0, multi = 0, gMin = Infinity, gMax = -Infinity;
-    for (let v = 0; v < f.low.length; v++) { if (!Number.isFinite(f.low[v])) open++; else if (f.hits[v] > 2) multi++; }
+    // (more than one layer over the web: a file's blade overhanging there. A blade made here has one underside by its
+    //  profile; with the exit face leaning back over the gap (above 90°) the rays also cross that face and the blade above
+    //  it, which the solver takes from the 2D setup -- not an overhang)
+    const fileBlade = C3D.source !== 'made';
+    for (let v = 0; v < f.low.length; v++) { if (!Number.isFinite(f.low[v])) open++; else if (fileBlade && f.hits[v] > 2) multi++; }
     const iE = xsGap.length - 1;
     for (let k = 0; k < nz; k++) { const v = f.low[iE * nz + k]; if (Number.isFinite(v)) { gMin = Math.min(gMin, v); gMax = Math.max(gMax, v); } }
     // (where a ray misses the blade: the top of the gap from its neighbours along x, so the mesh still closes)

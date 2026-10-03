@@ -12,6 +12,7 @@
  *  4. The same with the gap varying slowly across the strip (a 40 mm wave): the film and the
  *     contact line at every station as the 2D solves at those gaps (nothing to couple at that
  *     scale), and Newton converging quadratically with the free surface and the contact line.
+ *     Both again with the exit face leaning back over the gap (120°).
  *  5. Flow under a round-entry blade whose gap varies across the web on the scale of the blade
  *     (no meniscus): the flow rate at every station against the Reynolds equation over the web's
  *     plane, which carries the flow across the web -- and clearly unlike station-by-station
@@ -168,6 +169,17 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
   const hs = w3.history.map(h => h.residual).filter(v => v > 1e-13);
   const rates = []; for (let i = 1; i < hs.length; i++) if (hs[i - 1] < 1e-2) rates.push(Math.log(hs[i]) / Math.log(hs[i - 1]));
   check('  Newton with the free surface and the contact line converges quadratically', rates.length > 0 && Math.min(...rates) > 1.6, `residuals ${w3.history.map(h => h.residual.toExponential(1)).join(' ')}`);
+  // the exit face leaning back over the gap (120°): the same identities
+  const back = solveCoater3D({ ...base, faceDeg: 120 }), b3 = back.r3, b2 = back.r2[0];
+  let dub = 0, ubm = 0;
+  for (let c = 0; c < b3.NC; c++) for (let l = 0; l < b3.NL; l++) for (let k = 0; k < b3.NR; k++) {
+    const n3 = (c * b3.NL + l) * b3.NR + k, n2 = c * b3.NR + k;
+    dub = Math.max(dub, Math.hypot(b3.u[n3] - b2.u[n2], b3.v[n3] - b2.v[n2], b3.w[n3])); ubm = Math.max(ubm, Math.abs(b2.u[n2]));
+  }
+  const bw = solveCoater3D({ ...base, faceDeg: 120, dH: z => 30e-6 * Math.sin(2 * Math.PI * z / 0.04) });
+  const bF = Math.max(...bw.stations.map(st => Math.abs(st.film / st.film2 - 1))), bS = Math.max(...bw.stations.map(st => Math.abs(st.s - st.s2)));
+  check('exit face leaning back over the gap (120°): uniform strip = the 2D at every station; a gap wave = the 2D at that gap', b3.converged && dub / ubm < 1e-12 && bw.r3.converged && bF < 1e-3 && bS < 2e-6,
+    `uniform ${(dub / ubm).toExponential(1)}; film ${(back.stations[0].film * 1e3).toFixed(4)} mm; wave: film within ${(bF * 100).toFixed(3)} %, contact line within ${(bS * 1e6).toFixed(2)} µm`);
   // the mass balance (NUM-1): through the inlet = the 2D's across the strip's width; the symmetry sides let nothing through; in = out to
   // the mesh's accuracy (Taylor-Hood holds continuity weakly), the imbalance falling as the mesh is refined
   const mb = r3.massBalance, mbw = w3.massBalance, fine = solveCoater3D({ ...base, nEb: 10, nEs: 24, nEy: 6 }).r3.massBalance, r2in = r2.psi[r2.NR - 1];
