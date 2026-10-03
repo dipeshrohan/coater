@@ -29,14 +29,15 @@ const lineWorst = L => { const q = L.filter(Boolean); return !q.length ? 'done' 
 const lineGo = k => goSection(SECTIONS.findIndex(s => s.k === k));
 
 /**
- * Every stage's checks for the film and the way followed: { coat, dry, peel, cut, stack, furn }, each null while it is not
- * solved, else [{ t, res, lim, v (the result over its limit, or null), lv ('ok' | 'warn' | 'bad'; null: shown, not
- * judged) }]. Each as its page judges it: the coating's by the Results pages' verdicts (contactAcross, edgeOutlook,
+ * Every stage's checks for the film and the way followed: { mix, coat, dry, peel, cut, stack, furn }, each null while it is
+ * not solved, else [{ t, res, lim, v (the result over its limit, or null), lv ('ok' | 'warn' | 'bad'; null: shown, not
+ * judged) }]. Each as its page judges it: the mixer's by mixChecks, the coating's by the Results pages' verdicts (contactAcross, edgeOutlook,
  * surfaceOutlook), the drying's by dryWarnings, the peel's by filmChecks and filmWarnings, the stack's by its page (its pull
  * against the film's strength: a risk), the furnace's by its lights (furnLevel). The cut piece's flatness has no limit: shown.
  */
 function lineChecks() {
-  const C = { coat: null, dry: null, peel: null, cut: null, stack: null, furn: null }, way = lineWay(), sel = lineSel();
+  const C = { mix: null, coat: null, dry: null, peel: null, cut: null, stack: null, furn: null }, way = lineWay(), sel = lineSel();
+  if (typeof mixCurrent === 'function' && mixCurrent()) C.mix = mixChecks(MIX.res).map(({ say, ...q }) => q);
   const ca = contactAcross(), ed = edgeOutlook(), sf = surfaceOutlook();
   if (ca && ed && sf) C.coat = [
     { t: 'Contact line below the notch corner', res: `${ca.mx.toFixed(2)} mm up the face`, lim: `${P.face} mm`, v: ca.mx / P.face, lv: ca.over ? 'bad' : 'ok' },
@@ -88,13 +89,14 @@ function lineChecks() {
  *  the stage pages' heads), checks (lineChecks' for it) }. */
 function lineStages(C = lineChecks()) {
   const out = [], worst = L => lineWorst(L.map(q => q.lv));
-  // 1 Mixing: no model yet; what it makes, as Materials holds it
-  const c = MAT.slurry;
-  out.push({ k: 'mix', t: 'Mixing', go: () => navGo('mix'), st: 'none', checks: null,
-    rows: [['Solids', `${c.phi.v} vol% GO (${(slurrySolidsMass() * 100).toFixed(1)} % by mass)`], ['Slurry density', `${slurryRho().toFixed(0)} kg/m³`]] });
   // (a stage without its checks: solving (asked for or under way), out of date, could not be solved, or not solved -- Phase 0:
   //  nothing solves until asked)
   const unsolved = k => solvePending(k) ? 'busy' : ({ failed: 'fail', stale: 'stale' })[solveState(k)] || 'todo';
+  // 1 Mixing: the batch through its program (MIX-1), with what it makes as Materials holds it
+  const c = MAT.slurry, mOk = typeof mixCurrent === 'function' && mixCurrent(), mE = mOk ? MIX.res.end : null;
+  out.push({ k: 'mix', t: 'Mixing', go: () => navGo('mix'), st: C.mix ? worst(C.mix) : unsolved('mix'), checks: C.mix,
+    rows: [['Solids', `${c.phi.v} vol% GO (${(slurrySolidsMass() * 100).toFixed(1)} % by mass)`], ['Slurry density', `${slurryRho().toFixed(0)} kg/m³`],
+      ...(mOk ? [['Grind gauge', mixGrind(mE.grind)], ['pH', mE.pH.toFixed(1)], ['Viscosity after mixing', `${mixSig(mE.mu27)} Pa·s at 2.7 1/s`]] : [])] });
   // 2 Coating: the answers (answers.js)
   const web = processWeb();
   out.push({ k: 'coat', t: 'Coating', go: () => lineGo('coat'), st: C.coat ? worst(C.coat) : unsolved('1d'), checks: C.coat,

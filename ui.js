@@ -700,7 +700,7 @@ const TAB_ICONS = [
  */
 const NAV = {
   line: { v: 14 }, materials: { v: 13 },
-  mix: { v: 12, st: 'slurry', t: 'Mixing', icon: 'drop', note: 'The slurry\'s flow as the mixer makes it: viscosity, n, yield stress, surface tension. Its solids and densities are on Materials.', q: 'The slurry the mixer makes: what it is made of and how it flows (the mixer itself is not modelled yet).' },
+  mix: { v: 12, st: 'slurry', t: 'Mixing', icon: 'drop', note: 'The slurry\'s flow as the mixer makes it (viscosity, n, yield stress, surface tension), then the mixer: its vessel, blades, disperser, the chemistry and the cake. Its program is on the page; the slurry\'s solids and densities are on Materials.', q: 'The batch in the double planetary mixer through its program: power and torque, its heat, its pH, the lumps broken (the grind gauge), the flakes and the viscosity after mixing.' },
   gap: { v: 8 }, oven1d: { v: 10 }, across: { v: 11 }, feed1d: { v: 15 }, startup: { v: 0 }, cfd2d: { v: 4, rt: 'Under the blade' }, cfd3d: { v: 9, rt: 'Under the blade' },
   feed2d: { v: 16 }, feed3d: { v: 17 },
   contact: { v: 1 }, edge: { v: 2 }, surface: { v: 3 },

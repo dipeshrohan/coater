@@ -25,6 +25,8 @@ const solveMay = k => SOLVE_ASK.has(k) && !((SOLVE_M[k] || { up: [] }).up.some(u
 const fnOk = f => typeof f === 'function';
 /** The models (id → what it is called, the page it is on, what it needs first, and its state). */
 const SOLVE_M = {
+  mix: { l: 'Mixing (the batch)', nav: 'mix', up: [], has: () => !!MIX.res, cur: () => mixCurrent(), busy: () => MIX.busy, err: () => !!(MIX.error && MIX.key === mixKeyNow()),
+    key: () => mixKeyNow(), go: () => mixRequest() },
   '1d': { l: 'Coating 1D', nav: 'gap', up: [], has: () => !!ONE_D.res, cur: () => fnOk(oneDCurrent) && oneDCurrent() && !!oneDAcrossNow(),
     busy: () => ONE_D.busy, err: () => !!ONE_D.error, key: () => JSON.stringify([CFD_LOCS.map((_, i) => oneDGeo(i)), oneDRipple(), acrossPositions().map(oneDGeoAt)]), go: () => oneDRequest(true) },
   dry: { l: 'Drying', nav: 'dry', up: ['1d'], has: () => !!DRY.res, cur: () => dryCurrent(), busy: () => DRY.busy, err: () => !!(DRY.error && DRY.key === dryKeyNow()),
@@ -49,9 +51,9 @@ const SOLVE_M = {
 for (const d of [2, 3]) SOLVE_M['pool' + d] = { l: `Pool and feed ${d}D`, nav: `feed${d}d`, up: ['1d'], dim: d, has: () => !!POOL[d].res, cur: () => poolCurrent(d), busy: () => POOL[d].busy,
   err: () => !!(POOL[d].error && POOL[d].key === poolKeyNow(d)), key: () => poolKeyNow(d), ready: () => poolBase(d) != null, go: () => poolRequest(d) };
 /** The order a pump starts them in (each after what it needs). */
-const SOLVE_ORDER = ['1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'pool2', 'pool3'];
+const SOLVE_ORDER = ['mix', '1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'pool2', 'pool3'];
 /** The line's chain, for "Solve the line". */
-const SOLVE_LINE = ['1d', 'dry', 'film', 'sheet', 'stack', 'furn'];
+const SOLVE_LINE = ['mix', '1d', 'dry', 'film', 'sheet', 'stack', 'furn'];
 
 const solveSafe = (f, d) => { try { return f(); } catch (e) { return d; } };
 /** A model's state: 'busy' | 'solved' | 'stale' (solved for other inputs) | 'failed' | 'todo' (never solved). */

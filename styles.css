@@ -2080,7 +2080,9 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 #modWb[data-proc-stage="align"] .verdict, #modWb[data-proc-stage="align"] .mod-results { display: none; }
 #modWb[data-proc-stage="slurry"] .proc-line { display: none; }
 .mx-page { display: grid; gap: 14px; }
-.mx-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 0; }
+.mx-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+@media (max-width: 900px) { .mx-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mx-nw { white-space: nowrap; }
 .mx-stats .stat strong { display: block; margin-top: 2px; }
 .mx-stats .stat small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
 .mx-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -2840,3 +2842,16 @@ canvas { box-shadow: none; border-radius: 0; }
 .mv-note b { color: var(--ink); }
 @media (max-width: 1023px) { .mv-panel { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) { .mv-ctl input[type=range] { width: 90px; } .mv-key { left: 8px; bottom: 8px; } .mv-bar { width: 130px; } }
+
+/* ---- MIX-1: the Mixing page's mixer ---- */
+.mx-draw { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.mx-draw .pane { margin: 0; }
+.mx-draw canvas { width: 100%; display: block; }
+canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
+.mx-prog input[type="number"] { width: 78px; }
+.mx-prog input[type="text"] { width: 150px; font: inherit; font-family: var(--sans); text-align: left; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.mx-prog select { font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); margin-right: 6px; }
+.mx-prog td.mx-ro { font-family: var(--mono); color: var(--muted); text-align: right; }
+.mx-prog td.mx-dose { white-space: nowrap; }
+.mx-how th { text-align: left; white-space: nowrap; vertical-align: top; width: 1%; padding-right: 14px; }
+.mx-how td { color: var(--ink-soft, var(--ink)); }

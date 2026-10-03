@@ -66,7 +66,7 @@ const procStepKey = (k = PROC.stage) => k === 'film' ? `film:${FILM.view || 'fil
 /** The pages that are computed here, with their steps (the cut piece and the stack are solved after the film, on their own;
  *  the graphene film is the furnace's result); the others show their one page. */
 // (the stack's and the furnace's multiphysics, MP-1 and MP-2: their own pages, 1D, 2D and 3D, beside these: MP-W)
-const PROC_STEPS = { dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results'],
+const PROC_STEPS = { slurry: ['setup', 'solve', 'results'], dry: ['setup', 'solve', 'results'], 'film:film': ['setup', 'solve', 'results'], 'film:piece': ['setup', 'results'], 'film:stack': ['setup', 'results'],
   'furn:runs': ['setup', 'solve', 'results'], 'furn:product': ['results'] };
 const PROC_STEP_T = { setup: 'Setup', solve: 'Solve', results: 'Results', multi: 'Multiphysics' };
 /** A solve's state as a stage's: solved, solving, failed, out of date (solved for other inputs) or not yet. */
@@ -76,7 +76,7 @@ const procLineOf = k => { try { const L = lineStages().find(q => q.k === k); ret
 /** The page shown: its name, icon, where it stands and its line. */
 function procPageHead() {
   const pg = navNow(), g = processStages().find(q => q.k === PROC.stage) || processStages()[1], name = navTitle(pg), icon = NAV[pg].icon || STAGE_ICON[g.k];
-  if (pg === 'mix') return { t: name, icon, st: 'none', s: `the mixer is not modelled yet; the slurry it makes: ${g.s}` };
+  if (pg === 'mix') return { t: name, icon, ...mixStage() };
   if (pg === 'cut') { const st = procSolveSt(typeof sheetCurrent === 'function' && sheetCurrent(), SHEET); return { t: name, icon, st, s: st === 'solved' ? procLineOf('cut') : st === 'busy' ? 'the piece in 3D, solving…' : st === 'stale' ? 'the piece in 3D, solved for the previous inputs' : 'the piece in 3D: after the film (Solve solves the film first)' }; }
   if (pg === 'stack') { const st = procSolveSt(typeof stackCurrent === 'function' && stackCurrent(), STACK); return { t: name, icon, st, s: st === 'solved' ? procLineOf('stack') : st === 'busy' ? 'the pressed stack, solving…' : st === 'stale' ? 'the pressed stack, solved for the previous inputs' : 'the pressed stack: after the film and its cut piece (Solve solves them first)' }; }
   if (pg === 'gfilm') return { t: name, icon, st: g.st, s: g.st === 'solved' ? procLineOf('gfilm') : g.s };
@@ -86,13 +86,12 @@ function procPageHead() {
 /** Pages without a solver of their own yet (the owner's choice: kept, clearly marked; nothing on them looks like a result
  *  of a model that does not exist): what is missing, and what the page shows instead. */
 const PROC_NOSOLVER = {
-  mix: ['No solver yet', 'The double planetary mixer is not modelled: its flow, shear and heat in the vessel, and the flake size and viscosity they give, come in a later phase (its dimensions are asked first).', 'Shown here: the slurry as you set it on Materials (its inputs, not a result).'],
   cut: ['No solver of its own yet for the cut', 'The cut itself (the knife along a ruler: the edge stress, cracks or tearing at the cut) is not modelled yet: a later phase.', 'Shown here: the piece after cutting, solved by the piece-in-3D model (its curl and corners).'],
   gfilm: ['No solver of its own yet', 'The graphene film\'s own analysis (heat spreading, flatness after release, bending and folding) is not modelled yet: a later phase.', 'Shown here: the furnace\'s result for the film (its thickness, density, C/O, heat along it).'],
 };
 const procNoSolverHTML = pg => { const q = PROC_NOSOLVER[pg]; return q ? `<div class="no-solver" role="note"><b>${uiBadge('warn')}${q[0]}</b><p>${q[1]}</p><p class="ns-shown">${q[2]}</p></div>` : ''; };
 /** The page's model (Phase 0: solved only when asked -- its Solve beside its state). */
-const PROC_MODEL = { wetdry: '1d', dry: 'dry', peel: 'film', cut: 'sheet', stack: 'stack', furn: 'furn', gfilm: 'furn' };
+const PROC_MODEL = { mix: 'mix', wetdry: '1d', dry: 'dry', peel: 'film', cut: 'sheet', stack: 'stack', furn: 'furn', gfilm: 'furn' };
 function processStageHead() {
   const g = procPageHead(), [stT, stC] = STAGE_ST[g.st], key = procStepKey(), steps = PROC_STEPS[key], now = processStep(key);
   const mk = PROC_MODEL[navNow()], ms = mk ? solveState(mk) : null;
@@ -184,9 +183,10 @@ function procAnswerHTML(line, warnHTML) {
   return `<p class="furn-answer">${line}</p>${pills.length ? `<details class="furn-warn"><summary>${nBad ? '<i class="pt-dot pt-bad" aria-hidden="true"></i>' : ''}Warnings (${pills.length})</summary>${warnHTML}</details>` : ''}`;
 }
 /** A stage's charts one at a time, picked by chips above them (Q118): each grid's chosen chart (its canvas's id). */
-const PROC_CHART = { dry: 'dr1', film: 'fm1' };
+const PROC_CHART = { dry: 'dr1', film: 'fm1', mix: 'mxP' };
 const PROC_CHARTS = {
   dry: [['dr1', 'Water in the film'], ['dr2', 'Temperatures'], ['dr3', 'Evaporation'], ['dr4', 'The film and its skin'], ['dr5', 'Through the film']],
+  mix: MIX_CHARTS,
   film: [['fm1', 'Stress at its top'], ['fm2', 'Crack risk'], ['fm3', 'Peel force'], ['fm4', 'Through it at the peel'], ['fm5', 'Blister risk'], ['fm6', 'On a table']],
 };
 function procChipsHTML(k) {
@@ -220,12 +220,13 @@ function processShowStage() {
  * values (from Materials); Drying, the oven's zones; Peel and wind, Cutting and Pre heat treatment, their rows of what
  * follows the oven; Furnace and Graphene film, the furnace.
  */
-const PROC_BAR = { mix: [], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'],
+const PROC_BAR = { mix: ['mixer'], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'],
   stack1d: ['peel'], stack2d: ['peel'], stack3d: ['peel'], furn1d: ['furn'], furn2d: ['furn'], furn3d: ['furn'], dry1d: ['oven'], dry2d: ['oven'], dry3d: ['oven'] };
 function processSidebar() {
   const open = k => FV.tree[k] !== false ? ' open' : '', pg = navNow(), part = NAV[pg].fv;
   const c = MAT.slurry, row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
   const G = {
+    mixer: () => mixTreeHTML(),
     oven: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>Drying air (oven)</summary>${ovenZonesTree()}</details>`,
     peel: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[part]}</summary>${ovenZonesTree({ zones: false, peel: part })}</details>`,
     furn: () => `<details class="grp cfd-grp" data-tree="furn"${FV.tree.furn !== false ? ' open' : ''}><summary>The furnace</summary>${furnTreeHTML()}</details>`,
@@ -235,12 +236,13 @@ function processSidebar() {
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="procToMat">${uiIco(13)}Edit in Materials</button></div>
     </details>`,
   };
-  // (Mixing: none -- its page shows the slurry card's values, its inputs are the slurry's flow above)
+  // (Mixing: the mixer's own inputs, below the slurry's flow above)
   const groups = PROC_BAR[pg] || ['oven', 'furn', 'matro'];
   document.getElementById('setupExtra').innerHTML = groups.length ? `<div class="tree-sep">${NAV[pg].md ? secOfPage(pg).t : navTitle(pg)}: its setup</div>${groups.map(k => G[k]()).join('')}` : '';
   document.querySelectorAll('#setupExtra details[data-tree]').forEach(d => d.addEventListener('toggle', () => { FV.tree[d.dataset.tree] = d.open; }));
   const toMat = document.getElementById('procToMat'); if (toMat) toMat.onclick = () => { tab = 13; render(); };
   wireOvenZones(() => processPage(true), render);
+  wireMixTree();
   if (document.querySelector('#setupExtra [data-tree="furn"]')) wireFurnTree(() => processPage(true));
 }
 /** Open a stage (from a link or another tab's "See it"), at the page's top: the film's and the furnace's on the part shown last. */
@@ -267,7 +269,7 @@ function processPageBody() {
   const acc = cssVar('--accent'), mut = cssVar('--muted');
   view.innerHTML = moduleFrame({
     top: processStageHead()
-      + `<div class="proc-stage" data-stage-of="slurry">${procSlurryHTML()}</div>`
+      + `<div class="proc-stage" data-stage-of="slurry">${mixPageHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="align">${procAlignHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="dry">${drySectionHTML()}</div>`
       + `<div class="proc-stage" data-stage-of="film">${filmSectionHTML()}</div>`
@@ -279,13 +281,14 @@ function processPageBody() {
   });
   processShowStage();
   procSlurryDraw();
+  mixRender();
   if (!view.dataset.wired) {
     view.dataset.wired = '1';
     view.addEventListener('click', e => {
       if (tab !== 12) return;
       // (a step of the page shown)
       const pc = e.target.closest && e.target.closest('[data-pchart]');
-      if (pc) { const [k, id] = pc.dataset.pchart.split('|'); PROC_CHART[k] = id; procShowChart(k); if (k === 'dry') dryRender(); else filmRender(); return; }
+      if (pc) { const [k, id] = pc.dataset.pchart.split('|'); PROC_CHART[k] = id; procShowChart(k); if (k === 'dry') dryRender(); else if (k === 'mix') mixRender(); else filmRender(); return; }
       const sp = e.target.closest && e.target.closest('[data-pstepgo]');
       if (sp) { PROC.step[procStepKey()] = sp.dataset.pstepgo; render(); return; }
       const b = e.target.closest && e.target.closest('[data-chain]');
@@ -294,6 +297,7 @@ function processPageBody() {
       if (go === 'dry' || go === 'film' || go === 'furn') processGo(go);
       else if (go === 'furnin') { FV.tree.furn = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="furn"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else if (go === 'peel') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; const b = document.getElementById('ovzPeel'); if (b) b.scrollIntoView({ block: 'nearest' }); const f = document.getElementById('ovzPeelLen') || (b && b.querySelector('input')); if (f) f.focus(); } }
+      else if (go === 'mixin') { setPanelHidden('model', false); const d = document.querySelector('#mixIn details'); if (d) { d.open = true; FV.tree[d.dataset.tree] = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else { tab = +go; render(); }
     });
