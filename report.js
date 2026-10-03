@@ -413,7 +413,7 @@ function repCfdSetup() {
   const rows = keys.map(g);
   // (the oven's zones, each with its drying air; the slurry's density, from its card)
   OVEN.zones.forEach((z, i) => rows.push([`Oven zone ${i + 1}`, repEsc(OVEN_ZONE_FIELDS.map(([k, l, u, , , , d]) => `${l.toLowerCase()} ${repNum(z[k], d)}${u ? ' ' + u : ''}`).join(', '))]));
-  rows.push(['Slurry density', repEsc(`${repNum(slurryRho(), 0)} kg/m³ (${repNum(MAT.slurry.phi.v, 1)} vol% solids of ${repNum(MAT.slurry.rhoS.v, 2)} g/cm³ in a liquid of ${repNum(MAT.slurry.rhoL.v, 0)} kg/m³)`)]);
+  rows.push(['Slurry density', repEsc(`${repNum(slurryRho(), 0)} kg/m³ (${matPhiTxt()} vol% solids of ${repNum(MAT.slurry.rhoS.v, 2)} g/cm³ in a liquid of ${repNum(MAT.slurry.rhoL.v, 0)} kg/m³)`)]);
   if (bladeUsesL()) rows.splice(1, 0, [CFDG.shape === 'wedge' ? 'Length' : 'Land length', `${P.L} mm <small>(sidebar)</small>`]);
   const s = CFDS;
   let counts = null;

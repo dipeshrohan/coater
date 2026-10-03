@@ -151,6 +151,7 @@ function hubValCell(p, v) {
     const txt = b.t === 'model' ? RHEO_MODELS[CFDG.model].l : b.t === 'orModel' ? OR_MODELS[MAT.orient.model] : b.t === 'switch' ? (b.get() ? 'On' : 'Off') : b.t === 'fibreSel' ? FIBRES[CFDG.fibre].l : typeof v.v === 'number' ? hubFmt(v.v, v.d) : String(v.v ?? '');
     return `<span class="hub-num hub-shared" title="The project's: set on ${hubEsc(hubName(hubBaseRec(hubRec(b.inst).base)))}">${hubEsc(txt)}</span>`;
   }
+  if (hubPhiMix(p)) return `<span class="hub-num">${hubFmt(v.v, 3)}</span><button type="button" class="linkish hub-mixgo" data-hubgonav="mix" title="The batch's recipe on Mixing sets it">Mixing recipe</button>`;
   if (b.t === 'card' && v.def) { const [attr, pre] = HUB_ATTR[b.card]; return `<span class="hub-num">${hubFmt(v.v, -4)}</span><small class="hub-at">at 20 °C</small><span class="hub-tdef" title="Defined in temperature: open the row">${v.def.kind === 'table' ? `table, ${v.def.x.length} points` : 'f(T)'}</span><input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" value="${v.v}" hidden disabled>`; }
   if (b.t === 'card') { const [attr, pre] = HUB_ATTR[b.card]; return `<input type="number" id="${pre}_${b.k}" data-${attr}="${b.k}" data-hubp="${p.id}" min="${v.lo}" max="${v.hi}" step="${v.step}" value="${v.v ?? ''}"${v.v == null ? ' placeholder="—"' : ''} aria-label="${hubEsc(p.l)}">`; }
   if (b.t === 'inp') return `<input type="number" id="hubin_${b.k}" data-hubp="${p.id}" data-help="in.${b.k}" min="${v.lo}" max="${v.hi}" step="${v.exact ? 'any' : v.step}" value="${v.exact ? +(+v.v).toPrecision(6) : (+v.v).toFixed(v.d)}" aria-label="${hubEsc(p.l)}">`;
@@ -170,7 +171,7 @@ function hubRowHTML(r, p) {
   const kind = !v.def ? 'const' : v.def.kind === 'table' ? 'table' : 'expr';
   const methodCell = hubTdep(p) ? `<select class="hub-sel hub-msel" id="hubm_${p.id}" data-hubmethod="${p.id}" aria-label="${hubEsc(p.l)}: its definition method">${[['const', 'Constant'], ['table', 'Table in T'], ['expr', 'Equation in T']].map(([k, t]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${t}</option>`).join('')}</select>`
     : `<span class="hub-meth">${hubEsc(hubMethod(p, v))}</span>`;
-  const srcCell = b.t === 'card' ? `<input type="text" class="mat-src hub-src" id="${HUB_ATTR[b.card][1]}s_${b.k}" data-${HUB_ATTR[b.card][0]}="${b.k}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`
+  const srcCell = hubPhiMix(p) ? '<span class="hub-srct">the Mixing recipe</span>' : b.t === 'card' ? `<input type="text" class="mat-src hub-src" id="${HUB_ATTR[b.card][1]}s_${b.k}" data-${HUB_ATTR[b.card][0]}="${b.k}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`
     : b.t === 'inp' ? `<input type="text" class="hub-src" id="hubins_${b.k}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: source">`
     : `<span class="hub-srct" title="${hubEsc(v.src)}">${hubEsc(v.src)}</span>`;
   const row = `<tr class="hub-row${off ? ' hub-off' : ''}${open ? ' open' : ''}${p.sub ? ' hub-subrow' : ''}${lv ? ' hub-r' + lv : ''}" data-hubrow="${p.id}"${b.t === 'card' ? ` data-${HUB_ATTR[b.card][0]}="${b.k}"` : ''}>
@@ -194,14 +195,17 @@ function hubDetailHTML(r, p, v) {
       ['Valid range', hubEsc(hubValid(p, v))],
       ['Data source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`],
     ])}${usedHTML}</div>`;
+    const mixRow = b.t === 'card' && b.card === 'slurry' && b.k === 'phi' && !b.inst
+      ? ['Its value', `<label class="hub-switch"><input type="checkbox" id="hubPhiMix"${MAT.mixLink ? ' checked' : ''}><span>${MAT.mixLink ? 'From the Mixing recipe: the mixed slurry goes straight to the coater' : 'Typed here (on: from the Mixing recipe)'}</span></label>`] : null;
     return `<div class="hub-d">${kv([
-      ['Method', 'Constant'],
+      ['Method', hubPhiMix(p) ? 'From the Mixing recipe' : 'Constant'],
+      mixRow,
       help ? ['What it is', hubEsc(help.d)] : null,
       b.t === 'card' ? ['Stage card', `the ${HUB_CARD_T[b.card]} (its Defaults: the Defaults menu above)`] : null,
       si ? ['In SI', si] : null,
       ['Valid range', `${v.lo} to ${v.hi} ${hubEsc(v.u)}`],
       b.t === 'inp' ? ['Also on', 'the inputs bar (left), the same value'] : b.t === 'cfdg' ? ['Also on', 'Coating › 2D, the fibre (the same value)'] : b.t === 'peel' ? ['Also on', 'Pre heat treatment, its inputs (the same value)'] : null,
-      b.t === 'card' || b.t === 'inp' ? ['Data source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`] : ['Data source', hubEsc(v.src)],
+      hubPhiMix(p) ? ['Data source', 'the Mixing recipe'] : b.t === 'card' || b.t === 'inp' ? ['Data source', `<input type="text" class="hub-src hub-src-d" id="hubsrc_${p.id}" data-hubsrc="${p.id}" value="${hubEsc(v.src)}" aria-label="${hubEsc(p.l)}: data source">`] : ['Data source', hubEsc(v.src)],
     ])}${usedHTML}</div>`;
   }
   if (b.t === 'calc') return `<div class="hub-d">${kv([['Method', 'Calculated'], ['How', hubEsc(v.src)], si ? ['In SI', si] : null])}${usedHTML}</div>`;
@@ -521,6 +525,10 @@ function hubWireEditor(r) {
   on('matOrModel', e => { MAT.orient.model = e.target.value; render(); });
   on('matStructOn', e => { MAT.rheo.structOn = e.target.checked; render(); });
   on('matOrOn', e => { MAT.orient.on = e.target.checked; render(); });
+  // (the solids from the Mixing recipe, or typed here: off, the recipe's value kept as typed, to the card's decimals)
+  on('hubPhiMix', e => { const on = e.target.checked; undoHint(`Materials: the solids ${on ? 'from the Mixing recipe' : 'typed here'}`); MAT.mixLink = on;
+    if (!on) MAT.slurry = { ...MAT.slurry, phi: { ...MAT.slurry.phi, v: +MAT.slurry.phi.v.toFixed(3), src: 'typed on Materials' } };
+    render(); });
   on('hubFibre', e => { undoHint(`Fibre web: ${FIBRES[e.target.value].l}`); selectFibre(e.target.value); render(); });
   const rr = document.getElementById('hubRecReset');
   // (a copy: its own values back to its record's first values; the project's untouched, MC-2)

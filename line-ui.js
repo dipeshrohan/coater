@@ -95,7 +95,7 @@ function lineStages(C = lineChecks()) {
   // 1 Mixing: the batch through its program (MIX-1), with what it makes as Materials holds it
   const c = MAT.slurry, mOk = typeof mixCurrent === 'function' && mixCurrent(), mE = mOk ? MIX.res.end : null;
   out.push({ k: 'mix', t: 'Mixing', go: () => navGo('mix'), st: C.mix ? worst(C.mix) : unsolved('mix'), checks: C.mix,
-    rows: [['Solids', `${c.phi.v} vol% GO (${(slurrySolidsMass() * 100).toFixed(1)} % by mass)`], ['Slurry density', `${slurryRho().toFixed(0)} kg/m³`],
+    rows: [['Solids', `${matPhiTxt()} vol% GO (${(slurrySolidsMass() * 100).toFixed(1)} % by mass)`], ['Slurry density', `${slurryRho().toFixed(0)} kg/m³`],
       ...(mOk ? [['Grind gauge', mixGrind(mE.grind)], ['pH', mE.pH.toFixed(1)], ['Viscosity after mixing', `${mixSig(mE.mu27)} Pa·s at 2.7 1/s`]] : [])] });
   // 2 Coating: the answers (answers.js)
   const web = processWeb();

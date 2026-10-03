@@ -136,7 +136,9 @@ function applyMaterials(m) {
     const s = m && m[part];
     if (s) for (const k of Object.keys(MAT[part])) if (s[k] && Number.isFinite(s[k].v)) MAT[part][k] = { ...MAT[part][k], ...s[k] };
   }
-  if (m && m.rheo && typeof m.rheo.structOn === 'boolean') MAT.rheo.structOn = m.rheo.structOn;   // (a project from before GO-1: the structure model's default)
+  if (m && m.rheo && typeof m.rheo.structOn === 'boolean') MAT.rheo.structOn = m.rheo.structOn;
+  // (the slurry's solids from the Mixing recipe, MIX-1c: a project from before typed its own -- it keeps them)
+  if (m) MAT.mixLink = m.mixLink === true;   // (a project from before GO-1: the structure model's default)
   // (the sidebar inputs a rheometer fit set, and the rheometer tests: kept as they are when they have their shape)
   if (m && m.rheo && m.rheo.side && typeof m.rheo.side === 'object') MAT.rheo.side = Object.fromEntries(Object.entries(m.rheo.side).filter(([k, q]) => ['mu', 'n', 'ty'].includes(k) && q && Number.isFinite(q.v)).map(([k, q]) => [k, { v: q.v, src: String(q.src || '') }]));
   if (m && Array.isArray(m.tests)) MAT.tests = m.tests.filter(t => t && t.id && t.name && RT_KINDS[t.kind] && Array.isArray(t.tables)).map(t => ({ ...t, warnings: Array.isArray(t.warnings) ? t.warnings : [] }));

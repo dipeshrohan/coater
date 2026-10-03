@@ -153,7 +153,7 @@ const HUB_RECORDS = [
     groups: [
       { l: 'Composition', props: [
         { id: 'phi', sym: 'φ', l: 'Solids volume fraction', b: hC('slurry', 'phi'), phys: ['mix', 'coat', 'dry', 'film'] },
-        { id: 'rho', sym: 'ρ', l: 'Density', b: hCalc(() => slurryRho(), 'kg/m³', 0, () => `φ ρ_GO + (1 − φ) ρ_water: ${MAT.slurry.phi.v} % × ${MAT.slurry.rhoS.v * 1000} + ${(100 - MAT.slurry.phi.v).toFixed(1)} % × ${MAT.slurry.rhoL.v}; the flow models use it`), phys: ['mix', 'coat'] },
+        { id: 'rho', sym: 'ρ', l: 'Density', b: hCalc(() => slurryRho(), 'kg/m³', 0, () => `φ ρ_GO + (1 − φ) ρ_water: ${matPhiTxt()} % × ${MAT.slurry.rhoS.v * 1000} + ${+(100 - MAT.slurry.phi.v).toPrecision(4)} % × ${MAT.slurry.rhoL.v}; the flow models use it`), phys: ['mix', 'coat'] },
         { id: 'wm', sym: 'w', l: 'Solids mass fraction', b: hCalc(() => slurrySolidsMass() * 100, '%', 1, 'φ ρ_GO / ρ'), phys: ['mix'] },
         { id: 'X0', sym: 'X₀', l: 'Water per mass of GO', b: hCalc(() => (1 - MAT.slurry.phi.v / 100) * MAT.slurry.rhoL.v / (MAT.slurry.phi.v / 100 * MAT.slurry.rhoS.v * 1000), 'kg/kg', 2, '(1 − φ) ρ_water / (φ ρ_GO): the water the drying takes out'), phys: ['mix', 'dry'] },
       ] },
@@ -738,7 +738,7 @@ function hubChecks(r) {
   const out = [], c = MAT.slurry, add = (level, msg, prop) => out.push({ level, msg, prop });
   if (r.id === 'slurry') {
     const re = rheoError(); if (re) add('error', re, 'model');
-    if (c.phiDry.v * 100 < c.phi.v) add('error', `The dry film's packing (${c.phiDry.v}) is below the slurry's solids fraction (${c.phi.v} vol%): the film would not shrink as it dries.`, 'phi');
+    if (c.phiDry.v * 100 < c.phi.v) add('error', `The dry film's packing (${c.phiDry.v}) is below the slurry's solids fraction (${matPhiTxt()} vol%): the film would not shrink as it dries.`, 'phi');
     if (MAT.dry.mul.v > 1e5) add('warn', 'A collective diffusion over 10⁵ × the hard-sphere law is near what the drying solver resolves in double precision (10⁶ at most).', 'mul');
     const o = MAT.orient;
     if (o.on && o.model === 'dh' && o.U.v > 4.4 && o.U.v < 5.1) add('warn', `U = ${o.U.v} is at the edge of the liquid crystal (4.5 to 5): its order settles slowly and the result depends on it strongly.`, 'U');
@@ -767,9 +767,12 @@ const hubT2 = p => { const t = hubTensorOf(p); return mlT2Eval({ form: 'ti', axi
 // ---- provenance counts and readiness ----
 const HUB_PROV_ORDER = ['measured', 'fitted', 'user', 'supplier', 'report', 'published', 'assumed', 'builtin', 'calc'];
 /** A record's typed values by provenance (the values a person can set or a solver fixes; not the calculated). */
+/** The slurry's solids on the project's own record while they follow the Mixing recipe (MIX-1c): shown, not typed. */
+const hubPhiMix = p => !!(p && p.b && p.b.t === 'card' && p.b.card === 'slurry' && p.b.k === 'phi' && !p.b.inst && MAT.mixLink);
 /** A property's definition method, as the material card names it (the spec's: constant, equation, table, tensor ...). */
 function hubMethod(p, v = hubVal(p)) {
   const b = p.b;
+  if (hubPhiMix(p)) return 'From the Mixing recipe';
   if (['card', 'inp', 'cfdg', 'peel'].includes(b.t)) return v.def ? (v.def.kind === 'table' ? 'Table in T' : 'Equation in T') : 'Constant';
   return { calc: 'Calculated', law: 'Equation in T', const: 'Constant', tensor: 'Tensor', stiff: 'Tensor (6 × 6)', stiffWeb: 'Tensor (6 × 6)', model: 'Model',
     orModel: 'Model', switch: 'On / off', fibreSel: 'Test report', measured: 'Measured point' }[b.t] || 'Constant';

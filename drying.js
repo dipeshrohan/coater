@@ -617,6 +617,8 @@ function drStrip(o) {
       TT = Tn.TT; TsV = Tn.Ts; TbV = Tn.Tb;
       if (dT < 1e-4) { conv = true; break; }
     }
+    // (a step that fails is retried at a quarter; one that fails 60 times running, or below a nanosecond, stops the run --
+    //  the count starts again at every accepted step: a dilute film's sharp compaction front fails now and then)
     if (!conv) { dt = dtv / 4; nFail++; if (nFail > 60 || dt < 1e-9) throw new Error(`drying: the step would not converge at x = ${x.toFixed(4)} m (${Z.name})`); continue; }
     // the step's size: water, fronts and temperatures change a little per step
     let chg = 0;
@@ -634,6 +636,7 @@ function drStrip(o) {
     chg = Math.max(chg, dTm / 2) / (o.dtScale || 1);
     if (chg > 2) { stats.rejected++; dt = dtv / Math.min(4, chg); continue; }
     // accept
+    nFail = 0;
     // (the evaporation the water step used: the film's water balance holds with it exactly)
     const Et = dry ? 0 : W.Et, Eb = dry ? 0 : W.Eb;
     if (!dry) {
