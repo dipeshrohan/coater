@@ -95,6 +95,26 @@ function umtInsidePoint(P) {
   throw new Error('um-tetmesh: no point inside a hole');
 }
 
+/** Triangles by their three point numbers in any order (a map: has, get, set): under the smallest, a short list of the
+ *  other two and the value -- no strings built, no hashing. */
+class UmtTriMap {
+  constructor() { this.l = []; }
+  set(a, b, c, v) {
+    let t; if (a > b) { t = a; a = b; b = t; } if (b > c) { t = b; b = c; c = t; } if (a > b) { t = a; a = b; b = t; }
+    let L = this.l[a]; if (!L) this.l[a] = L = [];
+    for (let i = 0; i < L.length; i += 3) if (L[i] === b && L[i + 1] === c) { L[i + 2] = v; return; }
+    L.push(b, c, v);
+  }
+  get(a, b, c) {
+    let t; if (a > b) { t = a; a = b; b = t; } if (b > c) { t = b; b = c; c = t; } if (a > b) { t = a; a = b; b = t; }
+    const L = this.l[a]; if (L) for (let i = 0; i < L.length; i += 3) if (L[i] === b && L[i + 1] === c) return L[i + 2];
+    return undefined;
+  }
+  has(a, b, c) { return this.get(a, b, c) !== undefined; }
+}
+/** The faces of a tetrahedron: its corners other than the k-th. */
+const UMT_FACE = [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]];
+
 /** The solid inside a closed surface, filled with tetrahedra (see the header). */
 function umtVolume(S, o = {}) {
   const hOf = typeof o.size === 'function' ? o.size : () => o.size ?? Infinity;
@@ -102,6 +122,10 @@ function umtVolume(S, o = {}) {
   const X = Array.from(S.X), Y = Array.from(S.Y), Z = Array.from(S.Z);
   // the surface: its triangles (outward), each one's diametral sphere; a hash of them by the cells their spheres touch
   let F = Array.from(S.tri), Ftag = S.tag.slice(), alive = new Array(F.length / 3).fill(true);
+  // (the surface must be closed and turned one way: every edge met once each way)
+  { const dir = new Map(); for (let t = 0; t < F.length; t += 3) for (let k = 0; k < 3; k++) { const key = F[t + k] + ',' + F[t + (k + 1) % 3]; dir.set(key, (dir.get(key) || 0) + 1); }
+    let open = 0; for (const [key, c] of dir) { const [a, b] = key.split(','); if (c !== 1 || dir.get(b + ',' + a) !== 1) open++; }
+    if (open) throw new Error(`um-tetmesh: the surface is not closed (${open} edges without one partner turned the other way)`); }
   // the surface's edges → their triangles (for splitting)
   const ekey = (a, b) => (a < b ? a + ',' + b : b + ',' + a);
   const edgeTris = new Map();
@@ -153,8 +177,7 @@ function umtVolume(S, o = {}) {
       const g = edgeTris.get(ekey(a, b)).find(q => q !== f); if (g === undefined || Ftag[g] !== Ftag[f]) continue;
       const d = [F[3 * g], F[3 * g + 1], F[3 * g + 2]].find(v => v !== a && v !== b);
       if (UMM_T.umtOrient(X[a], Y[a], Z[a], X[b], Y[b], Z[b], X[c], Y[c], Z[c], X[d], Y[d], Z[d]) !== 0) continue;
-      const k1 = [a, d, c].sort((x, y) => x - y).join(), k2 = [d, b, c].sort((x, y) => x - y).join();
-      if (!fs.has(k1) || !fs.has(k2)) continue;
+      if (!fs.has(a, d, c) || !fs.has(d, b, c)) continue;
       eDel(f); eDel(g); F[3 * f] = a; F[3 * f + 1] = d; F[3 * f + 2] = c; F[3 * g] = d; F[3 * g + 1] = b; F[3 * g + 2] = c; eAdd(f); eAdd(g);
       return true;
     }
@@ -163,9 +186,9 @@ function umtVolume(S, o = {}) {
   /** Every surface triangle a face of the tetrahedralization: ties flipped, else (splits allowed) split. Whether it is. */
   const recoverSurface = (splits = true) => {
     for (let round = 0; round < 80; round++) {
-      const fs = faceSet(), missing = []; for (let f = 0; f < F.length / 3; f++) if (alive[f] && !fs.has(tkey(f))) missing.push(f);
+      const fs = faceSet(), missing = []; for (let f = 0; f < F.length / 3; f++) if (alive[f] && !fs.has(F[3 * f], F[3 * f + 1], F[3 * f + 2])) missing.push(f);
       if (!missing.length) return true;
-      let flipped = false; for (const f of missing) if (alive[f] && !fs.has(tkey(f)) && tieFlip(f, fs)) flipped = true;
+      let flipped = false; for (const f of missing) if (alive[f] && !fs.has(F[3 * f], F[3 * f + 1], F[3 * f + 2]) && tieFlip(f, fs)) flipped = true;
       if (flipped) continue;
       if (!splits) return false;
       for (const f of missing) if (alive[f]) splitSurface(f);
@@ -173,23 +196,24 @@ function umtVolume(S, o = {}) {
     return false;
   };
   // the faces of the tetrahedralization (finite ones), to find the surface triangles missing from it
-  const faceSet = () => { const s = new Set(), tv = D.tv, al = D.alive;
+  const faceSet = () => { const s = new UmtTriMap(), tv = D.tv, al = D.alive;
     for (let t = 0; t < D.nT; t++) if (al[t] && tv[4 * t] >= 0 && tv[4 * t + 1] >= 0 && tv[4 * t + 2] >= 0 && tv[4 * t + 3] >= 0)
-      for (let k = 0; k < 4; k++) { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => tv[4 * t + i]).sort((x, y) => x - y); s.add(f.join()); }
+      for (let k = 0; k < 4; k++) { const [i, j, l] = UMT_FACE[k]; s.set(tv[4 * t + i], tv[4 * t + j], tv[4 * t + l], 1); }
     return s; };
-  const tkey = f => [F[3 * f], F[3 * f + 1], F[3 * f + 2]].sort((x, y) => x - y).join();
+  /** The surface triangle that is tetrahedron t's face opposite its k-th corner, or undefined (sk: surfKeys()). */
+  const surfFace = (sk, t, k) => { const [i, j, l] = UMT_FACE[k], a = D.tv[4 * t + i], b = D.tv[4 * t + j], c = D.tv[4 * t + l]; return a < 0 || b < 0 || c < 0 ? undefined : sk.get(a, b, c); };
   // 1. the surface into the tetrahedralization
   if (!recoverSurface()) throw new Error('um-tetmesh: the surface could not be recovered');
   let skCache = null, skN = -1;
   const surfKeysNow = () => { if (skN !== F.length) { skCache = surfKeys(); skN = F.length; } return skCache; };
   // the inside: flood from outside (the ghosts), each surface triangle crossed turning inside to outside and back
-  const surfKeys = () => { const s = new Map(); for (let f = 0; f < F.length / 3; f++) if (alive[f]) s.set(tkey(f), f); return s; };
+  const surfKeys = () => { const s = new UmtTriMap(); for (let f = 0; f < F.length / 3; f++) if (alive[f]) s.set(F[3 * f], F[3 * f + 1], F[3 * f + 2], f); return s; };
   const classify = () => {
     const sk = surfKeys(), tv = D.tv, tn = D.tn, al = D.alive, nT = D.nT; inside = new Uint8Array(nT).fill(255);
     const st = [];
     for (let t = 0; t < nT; t++) if (al[t] && D.infAt(t) >= 0) { inside[t] = 0; st.push(t); }
     while (st.length) { const t = st.pop(); for (let k = 0; k < 4; k++) { const s = tn[4 * t + k]; if (!al[s] || inside[s] !== 255) continue;
-      const key = [0, 1, 2, 3].filter(i => i !== k).map(i => tv[4 * t + i]); const cross = key.every(v => v >= 0) && sk.has(key.sort((x, y) => x - y).join());
+      const cross = surfFace(sk, t, k) !== undefined;
       inside[s] = cross ? 1 - inside[t] : inside[t]; st.push(s); } }
   };
   // 2. refinement: too big or badly shaped tetrahedra get their circumcentres; a centre in a surface triangle's sphere splits it instead
@@ -204,35 +228,46 @@ function umtVolume(S, o = {}) {
     return { c: [A[0] + cx, A[1] + cy, A[2] + cz], R: Math.hypot(cx, cy, cz), lmin };
   };
   let refined = 0, skipped = 0;
+  // (a tetrahedron skipped -- its point would take the surface, or fall outside -- is not tried again while it and the
+  //  surface stay as they were: the same four corners, no surface triangle split since; one skipped for its shape alone
+  //  -- small enough, badly shaped by the surface -- not again at all: the smoothing below takes it)
+  const skippedAt = new Map(), skipKey = v => v.slice().sort((a, b) => a - b).join();
   for (let pass = 0; pass < 40 && X.length < maxPts; pass++) {
     classify();
     const bad = [];
-    for (let t = 0; t < D.nT; t++) if (D.alive[t] && inside[t] === 1) { const q = tetInfo(t); if (q.R > 0.65 * hOf(...q.c) || q.R / q.lmin > ratio) { q.v = Array.from(D.tv.subarray(4 * t, 4 * t + 4)).join(); bad.push([t, q]); } }
+    for (let t = 0; t < D.nT; t++) if (D.alive[t] && inside[t] === 1) { const q = tetInfo(t); if (q.R > 0.65 * hOf(...q.c) || q.R / q.lmin > ratio) { q.v = Array.from(D.tv.subarray(4 * t, 4 * t + 4)); bad.push([t, q]); } }
     if (!bad.length) break;
     let changed = false;
     for (const [t, q] of bad) {
       // (still the same tetrahedron? it may have gone with an earlier point this pass)
-      if (!D.alive[t] || X.length >= maxPts || Array.from(D.tv.subarray(4 * t, 4 * t + 4)).join() !== q.v) continue;
+      if (!D.alive[t] || X.length >= maxPts || !q.v.every((v, i) => D.tv[4 * t + i] === v)) continue;
+      const sKey = skipKey(q.v), sAt = skippedAt.get(sKey);
+      if (sAt === F.length || sAt === -1) continue;
+      const tooBig = q.R > 0.65 * hOf(...q.c);
+      const skip = () => { skipped++; skippedAt.set(sKey, tooBig ? F.length : -1); };
       // (the point may not take a surface triangle with it: one between two tetrahedra of its cavity is split instead)
       const cav = D.cavityOf(...q.c), inCav = new Set(cav), sk0 = surfKeysNow(), lost = new Set();
       for (const c of cav) for (let k = 0; k < 4; k++) if (inCav.has(D.tn[4 * c + k])) {
-        const key = [0, 1, 2, 3].filter(i => i !== k).map(i => D.tv[4 * c + i]); if (key.some(v => v < 0)) continue;
-        const f = sk0.get(key.sort((x, y) => x - y).join()); if (f !== undefined) lost.add(f); }
+        const f = surfFace(sk0, c, k); if (f !== undefined) lost.add(f); }
       // (only a tetrahedron too big for the size splits the surface; a badly shaped one by the surface is left to the
       //  smoothing below -- splitting the surface for shape alone runs away, smaller and smaller, toward it)
-      const tooBig = q.R > 0.65 * hOf(...q.c);
       const splittable = f => { const [a, b] = longest(f); return Math.hypot(X[a] - X[b], Y[a] - Y[b], Z[a] - Z[b]) > 0.5 * hOf((X[a] + X[b]) / 2, (Y[a] + Y[b]) / 2, (Z[a] + Z[b]) / 2); };
-      if (lost.size) { if (tooBig) for (const f of lost) if (alive[f] && splittable(f)) { splitSurface(f); changed = true; } skipped++; continue; }
+      if (lost.size) { if (tooBig) for (const f of lost) if (alive[f] && splittable(f)) { splitSurface(f); changed = true; } skip(); continue; }
       // (the centre must be inside: where it lands outside, the tetrahedron's own surface triangle is split instead)
       const tl = cav[0], lab = D.infAt(tl) >= 0 ? 0 : tl < inside.length ? inside[tl] : 255;
       if (lab !== 1) {
         const sk = surfKeysNow(); let fbig = -1, abig = 0;
-        for (let k = 0; k < 4; k++) { const key = [0, 1, 2, 3].filter(i => i !== k).map(i => D.tv[4 * t + i]).sort((a, b) => a - b).join(), f = sk.get(key);
+        for (let k = 0; k < 4; k++) { const f = surfFace(sk, t, k);
           if (f !== undefined) { const a = F[3 * f], b = F[3 * f + 1], c = F[3 * f + 2], u = [X[b] - X[a], Y[b] - Y[a], Z[b] - Z[a]], v = [X[c] - X[a], Y[c] - Y[a], Z[c] - Z[a]];
             const ar = Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]); if (ar > abig) { abig = ar; fbig = f; } } }
-        if (fbig >= 0 && tooBig && splittable(fbig)) { splitSurface(fbig); changed = true; } else skipped++;
+        if (fbig >= 0 && tooBig && splittable(fbig)) { splitSurface(fbig); changed = true; } else skip();
         continue;
       }
+      // (a point for shape alone not crowding the corners there: none of its cavity's within a quarter of the size -- else
+      //  points pile up at a corner, closer and closer; the smoothing below takes that tetrahedron)
+      if (!tooBig) { const hq = 0.25 * hOf(...q.c); let near = false;
+        for (const c of cav) for (let k = 0; k < 4 && !near; k++) { const w = D.tv[4 * c + k]; if (w >= 0 && Math.hypot(X[w] - q.c[0], Y[w] - q.c[1], Z[w] - q.c[2]) < hq) near = true; }
+        if (near) { skip(); continue; } }
       const p = X.length; X.push(q.c[0]); Y.push(q.c[1]); Z.push(q.c[2]);
       const made = D.insert(p); if (made === -1) { skipped++; continue; }
       // (its new tetrahedra inside, as the one it landed in: the surface kept them all on one side)
@@ -275,7 +310,7 @@ function umtVolume(S, o = {}) {
       let ok = recoverSurface(false);
       if (ok) { classify(); let vt = 0; for (const t of insideTets()) vt += vol6(...[0, 1, 2, 3].map(k => pt(D.tv[4 * t + k]))) / 6; ok = Math.abs(vt / volume0 - 1) < 1e-9; if (ok) return old.size > 0; }
       // (undo the moves near the triangles gone missing; all of them at the last try)
-      const fs = faceSet(), miss = []; for (let f = 0; f < F.length / 3; f++) if (alive[f] && !fs.has(tkey(f))) miss.push(f);
+      const fs = faceSet(), miss = []; for (let f = 0; f < F.length / 3; f++) if (alive[f] && !fs.has(F[3 * f], F[3 * f + 1], F[3 * f + 2])) miss.push(f);
       let undone = 0;
       for (const [v, p0] of [...old]) {
         const near = attempt === 3 || !miss.length || miss.some(f => { const a = F[3 * f], b = F[3 * f + 1], c = F[3 * f + 2], cx = (X[a] + X[b] + X[c]) / 3, cy = (Y[a] + Y[b] + Y[c]) / 3, cz = (Z[a] + Z[b] + Z[c]) / 3;
@@ -314,7 +349,7 @@ function umtVolume(S, o = {}) {
       const v = [0, 1, 2, 3].map(k => D.tv[4 * t + k]); if (!v.every(i => fixed[i])) continue;
       const c = [0, 1, 2].map(d => (pt(v[0])[d] + pt(v[1])[d] + pt(v[2])[d] + pt(v[3])[d]) / 4);
       const cav = D.cavityOf(...c), inCav = new Set(cav), sk = surfKeysNow(); let lose = false;
-      for (const u of cav) for (let k = 0; k < 4 && !lose; k++) if (inCav.has(D.tn[4 * u + k])) { const key = [0, 1, 2, 3].filter(i => i !== k).map(i => D.tv[4 * u + i]); if (key.every(w => w >= 0) && sk.has(key.sort((a, b) => a - b).join())) lose = true; }
+      for (const u of cav) for (let k = 0; k < 4 && !lose; k++) if (inCav.has(D.tn[4 * u + k]) && surfFace(sk, u, k) !== undefined) lose = true;
       if (lose) continue;
       const p = X.length; X.push(c[0]); Y.push(c[1]); Z.push(c[2]);
       if (D.insert(p) !== -1) added++; else { X.pop(); Y.pop(); Z.pop(); }
