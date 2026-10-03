@@ -75,15 +75,18 @@ let RT, RH;
 {
   const t = Date.now(); RT = FT.fptSolve({ ...base, mu: () => 10.5, Mt, solve: { tol: 1e-10 } });
   const ms = Date.now() - t, rb = d / 2, V = Qin / 2 / (Math.PI * rb * rb), yq = tip + bore - 3 * d;
-  // (down each bore three bores below its entry: Poiseuille's parabola at the nodes nearest that height)
-  let e = 0, n = 0;
+  // (down each bore, a bore's length round three bores below its entry -- the flow there developed: Poiseuille's parabola
+  //  at every node inside the bore's wall; each pipe its equal share of the flow in, so each bore's parabola fitted by
+  //  least squares has Poiseuille's peak)
+  let e = 0, n = 0; const peaks = [];
   for (const q of Mt.pipes) {
-    let best = Infinity; for (let i = 0; i < M.nN; i++) if (Math.hypot(M.X[i] - q.x, M.Z[i] - q.z) <= rb + 1e-9) best = Math.min(best, Math.abs(M.Y[i] - yq));
-    for (let i = 0; i < M.nN; i++) { const rr = Math.hypot(M.X[i] - q.x, M.Z[i] - q.z); if (rr > rb + 1e-9 || Math.abs(Math.abs(M.Y[i] - yq) - best) > 1e-9) continue; e = Math.max(e, Math.abs(RT.v[i] + 2 * V * (1 - rr * rr / (rb * rb))) / (2 * V)); n++; }
+    let sv = 0, sf = 0, nq = 0;
+    for (let i = 0; i < M.nN; i++) { const rr = Math.hypot(M.X[i] - q.x, M.Z[i] - q.z), f = 1 - rr * rr / (rb * rb); if (rr > rb * (1 - 1e-6) || Math.abs(M.Y[i] - yq) > d / 2) continue; e = Math.max(e, Math.abs(RT.v[i] + 2 * V * f) / (2 * V)); sv -= RT.v[i] * f; sf += f * f; n++; nq++; }
+    peaks.push(nq ? sv / sf / (2 * V) : NaN);
   }
   check('the pool with its pipes on tetrahedra (half the pool, two pipes): every flow balanced, the top rising with the rest; down each bore, Poiseuille\'s flow',
-    balance(RT.flows) < 1e-9 && RT.converged && e < 0.02,
-    `${M.nE} tetrahedra, ${RT.S.nD} unknowns, Newton ${RT.hist.length}, ${(ms / 1000).toFixed(0)} s; flows off ${balance(RT.flows).toExponential(1)} of the web's; ${n} nodes across the bores, off Poiseuille by ${pc(e)} of its peak`);
+    balance(RT.flows) < 1e-9 && RT.converged && e < 0.02 && peaks.every(a => Math.abs(a - 1) < 0.005),
+    `${M.nE} tetrahedra, ${RT.S.nD} unknowns, Newton ${RT.hist.length}, ${(ms / 1000).toFixed(0)} s; flows off ${balance(RT.flows).toExponential(1)} of the web's; ${n} nodes inside the bores, off Poiseuille by ${pc(e)} of its peak at most; each bore's fitted peak ${peaks.map(a => a.toFixed(4)).join(', ')} of Poiseuille's`);
 }
 
 // 4. the same pool on the block mesh
