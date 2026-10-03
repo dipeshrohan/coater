@@ -12,12 +12,34 @@ function cssVar(name) {
 }
 
 /**
+ * A chart's frame with nothing to draw yet (its model not solved, solving, or failed): a short box saying so in place of
+ * an empty frame (the owner's choice); drawing the canvas again (setupCanvas) takes it away. PANE_DRAWN: the canvases
+ * drawn since they were made (a page's charts never drawn get the box from paneSweep).
+ */
+const PANE_DRAWN = new WeakSet();
+function paneEmpty(cv, why) {
+  const f = cv && (cv.closest('figure') || cv.parentElement);
+  if (!f) return;
+  f.classList.add('pane-empty'); f.dataset.empty = why || 'Not solved yet: press Solve';
+}
+function paneFull(cv) {
+  PANE_DRAWN.add(cv);
+  const f = cv.closest('figure') || cv.parentElement;
+  if (f && f.classList.contains('pane-empty')) { f.classList.remove('pane-empty'); delete f.dataset.empty; }
+}
+/** Charts by their canvases' ids, cleared and boxed with why there is nothing to draw. */
+function paneEmptyIds(ids, why) {
+  for (const id of ids) { const cv = document.getElementById(id); if (!cv) continue; const cx = setupCanvas(cv, 0.2); cx.c.clearRect(0, 0, cx.w, cx.h); paneEmpty(cv, why); }
+}
+
+/**
  * Size a canvas to its container's width at a fixed aspect ratio, and scale
  * its backing store for the device pixel ratio so strokes stay crisp on
  * high-DPI screens. Returns the 2D context plus the CSS-pixel width/height
  * to draw against (the transform already absorbs the DPR scaling).
  */
 function setupCanvas(cv, aspectRatio) {
+  paneFull(cv);
   const par = cv.parentElement, pcs = getComputedStyle(par);
   const w = (par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0)) || 600;   // (the canvas fills its parent's content box)
   const dpr = window.EXPORT_DPR || window.devicePixelRatio || 1;   // (EXPORT_DPR: drawn for an image export)

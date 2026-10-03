@@ -1583,8 +1583,10 @@ function renderSbProg() {
   const el = document.getElementById('sbProg');
   if (!el) return;
   const items = [['2D', cfdProgShare()], ['3D', typeof c3dProgShare === 'function' ? c3dProgShare() : null]].filter(([, s]) => s != null);
-  el.hidden = !items.length;
-  el.innerHTML = items.map(([k, s]) => { const pct = Math.min(99, Math.floor(100 * s)); return `<span class="sb-prog-item" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Solving the ${k}: about ${pct} % done"><b>Solving ${k}</b> ≈ ${pct} %<i class="sb-bar"><i style="width:${pct}%"></i></i></span>`; }).join('');
+  // (written only when it changes: the second's tick does not touch it)
+  if (el.hidden !== !items.length) el.hidden = !items.length;
+  const html = items.map(([k, s]) => { const pct = Math.min(99, Math.floor(100 * s)); return `<span class="sb-prog-item" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Solving the ${k}: about ${pct} % done"><b>Solving ${k}</b> ≈ ${pct} %<i class="sb-bar"><i style="width:${pct}%"></i></i></span>`; }).join('');
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }
 }
 
 function renderCfdStatus() {

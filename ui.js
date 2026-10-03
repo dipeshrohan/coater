@@ -865,6 +865,16 @@ function renderAnchor(vp) {
   }
   return { top: vp.scrollTop, id: best ? best.id : null, dy: bestY };
 }
+/** The pages whose charts show their model's results (the stages' pages: PROC_MODEL), and the Coating results pages'. */
+const PANE_MODEL = { contact: '1d', edge: '1d', surface: '1d', feed2d: 'pool2', feed3d: 'pool3' };
+/** A page's charts never drawn while its model has no result at all: each frame's short box saying why (an earlier
+ *  result, even out of date, is drawn instead). */
+function paneSweep() {
+  const pg = navNow(), k = PANE_MODEL[pg] || (typeof PROC_MODEL !== 'undefined' ? PROC_MODEL[pg] : null);
+  if (!k || typeof SOLVE_M === 'undefined' || !SOLVE_M[k] || SOLVE_M[k].has()) return;
+  const why = paneWhy(k);
+  document.querySelectorAll('#view figure canvas, #view .pl-canvas canvas').forEach(cv => { if (!PANE_DRAWN.has(cv)) paneEmpty(cv, why); });
+}
 function render() {
   // (the built-in laws on this page's own calls -- a dew point, the pressed stack's vapour pressures: the hub's, MC-1b)
   if (typeof matSolverProps === 'function') { const pr = matSolverProps(); if (typeof drUse === 'function') drUse(pr); if (typeof fmpUse === 'function') fmpUse(pr); }
@@ -901,6 +911,7 @@ function render() {
   renderRunChips();
   work.classList.add('fill');
   [viewA, view1, view2, view3, viewCFD, viewDOE, viewMeasured, viewSummary, view1DGap, view3D, view1DFilm, view1DAcross, viewProcess, viewMaterials, viewLine, view1DFeed, view2DFeed, view3DFeed][tab]();
+  paneSweep();
   if (keepS) {
     const vp = document.querySelector('.mod-vp'), el = keepS.id && document.getElementById(keepS.id);
     if (vp) vp.scrollTop = el && vp.contains(el) ? vp.scrollTop + el.getBoundingClientRect().top - vp.getBoundingClientRect().top - keepS.dy : keepS.top;

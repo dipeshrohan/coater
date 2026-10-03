@@ -2855,3 +2855,9 @@ canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
 .mx-prog td.mx-dose { white-space: nowrap; }
 .mx-how th { text-align: left; white-space: nowrap; vertical-align: top; width: 1%; padding-right: 14px; }
 .mx-how td { color: var(--ink-soft, var(--ink)); }
+
+/* VIS: a chart with nothing to draw yet (its model not solved, solving or failed): a short box saying so, not an empty
+   frame (the owner's choice, B) */
+.pane-empty > canvas, .pane-empty > .pane-legend, .pane-empty > .pane-tools { display: none !important; }
+.pane-empty::after { content: attr(data-empty); display: block; width: fit-content; max-width: calc(100% - 24px); margin: 14px auto 10px; padding: 10px 16px;
+  border: 1px dashed var(--line); border-radius: 8px; background: var(--soft); color: var(--muted); font-size: 13px; text-align: center; }

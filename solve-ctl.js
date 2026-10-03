@@ -126,7 +126,7 @@ function solveBarPaint() {
     });
   }
   const L = solveStaleList(), sig = solveStaleSig(L);
-  if (!L.length || sig === solveKept) { if (!bar.hidden) { bar.hidden = true; bar.innerHTML = ''; } bar.dataset.sig = ''; return; }
+  if (!L.length || sig === solveKept) { if (!bar.hidden) { bar.hidden = true; bar.innerHTML = ''; } if (bar.dataset.sig) bar.dataset.sig = ''; return; }
   if (bar.dataset.sig === sig && !bar.hidden) return;
   bar.dataset.sig = sig; bar.hidden = false;
   bar.innerHTML = `<span class="sb-ico">${typeof uiIco === 'function' ? uiIco('restart') : ''}</span><span class="sb-t"><b>Inputs changed.</b> Out of date:</span>
@@ -152,6 +152,8 @@ function solveCtl(ids, label, noBtn) {
   const what = label || SOLVE_M[k].l, btn = noBtn || st === 'solved' || st === 'busy' ? '' : `<button type="button" class="btn btn-primary btn-sm" data-solve="${ids.join(',')}">${typeof uiIco === 'function' ? uiIco('play') : ''}${st === 'stale' ? 'Solve again' : 'Solve'}</button>`;
   return `<span class="solve-ctl" data-st="${st}">${pill(`${what}: ${t}`, c)}${btn}</span>`;
 }
+/** What a chart of a model with nothing to draw says (its frame's short box). */
+const paneWhy = k => (solvePending(k) ? 'Solving…' : solveState(k) === 'failed' ? 'Could not be solved: see the message above' : 'Not solved yet: press Solve');
 /** Whether a page's model is still to be solved (asked or solving: the page says so instead of "not solved"). */
 const solvePending = k => SOLVE_ASK.has(k) || solveState(k) === 'busy';
 document.addEventListener('click', e => {

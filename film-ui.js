@@ -226,7 +226,8 @@ function filmRender() {
 }
 function filmClear() {
   ['filmChecks', 'filmStats', 'filmTable', 'filmNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
-  ['fm1', 'fm2', 'fm3', 'fm4', 'fm5', 'fm6'].forEach(id => { const cv = document.getElementById(id); if (cv) { const cx = setupCanvas(cv, 0.2); cx.c.clearRect(0, 0, cx.w, cx.h); } });
+  paneEmptyIds(['fm1', 'fm2', 'fm3', 'fm4', 'fm5', 'fm6'], paneWhy('film'));
+  procShowChart('film');   // (one chart at a time, solved or not)
   filmMeasured(null, null);
 }
 function filmWire(sec) {

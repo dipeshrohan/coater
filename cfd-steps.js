@@ -110,18 +110,29 @@ function stepBarScroll() {
     if (cur && bar.scrollWidth > bar.clientWidth + 1) bar.scrollLeft += cur.getBoundingClientRect().left - bar.getBoundingClientRect().left - 8;
   });
 }
+// (each bar's markup as last written: the browser's outerHTML never reads back the same string, so comparing with it
+//  replaced the bar every second -- its buttons flashed and lost hover and keyboard focus)
+const STEP_BAR_HTML = new WeakMap();
+function stepBarSwap(sel, html) {
+  const host = document.querySelector(sel);
+  if (!host || STEP_BAR_HTML.get(host) === html) return;
+  // (a bar the page drew: the same markup, as the browser writes it out -- kept)
+  const t = document.createElement('template'); t.innerHTML = html;
+  if (t.content.firstElementChild && t.content.firstElementChild.outerHTML === host.outerHTML) { STEP_BAR_HTML.set(host, html); return; }
+  const focused = document.activeElement && host.contains(document.activeElement) ? document.activeElement.dataset.step : null;
+  host.outerHTML = html;
+  const now = document.querySelector(sel);
+  if (now) { STEP_BAR_HTML.set(now, html); if (focused) { const f = now.querySelector(`[data-step="${focused}"]`); if (f) f.focus(); } }
+  stepBarScroll();
+}
 function renderStepBar2D() {
-  const host = document.querySelector('.flow-head .step-bar');
-  if (!host) return;
-  const html = stepBar('2d', step2D(), stepStatus2D());
-  if (host.outerHTML !== html) { host.outerHTML = html; stepBarScroll(); }
+  if (!document.querySelector('.flow-head .step-bar')) return;
+  stepBarSwap('.flow-head .step-bar', stepBar('2d', step2D(), stepStatus2D()));
 }
 /** The 3D page's step bar, where each step stands now (while solving: its progress). */
 function renderStepBar3D() {
-  const host = document.querySelector('.pg-bar .step-bar[data-kind="3d"]');
-  if (!host) return;
-  const html = stepBar('3d', step3D(), stepStatus3D());
-  if (host.outerHTML !== html) { host.outerHTML = html; stepBarScroll(); }
+  if (!document.querySelector('.pg-bar .step-bar[data-kind="3d"]')) return;
+  stepBarSwap('.pg-bar .step-bar[data-kind="3d"]', stepBar('3d', step3D(), stepStatus3D()));
 }
 
 // ---- the toolbar of Geometry, Mesh and Solve ----

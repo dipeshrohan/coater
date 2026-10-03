@@ -258,7 +258,7 @@ function viewProcess() {
 }
 /** The Process page itself (redrawn alone after an oven zone's value, so the inputs bar keeps its focus). */
 function processPage(alone = false) {
-  if (alone) { processPageBody(); wireModDock(); undoUI(); return; }
+  if (alone) { processPageBody(); paneSweep(); wireModDock(); undoUI(); return; }
   processPageBody();
 }
 function processPageBody() {
