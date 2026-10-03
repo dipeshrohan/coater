@@ -77,15 +77,18 @@ function fptSolve(o) {
   for (const [n, a] of nrm) { const l = Math.hypot(...a); nrm.set(n, a.map(v => v / l)); }
   const top = [...fptAreas(M, ['pile'])].filter(([n]) => !onWall.has(n)).map(([n, a]) => [n, a * nrm.get(n)[1]]);
   const free = top.reduce((s, [, a]) => s + a, 0), qIn = o.pulse ? o.Qin : 0, hdot = (qIn - o.Qout) / free;
-  // (the paste in: through the pipes' bores, a plug at their tops -- the discrete area's -- or the streams landing on the top)
-  const inA = Pp ? [...fptAreas(M, ['bore-inlet']).values()].reduce((s, a) => s + a, 0) : 0, V = Pp ? qIn / inA : 0;
+  // (the paste in: through the pipes' bores, a plug at their tops inside their rims -- the bore's wall holds its rim, so
+  //  no paste crosses the wall where the curved wall's elements meet the plug -- over the discrete area of the nodes it
+  //  moves, so the flow in is exact; or the streams landing on the top)
+  const rim = new Set(); if (Pp) for (const f of M.faces) if (f.tag === 'bore') for (const k of FN[f.f]) rim.add(M.conn[10 * f.e + k]);
+  const inA = Pp ? [...fptAreas(M, ['bore-inlet'])].reduce((s, [n, a]) => s + (rim.has(n) ? 0 : a), 0) : 0, V = Pp ? qIn / inA : 0;
   const stream = o.pulse && !Pp && o.outlets.length ? fplStreams(top, M, o.outlets, o.r, qIn / o.outlets.length, o.line) : () => 0;
   const byPos = new Map(); for (const [n, v] of nrm) byPos.set(`${M.X[n]},${M.Y[n]},${M.Z[n]}`, v[1]);
   const wall = { type: 'velocity', u: [0, 0, 0] }, side = s => (s === 'slip' ? { type: 'slip', normal: 'z' } : wall);
   const bc = { web: { type: 'velocity', u: [o.U, 0, 0] }, blade: wall, side0: side(sideT[0]), side1: side(sideT[1]),
     inlet: { type: 'slip', normal: 'x', over: true }, outlet: { type: 'traction', t: (x, y) => [-rg * (o.h - y), 0, 0] },
     pile: { type: 'slip', normal: 'surface', un: (x, y, z) => (hdot - stream(x, y, z)) * (byPos.get(`${x},${y},${z}`) ?? 1) },
-    ...(Pp ? { 'pipe-wall': wall, 'pipe-end': wall, bore: wall, 'bore-inlet': { type: 'velocity', u: [0, -V, 0] } } : {}) };
+    ...(Pp ? { 'bore-inlet': { type: 'velocity', u: [0, -V, 0] }, 'pipe-wall': wall, 'pipe-end': wall, bore: wall } : {}) };   // (the walls after the plug: the rim theirs)
   const S = ffSetup({ mesh: M, mu: o.mu, gdMin: o.gdMin, rho: o.rho, g: o.g, Lr: 1e-3, Ur: o.U || 1e-3, bc });
   const R = ffSolve(S, { tol: 1e-8, ...(o.solve || {}) });
   const fl = t => (M.faces.some(f => f.tag === t) ? ffFlow(S, R.x, t) : 0);

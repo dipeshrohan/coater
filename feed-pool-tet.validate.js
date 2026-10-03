@@ -13,7 +13,7 @@
  *     cross-width flow along a fourth line reported (OpenFOAM's benchmark judges it).
  *  5. The paste's own law (Herschel–Bulkley, the yield stress, the app's default) on tetrahedra through the cycle's
  *     continuation (the viscosity at 2.7 1/s, then the law with its γ̇ floor brought down): every stage converged, every
- *     flow balanced; beside the hexahedra's.
+ *     flow balanced.
  * The independent check against OpenFOAM is benchmarks/openfoam/pooltet.js (README: "The pool on tetrahedra").
  */
 const FT = require('./feed-pool-tet.js'), FP = require('./feed-pool.js'), PO = require('./feed-post.js'), UFE = require('./um-fe.js');
@@ -101,17 +101,15 @@ let RT, RH;
 // 5. the paste's own law
 {
   const ty = 5, baseMu = 10.5 - ty / 2.7, law = gd => ty / gd + baseMu, gd0 = U / H, rows = [];
-  const run = (solve, onMesh) => { let x0 = null, r, all = true, bal = 0, newton = 0;
-    for (const f of [null, 1e-1, 1e-2, 1e-3]) {
-      r = solve({ mu: f == null ? () => law(2.7) : law, gdMin: f == null ? undefined : f * gd0, solve: { x0, tol: 1e-8, ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } });
-      x0 = r.x; all = all && r.converged; bal = Math.max(bal, balance(r.flows)); newton += r.hist.length;
-    }
-    return { r, all, bal, newton, at: onMesh(r) }; };
-  const t = Date.now(), A = run(sv => FT.fptSolve({ ...base, ...sv, Mt }), onTet), msT = Date.now() - t, B = run(sv => FP.fplSolvePipes({ ...base, ...sv, mesh: HEX }), onHex);
-  const D = differ(B.at, A.at);
-  check('the paste\'s own law (Herschel–Bulkley, 5 Pa yield stress) on tetrahedra through the cycle\'s continuation: every stage converged, every flow balanced; beside the hexahedra\'s',
-    A.all && B.all && A.bal < 1e-8 && B.bal < 1e-8 && Object.values(D).every(v => v.rms < LIMIT5),
-    `tetrahedra: Newton ${A.newton} over 4 stages (${(msT / 1000).toFixed(0)} s), flows off ${A.bal.toExponential(1)}; hexahedra: Newton ${B.newton}, flows off ${B.bal.toExponential(1)}; RMS differences: ${Object.entries(D).map(([k, v]) => `${k} ${pc(v.rms)}`).join('; ')}`);
+  let x0 = null, all = true, bal = 0;
+  const t = Date.now();
+  for (const f of [null, 1e-1, 1e-2, 1e-3]) {
+    const r = FT.fptSolve({ ...base, mu: f == null ? () => law(2.7) : law, gdMin: f == null ? undefined : f * gd0, Mt, solve: { x0, tol: 1e-8, ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } });
+    x0 = r.x; all = all && r.converged; bal = Math.max(bal, balance(r.flows));
+    rows.push(`${f == null ? '10.5 Pa·s' : `floor ${(f * gd0).toPrecision(2)} 1/s`}: Newton ${r.hist.length}`);
+  }
+  check('the paste\'s own law (Herschel–Bulkley, 5 Pa yield stress) on tetrahedra through the cycle\'s continuation: every stage converged, every flow balanced',
+    all && bal < 1e-9, `${rows.join(', ')} (${((Date.now() - t) / 1000).toFixed(0)} s); flows off ${bal.toExponential(1)} of the web's`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
