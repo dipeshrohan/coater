@@ -211,6 +211,8 @@ const UNDO_UNITS = (() => {
   u.push({ id: 'mat.furnMeas', get: () => MAT.furnMeas || { out: [] }, set: v => { MAT.furnMeas = v ? JSON.parse(JSON.stringify(v)) : { out: [] }; },
     label: (a, b) => { const na = ((a || {}).out || []).length, nb = ((b || {}).out || []).length; return nb > na ? 'Add a measured graphene film' : nb < na ? 'Remove a measured graphene film' : 'Graphene film measured'; } });
   u.push({ id: 'oven.furn', get: () => OVEN.furn || furnDefaults(), set: v => { OVEN.furn = v ? JSON.parse(JSON.stringify(v)) : furnDefaults(); }, label: furnUndoLabel });
+  // (the mixer's inputs and program, MIX-1: one unit)
+  u.push({ id: 'oven.mix', get: () => OVEN.mix || mixInDefaults(), set: v => { OVEN.mix = v ? JSON.parse(JSON.stringify(v)) : mixInDefaults(); }, label: (a, b) => mixUndoLabel(a, b) });
   // (the stages' multiphysics mesh and time settings, MP-W: one unit)
   u.push({ id: 'oven.mp', get: () => OVEN.mp || {}, set: v => { OVEN.mp = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: (a, b) => (typeof swbUndoLabel === 'function' ? swbUndoLabel(a || {}, b || {}) : 'A multiphysics mesh') });
   u.push({ id: 'mat.tests', get: () => MAT.tests || [], set: v => { MAT.tests = v ? JSON.parse(JSON.stringify(v)) : []; }, label: (a, b) => (b || []).length > (a || []).length ? `Import rheometer test ${b[b.length - 1].name}` : 'Remove a rheometer test' });

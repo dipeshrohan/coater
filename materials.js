@@ -305,7 +305,8 @@ const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], 
 const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
 // (mp: the stages' multiphysics mesh and time settings as set on their Mesh steps, MP-W -- { stage: { dim: { k: v } } };
 //  none set: each solve's defaults)
-const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults(), mp: {} });
+// (mix: the mixer's inputs and program, MIX-1 -- mixer.js's, in the units its page shows; none where mixer.js is not loaded)
+const ovenDefaults = () => ({ zones: [0, 1, 2].map(() => ({ ...OVEN_ZONE_DEFAULT })), peel: { ...OVEN_PEEL_DEFAULT }, furn: furnDefaults(), mp: {}, mix: typeof mixInDefaults === 'function' ? mixInDefaults() : null });
 let OVEN = ovenDefaults();
 const OVEN_MAX_ZONES = 8;
 /** The oven's length (m) and the time the film spends in it at the line speed U (m/s). */
