@@ -14,6 +14,7 @@
  *     (fixtures/um-tet-graded, made by its make.py): as good a worst dihedral, and the size kept where gmsh's edges pass it.
  *  4. A size box (0.6 mm over the floor's downstream corner, 3 mm elsewhere): the checks of 1, the size met inside it.
  *  5. The size field itself: its value inside a box, on a line and far from both; its slope never above grow - 1.
+ *  6. A surface that is not closed (a face left out) refused, saying so -- not refined without end.
  */
 const M = require('./um-tetmesh.js'), UC = require('./um-core.js'), fs = require('fs'), path = require('path');
 let fails = 0;
@@ -151,6 +152,14 @@ function quality(X, Y, Z, tet0) {
   check('the size field: the box\'s size inside it, the line\'s within its radius, the point\'s at it, the size far away; its slope never above grow - 1',
     F(0.5e-3, 0.5e-3, 0.5e-3) === 0.2e-3 && F(0.0104, 0.005, 0) === 0.3e-3 && F(0, 0.01, 0.01) === 0.4e-3 && F(0.02, 0.02, 0.02) === 4e-3 && slope <= grow - 1 + 1e-9,
     `largest slope over 10,000 random pairs ${slope.toFixed(4)} (grow - 1 = ${(grow - 1).toFixed(2)})`);
+}
+
+// 6. an open surface refused
+{
+  const box = prism([[0, 0], [0.02, 0], [0.02, 0.01], [0, 0.01]], 0, 0.015);
+  const S = M.umtSurface({ ...box, faces: box.faces.filter(f => f.tag !== 'top') }, { size: 4e-3 });
+  let msg = ''; try { M.umtVolume(S, { size: 4e-3 }); } catch (e) { msg = e.message; }
+  check('a surface with a face left out: refused, saying it is not closed', /not closed/.test(msg), `"${msg}"`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
