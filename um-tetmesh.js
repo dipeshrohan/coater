@@ -15,6 +15,12 @@
  *   sphere -- then that surface triangle is split instead, so the surface stays in the mesh; then slivers (tetrahedra flat
  *   though their edges are fine) removed by points put near their circumcentres. Returns { X, Y, Z, tet (4 each, positive),
  *   bface (the surface's triangles, outward), btag, stats }.
+ * umtSizeField(spec): a size over space, (x, y, z) → h, graded: spec = { h (everywhere), grow (each size at most this
+ *   many times its neighbour's, default 1.3), boxes: [{ min: [x, y, z], max: [x, y, z], h }], lines: [{ a: [x, y, z], b:
+ *   [x, y, z], h, r (the size held to this distance, default 0) }], points: [{ at: [x, y, z], h, r }] }. Inside a box, or
+ *   within r of a line or point, its h; away from it the size grows linearly with the distance, by grow - 1 per unit
+ *   length (the gradient a mesh of ratio `grow` between neighbours has), up to h. The smallest of all at each point: a
+ *   field whose slope is never above grow - 1, so the mesh grades smoothly whatever the sources.
  * Pure computation.
  */
 const UMM_T = typeof umtTri === 'function' ? { umtTri, umtOrient, UMT_INF } : require('./um-tet.js');
@@ -29,9 +35,18 @@ function umtSurface(G, o = {}) {
   const edge = (a, b) => {
     const key = a < b ? `${a},${b}` : `${b},${a}`;
     if (!edgePts.has(key)) {
-      const [p, q] = a < b ? [a, b] : [b, a], L = Math.hypot(X[q] - X[p], Y[q] - Y[p], Z[q] - Z[p]);
-      const h = hOf((X[p] + X[q]) / 2, (Y[p] + Y[q]) / 2, (Z[p] + Z[q]) / 2), m = Math.max(1, Math.round(L / h)), ids = [p];
-      for (let i = 1; i < m; i++) { const t = i / m; ids.push(X.length); X.push(X[p] + t * (X[q] - X[p])); Y.push(Y[p] + t * (Y[q] - Y[p])); Z.push(Z[p] + t * (Z[q] - Z[p])); }
+      const [p, q] = a < b ? [a, b] : [b, a], L = Math.hypot(X[q] - X[p], Y[q] - Y[p], Z[q] - Z[p]), ids = [p];
+      // (graded: the pieces spaced by the size along the edge -- equal steps of the integral of 1/h, by the trapezium
+      //  rule over 256 samples; a constant size gives equal pieces exactly)
+      const ns = 256, at = t => hOf(X[p] + t * (X[q] - X[p]), Y[p] + t * (Y[q] - Y[p]), Z[p] + t * (Z[q] - Z[p]));
+      const cum = [0]; let hPrev = at(0);
+      for (let i = 1; i <= ns; i++) { const hi = at(i / ns); cum.push(cum[i - 1] + L / ns * (1 / hPrev + 1 / hi) / 2); hPrev = hi; }
+      const m = Math.max(1, Math.round(cum[ns])), uniform = cum.every((c, i) => Math.abs(c - cum[ns] * i / ns) <= 1e-12 * cum[ns]);
+      for (let i = 1; i < m; i++) {
+        let t = i / m;
+        if (!uniform) { const goal = cum[ns] * i / m; let j = 1; while (cum[j] < goal) j++; t = (j - 1 + (goal - cum[j - 1]) / (cum[j] - cum[j - 1])) / ns; }
+        ids.push(X.length); X.push(X[p] + t * (X[q] - X[p])); Y.push(Y[p] + t * (Y[q] - Y[p])); Z.push(Z[p] + t * (Z[q] - Z[p]));
+      }
       ids.push(q); edgePts.set(key, ids);
     }
     const ids = edgePts.get(key); return a < b ? ids : ids.slice().reverse();
@@ -463,4 +478,22 @@ function umtImprove(M, o = {}) {
   return { flips23, flips32, moves, splits, dihedralMin: dmin };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { umtSurface, umtVolume, umtImprove, umtInsidePoint };
+/** A graded size over space (see the header): (x, y, z) → h. */
+function umtSizeField(spec) {
+  const H = spec.h, g = (spec.grow ?? 1.3) - 1, boxes = spec.boxes || [], lines = spec.lines || [], points = spec.points || [];
+  const dBox = (B, x, y, z) => Math.hypot(Math.max(B.min[0] - x, 0, x - B.max[0]), Math.max(B.min[1] - y, 0, y - B.max[1]), Math.max(B.min[2] - z, 0, z - B.max[2]));
+  const dLine = (Ln, x, y, z) => {
+    const d = [Ln.b[0] - Ln.a[0], Ln.b[1] - Ln.a[1], Ln.b[2] - Ln.a[2]], dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    const t = dd > 0 ? Math.min(1, Math.max(0, ((x - Ln.a[0]) * d[0] + (y - Ln.a[1]) * d[1] + (z - Ln.a[2]) * d[2]) / dd)) : 0;
+    return Math.hypot(x - Ln.a[0] - t * d[0], y - Ln.a[1] - t * d[1], z - Ln.a[2] - t * d[2]);
+  };
+  return (x, y, z) => {
+    let h = H;
+    for (const B of boxes) h = Math.min(h, B.h + g * dBox(B, x, y, z));
+    for (const Ln of lines) h = Math.min(h, Ln.h + g * Math.max(0, dLine(Ln, x, y, z) - (Ln.r || 0)));
+    for (const P of points) h = Math.min(h, P.h + g * Math.max(0, Math.hypot(x - P.at[0], y - P.at[1], z - P.at[2]) - (P.r || 0)));
+    return h;
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { umtSurface, umtVolume, umtImprove, umtInsidePoint, umtSizeField };
