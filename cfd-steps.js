@@ -1082,6 +1082,22 @@ function c3dMeshStats() {
   C3D_MS.key = key; C3D_MS.v = { S: m3Stats(M, { layers: lay || undefined, zone: m3ZoneOf(M) }), M, solved: false, layers: lay };
   return C3D_MS.v;
 }
+/**
+ * The 3D mesh for the mesh viewer (mesh-view-ui.js), cell by cell: the mesh c3dMeshStats gives (solved: the result's own;
+ * before solving: the stations' starting layout), its 27-node elements (cfd-3d-mesh.js's m3CellMesh) each drawn as the 8
+ * cells on its nodes, placed as the 3D view draws the region (across the web where the region is; a skewed blade turned
+ * into the machine's frame). Null when c3dMeshStats has none.
+ */
+function c3dCellMesh() {
+  const ms = c3dMeshStats();
+  if (!ms) return null;
+  const SM = c3dSolvedMesh(), R = SM && ms.solved ? SM.R : null, M = ms.M, e = c3dZEnds();
+  const zo = R ? (R.zOff || 0) : (e[0] + e[e.length - 1]) / 2, skew = (R ? R.skew : P.skew) || 0, xe = R ? R.xe : c3dBuild().xe;
+  const key = JSON.stringify(['c3d', R ? [SM.S.when, SM.S.key] : C3D_MS.key, zo, skew, xe]);
+  // (an open edge's wedges at the web, a corner collapsed onto the contact line by design: left out, as its statistics leave them out)
+  const skip = R ? c3dWedgeSkip(R) : null;
+  return mvPrep(key, () => { const mesh = m3CellMesh(M, { zo, skew, xe, skip }); return { mesh, split: true, info: { skipped: mesh.skipped } }; });
+}
 /** Where the 3D is solved, in words (the warnings' "across the ..."). */
 const c3dWhere = () => C3D.region === 'strip' ? 'strip' : C3D.region === 'edge' ? 'edge strip' : 'web';
 /**

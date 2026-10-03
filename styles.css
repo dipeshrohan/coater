@@ -2802,3 +2802,41 @@ canvas { box-shadow: none; border-radius: 0; }
 .no-solver b { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
 .no-solver p { margin: 6px 0 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
 .no-solver .ns-shown { color: var(--ink); }
+
+/* ---- MESH-T1b: the mesh viewer on the 3D Mesh steps (mesh-view-ui.js): its tools, the 3D view and its key, its numbers ---- */
+.mv { display: grid; min-width: 0; }
+.mv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 2px 0 10px; }
+.mv-ctl { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.mv-ctl .tb-lbl { margin-left: 0; }
+.mv-ctl.mv-off .tb-lbl, .mv-ctl.mv-off output { opacity: .5; }
+.mv-ctl input[type=range] { width: 120px; accent-color: var(--accent); }
+.mv-ctl output { min-width: 5.5em; font-size: 12.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.mv-ctl select { width: auto; height: 28px; padding: 2px 6px; font-size: 12.5px; }
+.mv-view { position: relative; min-width: 0; }
+.mv-host { position: relative; height: clamp(320px, calc(100vh - 420px), 680px); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.mv-host canvas { display: block; max-width: 100%; touch-action: none; cursor: grab; }
+.mv-host canvas:active { cursor: grabbing; }
+.mv-over { position: absolute; inset: 0; pointer-events: none; }
+.mv-key { position: absolute; left: 12px; bottom: 12px; display: grid; gap: 4px; padding: 7px 10px; font-size: 11.5px; color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line-soft); border-radius: 8px; font-variant-numeric: tabular-nums; }
+.mv-key b { color: var(--ink); font-weight: 600; }
+.mv-key > span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.mv-key > span i { width: 10px; height: 10px; border-radius: 2px; }
+.mv-bar { display: block; width: 190px; height: 9px; border-radius: 2px; }
+.mv-ends { display: flex; justify-content: space-between; }
+.mv-count { position: absolute; right: 12px; top: 10px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.mv-panel { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px 28px; padding: 14px 2px 2px; border-top: 1px solid var(--line-soft); margin-top: 10px; }
+.mv-sec { min-width: 0; overflow-x: auto; }
+.mv-sec h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; }
+.mv-q { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.mv-q th { padding: 4px 8px 4px 0; text-align: left; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.mv-q td { padding: 4px 0 4px 8px; text-align: right; white-space: nowrap; }
+.mv-q tr + tr th, .mv-q tr + tr td { border-top: 1px solid var(--line-soft); }
+.mv-st { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
+.mv-st i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.mv-sw { display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 2px; vertical-align: 0; }
+.mv-hist { display: block; width: 100%; max-width: 380px; height: auto; overflow: visible; }
+.mv-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.mv-note b { color: var(--ink); }
+@media (max-width: 1023px) { .mv-panel { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .mv-ctl input[type=range] { width: 90px; } .mv-key { left: 8px; bottom: 8px; } .mv-bar { width: 130px; } }

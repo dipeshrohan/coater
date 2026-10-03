@@ -46,6 +46,21 @@ function fplTopAt(M, x, z) {
   return (1 - s) * (1 - t) * y(i, k) + s * (1 - t) * y(i + 1, k) + (1 - s) * t * y(i, k + 1) + s * t * y(i + 1, k + 1);
 }
 
+/** The pool's mesh on a top (eta: its height over the level at the plan's nodes; none: flat at the level), as fplSolve
+ *  takes it: o: { W, xBack, xEnd, h, blade, outlets, r, mesh, pipes (the 2D's slots) }. */
+function fplPoolMesh(o, eta) {
+  const fpmMesh = FPL_('fpmMesh', './feed-pool-mesh.js');
+  return fpmMesh({ W: o.W, xBack: o.xBack, xEnd: o.xEnd, h: o.h, blade: o.blade, outlets: o.outlets, r: o.r, ...(o.mesh || {}), ...(o.pipes ? { pipes: o.pipes } : {}), eta });
+}
+/** The coater's block mesh with the round pipes, their tips in the paste (feed-mesh.js), as fplSolvePipes takes it: o: {
+ *  W, half, xBack, xEnd, h, blade, outlets, pipe: { d, Do, tip, bore }, mesh (fmMesh's options) }. */
+function fplPipesMesh(o) {
+  const fmMesh = FPL_('fmMesh', './feed-mesh.js'), Pp = o.pipe;
+  if (!(Pp.tip > 0 && Pp.tip < o.h)) throw new Error('the pipes\' tips must be in the paste, above the web');
+  return fmMesh({ W: o.W, half: !!o.half, d: Pp.d, t: (Pp.Do - Pp.d) / 2, xCut: -o.xBack, xEnd: -o.xEnd, bladeY: o.blade, H0: o.h, film0: 0,
+    outlets: o.outlets.map(q => ({ z: q.z, ym: Pp.tip, yIn: Pp.tip + (Pp.bore ?? 2 * Pp.d) })), xP: o.outlets[0].x, ...(o.mesh || {}) });
+}
+
 /**
  * The pool's flow in one part of the cycle. o: { W, xBack, xEnd, h, blade (x -> m), U, mu (γ̇ -> Pa·s), gdMin, rho, g,
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin (m³/s, all outlets, during a pulse), Qout (m³/s, the web's),
@@ -74,7 +89,7 @@ function fplTopAt(M, x, z) {
  *   (the share of the streams on) }), stream }.
  */
 function fplSolve(o) {
-  const fpmMesh = FPL_('fpmMesh', './feed-pool-mesh.js'), ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
+  const ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
   const ffFaceNormals = FPL_('ffFaceNormals', './feed-fem.js'), fsArea = FPL_('fsArea', './feed-free.js');
   const FMF = FPL_FACES(), F = o.free, tops = [], rg = o.rho * o.g;
   // (each side: 'wall' a side plate, 'slip' a mirror; one for both, or [at z = 0, at z = W])
@@ -82,7 +97,7 @@ function fplSolve(o) {
   let eta = o.eta ? Float64Array.from(o.eta) : null, x0 = o.solve && o.solve.x0;
   // the pool on a top: its mesh, the top's free nodes (their area shares, their normals), the streams, the level's rate
   const pool = (eta, f = 1) => {
-    const M = fpmMesh({ W: o.W, xBack: o.xBack, xEnd: o.xEnd, h: o.h, blade: o.blade, outlets: o.outlets, r: o.r, ...(o.mesh || {}), ...(o.pipes ? { pipes: o.pipes } : {}), eta });
+    const M = fplPoolMesh(o, eta);
     const I = M.info, NX = I.NX, NY = I.NY, iJ = 2 * I.xs.findIndex(v => Math.abs(v - I.xJ) < 1e-12);
     // (the top's nodes on the walls -- the side plates, where it meets the blade -- hold the walls' no-slip; the top moves
     //  where it is free)
@@ -171,11 +186,9 @@ function fplSolve(o) {
  *   bore (their tops: in, negative) } (m³/s, out), hist, converged }.
  */
 function fplSolvePipes(o) {
-  const fmMesh = FPL_('fmMesh', './feed-mesh.js'), ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
+  const ffSetup = FPL_('ffSetup', './feed-fem.js'), ffSolve = FPL_('ffSolve', './feed-fem.js'), ffFlow = FPL_('ffFlow', './feed-fem.js');
   const ffFaceNormals = FPL_('ffFaceNormals', './feed-fem.js'), fsArea = FPL_('fsArea', './feed-free.js'), FMF = FPL_FACES(), rg = o.rho * o.g, Pp = o.pipe;
-  if (!(Pp.tip > 0 && Pp.tip < o.h)) throw new Error('the pipes\' tips must be in the paste, above the web');
-  const M = fmMesh({ W: o.W, half: !!o.half, d: Pp.d, t: (Pp.Do - Pp.d) / 2, xCut: -o.xBack, xEnd: -o.xEnd, bladeY: o.blade, H0: o.h, film0: 0,
-    outlets: o.outlets.map(q => ({ z: q.z, ym: Pp.tip, yIn: Pp.tip + (Pp.bore ?? 2 * Pp.d) })), xP: o.outlets[0].x, ...(o.mesh || {}) });
+  const M = fplPipesMesh(o);
   // the top's free nodes (off the walls: the side plates, the blade, the pipes), their normals and shares of its plan
   const walls = new Set(['side0', 'side1', 'blade', 'pipeOut']), onWall = new Set();
   for (const f of M.faces) if (walls.has(f.tag)) for (const i of FMF[f.f]) onWall.add(M.elems[27 * f.e + i]);
@@ -313,7 +326,13 @@ function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3,
  *   drain], each { info, X, Y, Z, u, v, w, p (Float32Array; p NaN off the corners), flows (m³/s), hdot, converged, newton },
  *   paths: [{ outlet, s, out, t (s), pts (Float32Array: x, y, z, t …) }] }.
  */
-function fplCycle(o, onProgress = () => {}) {
+/**
+ * fplCycle's layout before it solves (o: fplCycle's): the outlets in order across the web (ord), whether they are in
+ * mirror pairs (half the pool solved), the width solved W and its share of the pool's, the blade's underside, the outlets
+ * solved (their indices, and themselves), how the paste enters (dip: the tips in the paste -- the 2D's pipe a slot, pipes;
+ * the 3D's round), the pool mesh's options.
+ */
+function fplPlan(o) {
   const dim = o.dim, M3 = o.mesh || {}, nO = o.outlets.length;
   // (the outlets across the web in order; mirror pairs: the k-th from each side plate)
   const ord = o.outlets.map((q, j) => j).sort((a, b) => o.outlets[a].z - o.outlets[b].z);
@@ -322,17 +341,38 @@ function fplCycle(o, onProgress = () => {}) {
     && ord.slice(0, nO / 2).every(j => o.outlets[j].z < o.W / 2 - (o.entry === 'dip' ? (M3.sq ?? 3) * o.pipe.Do / 2 : 2 * o.r));
   const W = dim === 2 ? Math.max(M3.hMax || 0.02, 4 * (M3.hFine || 2e-3)) : mirror ? o.W / 2 : o.W, share = W / o.W;
   const blade = o.R > 0 ? (x => o.H + o.R - Math.sqrt(Math.max(0, o.R * o.R - x * x))) : (() => 1e3);
-  const L = o.law || {}, base = L.muRef - L.ty / 2.7, gd0 = o.U / o.H;
-  const law = o.muLaw || (gd => L.ty / gd + base * Math.pow(gd / 2.7, L.n - 1)), mu27 = law(2.7), plain = o.muLaw ? !!o.plain : !(L.ty > 0) && L.n === 1;
-  if (!(mu27 > 0)) throw new Error('the paste\'s law gives no viscosity at 2.7 1/s');
   const solved = dim === 2 ? [0] : mirror ? ord.slice(0, nO / 2) : o.outlets.map((q, j) => j);     // (the outlets solved, their indices)
   const outlets = dim === 2 ? [{ x: o.outlets[0].x, z: W / 2 }] : solved.map(j => o.outlets[j]);
   // (the tips in the paste: the 2D's pipe a slot across the slice, standing from above the top down to the tip; the 3D's
   //  round, on the coater's block mesh -- fplSolvePipes -- its flow then shown on the pool's own grid)
   const dip = o.entry === 'dip';
-  if (dip && !(o.pipe.tip > 0 && o.pipe.tip < Math.min(o.hP, o.hD))) throw new Error(`the outlets' tips (${(o.pipe.tip * 1e3).toFixed(1)} mm above the web) must stay in the paste through the cycle: the level falls to ${(Math.min(o.hP, o.hD) * 1e3).toFixed(1)} mm between pulses`);
   const pipes = dip && dim === 2 ? [{ x: outlets[0].x, d: o.pipe.d, Do: o.pipe.Do, tip: o.pipe.tip, bore: 2 * o.pipe.d }] : null, round = dip && dim === 3;
   const mesh = { hFine: M3.hFine, hMax: M3.hMax, ny: M3.ny, ...(M3.zs ? { zs: M3.zs } : {}), ...(dim === 2 ? { nz: 1, sideFine: false } : mirror ? { sideFine: [true, false] } : {}) };
+  return { dim, M3, nO, ord, mirror, W, share, blade, solved, outlets, dip, pipes, round, mesh };
+}
+/** The tips in the paste must stay in it through the cycle (fplCycle's check). */
+function fplDipCheck(o) {
+  if (o.entry === 'dip' && !(o.pipe.tip > 0 && o.pipe.tip < Math.min(o.hP, o.hD))) throw new Error(`the outlets' tips (${(o.pipe.tip * 1e3).toFixed(1)} mm above the web) must stay in the paste through the cycle: the level falls to ${(Math.min(o.hP, o.hD) * 1e3).toFixed(1)} mm between pulses`);
+}
+/**
+ * The meshes the cycle's solves start on, laid out as fplCycle lays them out, the top flat at the level (during a pulse
+ * at hP, between pulses at hD): { plan (fplPlan's), pulse, drain } -- each feed-pool-mesh.js's mesh (the 3D's tips in the
+ * paste: feed-mesh.js's, with the round pipes). For the mesh viewer, before solving (the solve moves a free top from there).
+ */
+function fplStartMeshes(o) {
+  const PL = fplPlan(o), M3 = PL.M3;
+  fplDipCheck(o);
+  const at = h => (PL.round
+    ? fplPipesMesh({ W: o.W, half: PL.mirror, xBack: o.xBack, xEnd: o.xEnd, h, blade: PL.blade, outlets: o.outlets, pipe: { d: o.pipe.d, Do: o.pipe.Do, tip: o.pipe.tip, bore: 2 * o.pipe.d }, mesh: M3.pipes })
+    : fplPoolMesh({ W: PL.W, xBack: o.xBack, xEnd: o.xEnd, h, blade: PL.blade, outlets: PL.outlets, r: o.r, mesh: PL.mesh, ...(PL.pipes ? { pipes: PL.pipes } : {}) }, null));
+  return { plan: PL, pulse: at(o.hP), drain: at(o.hD) };
+}
+function fplCycle(o, onProgress = () => {}) {
+  const { dim, M3, nO, ord, mirror, W, share, blade, solved, outlets, dip, pipes, round, mesh } = fplPlan(o);
+  const L = o.law || {}, base = L.muRef - L.ty / 2.7, gd0 = o.U / o.H;
+  const law = o.muLaw || (gd => L.ty / gd + base * Math.pow(gd / 2.7, L.n - 1)), mu27 = law(2.7), plain = o.muLaw ? !!o.plain : !(L.ty > 0) && L.n === 1;
+  if (!(mu27 > 0)) throw new Error('the paste\'s law gives no viscosity at 2.7 1/s');
+  fplDipCheck(o);
   const stages = plain ? [null] : [null, 1e-1, 1e-2, 1e-3], n = 2 * stages.length + 1;
   const f32 = a => Float32Array.from(a), states = [], fields = [];
   let done = 0;
@@ -397,4 +437,4 @@ function fplCycle(o, onProgress = () => {}) {
   return { dim, W: mirror ? o.W : W, mirror, states, paths, t0 };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplSolvePipes, fplPressureAll, fplOnGrid, fplPaths, fplCycle };
+if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplPoolMesh, fplPipesMesh, fplSolve, fplSolvePipes, fplPressureAll, fplOnGrid, fplPaths, fplPlan, fplDipCheck, fplStartMeshes, fplCycle };
