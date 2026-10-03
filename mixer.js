@@ -100,7 +100,7 @@ const MIX_INPUTS = [
   { g: 'power', k: 'Fl', l: 'Disc\'s flow number', u: '', f: 1, v: 0.1, min: 0.001, max: 2, step: 0.005, d: 3, h: 'the flow through its rim zone over Nd Dd³' },
   { g: 'power', k: 'fe', l: 'Power spent in the shear zones', u: '', f: 1, v: 0.5, min: 0, max: 1, step: 0.05, d: 2, h: 'the share of the disc\'s power dissipated in its rim zone, of the blades\' in their wall and floor gaps (their turbulence)' },
   { g: 'power', k: 'Ck', l: 'Kolmogorov constant C', u: '', f: 1, v: 2, min: 0.5, max: 5, step: 0.1, d: 1, h: 'the eddies\' stress on a lump in the inertial range, C ρ (ε a)^⅔' },
-  { g: 'chem', k: 'q1', l: 'Carboxyl groups', u: 'mmol/g', f: 1, v: 2.5, min: 0, max: 10, step: 0.05, d: 2, h: 'acid groups on the GO, per gram of GO' },
+  { g: 'chem', k: 'q1', l: 'Carboxyl groups', u: 'mmol/g', f: 1, v: 2.53, min: 0, max: 10, step: 0.01, d: 2, h: 'acid groups on the GO, per gram of GO (2.53: the recipe\'s ammonia brings the batch to pH 7, as measured)' },
   { g: 'chem', k: 'pK1', l: 'Carboxyl pKa', u: '', f: 1, v: 4.3, min: 1, max: 8, step: 0.05, d: 2 },
   { g: 'chem', k: 'q2', l: 'Phenolic groups', u: 'mmol/g', f: 1, v: 2, min: 0, max: 10, step: 0.05, d: 2 },
   { g: 'chem', k: 'pK2', l: 'Phenolic pKa', u: '', f: 1, v: 9.8, min: 6, max: 13, step: 0.05, d: 2 },
