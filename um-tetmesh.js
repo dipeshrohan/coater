@@ -196,9 +196,12 @@ function umtVolume(S, o = {}) {
     return false;
   };
   // the faces of the tetrahedralization (finite ones), to find the surface triangles missing from it
-  const faceSet = () => { const s = new UmtTriMap(), tv = D.tv, al = D.alive;
-    for (let t = 0; t < D.nT; t++) if (al[t] && tv[4 * t] >= 0 && tv[4 * t + 1] >= 0 && tv[4 * t + 2] >= 0 && tv[4 * t + 3] >= 0)
-      for (let k = 0; k < 4; k++) { const [i, j, l] = UMT_FACE[k]; s.set(tv[4 * t + i], tv[4 * t + j], tv[4 * t + l], 1); }
+  // (only those whose three corners are all the surface's: the only ones asked about)
+  const faceSet = () => { const s = new UmtTriMap(), tv = D.tv, al = D.alive, on = new Uint8Array(X.length);
+    for (let f = 0; f < F.length / 3; f++) if (alive[f]) { on[F[3 * f]] = 1; on[F[3 * f + 1]] = 1; on[F[3 * f + 2]] = 1; }
+    for (let t = 0; t < D.nT; t++) if (al[t] && tv[4 * t] >= 0 && tv[4 * t + 1] >= 0 && tv[4 * t + 2] >= 0 && tv[4 * t + 3] >= 0
+      && on[tv[4 * t]] + on[tv[4 * t + 1]] + on[tv[4 * t + 2]] + on[tv[4 * t + 3]] >= 3)
+      for (let k = 0; k < 4; k++) { const [i, j, l] = UMT_FACE[k], a = tv[4 * t + i], b = tv[4 * t + j], c = tv[4 * t + l]; if (on[a] && on[b] && on[c]) s.set(a, b, c, 1); }
     return s; };
   /** The surface triangle that is tetrahedron t's face opposite its k-th corner, or undefined (sk: surfKeys()). */
   const surfFace = (sk, t, k) => { const [i, j, l] = UMT_FACE[k], a = D.tv[4 * t + i], b = D.tv[4 * t + j], c = D.tv[4 * t + l]; return a < 0 || b < 0 || c < 0 ? undefined : sk.get(a, b, c); };
@@ -218,24 +221,33 @@ function umtVolume(S, o = {}) {
   };
   // 2. refinement: too big or badly shaped tetrahedra get their circumcentres; a centre in a surface triangle's sphere splits it instead
   const tetInfo = t => {
-    const v = [0, 1, 2, 3].map(k => D.tv[4 * t + k]), P = v.map(i => [X[i], Y[i], Z[i]]), A = P[0];
-    const b = [0, 1, 2].map(k => [P[k + 1][0] - A[0], P[k + 1][1] - A[1], P[k + 1][2] - A[2]]), r = b.map(e => (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]) / 2);
-    const det = b[0][0] * (b[1][1] * b[2][2] - b[1][2] * b[2][1]) - b[0][1] * (b[1][0] * b[2][2] - b[1][2] * b[2][0]) + b[0][2] * (b[1][0] * b[2][1] - b[1][1] * b[2][0]);
-    const cx = (r[0] * (b[1][1] * b[2][2] - b[1][2] * b[2][1]) - b[0][1] * (r[1] * b[2][2] - b[1][2] * r[2]) + b[0][2] * (r[1] * b[2][1] - b[1][1] * r[2])) / det;
-    const cy = (b[0][0] * (r[1] * b[2][2] - b[1][2] * r[2]) - r[0] * (b[1][0] * b[2][2] - b[1][2] * b[2][0]) + b[0][2] * (b[1][0] * r[2] - r[1] * b[2][0])) / det;
-    const cz = (b[0][0] * (b[1][1] * r[2] - r[1] * b[2][1]) - b[0][1] * (b[1][0] * r[2] - r[1] * b[2][0]) + r[0] * (b[1][0] * b[2][1] - b[1][1] * b[2][0])) / det;
-    let lmin = Infinity; for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) lmin = Math.min(lmin, Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1], P[i][2] - P[j][2]));
-    return { c: [A[0] + cx, A[1] + cy, A[2] + cz], R: Math.hypot(cx, cy, cz), lmin };
+    const tv = D.tv, v0 = tv[4 * t], v1 = tv[4 * t + 1], v2 = tv[4 * t + 2], v3 = tv[4 * t + 3], ax = X[v0], ay = Y[v0], az = Z[v0];
+    const b00 = X[v1] - ax, b01 = Y[v1] - ay, b02 = Z[v1] - az, b10 = X[v2] - ax, b11 = Y[v2] - ay, b12 = Z[v2] - az, b20 = X[v3] - ax, b21 = Y[v3] - ay, b22 = Z[v3] - az;
+    const r0 = (b00 * b00 + b01 * b01 + b02 * b02) / 2, r1 = (b10 * b10 + b11 * b11 + b12 * b12) / 2, r2 = (b20 * b20 + b21 * b21 + b22 * b22) / 2;
+    const det = b00 * (b11 * b22 - b12 * b21) - b01 * (b10 * b22 - b12 * b20) + b02 * (b10 * b21 - b11 * b20);
+    const cx = (r0 * (b11 * b22 - b12 * b21) - b01 * (r1 * b22 - b12 * r2) + b02 * (r1 * b21 - b11 * r2)) / det;
+    const cy = (b00 * (r1 * b22 - b12 * r2) - r0 * (b10 * b22 - b12 * b20) + b02 * (b10 * r2 - r1 * b20)) / det;
+    const cz = (b00 * (b11 * r2 - r1 * b21) - b01 * (b10 * r2 - r1 * b20) + r0 * (b10 * b21 - b11 * b20)) / det;
+    const d = (i, j) => Math.hypot(X[i] - X[j], Y[i] - Y[j], Z[i] - Z[j]);
+    let lmin = Infinity; lmin = Math.min(lmin, d(v0, v1)); lmin = Math.min(lmin, d(v0, v2)); lmin = Math.min(lmin, d(v0, v3)); lmin = Math.min(lmin, d(v1, v2)); lmin = Math.min(lmin, d(v1, v3)); lmin = Math.min(lmin, d(v2, v3));
+    return { c: [ax + cx, ay + cy, az + cz], R: Math.hypot(cx, cy, cz), lmin };
   };
   let refined = 0, skipped = 0;
   // (a tetrahedron skipped -- its point would take the surface, or fall outside -- is not tried again while it and the
   //  surface stay as they were: the same four corners, no surface triangle split since; one skipped for its shape alone
   //  -- small enough, badly shaped by the surface -- not again at all: the smoothing below takes it)
-  const skippedAt = new Map(), skipKey = v => v.slice().sort((a, b) => a - b).join();
+  const skippedAt = new Map(), skipKey = v => v.slice().sort((a, b) => a - b).join(), qCache = [];
   for (let pass = 0; pass < 40 && X.length < maxPts; pass++) {
     classify();
-    const bad = [];
-    for (let t = 0; t < D.nT; t++) if (D.alive[t] && inside[t] === 1) { const q = tetInfo(t); if (q.R > 0.65 * hOf(...q.c) || q.R / q.lmin > ratio) { q.v = Array.from(D.tv.subarray(4 * t, 4 * t + 4)); bad.push([t, q]); } }
+    const bad = [], tv = D.tv;
+    for (let t = 0; t < D.nT; t++) if (D.alive[t] && inside[t] === 1) {
+      // (each tetrahedron's measure kept from the pass it was made in: the points do not move while refining, so the same
+      //  four corners give the same sphere)
+      let e = qCache[t];
+      if (!e || e.a !== tv[4 * t] || e.b !== tv[4 * t + 1] || e.c !== tv[4 * t + 2] || e.d !== tv[4 * t + 3]) {
+        const q = tetInfo(t); e = qCache[t] = { a: tv[4 * t], b: tv[4 * t + 1], c: tv[4 * t + 2], d: tv[4 * t + 3], q, bad: q.R > 0.65 * hOf(...q.c) || q.R / q.lmin > ratio }; }
+      if (e.bad) { const q = e.q; q.v = [e.a, e.b, e.c, e.d]; bad.push([t, q]); }
+    }
     if (!bad.length) break;
     let changed = false;
     for (const [t, q] of bad) {
@@ -245,10 +257,14 @@ function umtVolume(S, o = {}) {
       if (sAt === F.length || sAt === -1) continue;
       const tooBig = q.R > 0.65 * hOf(...q.c);
       const skip = () => { skipped++; skippedAt.set(sKey, tooBig ? F.length : -1); };
+      // (one for its shape alone whose centre is outside the solid is skipped whatever its cavity takes -- no point outside,
+      //  and only a tetrahedron too big splits the surface: its cavity, through the space outside, not searched)
+      if (!tooBig) { const tl = D.locate(...q.c); if (D.infAt(tl) >= 0 || !(tl < inside.length && inside[tl] === 1)) { skip(); continue; } }
       // (the point may not take a surface triangle with it: one between two tetrahedra of its cavity is split instead)
-      const cav = D.cavityOf(...q.c), inCav = new Set(cav), sk0 = surfKeysNow(), lost = new Set();
-      for (const c of cav) for (let k = 0; k < 4; k++) if (inCav.has(D.tn[4 * c + k])) {
-        const f = surfFace(sk0, c, k); if (f !== undefined) lost.add(f); }
+      // (a surface triangle lies between a tetrahedron inside and one outside: two on the same known side need no look)
+      const cav = D.cavityOf(...q.c), sk0 = surfKeysNow(), lost = new Set(), side = t => (t < inside.length ? inside[t] : 255);
+      for (const c of cav) { const sc = side(c); for (let k = 0; k < 4; k++) { const nb = D.tn[4 * c + k]; if (!D.inCavity(nb) || (sc !== 255 && side(nb) === sc)) continue;
+        const f = surfFace(sk0, c, k); if (f !== undefined) lost.add(f); } }
       // (only a tetrahedron too big for the size splits the surface; a badly shaped one by the surface is left to the
       //  smoothing below -- splitting the surface for shape alone runs away, smaller and smaller, toward it)
       const splittable = f => { const [a, b] = longest(f); return Math.hypot(X[a] - X[b], Y[a] - Y[b], Z[a] - Z[b]) > 0.5 * hOf((X[a] + X[b]) / 2, (Y[a] + Y[b]) / 2, (Z[a] + Z[b]) / 2); };
@@ -289,11 +305,12 @@ function umtVolume(S, o = {}) {
   const pt = v => [X[v], Y[v], Z[v]];
   const vol6 = (a, b, c, d) => { const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
     return u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]); };
+  const dihN = new Float64Array(12);
   const minDih = P => { // the smallest of the six dihedral angles (degrees)
-    const face = k => { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => P[i]), u = [f[1][0] - f[0][0], f[1][1] - f[0][1], f[1][2] - f[0][2]], v = [f[2][0] - f[0][0], f[2][1] - f[0][1], f[2][2] - f[0][2]];
-      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(...n); return n.map(c => c / l); };
-    const N = [0, 1, 2, 3].map(face); let m = 180;
-    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) { const c = Math.abs(N[i][0] * N[j][0] + N[i][1] * N[j][1] + N[i][2] * N[j][2]); m = Math.min(m, Math.acos(Math.min(1, c)) * 180 / Math.PI); }
+    for (let k = 0; k < 4; k++) { const [i0, i1, i2] = UMT_FACE[k], f0 = P[i0], f1 = P[i1], f2 = P[i2], u0 = f1[0] - f0[0], u1 = f1[1] - f0[1], u2 = f1[2] - f0[2], v0 = f2[0] - f0[0], v1 = f2[1] - f0[1], v2 = f2[2] - f0[2];
+      const n0 = u1 * v2 - u2 * v1, n1 = u2 * v0 - u0 * v2, n2 = u0 * v1 - u1 * v0, l = Math.hypot(n0, n1, n2); dihN[3 * k] = n0 / l; dihN[3 * k + 1] = n1 / l; dihN[3 * k + 2] = n2 / l; }
+    let m = 180;
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) { const c = Math.abs(dihN[3 * i] * dihN[3 * j] + dihN[3 * i + 1] * dihN[3 * j + 1] + dihN[3 * i + 2] * dihN[3 * j + 2]); m = Math.min(m, Math.acos(Math.min(1, c)) * 180 / Math.PI); }
     return m; };
   const insideTets = () => { const out = []; for (let t = 0; t < D.nT; t++) if (D.alive[t] && inside[t] === 1) out.push(t); return out; };
   const rebuild = (splits = false) => { D = UMM_T.umtTri(X, Y, Z, { seed: o.seed }); const ok = recoverSurface(splits); if (ok) classify(); return ok; };
@@ -398,29 +415,32 @@ function umtImprove(M, o = {}) {
   let fixed = new Uint8Array(X.length); for (const v of M.bface) fixed[v] = 1;
   const fixedSet = f => { fixed = f; };
   const P = v => [X[v], Y[v], Z[v]];
-  const vol = (a, b, c, d) => { const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
-    return u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]); };
+  const vol = (a, b, c, d) => { const u0 = b[0] - a[0], u1 = b[1] - a[1], u2 = b[2] - a[2], v0 = c[0] - a[0], v1 = c[1] - a[1], v2 = c[2] - a[2], w0 = d[0] - a[0], w1 = d[1] - a[1], w2 = d[2] - a[2];
+    return u0 * (v1 * w2 - v2 * w1) - u1 * (v0 * w2 - v2 * w0) + u2 * (v0 * w1 - v1 * w0); };
   /** A tetrahedron's worst dihedral angle (degrees, as min(θ, 180° − θ) over its six) given its four corners; −1 if it is
    *  inverted or flat. */
+  const qN = new Float64Array(12), qL = new Float64Array(4);
   const q = Q => {
-    if (!(vol(...Q) > 0)) return -1;
-    const N = [0, 1, 2, 3].map(k => { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => Q[i]), u = [f[1][0] - f[0][0], f[1][1] - f[0][1], f[1][2] - f[0][2]], w = [f[2][0] - f[0][0], f[2][1] - f[0][1], f[2][2] - f[0][2]];
-      const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], l = Math.hypot(...n); return n.map(c => c / l); });
+    if (!(vol(Q[0], Q[1], Q[2], Q[3]) > 0)) return -1;
+    // (each face's unit normal, and its doubled area)
+    for (let k = 0; k < 4; k++) { const [i0, i1, i2] = UMT_FACE[k], f0 = Q[i0], f1 = Q[i1], f2 = Q[i2], u0 = f1[0] - f0[0], u1 = f1[1] - f0[1], u2 = f1[2] - f0[2], w0 = f2[0] - f0[0], w1 = f2[1] - f0[1], w2 = f2[2] - f0[2];
+      const n0 = u1 * w2 - u2 * w1, n1 = u2 * w0 - u0 * w2, n2 = u0 * w1 - u1 * w0, l = Math.hypot(n0, n1, n2); qN[3 * k] = n0 / l; qN[3 * k + 1] = n1 / l; qN[3 * k + 2] = n2 / l; qL[k] = l; }
     // (each dihedral θ counted as min(θ, 180° − θ): its sine's angle, small for a sliver's near-0° and near-180° alike)
-    let m = 90; for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) m = Math.min(m, Math.acos(Math.min(1, Math.abs(N[i][0] * N[j][0] + N[i][1] * N[j][1] + N[i][2] * N[j][2]))) * 180 / Math.PI);
+    let m = 90; for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) m = Math.min(m, Math.acos(Math.min(1, Math.abs(qN[3 * i] * qN[3 * j] + qN[3 * i + 1] * qN[3 * j + 1] + qN[3 * i + 2] * qN[3 * j + 2]))) * 180 / Math.PI);
     if (!useRho) return m;
     // (and its radius ratio 3 r_in / r_circ, 1 for the regular tetrahedron: the worse of the two, on the dihedral's scale)
-    const V6 = vol(...Q); let A = 0;
-    for (let k = 0; k < 4; k++) { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => Q[i]), u = [f[1][0] - f[0][0], f[1][1] - f[0][1], f[1][2] - f[0][2]], w = [f[2][0] - f[0][0], f[2][1] - f[0][1], f[2][2] - f[0][2]];
-      A += Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2; }
-    const a = Q[0], b = [0, 1, 2].map(k => [Q[k + 1][0] - a[0], Q[k + 1][1] - a[1], Q[k + 1][2] - a[2]]), r2 = b.map(e => (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]) / 2);
-    const cx = (r2[0] * (b[1][1] * b[2][2] - b[1][2] * b[2][1]) - b[0][1] * (r2[1] * b[2][2] - b[1][2] * r2[2]) + b[0][2] * (r2[1] * b[2][1] - b[1][1] * r2[2])) / V6;
-    const cy = (b[0][0] * (r2[1] * b[2][2] - b[1][2] * r2[2]) - r2[0] * (b[1][0] * b[2][2] - b[1][2] * b[2][0]) + b[0][2] * (b[1][0] * r2[2] - r2[1] * b[2][0])) / V6;
-    const cz = (b[0][0] * (b[1][1] * r2[2] - r2[1] * b[2][1]) - b[0][1] * (b[1][0] * r2[2] - r2[1] * b[2][0]) + r2[0] * (b[1][0] * b[2][1] - b[1][1] * b[2][0])) / V6;
+    const V6 = vol(Q[0], Q[1], Q[2], Q[3]); let A = 0;
+    for (let k = 0; k < 4; k++) A += qL[k] / 2;
+    const a = Q[0], b00 = Q[1][0] - a[0], b01 = Q[1][1] - a[1], b02 = Q[1][2] - a[2], b10 = Q[2][0] - a[0], b11 = Q[2][1] - a[1], b12 = Q[2][2] - a[2], b20 = Q[3][0] - a[0], b21 = Q[3][1] - a[1], b22 = Q[3][2] - a[2];
+    const r0 = (b00 * b00 + b01 * b01 + b02 * b02) / 2, r1 = (b10 * b10 + b11 * b11 + b12 * b12) / 2, r2 = (b20 * b20 + b21 * b21 + b22 * b22) / 2;
+    const cx = (r0 * (b11 * b22 - b12 * b21) - b01 * (r1 * b22 - b12 * r2) + b02 * (r1 * b21 - b11 * r2)) / V6;
+    const cy = (b00 * (r1 * b22 - b12 * r2) - r0 * (b10 * b22 - b12 * b20) + b02 * (b10 * r2 - r1 * b20)) / V6;
+    const cz = (b00 * (b11 * r2 - r1 * b21) - b01 * (b10 * r2 - r1 * b20) + r0 * (b10 * b21 - b11 * b20)) / V6;
     const rho = 3 * (V6 / 2 / A) / Math.hypot(cx, cy, cz);   // (r_in = 3 V / A = V6 / (2 A))
     return Math.min(m, rho * 70.528779);
   };
-  const qt = t => q([0, 1, 2, 3].map(k => P(T[4 * t + k])));
+  const QB = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const qt = t => { for (let k = 0; k < 4; k++) { const v = T[4 * t + k]; QB[k][0] = X[v]; QB[k][1] = Y[v]; QB[k][2] = Z[v]; } return q(QB); };
   // faces → tetrahedra, vertices → tetrahedra
   const fkey = (a, b, c) => { const s3 = [a, b, c].sort((x, y) => x - y); return s3[0] + ',' + s3[1] + ',' + s3[2]; };
   const faces = new Map(), vt = new Map();
