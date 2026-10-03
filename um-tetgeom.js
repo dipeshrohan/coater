@@ -21,7 +21,8 @@
  *   blade, pile, inlet, side0, side1, pipe-wall, pipe-end, bore, bore-inlet.
  *   Returns { G, size (the size to mesh it with: o.size, held under the blade to the gap's height over `across`), volume
  *   (the exact solid's, the blade's underside integrated), volumeFacets (the faceted solid's, exact), xJ (where the pile's
- *   surface meets the blade) }.
+ *   surface meets the blade), project (each curved wall's projection onto its true surface, by tag: blade, pipe-wall,
+ *   bore -- for umtQuadratic's mid-edge nodes) }.
  * Pure computation.
  */
 
@@ -119,7 +120,13 @@ function umgPool(o) {
   const polyA = L => { let A = 0; for (let i = 0; i < L.length; i++) { const a = L[i], c = L[(i + 1) % L.length]; A += X[a] * Z[c] - X[c] * Z[a]; } return Math.abs(A) / 2; };
   let area = 0; for (let i = 0; i < n; i++) { const a = P[i], c = P[(i + 1) % n]; area += (a[0] * c[1] - c[0] * a[1]) / 2; }
   const volumeFacets = W * area + pipes.reduce((s, p) => s - polyA(p.outerH) * (H0 - p.q.ym) + polyA(p.boreIn) * (p.q.yIn - p.q.ym), 0);
-  return { G: { X, Y, Z, faces }, size: hOf, volume, volumeFacets, xJ };
+  // (each curved wall's projection onto its true surface: the blade's underside straight up or down to it; a pipe's wall
+  //  and bore radially from the nearest pipe's axis)
+  const nearest = (x, z) => outlets.reduce((b2, q) => (Math.hypot(x - q.x, z - q.z) < Math.hypot(x - b2.x, z - b2.z) ? q : b2), outlets[0]);
+  const radial = r => (x, y, z) => { const q = nearest(x, z), d = Math.hypot(x - q.x, z - q.z); return [q.x + (x - q.x) * r / d, y, q.z + (z - q.z) * r / d]; };
+  const project = { blade: (x, y, z) => [x, bladeY(x), z] };
+  if (outlets.length) { project['pipe-wall'] = radial(ro); project.bore = radial(rb); }
+  return { G: { X, Y, Z, faces }, size: hOf, volume, volumeFacets, xJ, project };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { umgCurve, umgCircle, umgPool };
