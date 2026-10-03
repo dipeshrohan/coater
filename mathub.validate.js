@@ -186,5 +186,13 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   check('the spec\'s GO paste, carbonized film and blade material: records with their properties, no value made up, read by no solver at present', xr.every(([, n, ok]) => n >= 6 && ok), JSON.stringify(xr));
   R('MAT = matDefaults();');
 }
+// 9. the GO's carbon (the paste spec: 48–54 % of the dry GO) and the carbon lost with its oxygen
+{
+  vm.runInContext('MAT = matDefaults()', ctx);
+  const q = vm.runInContext('hubChem()', ctx), co = vm.runInContext('MAT.slurry.co.v', ctx), hc = vm.runInContext('MAT.furn.hc.v', ctx);
+  const wC = 12.011 / (12.011 + 15.999 / co + 1.008 * hc) * 100;
+  check(`carbon: the dry GO's carbon from its C/O ${co} and H/C ${hc} by atomic masses, ${wC.toFixed(2)} %, within the paste spec 48–54 %`, rel(q.carbon, wC) < 1e-3 && q.carbon >= 48 && q.carbon <= 54, `${q.carbon.toFixed(3)} %`);
+  check('  all its oxygen and hydrogen gone, the mass kept is its carbon less the carbon lost: m/m₀ = w_C (1 − ΔC/C)', rel(q.kept, q.carbon * (1 - q.cLost / 100)) < 1e-9 && q.cLost > 0 && q.cLost < 100, `kept ${q.kept.toFixed(2)} %, carbon ${q.carbon.toFixed(2)} %, lost ${q.cLost.toFixed(2)} %`);
+}
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exitCode = fails ? 1 : 0;

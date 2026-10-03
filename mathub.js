@@ -312,7 +312,9 @@ const HUB_RECORDS = [
           ['c1CO2', 'f_CO₂', 'Labile oxygen: share released as CO₂'], ['c1CO', 'f_CO', 'Labile oxygen: share released as CO'], ['s2', 's₂', 'Stable oxygen (carbonyl, ether): share'], ['T2', 'T₂', 'Stable oxygen: peak at 10 °C/min'],
           ['w2', 'σ₂', 'Stable oxygen: activation energy spread'], ['c2CO', 'f_CO,2', 'Stable oxygen: share released as CO'], ['T3', 'T₃', 'Remaining oxygen and hydrogen: peak'], ['w3', 'σ₃', 'Remaining oxygen and hydrogen: spread'],
           ['Hr', 'ΔH', 'Heat released with the labile oxygen']].map(([k, s, l]) => ({ id: k, sym: s, l, b: hC('furn', k), phys: k === 'Hr' ? ['mp2'] : ['furn', 'mp2'] })),
+        { id: 'carbon', sym: 'w_C', l: 'Carbon in the dry GO', b: hCalc(() => hubChem().carbon, 'wt%', 1, () => `from its C/O (${MAT.slurry.co.v}, the slurry card) and H/C (${MAT.furn.hc.v}): 12.011 / (12.011 + 15.999 O/C + 1.008 H/C); the paste's spec gives 48–54 %`), phys: ['furn'] },
         { id: 'kept', sym: 'm/m₀', l: 'Mass kept, all its oxygen gone', b: hCalc(() => hubChem().kept, '% of the dry GO', 1, 'the carbon left: some leaves with the oxygen as CO and CO₂'), phys: ['furn'] },
+        { id: 'cLost', sym: 'ΔC/C', l: 'Carbon lost with the oxygen', b: hCalc(() => hubChem().cLost, '% of its carbon', 1, 'as CO and CO₂ through the three stages: the film ends lighter than the carbon put in'), phys: ['furn'] },
         { id: 'co1', sym: 'C/O', l: 'C/O with its labile oxygen gone', b: hCalc(() => hubChem().co1, '', 1, 'after about 300 °C'), phys: ['furn'] },
         { id: 'co2', sym: 'C/O', l: 'C/O with its stable oxygen gone too', b: hCalc(() => hubChem().co2, '', 1, 'after about 1000 °C'), phys: ['furn'] },
         { id: 'split', sym: '', l: 'Labile oxygen out as CO₂ · CO · water', b: hCalc(() => hubChem().split, '%', 0, () => (hubChem().short ? 'its hydrogen runs short of the water set: the rest as CO' : 'as set')), phys: ['furn'] },
@@ -601,7 +603,7 @@ function hubChem() {
   const f = MAT.furn, c = fuChem({ co: MAT.slurry.co.v, hc: f.hc.v, s1: f.s1.v, c1CO2: f.c1CO2.v, c1CO: f.c1CO.v, s2: f.s2.v, c2CO: f.c2CO.v });
   const kept = n => (1 - c.stages.slice(0, n).reduce((s, q) => s + q.mass, 0) / c.mGO) * 100;
   const co = n => { const O = c.O0 - c.stages.slice(0, n).reduce((s, q) => s + q.O, 0), C = 1 - c.stages.slice(0, n).reduce((s, q) => s + q.C, 0); return O > 1e-9 ? C / O : Infinity; };
-  return { c, kept: kept(3), co1: co(1), co2: co(2), split: `${(c.split1.CO2 * 100).toFixed(0)} · ${(c.split1.CO * 100).toFixed(0)} · ${(c.split1.H2O * 100).toFixed(0)}`, short: c.split1.H2O < 1 - f.c1CO2.v - f.c1CO.v - 1e-9 };
+  return { c, kept: kept(3), co1: co(1), co2: co(2), carbon: FU_M.C / c.mGO * 100, cLost: c.stages.reduce((s, q) => s + q.C, 0) * 100, split: `${(c.split1.CO2 * 100).toFixed(0)} · ${(c.split1.CO * 100).toFixed(0)} · ${(c.split1.H2O * 100).toFixed(0)}`, short: c.split1.H2O < 1 - f.c1CO2.v - f.c1CO.v - 1e-9 };
 }
 
 // ---- a property's value, unit, provenance ----
