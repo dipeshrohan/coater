@@ -1,0 +1,11 @@
+points:           325
+faces:            2354
+internal faces:   1822
+cells:            1044
+tetrahedra:    1044
+polyhedra:     0
+Max cell openness = 1.66048857486e-16 OK.
+Max aspect ratio = 7.38505038406 OK.
+Min volume = 1.00832420526e-09. Max volume = 7.29726089483e-09.  Total volume = 3e-06.  Cell volumes OK.
+Mesh non-orthogonality Max: 52.4482888003 average: 21.0704408031
+Max skewness = 0.620556240212 OK.
