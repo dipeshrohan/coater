@@ -12,6 +12,9 @@
  *     two-step with a vertical riser.
  *  8. The blade's end faces: its side profile (not convex: the notch) cut into triangles covering it once, the solid's
  *     volume its area times its width.
+ *  9. Past the exit face the blade is the one the Geometry step draws to scale (cfd-steps.js, bladeSVG): from the notch
+ *     corner a 2 mm shelf along the web at the corner's height, then straight up; nothing of it below the corner past
+ *     the metering edge (no lip) -- every blade shape, the exit face leaning forward, upright and back.
  */
 const G = require('./cfd-3d-geom.js');
 const { bladeShape } = require('./cfd-1d.js');
@@ -125,8 +128,8 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
       `metering point ${(q.xe * 1e3).toFixed(4)} vs ${(p.xe * 1e3).toFixed(4)} mm, underside within ${(dU * 1e6).toFixed(2)} µm, face ${(q.face.len * 1e3).toFixed(3)} vs ${(p.face.len * 1e3).toFixed(3)} mm, corners on the face ${nC} vs ${nP}`);
   }
 }
-// 8. the blade's end faces: its side profile -- with the notch (the exit face up to its corner, the bevel down to the dry
-//  edge), not convex -- cut into triangles that cover it once: each inside it, none turned over, their areas its area;
+// 8. the blade's end faces: its side profile -- with the notch (the exit face up to its corner, the shelf out from it),
+//  not convex -- cut into triangles that cover it once: each inside it, none turned over, their areas its area;
 //  the solid's volume (by its faces, the divergence theorem) the profile's area times its width
 {
   const Bl = require('./cfd-blade.js');
@@ -148,6 +151,31 @@ const check = (name, ok, info) => { if (!ok) fails++; console.log(`${ok ? 'PASS'
     check(`${label}: the end faces cover the profile once (each triangle inside it, none turned over, their areas its area); the solid's volume its area times its width`,
       turned === 0 && out === 0 && Math.abs(sumAbs / Math.abs(A) - 1) < 1e-12 && Math.abs(Math.abs(V) / (Math.abs(A) * W) - 1) < 1e-6,
       `${P.length} points, ${T.length} triangles, their areas ${(sumAbs / Math.abs(A) - 1).toExponential(1)} off; volume ${(Math.abs(V) / (Math.abs(A) * W) - 1).toExponential(1)} off`);
+  }
+}
+
+// 9. past the exit face, the Geometry step's blade (cfd-steps.js, bladeSVG, in mm from the metering edge: the notch corner
+//  (nx, ny) -- cfd-blade.js's face end, or the exit face's top --, then (max(nx, 0) + 2, ny), then up to the top): the
+//  3D outline's points after the face are those, and none of the blade past the metering edge is below the notch corner
+{
+  const Bl = require('./cfd-blade.js'), H = 1.7e-3, F = 8e-3;
+  const made = (shape, deg) => ({ label: `${shape === 'round' ? 'round entry' : 'flat land'}, exit face ${deg}°`, pr: G.bladeSideOutline({ shape, H, R: 0.1, Xup: 0.04, L: 0.01, faceDeg: deg, faceLen: F, top: 0.02 }),
+    corner: [F * Math.cos(deg * Math.PI / 180), H + F * Math.sin(deg * Math.PI / 180)] });
+  const shaped = (label, spec) => { const p = Bl.bladeProfile({ H, faceLen: F, ...spec }), under = Bl.pathPoints(p.under), face = Bl.pathPoints(p.face), xe = under[under.length - 1][0], c = face[face.length - 1];
+    return { label, pr: G.bladeSideOutline({ faceLen: F, top: 0.02, shaped: { under, face } }), corner: [c[0] - xe, c[1]] }; };
+  const cases = [made('round', 90), made('flat', 60), made('flat', 90), made('flat', 120),
+    shaped('bevel', { shape: 'bevel', L: 0.01, bevelDeg: 45, bevelLen: 0.5e-3, exitDeg: 90 }), shaped('edge radius, exit face 120°', { shape: 'radius', L: 0.01, r: 0.3e-3, exitDeg: 120 }),
+    shaped('wedge', { shape: 'wedge', L: 0.01, inletGap: 3e-3, exitDeg: 90 }), shaped('two-step', { shape: 'twostep', land1: 0.01, stepH: 0.5e-3, riserDeg: 90, L: 5e-3, exitDeg: 90 })];
+  for (const { label, pr, corner } of cases) {
+    const P = pr.pts, n = P.length, xe = pr.xe, mm = q => [(q[0] - xe) * 1e3, q[1] * 1e3];
+    const [nx, ny] = corner.map(v => v * 1e3), want = [[nx, ny], [Math.max(nx, 0) + 2, ny]];
+    const got = [P[n - 4], P[n - 3]].map(mm), back = mm(P[n - 2]);
+    const err = Math.max(...want.flatMap((w, i) => [Math.abs(w[0] - got[i][0]), Math.abs(w[1] - got[i][1])]), Math.abs(back[0] - want[1][0]));
+    // (no lip: past the metering edge, every point of the blade other than the exit face's at or above the corner)
+    const faceStart = P.findIndex(q => q[0] === xe), below = P.slice(n - 3).filter(q => q[0] > xe && q[1] < corner[1] - 1e-12).length;
+    check(`${label}: past the face, the Geometry step's blade (the notch corner, the 2 mm shelf, straight up); nothing below the corner`,
+      err < 1e-9 && below === 0 && faceStart >= 0 && back[1] > ny,
+      `corner (${got[0][0].toFixed(3)}, ${got[0][1].toFixed(3)}) mm, shelf to ${got[1][0].toFixed(3)} mm (the Geometry step: ${want[1][0].toFixed(3)}); ${err.toExponential(1)} mm off`);
   }
 }
 

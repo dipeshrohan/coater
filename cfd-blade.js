@@ -383,7 +383,8 @@ function customProfile(c, H) {
  * bulge }] of a closed loop (closed = true) or an open chain, the flow along +x, y up. M: the lowest
  * vertex (the downstream end of the lowest run); from there upstream while x does not grow (a step's
  * riser is kept; a steep rise at the upstream end -- the blade's back -- is not) and downstream while y
- * does not fall (a level part at the top end -- the blade's top -- is not kept). Returns the vertices in
+ * does not fall, to the notch corner where a level shelf goes on downstream (a level part at the top end -- the
+ * blade's top -- is not kept). Returns the vertices in
  * that order (bulges carried with their segments, corner flags with their points), or null.
  */
 function openProfile(verts, closed) {
@@ -417,7 +418,10 @@ function openProfile(verts, closed) {
   const downI = [M];
   for (let k = 1; k < n; k++) {
     const j = M + dir * k; if (!ok(j) || idx(j) === idx(upI[upI.length - 1])) break;
-    if (verts[idx(j)].y < verts[idx(downI[downI.length - 1])].y - xtol) break;
+    const a = verts[idx(downI[downI.length - 1])], b = verts[idx(j)];
+    if (b.y < a.y - xtol) break;
+    // (a level step downstream from the face's top: the notch's shelf, the face ends at its corner)
+    if (downI.length > 1 && Math.abs(b.y - a.y) <= tol && b.x > a.x + xtol) break;
     downI.push(j);
   }
   while (downI.length > 2 && Math.abs(verts[idx(downI[downI.length - 1])].y - verts[idx(downI[downI.length - 2])].y) <= xtol) downI.pop();

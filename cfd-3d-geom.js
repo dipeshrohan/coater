@@ -8,23 +8,26 @@
  * land; the metering edge at xe), y up from the web (the web at y = 0), z across the web.
  */
 
+/** The shelf at the notch corner: 2 mm along the web past the corner (or past the metering edge, when the face leans back
+ *  over the gap), as the Geometry step draws the blade to scale (cfd-steps.js, bladeSVG). */
+const NOTCH_SHELF = 2e-3;
 /**
- * The blade's side profile as a closed polygon [[x, y], ...] (counter-clockwise), from the 2D setup:
- * the underside (round entry from the pool edge, or the flat land) to the metering edge E, the exit
- * face (faceDeg from the web, toward +x at 90° less) up to the notch corner V, down to the dry edge D
- * (as the Contact line tab draws it), then the blade's top back over the inlet. shaped: a shaped blade's
+ * The blade's side profile as a closed polygon [[x, y], ...] (counter-clockwise), from the 2D setup, the shape the
+ * Geometry step draws to scale: the underside (round entry from the pool edge, or the flat land) to the metering edge E,
+ * the exit face (faceDeg from the web, toward +x at 90° less) up to the notch corner V (the dry edge), the shelf S
+ * along the web at V's height, then up the blade's back and its top back over the inlet. shaped: a shaped blade's
  * { under, face } points instead (cfd-blade.js's pathPoints, m).
  */
 function bladeSideOutline({ shape, H, R, Xup, L, faceDeg, faceLen, top, shaped = null }) {
   if (shaped) {
     // a shaped blade (cfd-blade.js): its underside and face as points (m, from the inlet), M between them; the notch
-    // corner V at the face's end, the dry edge below it as the round entry and flat land have it
-    const pts = shaped.under.map(q => q.slice()), face = shaped.face.slice(1), V = face[face.length - 1], fl = faceLen ?? 8e-3;
+    // corner V at the face's end, the shelf from it as the round entry and flat land have it
+    const pts = shaped.under.map(q => q.slice()), face = shaped.face.slice(1), V = face[face.length - 1], xe = shaped.under[shaped.under.length - 1][0];
     pts.push(...face.slice(0, -1).map(q => q.slice()));
-    const D = [V[0] + 0.55 * fl * Math.SQRT1_2, V[1] - 0.55 * fl * Math.SQRT1_2];
+    const S = [Math.max(V[0], xe) + NOTCH_SHELF, V[1]];
     const yTop = Math.max(top, V[1] + 2e-3, ...shaped.under.map(q => q[1] + 2e-3));
-    pts.push(V, D, [D[0], yTop], [shaped.under[0][0], yTop]);
-    return { pts, xe: shaped.under[shaped.under.length - 1][0], V, D, yTop };
+    pts.push(V, S, [S[0], yTop], [shaped.under[0][0], yTop]);
+    return { pts, xe, V, S, yTop };
   }
   const pts = [];
   const xe = shape === 'round' ? Xup : L;
@@ -33,16 +36,16 @@ function bladeSideOutline({ shape, H, R, Xup, L, faceDeg, faceLen, top, shaped =
   for (let i = 0; i <= n; i++) { const x = xe * i / n; pts.push([x, under(x)]); }
   const th = faceDeg * Math.PI / 180;
   const V = [xe + faceLen * Math.cos(th), H + faceLen * Math.sin(th)];
-  const D = [V[0] + 0.55 * faceLen * Math.SQRT1_2, V[1] - 0.55 * faceLen * Math.SQRT1_2];   // the dry edge, as drawn in Contact line
+  const S = [Math.max(V[0], xe) + NOTCH_SHELF, V[1]];
   const yTop = Math.max(top, V[1] + 2e-3, under(0) + 2e-3);
-  pts.push(V, D, [D[0], yTop], [0, yTop]);
-  return { pts, xe, V, D, yTop };
+  pts.push(V, S, [S[0], yTop], [0, yTop]);
+  return { pts, xe, V, S, yTop };
 }
 
 /**
  * A simple polygon [[x, y], ...] cut into triangles by ear clipping: index triples, each turning the polygon's own way.
- * Any simple polygon, convex or not (a blade's profile with its notch: the exit face up to the notch corner, the bevel
- * down to the dry edge); each triangle inside the polygon, none overlapping, their areas the polygon's.
+ * Any simple polygon, convex or not (a blade's profile with its notch: the exit face up to the notch corner, the shelf
+ * out from it); each triangle inside the polygon, none overlapping, their areas the polygon's.
  */
 function polyTriangles(pts) {
   const n = pts.length, cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
@@ -79,8 +82,8 @@ function extrudeProfile(pts, z0, z1, nz, dy = () => 0) {
     const a = pts[i], b = pts[(i + 1) % m];
     tri(at(a, k), at(b, k), at(b, k + 1)); tri(at(a, k), at(b, k + 1), at(a, k + 1));
   }
-  // the two end caps: the profile cut into triangles (ear clipping: the notch's corner and the dry edge make it
-  //  non-convex, so a fan from its middle would fold over itself there)
+  // the two end caps: the profile cut into triangles (ear clipping: the notch's corner makes it non-convex, so a fan
+  //  from its middle would fold over itself there)
   const caps = polyTriangles(pts);
   for (const [k, flip] of [[0, true], [nz, false]]) for (const [i, j, l] of caps) {
     const a = at(pts[i], k), b = at(pts[j], k), c = at(pts[l], k);
