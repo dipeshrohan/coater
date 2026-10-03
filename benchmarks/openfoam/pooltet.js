@@ -130,13 +130,13 @@ function other(which, cells) {
   }
   const out = cells.map(c => { const v = at([c[0], c[1], c[2]]); return v ? [v[0], v[1], v[2], v[3] - rho * g * (h - c[1])] : null; }), lines = onLines(at);
   console.log(`${which}: ${r.M.nE} elements, ${r.S.nD} unknowns, ${((Date.now() - t0) / 1000).toFixed(0)} s; ${out.filter(v => !v).length} of ${cells.length} cell centres outside its mesh`);
-  return { name: which === 'hex' ? `hexahedra (${r.M.nE} Q2–Q1)` : `tetrahedra ${(+which.split(':')[1] * 1e3).toFixed(0)} mm, ${10 / +(which.split(':')[2] || 2)} mm round the pipes (${r.M.nE} P2–P1)`, nE: r.M.nE, nD: r.S.nD, vals: out, lines };
+  return { name: which === 'hex' ? `hexahedra (${r.M.nE} Q2–Q1)` : `tetrahedra ${(+which.split(':')[1] * 1e3).toFixed(0)} mm, ${+(10 / +(which.split(':')[2] || 2)).toFixed(1)} mm round the pipes (${r.M.nE} P2–P1)`, nE: r.M.nE, nD: r.S.nD, vals: out, lines };
 }
 
 function compare(dir, outFile, withList) {
   const A = JSON.parse(fs.readFileSync(path.join(dir, 'app.json'))), Uf = readField(dir, 'U'), pf = readField(dir, 'p'), n = A.cells.length;
   if (Uf.n !== n || pf.n !== n) throw new Error('cell counts differ');
-  const sols = [{ name: `tetrahedra ${(A.size * 1e3).toFixed(0)} mm, ${10 / (A.across || 2)} mm round the pipes (${A.nE} P2–P1, OpenFOAM's own)`, nE: A.nE, nD: A.nD, vals: A.cells.map(c => c.slice(4, 8)), lines: A.lines },
+  const sols = [{ name: `tetrahedra ${(A.size * 1e3).toFixed(0)} mm, ${+(10 / (A.across || 2)).toFixed(1)} mm round the pipes (${A.nE} P2–P1, OpenFOAM's own)`, nE: A.nE, nD: A.nD, vals: A.cells.map(c => c.slice(4, 8)), lines: A.lines },
     ...(withList ? withList.split(',').map(w => other(w, A.cells)) : [])];
   // (the pressure's level: OpenFOAM's has none of its own here -- every boundary's velocity is given -- so each is compared
   //  about its volume mean, over the cells every solution reaches)
@@ -168,9 +168,15 @@ function compare(dir, outFile, withList) {
   const Rb = d / 2, Vb = Qin / 2 / (Math.PI * Rb * Rb), dev = [], at = [];
   A.cells.forEach((c, k) => { if (rAx(c) < Rb && c[1] >= tip + 0.01 && c[1] <= tip + bore - 0.01) at.push(k); });
   const off = val => { let V = 0, e = 0, m = 0; for (const k of at) { const c = A.cells[k], v = val(k), ex = -2 * Vb * (1 - (rAx(c) / Rb) ** 2), q = Math.hypot(v[0], v[1] - ex, v[2]); V += c[3]; e += c[3] * q * q; m = Math.max(m, q); } return { rms: Math.sqrt(e / V) / (2 * Vb), max: m / (2 * Vb) }; };
-  res.poiseuille = { cells: at.length, peak: 2 * Vb, openfoam: off(k => Uf.nums.slice(3 * k, 3 * k + 3)), solutions: sols.map(S => ({ name: S.name, ...off(k => S.vals[k]) })) };
-  console.log(`  the bores' fully developed part (${at.length} cells) off Poiseuille (RMS, largest; of its peak ${(2 * Vb * 1e3).toFixed(1)} mm/s): OpenFOAM ${(res.poiseuille.openfoam.rms * 100).toFixed(2)} %, ${(res.poiseuille.openfoam.max * 100).toFixed(1)} %; ` +
-    res.poiseuille.solutions.map(s => `${s.name.split(' (')[0]} ${(s.rms * 100).toFixed(2)} %, ${(s.max * 100).toFixed(1)} %`).join('; '));
+  // (and the pressure's gradient down them: Poiseuille's 8μV̄/R² for p − ρg(h − y) -- OpenFOAM's has no gravity -- the
+  //  least-squares slope over the same cells)
+  const slope = val => { let n = 0, sy = 0, sp = 0, syy = 0, syp = 0; for (const k of at) { const y = A.cells[k][1], p = val(k); n++; sy += y; sp += p; syy += y * y; syp += y * p; } return (n * syp - sy * sp) / (n * syy - sy * sy); };
+  const G = 8 * mu * Vb / (Rb * Rb);
+  res.poiseuille = { cells: at.length, peak: 2 * Vb, dpdy: G, openfoam: { ...off(k => Uf.nums.slice(3 * k, 3 * k + 3)), dpdy: slope(k => rho * pf.nums[k]) },
+    solutions: sols.map(S => ({ name: S.name, ...off(k => S.vals[k]), dpdy: slope(k => S.vals[k][3]) })) };
+  const pg = v => `${((v / G - 1) * 100).toFixed(2)} %`;
+  console.log(`  the bores' fully developed part (${at.length} cells) off Poiseuille (velocity RMS, largest, of its peak ${(2 * Vb * 1e3).toFixed(1)} mm/s; the pressure's gradient, of its ${(G / 1e3).toFixed(1)} kPa/m): OpenFOAM ${(res.poiseuille.openfoam.rms * 100).toFixed(2)} %, ${(res.poiseuille.openfoam.max * 100).toFixed(1)} %, ${pg(res.poiseuille.openfoam.dpdy)}; ` +
+    res.poiseuille.solutions.map(s => `${s.name.split(' (')[0]} ${(s.rms * 100).toFixed(2)} %, ${(s.max * 100).toFixed(1)} %, ${pg(s.dpdy)}`).join('; '));
   // (for the figure: OpenFOAM's cell values along the lines -- the cell holding each point: the app's element, then which of
   //  its 8 -- and every solution's; the cells by the plane through the first pipe's axis)
   const M = FT.fptMesh({ ...CASE, mesh: { size: A.size, across: A.across || 2, tol: 0.2e-3 } }).M, X = FT.fptIndex(M), zero = new Float64Array(M.nN);

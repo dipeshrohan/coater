@@ -17,6 +17,8 @@ plt.rcParams.update({'font.family': 'DejaVu Sans', 'font.size': 9, 'axes.edgecol
 
 def colour(j):
     return PAL[j % len(PAL)]
+def short_name(S):
+    return S['name'].split(' (')[0].replace(' round the pipes', ' at the pipes')
 def dash(S):
     return '--' if S['name'].startswith('hex') else '-'
 
@@ -46,11 +48,12 @@ of = np.array([np.nan if v is None else v for v in L['openfoam']['w']], float) *
 ax.plot(z, of, color=COL_OF, lw=2.2, label='OpenFOAM')
 for j, S in enumerate(L['solutions']):
     if S.get('w') is None: continue
-    ax.plot(z, np.array([np.nan if v is None else v for v in S['w']], float) * 1e3, color=colour(j), lw=1.4, ls=dash(S), label='the app: ' + S['name'].split(' (')[0])
+    ax.plot(z, np.array([np.nan if v is None else v for v in S['w']], float) * 1e3, color=colour(j), lw=1.4, ls=dash(S), label=short_name(S))
 for zp in (37.5, 112.5): ax.axvline(zp, color=MUTED, lw=0.6, ls=':')
 ax.axhline(0, color=MUTED, lw=0.5)
 ax.set_title('Cross-width flow w, 15 mm up, x = −115 mm', loc='left')
-ax.set_xlabel('z across the web (mm; pipes at 37.5 and 112.5)'); ax.set_ylabel('w (mm/s)'); ax.legend(frameon=False, fontsize=7, loc='upper left')
+ax.set_xlabel('z across the web (mm; pipes at 37.5 and 112.5)'); ax.set_ylabel('w (mm/s)')
+lo_, hi_ = ax.get_ylim(); ax.set_ylim(lo_, hi_ + 0.55 * (hi_ - lo_)); ax.legend(frameon=False, fontsize=7, loc='upper left')
 
 # down the bore, where its flow is developed: Poiseuille's exact profile, OpenFOAM's cells, the app
 ax = fig.add_subplot(gs[1, 1])
@@ -59,7 +62,7 @@ xe = np.linspace(-5, 5, 201); ax.plot(xe, Pz['peak'] * (1 - (xe / 5) ** 2) * 1e3
 ax.plot(xb, -np.array([np.nan if v is None else v for v in L['openfoam']['bore']], float) * 1e3, color=COL_OF, lw=1.6, drawstyle='steps-mid', label=f"OpenFOAM (off {Pz['openfoam']['rms'] * 100:.1f} % RMS)")
 for j, S in enumerate(L['solutions']):
     if S.get('bore') is None: continue
-    ax.plot(xb, -np.array([np.nan if v is None else v for v in S['bore']], float) * 1e3, color=colour(j), lw=1.3, ls=dash(S), label=f"{S['name'].split(' (')[0]} (off {Pz['solutions'][j]['rms'] * 100:.2f} %)")
+    ax.plot(xb, -np.array([np.nan if v is None else v for v in S['bore']], float) * 1e3, color=colour(j), lw=1.3, ls=dash(S), label=f"{short_name(S)} (off {Pz['solutions'][j]['rms'] * 100:.2f} %)")
 ax.set_title('Down a bore, 60 mm up (30 mm above the tip)', loc='left'); ax.set_xlabel('x across the bore (mm)'); ax.set_ylabel('downward speed (mm/s)')
 ax.set_ylim(bottom=0); ax.legend(frameon=False, fontsize=7, loc='lower center')
 
@@ -72,7 +75,7 @@ w = 0.8 / len(R['solutions'])
 for j, S in enumerate(R['solutions']):
     v = [S['regions'][r]['uRms'] * 100 for r in regs]
     xs = np.arange(len(regs)) + (j - (len(R['solutions']) - 1) / 2) * w
-    ax.bar(xs, v, w * 0.9, color=colour(j), label=S['name'].split(' (')[0], hatch='//' if S['name'].startswith('hex') else None, edgecolor='white', lw=0)
+    ax.bar(xs, v, w * 0.9, color=colour(j), label=short_name(S), hatch='//' if S['name'].startswith('hex') else None, edgecolor='white', lw=0)
     for x, y in zip(xs, v): ax.text(x, y * 1.08, f'{y:.2f}', ha='center', va='bottom', fontsize=6, color=INK, rotation=90)
 ax.set_yscale('log'); ax.set_ylim(0.03, 40)
 ax.set_xticks(np.arange(len(regs))); ax.set_xticklabels(short, fontsize=8); ax.set_ylabel('velocity RMS off OpenFOAM (% of its largest speed)')
