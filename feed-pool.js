@@ -217,6 +217,23 @@ function fplPressureAll(M, p) {
 }
 
 /**
+ * A solve on the coater's block mesh (fplSolvePipes) shown on another grid G ({ nN, X, Y, Z }: the pool's own): each node's
+ * velocity and pressure where it is in the paste; in a pipe's wall none (NaN). Returns [u, v, w, p] (Float32Array each).
+ */
+function fplOnGrid(r, G) {
+  const fp = k => FPL_(k, './feed-post.js'), fpIndex = fp('fpIndex'), fpField = fp('fpField');
+  const X = fpIndex(r.M), F = [r.u, r.v, r.w, fplPressureAll(r.M, r.p)], A = [0, 1, 2, 3].map(() => new Float32Array(G.nN));
+  for (let i = 0; i < G.nN; i++) {
+    const q = [G.X[i], G.Y[i], G.Z[i]];
+    // (a node on a curved wall -- the blade's face, a pipe -- a hair outside the mesh's own surface: just inside)
+    let at = fpField(X, F, q);
+    for (let k = 0, e = 1e-7; !at && k < 6; k++, e *= 4) at = fpField(X, F, [q[0] - e, q[1] - e, q[2]]) || fpField(X, F, [q[0] + e, q[1] - e, q[2]]);
+    for (let c = 0; c < 4; c++) A[c][i] = at ? at.v[c] : NaN;
+  }
+  return A;
+}
+
+/**
  * Paths of the paste through the cycle: from points (each [x, y, z], m) at time t0 (s from a pulse's start), the pulse's flow
  * while t mod T < τ, the drain's after (RK4, the step a fraction of the element over the speed, never across a switch),
  * until the path leaves through the pool edge (x ≥ −xEnd) or tMax. A: the pulse's ({ M, u, v, w }), B: the drain's (each on
@@ -336,16 +353,7 @@ function fplCycle(o, onProgress = () => {}) {
     if (round) {
       // the flow shown on the pool's own grid (as the other entries'): each node's velocity and pressure from the coater's
       //  mesh where it is in the paste; in a pipe's wall none (NaN)
-      const fp = k => FPL_(k, './feed-post.js'), fpIndex = fp('fpIndex'), fpField = fp('fpField'), fpmMesh = FPL_('fpmMesh', './feed-pool-mesh.js');
-      const G = fpmMesh({ W, xBack: o.xBack, xEnd: o.xEnd, h: so.h, blade, outlets, r: o.pipe.Do / 2, ...mesh }), X = fpIndex(r.M), F = [r.u, r.v, r.w, fplPressureAll(r.M, r.p)];
-      const A = ['u', 'v', 'w', 'p'].map(() => new Float32Array(G.nN));
-      for (let i = 0; i < G.nN; i++) {
-        const q = [G.X[i], G.Y[i], G.Z[i]];
-        // (a node on a curved wall -- the blade's face, a pipe -- a hair outside the mesh's own surface: just inside)
-        let at = fpField(X, F, q);
-        for (let k = 0, e = 1e-7; !at && k < 6; k++, e *= 4) at = fpField(X, F, [q[0] - e, q[1] - e, q[2]]) || fpField(X, F, [q[0] + e, q[1] - e, q[2]]);
-        for (let c = 0; c < 4; c++) A[c][i] = at ? at.v[c] : NaN;
-      }
+      const G = FPL_('fpmMesh', './feed-pool-mesh.js')({ W, xBack: o.xBack, xEnd: o.xEnd, h: so.h, blade, outlets, r: o.pipe.Do / 2, ...mesh }), A = fplOnGrid(r, G);
       const I = G.info;
       states.push({ info: { NX: I.NX, NY: I.NY, NZ: I.NZ, xs: I.xs, zs: I.zs, xJ: I.xJ, h: I.h, W, xBack: I.xBack, xEnd: I.xEnd, nE: r.M.nE, nN: r.M.nN, pipes: true },
         X: f32(G.X), Y: f32(G.Y), Z: f32(G.Z), u: A[0], v: A[1], w: A[2], p: A[3], flows: r.flows, hdot: r.hdot, converged: r.converged, newton });
@@ -389,4 +397,4 @@ function fplCycle(o, onProgress = () => {}) {
   return { dim, W: mirror ? o.W : W, mirror, states, paths, t0 };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplSolvePipes, fplPressureAll, fplPaths, fplCycle };
+if (typeof module !== 'undefined' && module.exports) module.exports = { fplStreams, fplPlanWeights, fplTopAt, fplSolve, fplSolvePipes, fplPressureAll, fplOnGrid, fplPaths, fplCycle };

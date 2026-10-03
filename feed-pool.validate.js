@@ -29,6 +29,10 @@
  *     paste in through the bores is the pulse's (each bore's plug over its discrete area), out at the pool edge the web's,
  *     the top rising with the rest, nothing through the walls; down each bore, the flow in a round pipe, Poiseuille's
  *     v = −2 V (1 − r²/rb²), 3 bores below the entry, to the O-grid's accuracy (POISEUILLE_TOL of the peak).
+ * 10. The 3D page's pool with the tips in the paste, at the page's mesh, shown on the pool's own grid (fplOnGrid): the flow
+ *     at every node in the paste -- the pool edge's whole column too, under the blade, where the coater mesh's layers bend
+ *     hard down to it -- and none only in the pipes' walls; the flow out across the pool edge, summed over the grid, the
+ *     web's (to the grid's quadrature, EDGE_TOL).
  */
 const FP = require('./feed-pool.js'), PM = require('./feed-pool-mesh.js');
 let fails = 0;
@@ -39,6 +43,8 @@ const coarse = { hFine: 6e-3, hMax: 25e-3, ny: 3 }, newt = () => 10.5;
 // (check 9: the round pipes' mesh -- feed-mesh.js's options: half a bore per layer up the 6-bore channel -- and how near
 //  Poiseuille its bores' flow must come)
 const PIPE_MESH = { nUp: 12 }, POISEUILLE_TOL = 1e-3;
+// (check 10: the 3D page's own meshes -- the coater's round the pipes and the pool's grid -- at their defaults)
+const PAGE_PIPES = { m: 4, nLo: 4, nUp: 4, hFar: 0.02 }, PAGE_GRID = { hFine: 1.5e-3, hMax: 0.02, ny: 4 }, EDGE_TOL = 5e-3;
 const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mesh: coarse };
 
 // 1. at rest: exact under a straight blade face; under the round blade the stir falls with the mesh
@@ -214,6 +220,29 @@ const base = { W, xBack, xEnd, h, blade, rho, g, outlets, r: 6e-3, mu: newt, mes
   check('the tips in the paste in 3D (round pipes on the coater\'s block mesh, half the pool): the paste in through the bores, out at the pool edge, the top rising with the rest; down each bore, Poiseuille\'s flow',
     bal < 1e-6 && n >= 2 * 100 && e < POISEUILLE_TOL,
     `${M.nE} elements, ${nP} pipes; flows off ${bal.toExponential(1)} of the web's; ${n} nodes across the bores 3 bores below their entry, off Poiseuille by ${e.toExponential(1)} of its peak`);
+}
+
+// 10. the 3D page's pool with the tips in the paste on the pool's own grid: the flow everywhere in the paste, none in the walls
+{
+  const d = 0.01, Do = 0.014, tip = 0.03, Qin = 20e-6 / 2, Qout = 2.14e-6 / 2, half = outlets.filter(q => q.z < W / 2);
+  const r = FP.fplSolvePipes({ W, half: true, xBack, xEnd, h, blade, U, rho, g, outlets, mu: newt, Qin, Qout, pulse: true, pipe: { d, Do, tip }, mesh: PAGE_PIPES });
+  const G = PM.fpmMesh({ W: W / 2, xBack, xEnd, h, blade, outlets: half, r: Do / 2, ...PAGE_GRID }), [u] = FP.fplOnGrid(r, G);
+  const wallAt = i => G.Y[i] > tip - 1e-9 && half.some(q => { const rr = Math.hypot(G.X[i] - q.x, G.Z[i] - q.z); return rr > d / 2 - 1e-9 && rr < Do / 2 + 1e-9; });
+  let none = 0, noneOut = 0, edgeNone = 0;
+  for (let i = 0; i < G.nN; i++) if (!Number.isFinite(u[i])) { none++; if (!wallAt(i)) noneOut++; if (Math.abs(G.X[i] + xEnd) < 1e-12) edgeNone++; }
+  // (across the pool edge: the grid's last column, its Q2 elements' quadratics through each three nodes, up each line of
+  //  nodes and then across the half -- the grid's own interpolant integrated exactly)
+  const quad3 = (a, b, c, fa, fb, fc) => {            // (the quadratic through three points, integrated from a to c)
+    const P = x => x * x * x / 3, Q = x => x * x / 2, I = (m, n, k) => (P(c) - P(a) - (m + n) * (Q(c) - Q(a)) + m * n * (c - a)) / k;
+    return fa * I(b, c, (a - b) * (a - c)) + fb * I(a, c, (b - a) * (b - c)) + fc * I(a, b, (c - a) * (c - b)); };
+  const quad = (t, f) => { let s = 0; for (let j = 0; j + 2 < t.length; j += 2) s += quad3(t[j], t[j + 1], t[j + 2], f[j], f[j + 1], f[j + 2]); return s; };
+  const byZ = new Map(); for (let i = 0; i < G.nN; i++) if (Math.abs(G.X[i] + xEnd) < 1e-12) { if (!byZ.has(G.Z[i])) byZ.set(G.Z[i], []); byZ.get(G.Z[i]).push(i); }
+  const zq = [...byZ.keys()].sort((a, b) => a - b), perZ = zq.map(z => { const c = byZ.get(z).sort((a, b) => G.Y[a] - G.Y[b]); return quad(c.map(i => G.Y[i]), c.map(i => u[i])); });
+  const q = quad(zq, perZ);
+  const qe = Math.abs(q - r.flows.end) / r.flows.end;
+  check('the tips in the paste in 3D at the page\'s meshes, on the pool\'s own grid: the flow at every node in the paste (the pool edge\'s whole column under the blade too), none only in the pipes\' walls; the flow across the pool edge the web\'s',
+    none > 0 && noneOut === 0 && edgeNone === 0 && Number.isFinite(qe) && qe < EDGE_TOL,
+    `${G.nN} grid nodes on ${r.M.nE} elements: ${none} without flow (${noneOut} of them outside the walls, ${edgeNone} at the pool edge); across the pool edge ${(q * 1e6).toFixed(4)} ml/s, the web's ${(r.flows.end * 1e6).toFixed(4)} (off ${(qe * 100).toFixed(2)} %)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

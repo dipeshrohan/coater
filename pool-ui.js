@@ -292,8 +292,8 @@ function viewPoolFeed(dim) {
   const c1 = document.getElementById('pq1');
   if (ps.out) plotChart(c1, poolAspect(c1), { x0: 0, x1: ps.tMax * 1.08, y0: 0, y1: Math.max(1, ps.yMax * 1e3 * 1.25), yticks: niceTicks(0, Math.max(1, ps.yMax * 1e3 * 1.25), 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, ps.tMax * 1.08, 6), xf: v => String(+v.toPrecision(6)),
     yl: 'height at the pool edge (mm)', xl: `time from ${E.start} (s)`, s: [...byOut].map(([j, pts]) => ({ p: pts, c: poolColor(j), line: false, dots: true })), vl: poolPulseLines(base.T, ps.tMax * 1.08) });
-  // (across the pool edge: the last column, across the width on average)
-  const edge = s => { const out = []; for (let j = 0; j < I.NY; j++) { let a = 0, y = 0; for (let k = 0; k < I.NZ; k++) { const n = plId(I, I.NX - 1, j, k); a += s.u[n]; y += s.Y[n]; } out.push([a / I.NZ * 1e3, y / I.NZ * 1e3]); } return out; };
+  // (across the pool edge: the last column, across the width on average -- over the nodes that carry a flow)
+  const edge = s => { const out = []; for (let j = 0; j < I.NY; j++) { let a = 0, y = 0, m = 0; for (let k = 0; k < I.NZ; k++) { const n = plId(I, I.NX - 1, j, k); if (!Number.isFinite(s.u[n])) continue; a += s.u[n]; y += s.Y[n]; m++; } if (m) out.push([a / m * 1e3, y / m * 1e3]); } return out; };
   const e0 = edge(s0), e1 = edge(s1), uLo = Math.min(...e0.map(q => q[0]), ...e1.map(q => q[0])), uHi = Math.max(...e0.map(q => q[0]), ...e1.map(q => q[0])), yE = Math.max(...e0.map(q => q[1]));
   const c2 = document.getElementById('pq2');
   plotChart(c2, poolAspect(c2), { x0: uLo - 0.1 * (uHi - uLo), x1: uHi + 0.1 * (uHi - uLo), y0: 0, y1: yE * 1.05, yticks: niceTicks(0, yE * 1.05, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(uLo, uHi, 5), xf: v => String(+v.toPrecision(6)),
