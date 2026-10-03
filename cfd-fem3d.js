@@ -32,24 +32,17 @@
 // Reference element: Q2 hexahedron, node (a, b, g) = (along the flow, up a spine, across the
 // web), index (g*3 + b)*3 + a; Q1 pressure on the vertices, index (g'*2 + b')*2 + a'.
 // ---------------------------------------------------------------------
-const F3_G = [-Math.sqrt(0.6), 0, Math.sqrt(0.6)], F3_W = [5 / 9, 8 / 9, 5 / 9];
-const f3q2 = x => [x * (x - 1) / 2, 1 - x * x, x * (x + 1) / 2];
-const f3dq2 = x => [x - 0.5, -2 * x, x + 0.5];
-const f3q1 = x => [(1 - x) / 2, (1 + x) / 2];
+// (from the element library, um-fe.js: the same functions and points to the last bit)
+const F3_UFE = typeof ufeShape === 'function' ? { UFE_GAUSS, ufeLag1, ufeShape, ufePoints, ufeFaceRule } : require('./um-fe.js');
+const [F3_G, F3_W] = F3_UFE.UFE_GAUSS[3];
+const f3q2 = x => F3_UFE.ufeLag1(2, x)[0];
+const f3dq2 = x => F3_UFE.ufeLag1(2, x)[1];
 function f3Shape(xi, et, ze) {
-  const A = f3q2(xi), B = f3q2(et), C = f3q2(ze), dA = f3dq2(xi), dB = f3dq2(et), dC = f3dq2(ze);
-  const N = new Float64Array(27), Na = new Float64Array(27), Nb = new Float64Array(27), Ng = new Float64Array(27), P = new Float64Array(8);
-  for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
-    const i = (g * 3 + b) * 3 + a;
-    N[i] = A[a] * B[b] * C[g]; Na[i] = dA[a] * B[b] * C[g]; Nb[i] = A[a] * dB[b] * C[g]; Ng[i] = A[a] * B[b] * dC[g];
-  }
-  const Pa = f3q1(xi), Pb = f3q1(et), Pc = f3q1(ze);
-  for (let g = 0; g < 2; g++) for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) P[(g * 2 + b) * 2 + a] = Pa[a] * Pb[b] * Pc[g];
-  return { N, Na, Nb, Ng, P };
+  const S = F3_UFE.ufeShape('hex27', [xi, et, ze]), Na = new Float64Array(27), Nb = new Float64Array(27), Ng = new Float64Array(27);
+  for (let i = 0; i < 27; i++) { Na[i] = S.dN[3 * i]; Nb[i] = S.dN[3 * i + 1]; Ng[i] = S.dN[3 * i + 2]; }
+  return { N: S.N, Na, Nb, Ng, P: F3_UFE.ufeShape('hex8', [xi, et, ze]).N };
 }
-const F3_QP = [];
-for (let gz = 0; gz < 3; gz++) for (let gb = 0; gb < 3; gb++) for (let ga = 0; ga < 3; ga++) F3_QP.push({ w: F3_W[ga] * F3_W[gb] * F3_W[gz], ...f3Shape(F3_G[ga], F3_G[gb], F3_G[gz]) });
-/** A face's 3x3 rule: 2D Q2 functions over the face's two directions (index t*3 + s), and the 3D element functions there. */
+const F3_QP = F3_UFE.ufePoints('hex27', 3, 'hex8');
 /**
  * One row for a contact point that may be held at an edge (a complementarity condition, Fischer-Burmeister, smoothed by
  * F3_NCP_MU): a (its distance inside the edge) and b (its angle's excess over the contact angle, as a cosine) both at least
@@ -57,20 +50,12 @@ for (let gz = 0; gz < 3; gz++) for (let gb = 0; gb < 3; gb++) for (let ga = 0; g
  */
 const F3_NCP_MU = 1e-9, F3_HELD = 1e-7;
 const f3Ncp = (a, b) => a + b - Math.sqrt(a * a + b * b + F3_NCP_MU * F3_NCP_MU);
-function f3FaceRule(fix, val) {
-  const out = [];
-  for (let gt = 0; gt < 3; gt++) for (let gs = 0; gs < 3; gs++) {
-    const s = F3_G[gs], t = F3_G[gt], S = f3q2(s), T = f3q2(t), dS = f3dq2(s), dT = f3dq2(t);
-    const N2 = new Float64Array(9), Ns = new Float64Array(9), Nt = new Float64Array(9);
-    for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) { N2[j * 3 + i] = S[i] * T[j]; Ns[j * 3 + i] = dS[i] * T[j]; Nt[j * 3 + i] = S[i] * dT[j]; }
-    const at = fix === 'eta' ? f3Shape(s, val, t) : fix === 'zeta' ? f3Shape(s, t, val) : f3Shape(val, s, t);
-    out.push({ w: F3_W[gs] * F3_W[gt], N2, Ns, Nt, el: at });
-  }
-  return out;
-}
-const F3_BOTTOM = f3FaceRule('eta', -1), F3_TOP = f3FaceRule('eta', 1), F3_INLET = f3FaceRule('xi', -1), F3_OUTLET = f3FaceRule('xi', 1);
+/** A face's 3x3 rule (um-fe.js): 2D Q2 functions over the face's two directions (index t*3 + s), and the 3D element functions there.
+ *  The faces: 0 ξ = −1 (inlet), 1 ξ = +1 (outlet), 2 η = −1 (bottom), 3 η = +1 (top), 4 ζ = −1, 5 ζ = +1 (the sides). */
+const f3FaceRule = f => F3_UFE.ufeFaceRule('hex27', f, 3, 'hex8');
+const F3_BOTTOM = f3FaceRule(2), F3_TOP = f3FaceRule(3), F3_INLET = f3FaceRule(0), F3_OUTLET = f3FaceRule(1);
 // (the faces across the web: s along the flow, t up; an open side's outer spine lies on the web)
-const F3_SIDE_LO = f3FaceRule('zeta', -1), F3_SIDE_HI = f3FaceRule('zeta', 1);
+const F3_SIDE_LO = f3FaceRule(4), F3_SIDE_HI = f3FaceRule(5);
 
 /**
  * Solve. Options (as solveFEM's in cfd-fem.js, one dimension up):

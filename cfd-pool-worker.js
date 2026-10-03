@@ -5,7 +5,7 @@
  * paths from each landing to the pool edge. Message in: { id, o } (fplCycle's options, the law as { muRef, ty, n, rheoX });
  * out: { id, progress: { text, f } } while it works, then { id, ok, res, ms } or { id, ok: false, error }.
  */
-importScripts('rheo.js', 'cfd-solver.js', 'feed-mesh.js', 'feed-fem.js', 'feed-free.js', 'feed-post.js', 'feed-pool-mesh.js', 'feed-pool.js');
+importScripts('rheo.js', 'cfd-solver.js', 'um-fe.js', 'feed-mesh.js', 'feed-fem.js', 'feed-free.js', 'feed-post.js', 'feed-pool-mesh.js', 'feed-pool.js');
 // (the faces' node lists feed-fem.js reads: feed-mesh.js's FM_FACES, the pool mesh's the same; the coater's mesher for the
 //  tips in the paste in 3D, round pipes)
 onmessage = e => {

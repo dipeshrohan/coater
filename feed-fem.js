@@ -31,27 +31,14 @@
  * Units: SI; solved in scaled units (Lr, Ur, μr). Pure computation, no DOM.
  */
 
-// ---- the element: Q2 (27 nodes) velocity, Q1 (8 corners) pressure, 3 × 3 × 3 Gauss ----
-const FF_G = [-Math.sqrt(0.6), 0, Math.sqrt(0.6)], FF_W = [5 / 9, 8 / 9, 5 / 9];
-const ffQ2 = s => [s * (s - 1) / 2, 1 - s * s, s * (s + 1) / 2], ffDQ2 = s => [s - 0.5, -2 * s, s + 0.5], ffQ1 = s => [(1 - s) / 2, (1 + s) / 2];
+// ---- the element: Q2 (27 nodes) velocity, Q1 (8 corners) pressure, 3 × 3 × 3 Gauss -- from the element library (um-fe.js) ----
+const FF_UFE = typeof ufeTable === 'function' ? { UFE_GAUSS, ufeLag1, ufeElement, ufeTable, ufeGeometry } : require('./um-fe.js');
+const [FF_G, FF_W] = FF_UFE.UFE_GAUSS[3];
+const ffQ2 = s => FF_UFE.ufeLag1(2, s)[0], ffDQ2 = s => FF_UFE.ufeLag1(2, s)[1];
 /** Reference tables at the 27 quadrature points: N (27 x 27), dN/dξ, dN/dη, dN/dζ, P (8 corners), weights. */
-const FF_REF = (() => {
-  const nq = 27, N = new Float64Array(nq * 27), Na = new Float64Array(nq * 27), Nb = new Float64Array(nq * 27), Ng = new Float64Array(nq * 27), P = new Float64Array(nq * 8), W = new Float64Array(nq);
-  let q = 0;
-  for (let k = 0; k < 3; k++) for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++, q++) {
-    const xi = FF_G[i], et = FF_G[j], ze = FF_G[k], A = ffQ2(xi), B = ffQ2(et), C = ffQ2(ze), dA = ffDQ2(xi), dB = ffDQ2(et), dC = ffDQ2(ze);
-    W[q] = FF_W[i] * FF_W[j] * FF_W[k];
-    for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
-      const n = (g * 3 + b) * 3 + a;
-      N[q * 27 + n] = A[a] * B[b] * C[g]; Na[q * 27 + n] = dA[a] * B[b] * C[g]; Nb[q * 27 + n] = A[a] * dB[b] * C[g]; Ng[q * 27 + n] = A[a] * B[b] * dC[g];
-    }
-    const pa = ffQ1(xi), pb = ffQ1(et), pc = ffQ1(ze);
-    for (let g = 0; g < 2; g++) for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) P[q * 8 + (g * 2 + b) * 2 + a] = pa[a] * pb[b] * pc[g];
-  }
-  return { N, Na, Nb, Ng, P, W };
-})();
+const FF_REF = FF_UFE.ufeTable('hex27', 3, 'hex8');
 /** The 8 corners' local node numbers, in the pressure functions' order. */
-const FF_CORNER = (() => { const c = []; for (let g = 0; g < 2; g++) for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) c.push((2 * g * 3 + 2 * b) * 3 + 2 * a); return c; })();
+const FF_CORNER = FF_UFE.ufeElement('hex27').corners;
 
 /**
  * Set up a problem on a mesh (feed-mesh.js's): the unknowns, the elements' geometry at their quadrature points (in
@@ -65,32 +52,10 @@ function ffSetup(o) {
   const pOf = new Int32Array(nN).fill(-1); let nP = 0;
   for (let e = 0; e < nE; e++) for (const c of FF_CORNER) { const n = M.elems[27 * e + c]; if (pOf[n] < 0) pOf[n] = nP++; }
   const nU = 3 * nN, nD = nU + nP;
-  // each element's quadrature points: the inverse Jacobian (9) and det J × weight
-  const geo = new Float64Array(nE * 27 * 10);
+  // each element's quadrature points: the inverse Jacobian (9) and det J × weight (um-fe.js's ufeGeometry)
   const X = new Float64Array(nN), Y = new Float64Array(nN), Z = new Float64Array(nN);
   for (let n = 0; n < nN; n++) { X[n] = M.X[n] / Lr; Y[n] = M.Y[n] / Lr; Z[n] = M.Z[n] / Lr; }
-  let minDet = Infinity;
-  for (let e = 0; e < nE; e++) {
-    const el = M.elems.subarray(27 * e, 27 * e + 27);
-    for (let q = 0; q < 27; q++) {
-      let j00 = 0, j01 = 0, j02 = 0, j10 = 0, j11 = 0, j12 = 0, j20 = 0, j21 = 0, j22 = 0;
-      for (let a = 0; a < 27; a++) {
-        const n = el[a], na = FF_REF.Na[q * 27 + a], nb = FF_REF.Nb[q * 27 + a], ng = FF_REF.Ng[q * 27 + a];
-        j00 += na * X[n]; j01 += na * Y[n]; j02 += na * Z[n]; j10 += nb * X[n]; j11 += nb * Y[n]; j12 += nb * Z[n]; j20 += ng * X[n]; j21 += ng * Y[n]; j22 += ng * Z[n];
-      }
-      const det = j00 * (j11 * j22 - j12 * j21) - j01 * (j10 * j22 - j12 * j20) + j02 * (j10 * j21 - j11 * j20);
-      if (!(det > 0)) throw new Error(`element ${e} is inverted at a quadrature point (det ${det})`);
-      minDet = Math.min(minDet, det);
-      const g = geo.subarray((e * 27 + q) * 10, (e * 27 + q) * 10 + 10), id = 1 / det;
-      // J's rows are d(x,y,z)/dξ, /dη, /dζ; with Ji = J⁻¹, dN/dx_c = Σ_r Ji[c][r] dN/dξ_r -- stored g[3r + c] = Ji[c][r],
-      // so dN/dx = Na g0 + Nb g3 + Ng g6, dN/dy = Na g1 + Nb g4 + Ng g7, dN/dz = Na g2 + Nb g5 + Ng g8
-      const i00 = (j11 * j22 - j12 * j21) * id, i01 = (j02 * j21 - j01 * j22) * id, i02 = (j01 * j12 - j02 * j11) * id;
-      const i10 = (j12 * j20 - j10 * j22) * id, i11 = (j00 * j22 - j02 * j20) * id, i12 = (j02 * j10 - j00 * j12) * id;
-      const i20 = (j10 * j21 - j11 * j20) * id, i21 = (j01 * j20 - j00 * j21) * id, i22 = (j00 * j11 - j01 * j10) * id;
-      g[0] = i00; g[1] = i10; g[2] = i20; g[3] = i01; g[4] = i11; g[5] = i21; g[6] = i02; g[7] = i12; g[8] = i22;
-      g[9] = det * FF_REF.W[q];
-    }
-  }
+  const { geo, minDet } = FF_UFE.ufeGeometry(FF_REF, X, Y, Z, M.elems, nE);
   // boundary conditions: fixed velocity components (value in scaled units), tractions by face
   const fix = new Uint8Array(nD), val = new Float64Array(nD), tFaces = [];
   const faceNodes = (e, f) => (typeof FM_FACES !== 'undefined' ? FM_FACES : require('./feed-mesh.js').FM_FACES)[f].map(i => M.elems[27 * e + i]);

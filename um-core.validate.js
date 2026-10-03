@@ -16,6 +16,11 @@
  *  6. VTK and Fluent: the files hold every point, cell and face (counted back from the text); every polyhedron's faces;
  *     every typed cell (hexahedron, tetrahedron) in VTK's right-handed order (its volume by its faces as VTK lists them
  *     positive), whatever order it was given in.
+ *  7. The finite-element meshes of every model (um-fe.js's common form): mp-core.js's block of 27-node hexahedra, by its
+ *     corners and split into 8 each, and a cube of 10-node tetrahedra (Kuhn's, mid-edge nodes): every cell closed, none
+ *     inverted, the volume exact, the six faces' patches and their areas exact.
+ *  8. Each cell's own measures (for the viewer): their worst over the cells the totals' (non-orthogonality, skewness,
+ *     aspect ratio, openness, radius ratio, volumes), on the Delaunay cube and its dual, both tested against checkMesh.
  */
 const UC = require('./um-core.js'), fs = require('fs'), path = require('path');
 let fails = 0;
@@ -153,6 +158,58 @@ const same = (A, B) => A.nP === B.nP && A.nF === B.nF && A.nIF === B.nIF && A.nC
   const sets = [['the pool\'s hexahedra', meshes.pool.U], ['the Delaunay cube\'s tetrahedra (read from OpenFOAM)', meshes['um-tet-cube'].U], ['tetrahedra given left-handed', L]];
   check('every typed cell in VTK\'s right-handed order (its volume by VTK\'s faces positive), whatever order it came in', sets.every(([, U]) => all(U) > 0),
     sets.map(([n, U]) => `${n}: smallest ${all(U).toExponential(2)} m³`).join('; '));
+}
+
+// 7. the finite-element meshes of every model, in the common form
+{
+  const MP = require('./mp-core.js'), UF = require('./um-fe.js');
+  const Mb = MP.mpMesh({ dim: 3, p: 2, axes: [[{ L: 3e-3, n: 3 }], [{ L: 1e-3, n: 2 }], [{ L: 2e-3, n: 2, grade: 2 }]] });
+  const rows = [], ok = [];
+  for (const split of [false, true]) {
+    const U = UC.umFromFE(Mb, { split }), G = UC.umGeometry(U), Q = UC.umQuality(U, G);
+    const V = G.cv.reduce((a, b) => a + b, 0), area = {};
+    for (const P of U.patches) { let A = 0; for (let f = P.start; f < P.start + P.n; f++) A += Math.hypot(G.fa[3 * f], G.fa[3 * f + 1], G.fa[3 * f + 2]); area[P.name] = A; }
+    ok.push(U.nC === Mb.E * (split ? 8 : 1) && rel(V, 6e-9) < 1e-12 && Q.negativeVolumes === 0 && Q.opennessMax < 1e-12 && U.patches.length === 6 && rel(area.x0, 2e-6) < 1e-12 && rel(area.y1, 6e-6) < 1e-12 && rel(area.z0, 3e-6) < 1e-12);
+    rows.push(`hex27 ${split ? 'split' : 'by corners'}: ${U.nC} cells, volume ${rel(V, 6e-9).toExponential(0)}`);
+  }
+  // a cube of Kuhn tetrahedra with mid-edge nodes (10-node), 2 × 2 × 2 cubes of side 1 mm
+  const n = 2, h = 1e-3 / n, key = new Map(), X = [], Y = [], Z = [];
+  const node = (x, y, z) => { const k = `${Math.round(x / h * 2)},${Math.round(y / h * 2)},${Math.round(z / h * 2)}`; if (!key.has(k)) { key.set(k, X.length); X.push(x); Y.push(y); Z.push(z); } return key.get(k); };
+  const conn = [], faces = [], KUHN = [[0, 1, 3, 7], [0, 1, 5, 7], [0, 2, 3, 7], [0, 2, 6, 7], [0, 4, 5, 7], [0, 4, 6, 7]];
+  const E10 = UF.ufeElement('tet10');
+  for (let k = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) for (const t of KUHN) {
+    const P = t.map(c => [(i + (c & 1)) * h, (j + ((c >> 1) & 1)) * h, (k + ((c >> 2) & 1)) * h]);
+    // (right-handed: corner 3 on the side the face 0 1 2 faces)
+    const d = (a, b) => [0, 1, 2].map(q => P[b][q] - P[a][q]), u = d(0, 1), v = d(0, 2), w = d(0, 3);
+    if (u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]) < 0) [P[1], P[2]] = [P[2], P[1]];
+    const ids = P.map(p => node(...p));
+    for (const [a, b] of [[0, 1], [1, 2], [0, 2], [0, 3], [1, 3], [2, 3]]) ids.push(node(...[0, 1, 2].map(q => (P[a][q] + P[b][q]) / 2)));
+    const e = conn.length / 10; conn.push(...ids);
+    E10.faces.forEach((F, f) => {
+      const c = F.nodes.slice(0, 3).map(a => P[a]);
+      for (let q = 0; q < 3; q++) { const lo = c.every(p => Math.abs(p[q]) < 1e-12), hi = c.every(p => Math.abs(p[q] - 1e-3) < 1e-12); if (lo || hi) faces.push({ e, f, tag: 'xyz'[q] + (hi ? '1' : '0') }); }
+    });
+  }
+  const T = { type: 'tet10', nN: X.length, nE: conn.length / 10, X: Float64Array.from(X), Y: Float64Array.from(Y), Z: Float64Array.from(Z), conn: Int32Array.from(conn), faces };
+  const U = UC.umFromFE(T), G = UC.umGeometry(U), Q = UC.umQuality(U, G), V = G.cv.reduce((a, b) => a + b, 0);
+  let aw = 0; for (const P of U.patches) { let A = 0; for (let f = P.start; f < P.start + P.n; f++) A += Math.hypot(G.fa[3 * f], G.fa[3 * f + 1], G.fa[3 * f + 2]); aw = Math.max(aw, rel(A, 1e-6)); }
+  ok.push(U.nC === 48 && rel(V, 1e-9) < 1e-12 && Q.negativeVolumes === 0 && Q.opennessMax < 1e-12 && U.patches.length === 6 && aw < 1e-12 && U.nF - U.nIF === 6 * 8);
+  rows.push(`tet10 cube: ${U.nC} tetrahedra, volume ${rel(V, 1e-9).toExponential(0)}, ${U.nF - U.nIF} boundary triangles`);
+  check('every model\'s finite-element mesh in the common form (hex27 by corners and split, tet10): closed, none inverted, volume and patch areas exact', ok.every(Boolean), rows.join('; '));
+}
+
+// 8. each cell's own measures: their worst the totals'
+{
+  const rows = []; let ok = true;
+  for (const name of ['um-tet-cube', 'um-poly-cube']) {
+    const U = meshes[name].U, Q = UC.umQuality(U, undefined, { cells: true }), C = Q.cell, mx = a => a.reduce((m, v) => Math.max(m, v), 0);
+    const finite = Array.from(C.rho).filter(v => !isNaN(v)), vmin = C.volume.reduce((m, v) => Math.min(m, v), Infinity);
+    ok = ok && C.nonOrtho.length === Q.cells && mx(C.nonOrtho) === Q.nonOrthoMax && mx(C.skewness) === Q.skewnessMax && mx(C.aspect) === Q.aspectMax && mx(C.openness) === Q.opennessMax
+      && vmin === Q.volumeMin && (Q.tet ? finite.length === Q.tet.n && Math.min(...finite) === Q.tet.rhoMin : finite.length === 0)
+      && (Q.poly ? Math.min(...C.faces) === Q.poly.facesMin : true);
+    rows.push(`${name.slice(3, 7)}: ${Q.cells} cells`);
+  }
+  check('each cell\'s own measures: their worst exactly the mesh\'s (non-orthogonality, skewness, aspect, openness, radius ratio, volume, faces)', ok, rows.join('; '));
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

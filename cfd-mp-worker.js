@@ -7,7 +7,7 @@
  * Message in:  { id, kind: 'stack' | 'furnace' | 'dry', o } (smpStack's, fmpStack's or dmpDry's inputs, plain data)
  * Message out: { id, progress: { k, n } } while it works, then { id, ok: true, res, ms } or { id, ok: false, error }.
  */
-importScripts('matlib.js', 'mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js', 'film.js', 'drying-mp.js');
+importScripts('matlib.js', 'um-fe.js', 'mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js', 'film.js', 'drying-mp.js');
 
 /** A run, compact: the series (minutes), the sections and the pieces' fields at the snapshots, the answers, the balances. */
 function mpStackCompact(r) {
