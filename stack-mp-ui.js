@@ -160,7 +160,8 @@ function mpStackModelHTML(o, r) {
     <p class="mp-couple"><b>Coupling</b> heat ⇄ water in one system (the latent heat where the water leaves; p_sat at the local temperature) → each piece's stress every step.${bal ? ` <b>Balances</b> ${bal}.` : ''}</p>`;
 }
 function mpStackClear() {
-  for (const id of ['mp1', 'mp2', 'mp3']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, id === 'mp3' ? 0.34 : FILM_ASPECT); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }
+  paneEmptyIds(['mp1', 'mp2', 'mp3'], paneWhy('mps' + MPS.dim));
+  for (const id of ['mp1', 'mp2', 'mp3']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }
   ['mpStats', 'mpCompare'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   ['mpField', 'mpSnap'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   const ft = document.getElementById('mpFieldT'); if (ft) ft.textContent = 'The field';

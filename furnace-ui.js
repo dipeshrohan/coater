@@ -279,7 +279,8 @@ function furnPosGo(i) {
 }
 function furnClear() {
   ['furnChecks', 'furnStats', 'furnNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
-  ['fu1', 'fu2', 'fu3', 'fu4', 'fu5', 'fu6'].forEach(id => { const cv = document.getElementById(id); if (cv) { const cx = setupCanvas(cv, FILM_ASPECT); cx.c.clearRect(0, 0, cx.w, cx.h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; });
+  const ids = ['fu1', 'fu2', 'fu3', 'fu4', 'fu5', 'fu6'];
+  paneEmptyIds(ids, paneWhy('furn')); ids.forEach(id => { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; });
 }
 function furnRender() {
   const sec = document.getElementById('furnSec');

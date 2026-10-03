@@ -247,7 +247,7 @@ function mixRender() {
     st.innerHTML = MIX.busy ? `<p class="dry-msg">${pill('Mixing the batch through its program…', '')}</p>`
       : MIX.error && MIX.key === mixKeyNow() ? `<p class="dry-msg">${pill('The batch could not be solved: ' + mixEsc(MIX.error), 'bad')}${solveCtl('mix')}</p>`
         : `<p class="dry-msg">${solvePending('mix') ? pill('Solving the batch…', '') : solveCtl('mix')}</p>`;
-    if (!MIX.res) { mixClear(); return; }
+    if (!MIX.res) { mixClear(); procShowChart('mix'); return; }
     st.insertAdjacentHTML('beforeend', `<p class="dry-msg">${pill('Showing the batch for the previous inputs', 'warn')}</p>`);
   } else st.innerHTML = '';
   const r = MIX.res;
@@ -258,7 +258,7 @@ function mixRender() {
 }
 function mixClear() {
   ['mxStats', 'mxTable', 'mxZones'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
-  MIX_CHARTS.forEach(([id]) => { const cv = document.getElementById(id); if (cv) { const cx = setupCanvas(cv, 0.2); cx.c.clearRect(0, 0, cx.w, cx.h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; });
+  paneEmptyIds(MIX_CHARTS.map(([id]) => id), paneWhy('mix')); MIX_CHARTS.forEach(([id]) => { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; });
 }
 /** The batch's checks, as the Line page lists them and the page warns of them: [{ t, res, lim, v (the result over its
  *  limit, or null), lv ('ok' | 'warn' | 'bad'), say (the warning when not ok) }]. Lumps against the blade's gap (they stick

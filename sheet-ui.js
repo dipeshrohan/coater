@@ -309,7 +309,7 @@ function stackRender() {
   const el = document.getElementById('stackState');
   if (!el) return;
   const stats = document.getElementById('stackStats');
-  const clear = () => { stats.innerHTML = ''; for (const id of ['st1', 'st2']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, FILM_ASPECT); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } };
+  const clear = () => { stats.innerHTML = ''; paneEmptyIds(['st1', 'st2'], paneWhy('stack')); for (const id of ['st1', 'st2']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } };
   if (!filmCurrent() || !sheetInputs()) { el.innerHTML = '<p class="fv-why">After the film is solved.</p>'; clear(); return; }
   if (!stackCurrent()) {
     if (STACK.error && STACK.key === stackKeyNow()) { el.innerHTML = `<p class="dry-msg">${pill(`The stack could not be solved: ${dryEsc(STACK.error)}`, 'bad')}</p>`; clear(); return; }
@@ -351,7 +351,7 @@ function stackRender() {
   document.getElementById('st2Lg').innerHTML = oneDLegend([['top only', col], ['top and bottom', col, 'dash']]) + '<p class="fv-why">The largest pull in the piece\'s plane while it is held flat: at its drying edges as the pre heat treatment starts; eased by the creep while wet.</p>';
 }
 
-function sheetClear() { for (const id of ['sh1', 'sh2']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, 0.62); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } }
+function sheetClear() { paneEmptyIds(['sh1', 'sh2'], paneWhy('sheet')); for (const id of ['sh1', 'sh2']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } }
 
 /** The plate at a uniform water from its film's table (rows [X, A, D, eFlat, κ, eX]; linear between rows, held past its ends). */
 function sheetTabAt(tab, X) {

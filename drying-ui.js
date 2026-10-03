@@ -210,7 +210,8 @@ function dryRender() {
 }
 function dryClear() {
   ['dryStats', 'dryTable', 'dryNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
-  ['dryOven', 'dr1', 'dr2', 'dr3', 'dr4', 'dr5'].forEach(id => { const cv = document.getElementById(id); if (cv) { const cx = setupCanvas(cv, 0.2); cx.c.clearRect(0, 0, cx.w, cx.h); } });
+  paneEmptyIds(['dryOven', 'dr1', 'dr2', 'dr3', 'dr4', 'dr5'], paneWhy('dry'));
+  procShowChart('dry');   // (one chart at a time, solved or not)
   dryMeasured(null, null);
 }
 function dryWire(sec) {
