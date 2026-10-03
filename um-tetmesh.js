@@ -385,8 +385,11 @@ function umtVolume(S, o = {}) {
 /**
  * The finished mesh improved in place, its connectivity no longer held to Delaunay's: flips (two tetrahedra on a face into
  * three round an edge, and three into two) and moves of the inner points, each kept only if it raises the smallest
- * dihedral angle among the tetrahedra it touches; the surface's points and faces never change. M = { X, Y, Z, tet, bface }
- * (umtVolume's); the tetrahedra rewritten. Returns { flips23, flips32, moves, dihedralMin }.
+ * dihedral angle among the tetrahedra it touches; a bad tetrahedron with every corner on the surface (none of them can
+ * move) gets a new inner point -- in it, or below a crease where two of its faces are on the surface -- with the cavity of
+ * tetrahedra the point sees, kept only if the tetrahedra it leaves are better than those it took away, else undone. The
+ * surface's points and faces never change. M = { X, Y, Z, tet, bface } (umtVolume's); the tetrahedra rewritten (and the
+ * new points added). Returns { flips23, flips32, moves, splits (new points kept), dihedralMin }.
  */
 function umtImprove(M, o = {}) {
   let X = M.X, Y = M.Y, Z = M.Z; const target = o.dihedral ?? 18, useRho = o.radiusRatio !== false;
@@ -423,8 +426,9 @@ function umtImprove(M, o = {}) {
   const faces = new Map(), vt = new Map();
   const add = t => { for (let k = 0; k < 4; k++) { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => T[4 * t + i]), key = fkey(...f); (faces.get(key) || faces.set(key, []).get(key)).push(t);
     const v = T[4 * t + k]; (vt.get(v) || vt.set(v, new Set()).get(v)).add(t); } };
-  const del = t => { aliveT[t] = false; for (let k = 0; k < 4; k++) { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => T[4 * t + i]), key = fkey(...f), l = faces.get(key); l.splice(l.indexOf(t), 1); if (!l.length) faces.delete(key); vt.get(T[4 * t + k]).delete(t); } };
-  const make = (a, b, c, d) => { const t = T.length / 4; T.push(a, b, c, d); aliveT.push(true); add(t); return t; };
+  let log = null;   // (while a new point is tried: the tetrahedra deleted and made, to undo it)
+  const del = t => { if (log) log.push(-1 - t); aliveT[t] = false; for (let k = 0; k < 4; k++) { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => T[4 * t + i]), key = fkey(...f), l = faces.get(key); l.splice(l.indexOf(t), 1); if (!l.length) faces.delete(key); vt.get(T[4 * t + k]).delete(t); } };
+  const make = (a, b, c, d) => { const t = T.length / 4; T.push(a, b, c, d); aliveT.push(true); add(t); if (log) log.push(t); return t; };
   for (let t = 0; t < nT; t++) add(t);
   let flips23 = 0, flips32 = 0, moves = 0;
   /** Two tetrahedra on face a b c (apexes d, e) into three round the edge d–e, if better. */
@@ -457,20 +461,79 @@ function umtImprove(M, o = {}) {
   };
   let rs = 4242; const rnd = () => ((rs = (rs * 16807) % 2147483647) / 2147483647);
   let splits = 0;
-  /** Tetrahedron t in four about a new point at its centroid (inner, free), kept only if, moved and flipped, better. */
-  const split14 = t => {
-    const v = [0, 1, 2, 3].map(k => T[4 * t + k]), c = [0, 1, 2].map(d => (P(v[0])[d] + P(v[1])[d] + P(v[2])[d] + P(v[3])[d]) / 4);
-    const old = qt(t), p = X.length;
+  /** A new inner point c put in: the tetrahedra it must replace (a cavity grown from `seeds` across each face c does not
+   *  see, or would make a tetrahedron worse than `goal` with -- never across the surface), each of the cavity's faces
+   *  joined to c; then c moved and the new tetrahedra flipped as they can. Returns the worst of the tetrahedra taken away
+   *  and of those left, and how to undo it (the point and every tetrahedron as they were); null if it cannot be done. */
+  const tryPoint = (c, seeds, goal) => {
+    const nT0 = T.length / 4, inC = new Set(seeds);
+    const faceOf = (t, k) => { const f = [0, 1, 2, 3].filter(i => i !== k).map(i => T[4 * t + i]); return vol(P(f[0]), P(f[1]), P(f[2]), P(T[4 * t + k])) > 0 ? f : [f[0], f[2], f[1]]; };
+    const across = (t, f) => { const l = faces.get(fkey(...f)); return l.length === 2 ? (l[0] === t ? l[1] : l[0]) : -1; };
+    for (let it = 0; it < 64; it++) {
+      let grow = -1;
+      for (const t of inC) { for (let k = 0; k < 4 && grow < 0; k++) { const f = faceOf(t, k), u = across(t, f); if (u >= 0 && inC.has(u)) continue;
+          const m = q([P(f[0]), P(f[1]), P(f[2]), c]);
+          if (u < 0 && m < 0) return null;   // (c behind the surface)
+          if (u >= 0 && m < goal) grow = u; }
+        if (grow >= 0) break; }
+      if (grow < 0) break; inC.add(grow);
+    }
+    // (c sees every face of the cavity, keeps every point of it, and the new tetrahedra fill exactly the old)
+    const bnd = [], kept = new Set();
+    for (const t of inC) for (let k = 0; k < 4; k++) { const f = faceOf(t, k), u = across(t, f); if (u >= 0 && inC.has(u)) continue;
+      if (!(vol(P(f[0]), P(f[1]), P(f[2]), c) > 0)) return null; bnd.push(f); for (const w of f) kept.add(w); }
+    for (const t of inC) for (let k = 0; k < 4; k++) if (!kept.has(T[4 * t + k])) return null;
+    const v0 = [...inC].reduce((sum, t) => sum + vol(...[0, 1, 2, 3].map(i => P(T[4 * t + i]))), 0), v1 = bnd.reduce((sum, f) => sum + vol(P(f[0]), P(f[1]), P(f[2]), c), 0);
+    if (Math.abs(v1 - v0) > 1e-10 * v0) return null;
+    const p = X.length, fixed0 = fixed, X0 = M.X, Y0 = M.Y, Z0 = M.Z, counts = [flips23, moves];
     // (the coordinate arrays are typed: grown by copying)
     const grow = A => { const B = new Float64Array(A.length + 1); B.set(A); return B; };
     M.X = grow(M.X); M.Y = grow(M.Y); M.Z = grow(M.Z); X2(M); X[p] = c[0]; Y[p] = c[1]; Z[p] = c[2];
     const f2 = new Uint8Array(p + 1); f2.set(fixed); fixedSet(f2);
-    del(t); const nw = []; for (let k = 0; k < 4; k++) { const w = v.slice(); w[k] = p; nw.push(make(...w)); }
+    log = [];
+    for (const t of inC) del(t);
+    const nw = bnd.map(f => make(f[0], f[1], f[2], p));
     smooth(p);
     for (const u of nw) if (aliveT[u]) for (let k = 0; k < 4; k++) if (aliveT[u] && T[4 * u + k] !== p) flip23(u, k);
-    const now = Math.min(...[...vt.get(p)].map(qt));
-    splits++;
-    return now > old;
+    // (the old: those taken away that were there before, at the corners they had, none of which moved; the new: those
+    //  made that are still there)
+    const L = log; log = null;
+    let old = 180, now = 180;
+    for (const e of L) if (e < 0 && -1 - e < nT0) old = Math.min(old, qt(-1 - e));
+    for (const e of L) if (e >= 0 && aliveT[e]) now = Math.min(now, qt(e));
+    const undo = () => {
+      // (last first: a made one deleted again, a deleted one put back)
+      for (let i = L.length - 1; i >= 0; i--) { const e = L[i]; if (e >= 0) del(e); else { aliveT[-1 - e] = true; add(-1 - e); } }
+      T.length = 4 * nT0; aliveT.length = nT0; vt.delete(p);
+      M.X = X0; M.Y = Y0; M.Z = Z0; X2(M); fixedSet(fixed0); [flips23, moves] = counts;
+    };
+    return { old, now, undo };
+  };
+  /** A bad tetrahedron with every corner on the surface (no flip or move mends it): a point tried at its middle (its
+   *  cavity at least the tetrahedron: four at least) and, where two of its faces are on the surface, below their common
+   *  edge, into the solid along the two faces' inward bisector -- a crease's only tetrahedron has the crease's dihedral
+   *  there whatever its corners do, and a point inside it, as flat as it is, only makes flat ones. The best kept if the
+   *  tetrahedra it leaves are better than those it took away. */
+  const insertFor = t => {
+    const Pv = [0, 1, 2, 3].map(k => P(T[4 * t + k])), cands = [[0, 1, 2].map(d => (Pv[0][d] + Pv[1][d] + Pv[2][d] + Pv[3][d]) / 4)];
+    const inward = k => { const f = [0, 1, 2, 3].filter(i => i !== k); if (faces.get(fkey(...f.map(i => T[4 * t + i]))).length !== 1) return null;
+      const [a, b, d] = f.map(i => Pv[i]), u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+      let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]; const l = Math.hypot(...n);
+      if ((Pv[k][0] - a[0]) * n[0] + (Pv[k][1] - a[1]) * n[1] + (Pv[k][2] - a[2]) * n[2] < 0) n = n.map(x => -x); return n.map(x => x / l); };
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+      const [k, l] = [0, 1, 2, 3].filter(m => m !== i && m !== j), nk = inward(k), nl = inward(l); if (!nk || !nl) continue;
+      const bis = [nk[0] + nl[0], nk[1] + nl[1], nk[2] + nl[2]], bl = Math.hypot(...bis); if (!(bl > 1e-9)) continue;
+      const m = [0, 1, 2].map(d => (Pv[i][d] + Pv[j][d]) / 2), L = Math.hypot(Pv[j][0] - Pv[i][0], Pv[j][1] - Pv[i][1], Pv[j][2] - Pv[i][2]);
+      for (const s of [0.2, 0.35, 0.5, 0.7]) cands.push(m.map((x, d) => x + s * L * bis[d] / bl));
+    }
+    let best = null;
+    for (const c of cands) { const r0 = rs, r = tryPoint(c, [t], target); if (!r) continue; r.undo();
+      if (r.now > r.old + 1e-9 && (!best || r.now > best.now)) best = { c, r0, now: r.now }; }
+    if (!best) return false;
+    // (done again as it was tried: the same random moves)
+    rs = best.r0; const r = tryPoint(best.c, [t], target);
+    if (r && r.now > r.old + 1e-9) { splits++; return true; }
+    if (r) r.undo(); return false;
   };
   /** An inner point moved (random tries about it, the best kept) if the worst tetrahedron round it gets better. */
   const smooth = v => {
@@ -500,9 +563,8 @@ function umtImprove(M, o = {}) {
       for (let k = 0; k < 4 && !done; k++) done = flip23(t, k);
       for (let i = 0; i < 4 && !done; i++) for (let j = i + 1; j < 4 && !done; j++) done = flip32(T[4 * t + i], T[4 * t + j]);
       if (!done) for (let k = 0; k < 4 && !done; k++) done = smooth(T[4 * t + k]);
-      // (every corner on the surface and no flip helps: a point at its middle (four tetrahedra), then that point moved
-      //  and the four flipped as they can)
-      if (!done && [0, 1, 2, 3].every(k => fixed[T[4 * t + k]])) done = split14(t);
+      // (every corner on the surface and no flip helps: a new point, in it or below a crease it spans)
+      if (!done && [0, 1, 2, 3].every(k => fixed[T[4 * t + k]])) done = insertFor(t);
       if (done) any = true;
     }
     if (!any) break;
