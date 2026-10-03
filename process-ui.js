@@ -297,7 +297,7 @@ function processPageBody() {
       if (go === 'dry' || go === 'film' || go === 'furn') processGo(go);
       else if (go === 'furnin') { FV.tree.furn = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="furn"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else if (go === 'peel') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; const b = document.getElementById('ovzPeel'); if (b) b.scrollIntoView({ block: 'nearest' }); const f = document.getElementById('ovzPeelLen') || (b && b.querySelector('input')); if (f) f.focus(); } }
-      else if (go === 'mixin') { setPanelHidden('model', false); const d = document.querySelector('#mixIn details'); if (d) { d.open = true; FV.tree[d.dataset.tree] = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
+      else if (go === 'mixin' || go === 'mixrecipe') { setPanelHidden('model', false); const d = document.querySelector(`#mixIn details[data-tree="mx-${go === 'mixin' ? 'vessel' : 'recipe'}"]`); if (d) { d.open = true; FV.tree[d.dataset.tree] = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else if (go === 'oven') { FV.tree.oven = true; setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } }
       else { tab = +go; render(); }
     });

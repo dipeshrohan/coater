@@ -68,33 +68,39 @@ const MIX_F = 96485.33212, MIX_NA = 6.02214076e23, MIX_KB = 1.380649e-23, MIX_E 
  * max, step, d (decimals), h (what it is) }; select inputs carry o: [[value, label], ...].
  */
 const MIX_INPUTS = [
-  { g: 'vessel', k: 'D', l: 'Inside diameter', u: 'mm', f: 1e-3, v: 300, min: 50, max: 3000, step: 1, d: 0 },
-  { g: 'vessel', k: 'Hv', l: 'Height', u: 'mm', f: 1e-3, v: 300, min: 50, max: 3000, step: 1, d: 0 },
-  { g: 'vessel', k: 'V', l: 'Batch volume', u: 'L', f: 1e-3, v: 10, min: 0.1, max: 5000, step: 0.1, d: 1 },
+  { g: 'recipe', k: 'mPaste', l: 'GO paste', u: 'g', f: 1e-3, v: 3104, min: 1, max: 1e6, step: 1, d: 0, h: 'the filter cake weighed in (SOP 1.3: 3104 g ± 3 g)' },
+  { g: 'recipe', k: 'wPaste', l: 'GO paste solids', u: 'wt%', f: 1e-2, v: 45, min: 1, max: 100, step: 0.5, d: 1, h: 'its dry GO by weight (the paste spec: 41–47 %)' },
+  { g: 'recipe', k: 'mSoak', l: 'Water in the soak', u: 'g', f: 1e-3, v: 10000, min: 0, max: 1e7, step: 10, d: 0, h: 'the bucket the paste soaks in (at least 12 h)' },
+  { g: 'recipe', k: 'mWat', l: 'Water in the mixer', u: 'g', f: 1e-3, v: 70000, min: 0, max: 1e7, step: 10, d: 0, h: 'added in the mixing container to the target weight' },
+  { g: 'recipe', k: 'mN', l: 'Ammonia water', u: 'g', f: 1e-3, v: 242, min: 0, max: 1e6, step: 0.1, d: 1, h: 'weighed in and poured in at the step the program says' },
+  { g: 'vessel', k: 'D', l: 'Inside diameter', u: 'mm', f: 1e-3, v: 500, min: 50, max: 3000, step: 1, d: 0 },
+  { g: 'vessel', k: 'Hv', l: 'Height', u: 'mm', f: 1e-3, v: 520, min: 50, max: 3000, step: 1, d: 0 },
   { g: 'vessel', k: 'T0', l: 'Batch at the start', u: '°C', f: 1, v: 20, min: 0, max: 90, step: 0.5, d: 1 },
   { g: 'vessel', k: 'Tj', l: 'Jacket water', u: '°C', f: 1, v: 20, min: 0, max: 95, step: 0.5, d: 1 },
-  { g: 'vessel', k: 'UA', l: 'Jacket UA', u: 'W/K', f: 1, v: 15, min: 0, max: 10000, step: 0.5, d: 1, h: 'the jacket\'s heat transfer coefficient times the wetted area' },
+  { g: 'vessel', k: 'UA', l: 'Jacket UA', u: 'W/K', f: 1, v: 150, min: 0, max: 10000, step: 0.5, d: 1, h: 'the jacket\'s heat transfer coefficient times the wetted area' },
   { g: 'blades', k: 'ratio', l: 'Blade spin per arm turn', u: '', f: 1, v: 2.5, min: 0, max: 10, step: 0.05, d: 2, h: 'each blade\'s turns on its own axis, relative to the arm, per turn of the arm (75 rpm at 30 rpm: 2.5)' },
   { g: 'blades', k: 'dir', l: 'Blade spin', u: '', f: 1, v: 1, o: [[1, 'with the arm'], [-1, 'against the arm']] },
   { g: 'blades', k: 'nBlade', l: 'Blades', u: '', f: 1, v: 2, min: 1, max: 3, step: 1, d: 0 },
   { g: 'blades', k: 'nBar', l: 'Vertical bars per blade', u: '', f: 1, v: 2, min: 1, max: 4, step: 1, d: 0 },
-  { g: 'blades', k: 'w', l: 'Bar width', u: 'mm', f: 1e-3, v: 40, min: 1, max: 500, step: 1, d: 0 },
-  { g: 'blades', k: 't', l: 'Bar thickness', u: 'mm', f: 1e-3, v: 12, min: 1, max: 200, step: 1, d: 0 },
-  { g: 'blades', k: 'ro', l: 'Blade axis from the vessel\'s axis', u: 'mm', f: 1e-3, v: 73.5, min: 5, max: 1500, step: 0.5, d: 1 },
+  { g: 'blades', k: 'w', l: 'Bar width', u: 'mm', f: 1e-3, v: 60, min: 1, max: 500, step: 1, d: 0 },
+  { g: 'blades', k: 't', l: 'Bar thickness', u: 'mm', f: 1e-3, v: 16, min: 1, max: 200, step: 1, d: 0 },
+  { g: 'blades', k: 'ro', l: 'Blade axis from the vessel\'s axis', u: 'mm', f: 1e-3, v: 123.5, min: 5, max: 1500, step: 0.5, d: 1 },
   { g: 'blades', k: 'dw', l: 'Gap to the wall', u: 'mm', f: 1e-3, v: 3, min: 0.5, max: 50, step: 0.1, d: 1 },
   { g: 'blades', k: 'db', l: 'Gap to the floor', u: 'mm', f: 1e-3, v: 3, min: 0.5, max: 50, step: 0.1, d: 1 },
-  { g: 'disp', k: 'Dd', l: 'Disc diameter', u: 'mm', f: 1e-3, v: 80, min: 10, max: 1000, step: 1, d: 0 },
-  { g: 'disp', k: 'hT', l: 'Tooth height', u: 'mm', f: 1e-3, v: 8, min: 0.5, max: 100, step: 0.5, d: 1, h: 'the disc\'s rim zone is sheared at its tip speed over this height' },
+  { g: 'disp', k: 'Dd', l: 'Disc diameter', u: 'mm', f: 1e-3, v: 150, min: 10, max: 1000, step: 1, d: 0 },
+  { g: 'disp', k: 'hT', l: 'Tooth height', u: 'mm', f: 1e-3, v: 12, min: 0.5, max: 100, step: 0.5, d: 1, h: 'the disc\'s rim zone is sheared at its tip speed over this height' },
   { g: 'disp', k: 'nT', l: 'Teeth', u: '', f: 1, v: 16, min: 0, max: 64, step: 1, d: 0 },
-  { g: 'disp', k: 'rD', l: 'Disc axis from the vessel\'s axis', u: 'mm', f: 1e-3, v: 100, min: 0, max: 1500, step: 0.5, d: 1 },
-  { g: 'disp', k: 'hD', l: 'Disc above the floor', u: 'mm', f: 1e-3, v: 40, min: 5, max: 2000, step: 1, d: 0 },
+  { g: 'disp', k: 'rD', l: 'Disc axis from the vessel\'s axis', u: 'mm', f: 1e-3, v: 165, min: 0, max: 1500, step: 0.5, d: 1 },
+  { g: 'disp', k: 'hD', l: 'Disc above the floor', u: 'mm', f: 1e-3, v: 60, min: 5, max: 2000, step: 1, d: 0 },
   { g: 'power', k: 'fB', l: 'Blades\' power factor', u: '×', f: 1, v: 1, min: 0.01, max: 100, step: 0.01, d: 2, h: 'on the bars\' drag as computed; the 2D/3D or your torque log set it' },
   { g: 'power', k: 'CD', l: 'Bars\' form drag C_D', u: '', f: 1, v: 2, min: 0, max: 10, step: 0.1, d: 1, h: 'a flat bar broadside: about 2' },
   { g: 'power', k: 'Kp', l: 'Disc\'s laminar constant Kp', u: '', f: 1, v: 16 * Math.PI ** 2 / 3, min: 1, max: 5000, step: 0.01, d: 2, h: 'Np Re at low Re; 16π²/3 = 52.64: a thin disc\'s exact Stokes torque' },
   { g: 'power', k: 'Npt', l: 'Disc\'s turbulent power number', u: '', f: 1, v: 0.3, min: 0, max: 10, step: 0.01, d: 2 },
   { g: 'power', k: 'ks', l: 'Disc\'s Metzner–Otto ks', u: '', f: 1, v: 11, min: 1, max: 100, step: 0.5, d: 1, h: 'its mean shear rate is ks × its speed (1/s)' },
   { g: 'power', k: 'Fl', l: 'Disc\'s flow number', u: '', f: 1, v: 0.1, min: 0.001, max: 2, step: 0.005, d: 3, h: 'the flow through its rim zone over Nd Dd³' },
-  { g: 'chem', k: 'q1', l: 'Carboxyl groups', u: 'mmol/g', f: 1, v: 1, min: 0, max: 10, step: 0.05, d: 2, h: 'acid groups on the GO, per gram of GO' },
+  { g: 'power', k: 'fe', l: 'Power spent in the shear zones', u: '', f: 1, v: 0.5, min: 0, max: 1, step: 0.05, d: 2, h: 'the share of the disc\'s power dissipated in its rim zone, of the blades\' in their wall and floor gaps (their turbulence)' },
+  { g: 'power', k: 'Ck', l: 'Kolmogorov constant C', u: '', f: 1, v: 2, min: 0.5, max: 5, step: 0.1, d: 1, h: 'the eddies\' stress on a lump in the inertial range, C ρ (ε a)^⅔' },
+  { g: 'chem', k: 'q1', l: 'Carboxyl groups', u: 'mmol/g', f: 1, v: 2.5, min: 0, max: 10, step: 0.05, d: 2, h: 'acid groups on the GO, per gram of GO' },
   { g: 'chem', k: 'pK1', l: 'Carboxyl pKa', u: '', f: 1, v: 4.3, min: 1, max: 8, step: 0.05, d: 2 },
   { g: 'chem', k: 'q2', l: 'Phenolic groups', u: 'mmol/g', f: 1, v: 2, min: 0, max: 10, step: 0.05, d: 2 },
   { g: 'chem', k: 'pK2', l: 'Phenolic pKa', u: '', f: 1, v: 9.8, min: 6, max: 13, step: 0.05, d: 2 },
@@ -102,24 +108,27 @@ const MIX_INPUTS = [
   { g: 'chem', k: 'Ibg', l: 'Background salt', u: 'mM', f: 1e-3, v: 1, min: 0, max: 1000, step: 0.1, d: 1, h: 'ionic strength from other salts' },
   { g: 'chem', k: 'pKN', l: 'Ammonium pKa', u: '', f: 1, v: 9.25, min: 8, max: 11, step: 0.01, d: 2 },
   { g: 'chem', k: 'pKw', l: 'Water pKw', u: '', f: 1, v: 14, min: 13, max: 15, step: 0.01, d: 2 },
-  { g: 'chem', k: 'wN', l: 'Ammonia water', u: 'wt%', f: 1e-2, v: 25, min: 1, max: 35, step: 0.5, d: 1 },
-  { g: 'chem', k: 'rhoN', l: 'Ammonia water density', u: 'g/mL', f: 1000, v: 0.907, min: 0.85, max: 1, step: 0.001, d: 3 },
+  { g: 'recipe', k: 'wN', l: 'Ammonia water strength', u: 'wt%', f: 1e-2, v: 25, min: 1, max: 35, step: 0.5, d: 1 },
+  { g: 'recipe', k: 'rhoN', l: 'Ammonia water density', u: 'g/mL', f: 1000, v: 0.907, min: 0.85, max: 1, step: 0.001, d: 3 },
   { g: 'chem', k: 'Tadd', l: 'Ammonia water temperature', u: '°C', f: 1, v: 20, min: 0, max: 50, step: 0.5, d: 1 },
   { g: 'chem', k: 'dHN', l: 'Heat per mole of ammonium formed', u: 'kJ/mol', f: 1000, v: 52, min: 0, max: 100, step: 0.5, d: 1, h: 'NH₃ + H⁺ → NH₄⁺ releases about 52 kJ/mol' },
   { g: 'chem', k: 'AH', l: 'Hamaker constant (GO in water)', u: '×10⁻²⁰ J', f: 1e-20, v: 5, min: 0.1, max: 50, step: 0.1, d: 1 },
   { g: 'chem', k: 'xs', l: 'Slip plane', u: 'nm', f: 1e-9, v: 0.3, min: 0, max: 5, step: 0.05, d: 2, h: 'distance from the sheet where the zeta potential is' },
-  { g: 'lumps', k: 'fCake', l: 'GO in cake pieces at the start', u: '%', f: 1e-2, v: 100, min: 0, max: 100, step: 1, d: 0 },
-  { g: 'lumps', k: 'a0', l: 'Cake pieces, median size', u: 'mm', f: 1e-3, v: 10, min: 0.01, max: 100, step: 0.1, d: 1 },
-  { g: 'lumps', k: 'sg', l: 'Cake pieces, spread', u: '×', f: 1, v: 1.5, min: 1.01, max: 5, step: 0.05, d: 2, h: 'geometric standard deviation of their size' },
-  { g: 'lumps', k: 'phiL', l: 'Solids in the cake', u: 'vol%', f: 1e-2, v: 45, min: 1, max: 74, step: 0.5, d: 1, h: 'at least the slurry\'s: the cake\'s water is part of the batch\'s' },
-  { g: 'lumps', k: 'sig', l: 'Cake strength at 1 mm', u: 'kPa', f: 1e3, v: 0.3, min: 0.001, max: 1000, step: 0.01, d: 3 },
-  { g: 'lumps', k: 'beta', l: 'Strength against size, β', u: '', f: 1, v: 0.5, min: 0, max: 2, step: 0.05, d: 2, h: 'σ ∝ size^−β; 0.5: Kendall' },
+  { g: 'lumps', k: 'fCake', l: 'GO in paste pieces at the start', u: '%', f: 1e-2, v: 100, min: 0, max: 100, step: 1, d: 0, h: 'the rest already dispersed in the soak' },
+  { g: 'lumps', k: 'a0', l: 'Paste pieces, median size', u: 'mm', f: 1e-3, v: 10, min: 0.01, max: 100, step: 0.1, d: 1 },
+  { g: 'lumps', k: 'sg', l: 'Paste pieces, spread', u: '×', f: 1, v: 1.5, min: 1.01, max: 5, step: 0.05, d: 2, h: 'geometric standard deviation of their size' },
+  { g: 'lumps', k: 'sw', l: 'Swelling in the soak', u: '', f: 1, v: 1, min: 0, max: 1, step: 0.05, d: 2, h: 'how far the soak takes up its water into the paste: 0 the pieces at the paste\'s solids, 1 at the soak bucket\'s' },
+  { g: 'lumps', k: 'sig', l: 'Piece strength at 1 mm', u: 'kPa', f: 1e3, v: 0.3, min: 0.001, max: 1000, step: 0.01, d: 3 },
+  { g: 'lumps', k: 'beta', l: 'Strength against size, β', u: '', f: 1, v: 0, min: 0, max: 2, step: 0.05, d: 2, h: 'σ ∝ size^−β; 0: a swollen gel\'s yield stress, the same at any size; 0.5: Kendall\'s agglomerates' },
   { g: 'lumps', k: 'mR', l: 'Breaking threshold sharpness', u: '', f: 1, v: 8, min: 1, max: 30, step: 1, d: 0, h: 'chance per visit 1 − exp(−(τ/σ)^m)' },
-  { g: 'lumps', k: 'fh', l: 'Hard lumps', u: '% of the cake', f: 1e-2, v: 0.5, min: 0, max: 100, step: 0.1, d: 1 },
-  { g: 'lumps', k: 'kh', l: 'Hard lumps\' strength', u: '×', f: 1, v: 5, min: 1, max: 1000, step: 0.5, d: 1 },
+  { g: 'lumps', k: 'fh', l: 'Hard pieces', u: '% of the GO', f: 1e-2, v: 0.03, min: 0, max: 100, step: 0.001, d: 3, h: 'pieces the soak did not swell: at the paste\'s solids' },
+  { g: 'lumps', k: 'ah', l: 'Hard pieces, median size', u: 'µm', f: 1e-6, v: 30, min: 1, max: 10000, step: 1, d: 0 },
+  { g: 'lumps', k: 'sgh', l: 'Hard pieces, spread', u: '×', f: 1, v: 1.5, min: 1.01, max: 5, step: 0.05, d: 2, h: 'geometric standard deviation of their size' },
+  { g: 'lumps', k: 'kh', l: 'Hard pieces\' strength', u: '× the pieces\'', f: 1, v: 100, min: 1, max: 1e4, step: 1, d: 0 },
   { g: 'lumps', k: 'le', l: 'Erosion per visit', u: 'µm', f: 1e-6, v: 0.02, min: 0, max: 100, step: 0.005, d: 3, h: 'radius lost per visit to a zone at the lump\'s strength (τ/σ = 1)' },
   { g: 'lumps', k: 'Ns', l: 'Grind gauge: specks for a reading', u: '', f: 1, v: 5, min: 1, max: 100, step: 1, d: 0 },
   { g: 'lumps', k: 'Vg', l: 'Grind gauge: sample in its track', u: 'µL', f: 1e-9, v: 40, min: 1, max: 1000, step: 1, d: 0 },
+  { g: 'lumps', k: 'Vp', l: 'Grind gauge: sample put on it', u: 'mL', f: 1e-6, v: 1, min: 0.01, max: 100, step: 0.1, d: 2, h: 'the puddle at its deep end: a piece larger than the gauge anywhere in it is dragged along the whole track' },
   { g: 'lumps', k: 'gR', l: 'Grind gauge: its range', u: 'µm', f: 1e-6, v: 100, min: 10, max: 1000, step: 5, d: 0, h: 'readings above it are off the gauge' },
   { g: 'flakes', k: 'sf', l: 'Flake strength', u: 'GPa', f: 1e9, v: 10, min: 0.01, max: 100, step: 0.1, d: 2, h: 'a GO sheet\'s tensile strength, its defects included' },
   { g: 'visc', k: 'Tlaw', l: 'The flow law\'s temperature', u: '°C', f: 1, v: 20, min: 0, max: 90, step: 0.5, d: 1, h: 'where the Materials law was measured' },
@@ -129,10 +138,14 @@ const MIX_INPUTS = [
   { g: 'num', k: 'dtMax', l: 'Longest time step', u: 's', f: 1, v: 1, min: 0.01, max: 30, step: 0.01, d: 2 },
 ];
 /** The program's default steps: { name, min (duration), No (arm, rpm), Nd (disperser, rpm; 0 off), p (kPa abs), dose:
- *  null | { pH } | { mL } (ammonia water at the step's start) }. */
+ *  null | { recipe: true } (the recipe's ammonia water) | { pH } (to a pH) | { mL } (an amount), at the step's start }.
+ *  SOP 1.3 (100 L): steps 1 and 2 run on, the ammonia goes in, step 3, then step 4 under vacuum to take out the air;
+ *  their times and speeds the traveler's (here typical values until they are entered). */
 const MIX_STEPS = [
-  { name: 'Blades only', min: 5, No: 30, Nd: 0, p: 101.325, dose: { pH: 7 } },
-  { name: 'Blades and disperser', min: 30, No: 30, Nd: 1500, p: 10, dose: null },
+  { name: 'Step 1', min: 5, No: 20, Nd: 0, p: 101.325, dose: null },
+  { name: 'Step 2', min: 15, No: 30, Nd: 1000, p: 101.325, dose: null },
+  { name: 'Step 3', min: 15, No: 30, Nd: 1500, p: 101.325, dose: { recipe: true } },
+  { name: 'Step 4 (vacuum)', min: 10, No: 20, Nd: 0, p: 10, dose: null },
 ];
 /** The inputs' defaults in SI (the program as MIX_STEPS). */
 function mixDefaults() { return mixInSI(mixInDefaults()); }
@@ -160,9 +173,26 @@ const MIX_CW = 4180;
  *  Stokes: 4π / (ln k − (k² − 1)/(k² + 1)). */
 function mixCellDrag(a, b) { const k = b / a; return 4 * Math.PI / (Math.log(k) - (k * k - 1) / (k * k + 1)); }
 
-/** The mixer's geometry (see the header). */
+/**
+ * The batch from the recipe (SI: kg; rhoS, rhoL the slurry card's, rhoN the ammonia water's): the paste's GO and its
+ * water, the soak's and the mixer's water, the ammonia water (dosed in the program). Returns { mGO, mW0 (the water before
+ * the ammonia), V0, phi0 (the batch before the ammonia), mTot, mLiq (all but the GO, the ammonia water's included), wGO
+ * (the GO's mass share at the end), phiEnd, Vend (the mixed slurry), wSoak (the soak bucket's GO share), wL, phiL (the
+ * paste pieces' GO share by mass and by volume: the paste's, swollen toward the bucket's by sw), phiH (the hard pieces':
+ * the paste's, not swollen) }.
+ */
+function mixRecipe(o) {
+  const rS = o.rhoS, rL = o.rhoL, mGO = o.mPaste * o.wPaste, mW0 = o.mPaste * (1 - o.wPaste) + o.mSoak + o.mWat;
+  const V0 = mGO / rS + mW0 / rL, mTot = mGO + mW0 + o.mN, Vend = V0 + o.mN / o.rhoN;
+  const vol = w => (w / rS) / (w / rS + (1 - w) / rL);   // (a GO mass share in water, as a volume share)
+  const wSoak = mGO / (o.mPaste + o.mSoak), wL = o.wPaste + o.sw * (wSoak - o.wPaste);
+  return { mGO, mW0, V0, phi0: mGO / rS / V0, mTot, mLiq: mTot - mGO, wGO: mGO / mTot, phiEnd: mGO / rS / Vend, Vend, wSoak, wL, phiL: vol(wL), phiH: vol(o.wPaste) };
+}
+
+/** The mixer's geometry (see the header): the batch's volume o.V, else the recipe's before the ammonia. */
 function mixGeom(o) {
-  const R = o.D / 2, A = Math.PI * R * R, H = o.V / A, rs = R - o.dw - o.ro, nBars = o.nBlade * o.nBar;
+  const V = Number.isFinite(o.V) ? o.V : mixRecipe(o).V0;
+  const R = o.D / 2, A = Math.PI * R * R, H = V / A, rs = R - o.dw - o.ro, nBars = o.nBlade * o.nBar;
   const a = (o.w + o.t) / 4, b = o.D / (2 * Math.sqrt(nBars)), Hb = Math.max(0, H - o.db);
   const err = !(rs > 0) ? 'the blades\' axes are too far out: the bars do not fit between the axis and the wall'
     : !(H <= o.Hv) ? 'the batch does not fit in the vessel' : !(b > a * 1.05) ? 'the bars are too wide for the vessel'
@@ -170,7 +200,7 @@ function mixGeom(o) {
   // (the disc sits on the arm halfway between two blades: its rim's clearance to their sweep, to the wall)
   const da = Math.PI / o.nBlade, cB = Math.sqrt(o.ro * o.ro + o.rD * o.rD - 2 * o.ro * o.rD * Math.cos(da)) - rs - o.Dd / 2, cW = R - o.rD - o.Dd / 2;
   const warn = !err && cB < 0 ? `the disc reaches ${(-cB * 1000).toFixed(1)} mm into the blades' sweep: they would hit it unless they clear it in height` : null;
-  return { R, A, H, rs, nBars, a, b, Hb, Awet: Math.PI * o.D * H + A, cB, cW, err, warn };
+  return { R, A, H, V, rs, nBars, a, b, Hb, Awet: Math.PI * o.D * H + A, cB, cW, err, warn };
 }
 
 /** The power at a moment: { PB, PD (W), TqB, TqD (N m at the arm and the disperser's shaft), ReB, ReD, NpD, zones:
@@ -183,17 +213,31 @@ function mixPower(o, G, mu, rho, No, Nd, V) {
   // the disperser
   const gdD = o.ks * Nd, muD = Nd > 0 ? mu(gdD) : 0, ReD = Nd > 0 ? rho * Nd * o.Dd * o.Dd / muD : 0, NpD = Nd > 0 ? o.Kp / ReD + o.Npt : 0;
   const PD = Nd > 0 ? NpD * rho * Nd ** 3 * o.Dd ** 5 : 0;
-  const zones = [];
-  if (Nd > 0) { const gd = Math.PI * Nd * o.Dd / o.hT; zones.push({ k: 'disc', gd, tau: mu(gd) * gd, f: o.Fl * Nd * o.Dd ** 3 / V }); }
+  // (each zone: its mean shear rate and stress, how often the batch passes, and its turbulence: the share fe of its
+  //  driver's power dissipated in its volume, ε per mass -- the disc's rim band π Dd hT², the blades' wall and floor gaps)
+  const zones = [], zo = (k, gd, f, eps) => { const m = mu(gd); return { k, gd, tau: m * gd, f, eps, mu: m, rho, Ck: o.Ck }; };
+  if (Nd > 0) zones.push(zo('disc', Math.PI * Nd * o.Dd / o.hT, o.Fl * Nd * o.Dd ** 3 / V, o.fe * PD / (rho * Math.PI * o.Dd * o.hT * o.hT)));
   if (No > 0) {
     const gw = Math.abs(Wo * o.ro + Wb * G.rs) / o.dw, gf = Math.sqrt((Wo * o.ro) ** 2 + Wb * Wb * G.rs * G.rs / 3) / o.db;
-    zones.push({ k: 'wall', gd: gw, tau: mu(gw) * gw, f: G.nBars * No * Math.PI * o.D * o.dw * G.Hb / V });
-    zones.push({ k: 'floor', gd: gf, tau: mu(gf) * gf, f: o.nBlade * Math.abs(Wb) * G.rs * G.rs * o.db / V });
+    const Vgap = Math.PI * o.D * o.dw * G.Hb + o.nBlade * Math.PI * G.rs * G.rs * o.db, epsB = o.fe * PB / (rho * Vgap);
+    zones.push(zo('wall', gw, G.nBars * No * Math.PI * o.D * o.dw * G.Hb / V, epsB));
+    zones.push(zo('floor', gf, o.nBlade * Math.abs(Wb) * G.rs * G.rs * o.db / V, epsB));
   }
   // the batch's mean shear rate: τ(γ̇) γ̇ = P / V (monotone in γ̇: bisection in its logarithm)
   const eps = (PB + PD) / V; let gdBulk = 0;
   if (eps > 0) { let lo = -12, hi = 8; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2, g = Math.exp(m); if (mu(g) * g * g > eps) hi = m; else lo = m; } gdBulk = Math.exp((lo + hi) / 2); }
   return { PB, PD, TqB: No > 0 ? PB / Wo : 0, TqD: Nd > 0 ? PD / (2 * Math.PI * Nd) : 0, ReB: muB > 0 ? rho * Vb * 2 * G.a / muB : 0, ReD, NpD, Vb, zones, gdBulk };
+}
+
+/**
+ * The stress a zone puts on a body of size a: the larger of its mean shear's μ γ̇, the Kolmogorov scale's μ (ε/ν)^½ and,
+ * for a body larger than the Kolmogorov length η = (ν³/ε)^¼, the inertial eddies' C ρ (ε a)^⅔ (Kolmogorov–Hinze: equal
+ * to C μ (ε/ν)^½ at a = η). Without turbulence (ε 0) the mean shear's.
+ */
+function mixTauOn(z, a) {
+  if (!(z.eps > 0)) return z.tau;
+  const nu = z.mu / z.rho, tK = z.mu * Math.sqrt(z.eps / nu), eta = Math.pow(nu * nu * nu / z.eps, 0.25);
+  return Math.max(z.tau, tK, a > eta ? z.Ck * z.rho * Math.pow(z.eps * a, 2 / 3) : 0);
 }
 
 // ---- chemistry ----
@@ -346,63 +390,79 @@ function mixLogNormalShare(lo, hi, m, sg) {
  * { error }.
  */
 function mixRun(o) {
+  // the batch: the recipe's (the mixed slurry's solids the flow law's reference, φ; the pieces' solids φL)
+  const RC = mixRecipe(o);
+  o = { ...o, V: RC.V0, phi: RC.phiEnd, phiL: RC.phiL, phiH: RC.phiH };
   const G = mixGeom(o); if (G.err) return { error: G.err };
-  if (!(o.phiL >= o.phi)) return { error: 'the cake\'s solids must be at least the slurry\'s: its water is part of the batch\'s' };
+  if (!(RC.mGO > 0)) return { error: 'the recipe has no GO' };
+  if (!(o.phiL >= RC.phi0)) return { error: 'the paste pieces must hold more GO than the batch: the soak\'s water is part of the batch\'s' };
   if (!o.steps || !o.steps.length) return { error: 'the program has no steps' };
-  // the charge: the card's slurry, its GO in the cake's pieces (fCake of it)
-  const mGO = o.phi * o.V * o.rhoS; let mW = (1 - o.phi) * o.V * o.rhoL;
+  // the charge: the recipe's GO, its water before the ammonia; the GO in the paste's pieces (fCake of it)
+  const mGO = RC.mGO; let mW = RC.mW0;
   const Q = { Q1: o.q1 * mGO, Q2: o.q2 * mGO, QSA: o.qSA * mGO, NT: 0 };
   const cN = (1 - o.wN) * MIX_MNH3 / o.wN / o.rhoL * 1000;   // (L of water per mol of NH₃ in the ammonia water)
-  // the lumps' grid: v0 a flake, doubling to the largest piece
-  const v0 = o.d50 * o.d50 * o.tF, aOf = v => Math.max(o.d50, Math.cbrt(6 * v / (Math.PI * o.phiL)));
-  const vTop = Math.PI / 6 * o.phiL * (o.a0 * Math.pow(o.sg, 3.5)) ** 3;
-  const K = Math.max(8, Math.ceil(Math.log2(vTop / v0)) + 2), v = Array.from({ length: K }, (_, k) => v0 * 2 ** k), a = v.map(aOf);
-  const lump = v.map((x, k) => a[k] > o.dMax);   // (above the flakes' largest size: a lump)
-  // the cake's pieces: their volume share by size class (class edges midway in size)
-  const edge = k => (k <= 0 ? 0 : Math.sqrt(a[k - 1] * a[k]));
+  // the lumps' grid, in GO volume: v0 a flake, doubling to the largest piece; a piece's size from its solids (the soft
+  //  pieces' φL, the hard ones' φH)
+  const v0 = o.d50 * o.d50 * o.tF, aOf = phi => x => Math.max(o.d50, Math.cbrt(6 * x / (Math.PI * phi)));
+  const vTop = Math.max(Math.PI / 6 * o.phiL * (o.a0 * Math.pow(o.sg, 3.5)) ** 3, o.fh > 0 ? Math.PI / 6 * o.phiH * (o.ah * Math.pow(o.sgh, 3.5)) ** 3 : 0);
+  const K = Math.max(8, Math.ceil(Math.log2(vTop / v0)) + 2), v = Array.from({ length: K }, (_, k) => v0 * 2 ** k), a = v.map(aOf(o.phiL)), aH = v.map(aOf(o.phiH));
+  const lump = a.map(x => x > o.dMax), lumpH = aH.map(x => x > o.dMax);   // (above the flakes' largest size: a lump)
+  // the paste's pieces: their volume share by size class (class edges midway in size)
+  //  (all below the first class's upper edge in it: the GO kept)
+  const share = (sz, k, m, sg) => mixLogNormalShare(k <= 1 ? 0 : Math.sqrt(sz[k - 1] * sz[k]), k < K - 1 ? Math.sqrt(sz[k] * sz[k + 1]) : Infinity, m, sg);
   const N = new Float64Array(K), Nh = new Float64Array(K), Vs = o.fCake * mGO / o.rhoS;
-  for (let k = 1; k < K; k++) { const s = mixLogNormalShare(edge(k), k < K - 1 ? edge(k + 1) : Infinity, o.a0, o.sg); N[k] = (1 - o.fh) * Vs * s / v[k]; Nh[k] = o.fh * Vs * s / v[k]; }
+  for (let k = 1; k < K; k++) { N[k] = (1 - o.fh) * Vs * share(a, k, o.a0, o.sg) / v[k]; Nh[k] = o.fh * Vs * share(aH, k, o.ah, o.sgh) / v[k]; }
   N[0] += (1 - o.fCake) * mGO / o.rhoS / v0;
   // the flakes' sizes (√2 steps; their median o.d50, the spread from the card's range: ±2 geometric deviations)
   const sgF = Math.max(1.01, Math.exp(Math.log(o.dMax / o.dMin) / 4)), J = 24, dj = Array.from({ length: J }, (_, j) => o.d50 * Math.pow(2, (j - 14) / 2));
   const F0 = dj.map((d, j) => mixLogNormalShare(j ? Math.sqrt(dj[j - 1] * d) : 0, j < J - 1 ? Math.sqrt(d * dj[j + 1]) : Infinity, o.d50, sgF));
-  const dispVol = () => { let s = N[0] * v0; for (let k = 1; k < K; k++) if (!lump[k]) s += (N[k] + Nh[k]) * v[k]; return s; };
+  const dispVol = () => { let s = N[0] * v0; for (let k = 1; k < K; k++) { if (!lump[k]) s += N[k] * v[k]; if (!lumpH[k]) s += Nh[k] * v[k]; } return s; };
   const Gf = new Float64Array(J); { const vd = dispVol(); for (let j = 0; j < J; j++) Gf[j] = vd * F0[j]; }
   const pbe = mixPBE(v, { daughters: 'halves' }), pbeF = mixPBE(dj.map(d => d * d), { daughters: 'halves' });
-  const sOf = (k, hard) => o.sig * (hard ? o.kh : 1) * Math.pow(a[k] / 1e-3, -o.beta);
+  const sOf = (k, hard) => o.sig * (hard ? o.kh : 1) * Math.pow((hard ? aH : a)[k] / 1e-3, -o.beta);
   const d50Of = () => { let s = 0, tot = 0; for (const g of Gf) tot += g; if (!(tot > 0)) return o.d50; for (let j = 0; j < J; j++) { if (s + Gf[j] >= tot / 2) { const f = (tot / 2 - s) / Gf[j]; return dj[j] * Math.pow(Math.SQRT2, f - 0.5); } s += Gf[j]; } return dj[J - 1]; };
   const cSl = () => { const w = mGO / (mGO + mW); return w * o.cS + (1 - w) * MIX_CW; };
   // the viscosity now: the lumps a paste at the cake's solids, the rest the dispersed flakes in the remaining water
   const state = T => {
-    const Vb = mGO / o.rhoS + mW / o.rhoL; let Vl = 0; for (let k = 1; k < K; k++) if (lump[k]) Vl += (N[k] + Nh[k]) * v[k] / o.phiL;
-    const X = Math.min(1, Vl / Vb), phiR = X < 1 ? Math.max(0, (mGO / o.rhoS - Vl * o.phiL) / (Vb - Vl)) : 0;
+    const Vb = mGO / o.rhoS + mW / o.rhoL; let Vl = 0, Vg = 0;
+    for (let k = 1; k < K; k++) { if (lump[k]) { Vl += N[k] * v[k] / o.phiL; Vg += N[k] * v[k]; } if (lumpH[k]) { Vl += Nh[k] * v[k] / o.phiH; Vg += Nh[k] * v[k]; } }
+    const X = Math.min(1, Vl / Vb), phiR = X < 1 ? Math.max(0, (mGO / o.rhoS - Vg) / (Vb - Vl)) : 0;
     const fT = mixMuW(T) / mixMuW(o.Tlaw), fd = Math.pow(d50Of() / o.d50, o.md), muW = mixMuW(T);
-    const fL = o.cCake * Math.pow(o.phiL / o.phi, o.mphi), fR = Math.pow(phiR / o.phi, o.mphi);
+    const fL = o.cCake * Math.pow((Vl > 0 ? Vg / Vl : o.phiL) / o.phi, o.mphi), fR = Math.pow(phiR / o.phi, o.mphi);
     const mu = gd => { const m0 = o.law(gd) * fT * fd; return Math.exp(X * Math.log(Math.max(m0 * fL, muW)) + (1 - X) * Math.log(Math.max(m0 * fR, muW))); };
     return { Vb, X, phiR, mu, rho: (mGO + mW) / Vb, phiNow: mGO / o.rhoS / Vb };
   };
   const grind = () => {
-    // (the size above which Ns lumps are in the sample: counted from the top, spread evenly in log size over each class)
-    //  -- fewer lumps than that in a sample, the size above which one is; fewer than one, the sample a piece of cake: the
-    //  lumps' median size by volume)
-    const Vb = mGO / o.rhoS + mW / o.rhoL;
-    const above = need => { let c = 0;
-      for (let k = K - 1; k >= 1; k--) { if (!lump[k]) break; const n = (N[k] + Nh[k]) / Vb, lo = Math.sqrt(a[k - 1] * a[k]), hi = k < K - 1 ? Math.sqrt(a[k] * a[k + 1]) : a[k] * Math.SQRT2;
-        if (n > 0 && c + n >= need) return hi * Math.pow(lo / hi, (need - c) / n); c += n; }
-      return null; };
-    const r = above(o.Ns / o.Vg) ?? above(1 / o.Vg); if (r != null) return r;
-    let tot = 0, s = 0; for (let k = 1; k < K; k++) if (lump[k]) tot += (N[k] + Nh[k]) * v[k];
-    if (!(tot > 0)) return 0;
-    for (let k = 1; k < K; k++) if (lump[k]) { s += (N[k] + Nh[k]) * v[k]; if (s >= tot / 2) return a[k]; }
+    // (the size above which Ns lumps are in the sample: both populations' classes, each spread evenly in log size between
+    //  its edges, counted from the top; a lump in the sample when it touches it -- its centre within the sample's radius
+    //  and its own (the sample a ball of Vg), so the big pieces count as often as a spatula would meet them -- fewer lumps
+    //  than that in a sample, the size above which one is; fewer than one, the lumps' median size by volume)
+    const Vb = mGO / o.rhoS + mW / o.rhoL, ball = V => Math.cbrt(3 * V / (4 * Math.PI)), cls = [];
+    for (const [M, sz, lp] of [[N, a, lump], [Nh, aH, lumpH]]) for (let k = 1; k < K; k++) if (lp[k] && M[k] > 0)
+      cls.push({ n: M[k] / Vb, lo: Math.max(o.dMax, Math.sqrt(sz[k - 1] * sz[k])), hi: k < K - 1 ? Math.sqrt(sz[k] * sz[k + 1]) : sz[k] * Math.SQRT2, a: sz[k], vol: M[k] * v[k] });
+    if (!cls.length) return 0;
+    // (the lumps above x touching a sample of volume V)
+    const count = (x, V) => { const R = ball(V); let c = 0; for (const q of cls) if (x < q.hi) c += q.n * 4 / 3 * Math.PI * (R + q.a / 2) ** 3 * (x <= q.lo ? 1 : Math.log(q.hi / x) / Math.log(q.hi / q.lo)); return c; };
+    const above = (need, V) => { let lo = Math.log(o.dMax), hi = Math.log(Math.max(...cls.map(q => q.hi)));
+      if (!(count(o.dMax, V) >= need)) return null;
+      for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (count(Math.exp(m), V) >= need) lo = m; else hi = m; }
+      return Math.exp((lo + hi) / 2); };
+    // (a lump larger than the gauge's deepest point anywhere in the sample put on it is dragged along its whole track:
+    //  one there puts the reading off the gauge, at the largest size one is met at)
+    const rOff = above(1, o.Vp); if (rOff != null && rOff > o.gR) return rOff;
+    const r = above(o.Ns, o.Vg) ?? above(1, o.Vg); if (r != null) return r;
+    cls.sort((p, q) => p.a - q.a); let tot = 0, s = 0; for (const q of cls) tot += q.vol;
+    for (const q of cls) { s += q.vol; if (s >= tot / 2) return q.a; }
     return 0;
   };
   let T = o.T0, t = 0, evap = 0, addW = 0, heatN = 0;
   const hist = { t: [], T: [], PB: [], PD: [], TqB: [], TqD: [], pH: [], zeta: [], W: [], mu27: [], grind: [], lumps: [], d50: [], phi: [], gdBulk: [], step: [] };
   const zonesAt = [], doses = [];
+  const lumpVol = () => { let lv = 0, tot = 0; for (let k = 0; k < K; k++) { tot += (N[k] + Nh[k]) * v[k]; if (lump[k]) lv += N[k] * v[k]; if (lumpH[k]) lv += Nh[k] * v[k]; } return { lv, tot }; };
   const chem = () => mixSpecies(o, Q, mW / o.rhoL * 1000);
   const rec = (P, s, i) => {
     const sp = chem(), sf = mixSurface(o, sp, T, o.d50 / 2), st = state(T);
-    let lv = 0, tot = 0; for (let k = 1; k < K; k++) { const x = (N[k] + Nh[k]) * v[k]; tot += x; if (lump[k]) lv += x; } tot += N[0] * v0;
+    const { lv, tot } = lumpVol();
     hist.t.push(t); hist.T.push(T); hist.PB.push(P.PB); hist.PD.push(P.PD); hist.TqB.push(P.TqB); hist.TqD.push(P.TqD); hist.pH.push(sp.pH);
     hist.zeta.push(sf.zeta); hist.W.push(sf.W); hist.mu27.push(st.mu(2.7)); hist.grind.push(grind()); hist.lumps.push(lv / tot); hist.d50.push(d50Of());
     hist.phi.push(st.phiNow); hist.gdBulk.push(P.gdBulk); hist.step.push(i);
@@ -419,10 +479,10 @@ function mixRun(o) {
   for (let i = 0; i < o.steps.length; i++) {
     const s = o.steps[i], No = s.No / 60, Nd = s.Nd / 60, p = s.p * 1000, dur = s.min * 60;
     // the step's ammonia, at its start (the batch just before it recorded: the history jumps with the dose)
-    if (s.dose && (s.dose.pH != null || s.dose.mL > 0)) {
+    if (s.dose && (s.dose.recipe || s.dose.pH != null || s.dose.mL > 0)) {
       { const sb = state(T); rec(mixPower(o, G, sb.mu, sb.rho, No, Nd, sb.Vb), sb, i); }
       const before = chem(), n0 = Q.NT;
-      const NT = s.dose.pH != null ? mixDoseFor(o, Q, mW / o.rhoL * 1000, s.dose.pH, cN) : n0 + s.dose.mL * 1e-6 * o.rhoN * o.wN / MIX_MNH3;
+      const NT = s.dose.pH != null ? mixDoseFor(o, Q, mW / o.rhoL * 1000, s.dose.pH, cN) : n0 + (s.dose.recipe ? o.mN : s.dose.mL * 1e-6 * o.rhoN) * o.wN / MIX_MNH3;
       const dn = NT - n0, mSol = dn * MIX_MNH3 / o.wN, mWadd = mSol * (1 - o.wN);
       // (mixed in at its own temperature; the ammonium it forms releases its heat)
       const c0 = cSl() * (mGO + mW); mW += mWadd; addW += mWadd; Q.NT = NT;
@@ -437,12 +497,12 @@ function mixRun(o) {
     const rates = (st, Pw) => {
       const S = new Float64Array(K), Sh = new Float64Array(K), R = new Float64Array(K), Rh = new Float64Array(K);
       for (let k = 1; k < K; k++) for (const z of Pw.zones) {
-        for (const [hard, Sx, Rx] of [[false, S, R], [true, Sh, Rh]]) {
-          const x = z.tau / sOf(k, hard); Sx[k] += z.f * (1 - Math.exp(-Math.pow(x, o.mR)));
-          if (lump[k] && a[k] > a[k - 1]) Rx[k] += z.f * o.le * x / (a[k] - a[k - 1]);
+        for (const [hard, Sx, Rx, sz, lp] of [[false, S, R, a, lump], [true, Sh, Rh, aH, lumpH]]) {
+          const x = mixTauOn(z, sz[k]) / sOf(k, hard); Sx[k] += z.f * (1 - Math.exp(-Math.pow(x, o.mR)));
+          if (lp[k] && sz[k] > sz[k - 1]) Rx[k] += z.f * o.le * x / (sz[k] - sz[k - 1]);
         }
       }
-      const SF = new Float64Array(J); for (let j = 1; j < J; j++) for (const z of Pw.zones) SF[j] += z.f * (1 - Math.exp(-Math.pow(z.tau * dj[j] / (2 * o.tF * o.sf), o.mR)));
+      const SF = new Float64Array(J); for (let j = 1; j < J; j++) for (const z of Pw.zones) SF[j] += z.f * (1 - Math.exp(-Math.pow(mixTauOn(z, dj[j]) * dj[j] / (2 * o.tF * o.sf), o.mR)));
       const sp = chem(), W = mixSurface(o, sp, T, o.d50 / 2).W, gb = Pw.gdBulk;
       const beta = Number.isFinite(W) && gb > 0 ? (ii, jj) => (4 / 3) * gb * (a[ii] + a[jj]) ** 3 / W / st.Vb : null;
       return { soft: { S, R, beta }, hard: { S: Sh, R: Rh }, fl: { S: SF } };
@@ -511,12 +571,12 @@ function mixRun(o) {
   // the end
   const st = state(T), sp = chem(), sf = mixSurface(o, sp, T, o.d50 / 2), T20 = o.Tlaw;
   const muAt = gd => st.mu(gd) * mixMuW(T20) / mixMuW(T);   // (at the flow law's temperature, as a rheometer would)
-  const dist = { a: Array.from(a), vol: Array.from(v, (x, k) => (N[k] + Nh[k]) * x), lump: lump.slice() };
+  const dist = { a: Array.from(a), vol: Array.from(v, (x, k) => N[k] * x), lump: lump.slice(), aH: Array.from(aH), volH: Array.from(v, (x, k) => Nh[k] * x), lumpH: lumpH.slice() };
   const flakes = { d: dj, vol: Array.from(Gf) };
-  let lv = 0, tot = 0; for (let k = 0; k < K; k++) { const x = (N[k] + Nh[k]) * v[k]; tot += x; if (lump[k]) lv += x; }
+  const { lv, tot } = lumpVol();
   const end = { t, T, pH: sp.pH, zeta: sf.zeta, sigma: sf.sigma, debye: sf.debye, W: sf.W, I: sp.I, grind: grind(), lumps: lv / tot, d50: d50Of(),
     mu27: muAt(2.7), mu27T: st.mu(2.7), phi: st.phiNow, rho: st.rho, evap, addW, heatN, mGO, mW, goVol: tot, goVol0: mGO / o.rhoS, steps };
-  return { G, hist, end, doses, zones: zonesAt, dist, flakes, muAt, NT: Q.NT };
+  return { G, hist, end, doses, zones: zonesAt, dist, flakes, muAt, NT: Q.NT, recipe: RC };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MIX_INPUTS, MIX_STEPS, mixDefaults, mixInDefaults, mixInSI, mixCellDrag, mixGeom, mixPower, mixSpecies, mixDoseFor, mixSurface, mixPBE, mixLogNormalShare, mixRun };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MIX_INPUTS, MIX_STEPS, mixDefaults, mixInDefaults, mixInSI, mixCellDrag, mixRecipe, mixTauOn, mixGeom, mixPower, mixSpecies, mixDoseFor, mixSurface, mixPBE, mixLogNormalShare, mixRun };

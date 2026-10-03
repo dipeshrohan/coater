@@ -11,8 +11,8 @@
  */
 
 const MIX = { res: null, key: null, busy: false, error: null, ms: 0 };
-const MIX_GROUPS = [['vessel', 'Vessel and jacket'], ['blades', 'Planetary blades'], ['disp', 'High-speed disperser'], ['chem', 'Chemistry and ammonia'],
-  ['lumps', 'Cake lumps and the grind gauge'], ['flakes', 'Flakes'], ['visc', 'Viscosity'], ['power', 'Power constants'], ['num', 'Solver']];
+const MIX_GROUPS = [['recipe', 'Recipe'], ['vessel', 'Vessel and jacket'], ['blades', 'Planetary blades'], ['disp', 'High-speed disperser'], ['chem', 'Chemistry and ammonia'],
+  ['lumps', 'Paste pieces and the grind gauge'], ['flakes', 'Flakes'], ['visc', 'Viscosity'], ['power', 'Power constants'], ['num', 'Solver']];
 const MIX_ASPECT = 0.42;   // (the charts' height / width: the page scrolls, so they keep their shape)
 const MIX_STEP_LIMITS = { min: [0.1, 1440], No: [0, 200], Nd: [0, 10000], p: [1, 200], pH: [3, 12], mL: [0, 1e5] };
 /** The page's inputs (the units it shows): OVEN.mix. */
@@ -32,6 +32,8 @@ function mixOpts() {
   return { ...mixInSI(mixIn()), phi: c.phi.v / 100, rhoS: c.rhoS.v * 1000, rhoL: c.rhoL.v, d50: c.dMean.v * 1e-6, dMin: c.dMin.v * 1e-6, dMax: c.dMax.v * 1e-6,
     tF: c.tFlake.v * 1e-9, cS: MAT.dry.cS.v, law: mixLaw().f };
 }
+/** The page's inputs in SI with the slurry card's densities (the recipe's batch: its volume, its level). */
+const mixSetup = () => { const c = MAT.slurry; return { ...mixInSI(mixIn()), rhoS: c.rhoS.v * 1000, rhoL: c.rhoL.v }; };
 const mixProps = () => (typeof matSolverProps === 'function' ? matSolverProps() : null);
 function mixKeyNow() {
   const c = MAT.slurry;
@@ -66,7 +68,7 @@ const mixSig = v => (!Number.isFinite(v) ? '—' : Math.abs(v) >= 100 ? v.toFixe
 /** The inputs the shown results were solved with (an out-of-date batch is drawn with its own program). */
 const mixRunIn = () => (MIX.res && MIX.res.inp) || mixIn();
 const mixGrind = m => { const r = mixRunIn().gR; return !(m > 0) ? 'clean' : m * 1e6 > r ? `over ${r} µm` : `${(m * 1e6).toFixed(0)} µm`; };
-const mixDoseText = d => (!d ? 'none' : d.pH != null ? `to pH ${(+d.pH).toFixed(1)}` : `${(+d.mL).toFixed(0)} mL`);
+const mixDoseText = d => (!d ? 'none' : d.recipe ? `${+(+mixRunIn().mN).toFixed(1)} g` : d.pH != null ? `to pH ${(+d.pH).toFixed(1)}` : `${(+d.mL).toFixed(0)} mL`);
 
 // ---- the stage's line, its state ----
 function mixStage() {
@@ -81,7 +83,7 @@ function mixStage() {
 /** The mixer from above (the vessel, the blades' orbit and sweep, their bars, the disc) and from the side (the batch's
  *  level, a blade's frame with its gaps, the disc's height), with their sizes. */
 function mixDrawMixer() {
-  const q = mixInSI(mixIn()), G = mixGeom(q), ink = cssVar('--ink'), mut = cssVar('--muted'), acc = cssVar('--accent'), fill = cssVar('--go-film'), soft = cssVar('--soft'), line = cssVar('--line');
+  const q = mixSetup(), G = mixGeom(q), ink = cssVar('--ink'), mut = cssVar('--muted'), acc = cssVar('--accent'), fill = cssVar('--go-film'), soft = cssVar('--soft'), line = cssVar('--line');
   const mm = v => `${+(v * 1000).toFixed(1)} mm`;
   const shown = el => el && (PROC_ALL || el.offsetParent !== null);
   const top = document.getElementById('mxTop');
@@ -186,27 +188,48 @@ function mixDrawProgram() {
 function mixProgramTable() {
   const S = mixIn().steps, r = mixIn().ratio;
   const num = (i, k, step, what, unit) => { const [lo, hi] = MIX_STEP_LIMITS[k]; return `<input type="number" min="${lo}" max="${hi}" step="${step}" value="${S[i][k]}" data-mxstep="${i}:${k}" aria-label="Step ${i + 1}: ${what}, ${unit}">`; };
-  const dose = (q, i) => { const m = !q.dose ? 'none' : q.dose.pH != null ? 'pH' : 'mL';
-    return `<select data-mxdose="${i}" aria-label="Step ${i + 1}: ammonia water at its start">${[['none', 'none'], ['pH', 'to a pH'], ['mL', 'an amount']].map(([v, t]) => `<option value="${v}"${v === m ? ' selected' : ''}>${t}</option>`).join('')}</select>${m === 'pH' ? `<input type="number" min="3" max="12" step="0.1" value="${q.dose.pH}" data-mxdosev="${i}:pH" aria-label="Step ${i + 1}: ammonia to pH">` : m === 'mL' ? `<input type="number" min="0" max="100000" step="10" value="${q.dose.mL}" data-mxdosev="${i}:mL" aria-label="Step ${i + 1}: ammonia water, mL"><span class="prop-u">mL</span>` : ''}`; };
+  const dose = (q, i) => { const m = !q.dose ? 'none' : q.dose.recipe ? 'recipe' : q.dose.pH != null ? 'pH' : 'mL';
+    return `<select data-mxdose="${i}" aria-label="Step ${i + 1}: ammonia water at its start">${[['none', 'none'], ['recipe', 'the recipe\'s'], ['pH', 'to a pH'], ['mL', 'an amount']].map(([v, t]) => `<option value="${v}"${v === m ? ' selected' : ''}>${t}</option>`).join('')}</select>${m === 'recipe' ? `<span class="mx-ro">${+(+mixIn().mN).toFixed(1)} g</span>` : m === 'pH' ? `<input type="number" min="3" max="12" step="0.1" value="${q.dose.pH}" data-mxdosev="${i}:pH" aria-label="Step ${i + 1}: ammonia to pH">` : m === 'mL' ? `<input type="number" min="0" max="100000" step="10" value="${q.dose.mL}" data-mxdosev="${i}:mL" aria-label="Step ${i + 1}: ammonia water, mL"><span class="prop-u">mL</span>` : ''}`; };
   return `<div class="proc-zones-wrap"><table class="proc-kv proc-grid proc-zones mx-prog"><thead><tr><th>Step</th><th>Name</th><th>Time <small>min</small></th><th>Arm <small>rpm</small></th><th>Blades <small>rpm</small></th><th>Disperser <small>rpm</small></th><th>Pressure <small>kPa abs</small></th><th>Ammonia water at its start</th><th></th></tr></thead><tbody>
     ${S.map((q, i) => `<tr><th>${i + 1}</th><td><input type="text" value="${mixEsc(q.name)}" data-mxname="${i}" aria-label="Step ${i + 1}: name" maxlength="40"></td>
       <td>${num(i, 'min', 0.5, 'time', 'min')}</td><td>${num(i, 'No', 1, 'arm speed', 'rpm')}</td><td class="mx-ro">${(q.No * r).toFixed(1)}</td><td>${num(i, 'Nd', 50, 'disperser speed', 'rpm')}</td><td>${num(i, 'p', 1, 'pressure', 'kPa absolute')}</td>
       <td class="mx-dose">${dose(q, i)}</td><td>${S.length > 1 ? `<button type="button" class="icon-btn" data-mxdel="${i}" title="Remove step ${i + 1}" aria-label="Remove step ${i + 1}">${uiIco('trash')}</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
     <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="mxAddStep">${uiIco('plus')}Add a step</button></div>`;
 }
+/** The recipe as weighed in (the sheet's layout): each item, its amount, what it is; the batch's totals and make-up. */
+function mixRecipeHTML() {
+  const d = mixIn(), o = mixOpts(), R = mixRecipe(o), g = v => Math.round(v * 1000).toLocaleString('en-US'), g1 = v => (v * 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const at = d.steps.map((q, i) => (q.dose && q.dose.recipe ? i + 1 : 0)).filter(Boolean);
+  const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
+  const row = (t, m, note) => `<tr><th scope="row">${t}</th><td>${m}</td><td>${note}</td></tr>`;
+  return `<div class="mx-recipe"><div class="oned-scroll"><table class="cfd-table mx-rec"><thead><tr><th scope="col">Item</th><th scope="col">Amount <small>g</small></th><th scope="col">Note</th></tr></thead><tbody>
+      ${row('GO paste', g(o.mPaste), `${+(+d.wPaste).toFixed(1)} % solids: ${g1(R.mGO)} g of dry GO`)}
+      ${row('Water, the soak', g(o.mSoak), `the paste soaks in it in a bucket: ${(R.wSoak * 100).toFixed(1)} % GO`)}
+      ${row('Water, the mixer', g(o.mWat), 'to the target weight in the mixing container')}
+      ${row(`Ammonia water, ${+(+d.wN).toFixed(1)} %`, g1(o.mN), at.length ? `poured in at step ${at.join(', ')}` : '<span class="mx-warn">no step takes it: the program doses none</span>')}
+      <tr class="mx-total"><th scope="row">Batch</th><td>${g(R.mTot)}</td><td>${g1(R.mLiq)} g of liquid with the paste's water: ${(R.mLiq / R.mTot * 100).toFixed(1)} %</td></tr></tbody></table></div>
+    <div class="stats mx-stats">${[
+      tile('GO in the batch', `${(R.wGO * 100).toFixed(2)} wt%`, `${(R.phiEnd * 100).toFixed(3)} vol%`, 'weight'),
+      tile('Batch volume', `${(R.Vend * 1000).toFixed(1)} L`, `${(R.V0 * 1000).toFixed(1)} L before the ammonia`, 'drop'),
+      tile('Paste pieces', `${(R.wL * 100).toFixed(1)} wt%`, `GO, swollen in the soak (${(R.phiL * 100).toFixed(1)} vol%)`, 'ratio'),
+      tile('Hard pieces', `${(o.fh * 100).toPrecision(2)} %`, `of the GO, not swollen: ${(R.phiH * 100).toFixed(1)} vol%`, 'ratio'),
+    ].join('')}</div></div>`;
+}
 const MIX_CHARTS = [['mxP', 'Power'], ['mxT', 'Temperature'], ['mxPH', 'pH'], ['mxG', 'Grind gauge'], ['mxL', 'GO in lumps'], ['mxM', 'Viscosity'], ['mxS', 'Lump sizes'], ['mxK', 'Flake sizes'], ['mxF', 'Flow curve']];
 /** The page's frame (filled by mixRender after it is drawn). */
 function mixPageHTML() {
-  const q = mixInSI(mixIn()), G = mixGeom(q), pane = (id, icon, title, aria) => `<figure class="pane mx-pane-r"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
+  const q = mixSetup(), G = mixGeom(q), pane = (id, icon, title, aria) => `<figure class="pane mx-pane-r"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
   return `<section class="mx-sec" id="mixSec">
-    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The mixer</h4><span class="fv-why">${(q.D * 1000).toFixed(0)} mm vessel, ${(q.V * 1000).toFixed(1)} L batch ${(G.H * 1000).toFixed(0)} mm deep; ${q.nBlade} planetary blades, a ${(q.Dd * 1000).toFixed(0)} mm disperser</span>
+    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The mixer</h4><span class="fv-why">${(q.D * 1000).toFixed(0)} mm vessel, ${(G.V * 1000).toFixed(1)} L batch ${(G.H * 1000).toFixed(0)} mm deep; ${q.nBlade} planetary blades, a ${(q.Dd * 1000).toFixed(0)} mm disperser</span>
         <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" data-chain="mixin">${uiIco('tune')}Its sizes (inputs bar)</button></div>
       <div class="mx-draw"><figure class="pane"><figcaption>${uiBadge('drop')}From above</figcaption><canvas id="mxTop" role="img" aria-label="The mixer from above: the vessel, the blades' orbit and sweep, their bars, the disperser"></canvas></figure>
         <figure class="pane"><figcaption>${uiBadge('drop')}From the side</figcaption><canvas id="mxSide" role="img" aria-label="The mixer from the side: the batch's level, a blade's frame and its gaps, the disperser's height"></canvas></figure></div>
       ${G.err || G.warn ? `<p class="dry-msg">${pill('The mixer as set: ' + (G.err || G.warn), G.err ? 'bad' : 'warn')}</p>` : ''}</div>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The program</h4><span class="fv-why">the blades spin ${q.ratio}× the arm, ${q.dir > 0 ? 'with' : 'against'} it; 101 kPa: open to the room</span></div>
       <canvas id="mxProg" class="mx-strip" role="img" aria-label="The program's steps along the time"></canvas>${mixProgramTable()}</div>
-    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The slurry going in</h4><span class="fv-why">from Materials: it is the mixed slurry's; the cake goes in as its pieces</span></div>${procSlurryHTML()}</div>
+    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The recipe</h4><span class="fv-why">the batch weighed in; the paste soaked first, its pieces swelling</span>
+        <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" data-chain="mixrecipe">${uiIco('tune')}Its amounts (inputs bar)</button></div>${mixRecipeHTML()}</div>
+    <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The mixed slurry</h4><span class="fv-why">Materials: the slurry the coater takes, its flow law and flakes</span></div>${procSlurryHTML()}</div>
     <div id="mxState" data-pstep="solve results"></div>
     <div class="furn-block" data-pstep="solve"><div class="furn-bh"><h4>How it is solved</h4></div>
       <table class="cfd-table mx-how"><tbody>
@@ -214,10 +237,12 @@ function mixPageHTML() {
         <tr><th scope="row">Power</th><td>the blades' bars by the exact Stokes drag in their share of the vessel plus their form drag; the disc by its power number, Kp/Re + Np∞, Kp the thin disc's exact Stokes torque</td></tr>
         <tr><th scope="row">Heat</th><td>the power, the jacket, the ammonia's neutralization, boiling under the step's vacuum</td></tr>
         <tr><th scope="row">pH</th><td>the charge balance of the GO's carboxyl and phenolic groups, ammonia and water; ammonia to a pH in closed form</td></tr>
-        <tr><th scope="row">Lumps and flakes</th><td>a population balance on ${'>'}40 size classes: the cake's pieces broken and eroded in the disc's rim and the blades' wall and floor gaps, the flakes' collisions (their charge's stability ratio), the flakes broken where their tension passes their strength</td></tr>
-        <tr><th scope="row">Viscosity</th><td>the Materials law: the lumps a paste at the cake's solids, the rest the dispersed flakes in the remaining water; the water's temperature, the flakes' size</td></tr>
+        <tr><th scope="row">The batch</th><td>from the recipe: the paste's GO and water, the soak's and the mixer's water, the ammonia water when its step comes</td></tr>
+        <tr><th scope="row">Lumps and flakes</th><td>a population balance on ${'>'}40 size classes for the paste's pieces (swollen in the soak) and its hard pieces (not swollen): broken and eroded where the stress passes their strength in the disc's rim and the blades' wall and floor gaps -- the mean shear's, the smallest eddies' (Kolmogorov) and, on pieces larger than them, the eddies' own; the flakes' collisions (their charge's stability ratio), the flakes broken where their tension passes their strength</td></tr>
+        <tr><th scope="row">Viscosity</th><td>the Materials law: the lumps a paste at their own solids, the rest the dispersed flakes in the remaining water; the water's temperature, the flakes' size</td></tr>
+        <tr><th scope="row">Grind gauge</th><td>the size above which ${mixIn().Ns} lumps touch the ${mixIn().Vg} µL drawn down its track; a lump larger than the gauge in the ${mixIn().Vp} mL put on it is dragged along the track: off the gauge</td></tr>
         <tr><th scope="row">Time step</th><td>at most ${mixIn().dtMax} s (inputs bar, Solver); faster processes take shorter steps, flocculation an implicit step</td></tr>
-        <tr><th scope="row">Checked against</th><td>the bars' drag (the biharmonic solution), the disc (the exact Stokes torque), the jacket and boiling (exact), the titration curve, the Debye length, Smoluchowski's and Ziff–McGrady's exact solutions: mixer.validate.js</td></tr>
+        <tr><th scope="row">Checked against</th><td>the bars' drag (the biharmonic solution), the disc (the exact Stokes torque), the jacket and boiling (exact), the titration curve, the Debye length, Smoluchowski's and Ziff–McGrady's exact solutions, the recipe sheet's totals, the Kolmogorov length: mixer.validate.js</td></tr>
       </tbody></table></div>
     <div class="stats mx-stats" id="mxStats" data-pstep="results"></div>
     <div data-pstep="results">${procChipsHTML('mix')}</div>
@@ -327,11 +352,17 @@ function mixCharts(r) {
   draw('mxL', [0, 100], [ser(H.lumps.map(v => v * 100), acc)], { yl: 'GO in lumps (%)' }, [['GO in lumps larger than the flakes', acc]]);
   draw('mxM', lim(H.mu27), [ser(H.mu27, go)], { yl: 'viscosity at 2.7 1/s (Pa·s)' }, [['the batch, at its temperature', go]]);
   // lump sizes at the end: the GO's volume share per class against size (log); the flakes' sizes
-  const D = r.dist, tot = D.vol.reduce((s, v) => s + v, 0) || 1, pts = D.a.map((a, i) => [Math.log10(a * 1e6), D.vol[i] / tot * 100]).filter((p, i) => D.lump[i]);
+  // (the GO's share in each size class at the end, of all the GO: the paste's pieces and its hard pieces, each by its own sizes)
+  const D = r.dist, tot = [...D.vol, ...(D.volH || [])].reduce((s, v) => s + v, 0) || 1;
+  const pts = D.a.map((a, i) => [Math.log10(a * 1e6), D.vol[i] / tot * 100]).filter((p, i) => D.lump[i] && p[1] > 1e-9);
+  const ptsH = D.aH ? D.aH.map((a, i) => [Math.log10(a * 1e6), D.volH[i] / tot * 100]).filter((p, i) => D.lumpH[i] && p[1] > 1e-9) : [];
   const vis = cv => cv && (PROC_ALL || cv.offsetParent !== null);
-  const cvS = document.getElementById('mxS'); if (vis(cvS)) { const xs = pts.map(p => p[0]); const lo = Math.floor(Math.min(...xs, 0)), hi = Math.ceil(Math.max(...xs, 2));
-    plotChart(cvS, MIX_ASPECT, { x0: lo, x1: hi, ...mixAxis(0, Math.max(1e-3, ...pts.map(p => p[1])) * 1.05), xl: 'lump size (µm)', yl: 'share of the GO (%)', xticks: Array.from({ length: hi - lo + 1 }, (_, i) => lo + i), xf: v => String(+Math.pow(10, v).toPrecision(1)), s: [{ p: pts, c: acc, w: 2, dots: true }] });
-    document.getElementById('mxSLg').innerHTML = oneDLegend([['in lumps at the end, by size class', acc, 'dot']]); }
+  const cvS = document.getElementById('mxS'); if (vis(cvS)) { const all = [...pts, ...ptsH], xs = all.map(p => p[0]); const lo = Math.floor(Math.min(...xs, 0)), hi = Math.ceil(Math.max(...xs, 2));
+    // (none in lumps: an empty chart says so)
+    if (!all.length) { paneEmpty(cvS, 'No lumps left at the end: all the GO is dispersed'); document.getElementById('mxSLg').innerHTML = ''; } else {
+    plotChart(cvS, MIX_ASPECT, { x0: lo, x1: hi, ...mixAxis(0, Math.max(1e-3, ...all.map(p => p[1])) * 1.05), xl: 'lump size (µm)', yl: 'share of the GO (%)', xticks: Array.from({ length: hi - lo + 1 }, (_, i) => lo + i), xf: v => String(+Math.pow(10, v).toPrecision(1)),
+      s: [...(pts.length ? [{ p: pts, c: acc, w: 2, dots: true }] : []), ...(ptsH.length ? [{ p: ptsH, c: warm, w: 2, dots: true, dash: [6, 4] }] : [])] });
+    document.getElementById('mxSLg').innerHTML = oneDLegend([...(pts.length ? [['the paste\'s pieces at the end', acc, 'dot']] : [['the paste\'s pieces: none left', acc, 'dot']]), ...(ptsH.length ? [['its hard pieces at the end', warm, 'dash']] : [])]); } }
   const F = r.flakes, ft = F.vol.reduce((s, v) => s + v, 0) || 1, c0 = MAT.slurry;
   const cvK = document.getElementById('mxK'); if (vis(cvK)) { const p1 = F.d.map((d, i) => [Math.log10(d * 1e6), F.vol[i] / ft * 100]);
     plotChart(cvK, MIX_ASPECT, { x0: -1, x1: 2, ...mixAxis(0, Math.max(1, ...p1.map(p => p[1])) * 1.05), xl: 'flake size (µm)', yl: 'share of the flakes (%)', xticks: [-1, 0, 1, 2], xf: v => String(+Math.pow(10, v).toPrecision(1)),
@@ -366,7 +397,7 @@ function mixWire(sec) {
       guardNumber(el, { label: `Mixing step ${+i + 1}: ${{ min: 'time', No: 'arm speed', Nd: 'disperser speed', p: 'pressure' }[k]}`, lo, hi, unit: { min: 'min', No: 'rpm', Nd: 'rpm', p: 'kPa' }[k] }, v => { S[+i][k] = v; });
       processPage(true); return; }
     if (el.dataset.mxname != null) { S[+el.dataset.mxname].name = el.value.trim().slice(0, 40) || `Step ${+el.dataset.mxname + 1}`; processPage(true); return; }
-    if (el.dataset.mxdose != null) { const i = +el.dataset.mxdose; S[i].dose = el.value === 'pH' ? { pH: 7 } : el.value === 'mL' ? { mL: 500 } : null; processPage(true); return; }
+    if (el.dataset.mxdose != null) { const i = +el.dataset.mxdose; S[i].dose = el.value === 'recipe' ? { recipe: true } : el.value === 'pH' ? { pH: 7 } : el.value === 'mL' ? { mL: 500 } : null; processPage(true); return; }
     if (el.dataset.mxdosev) { const [i, k] = el.dataset.mxdosev.split(':'), [lo, hi] = MIX_STEP_LIMITS[k];
       guardNumber(el, { label: `Mixing step ${+i + 1}: ammonia ${k === 'pH' ? 'to pH' : 'water'}`, lo, hi, unit: k === 'pH' ? '' : 'mL' }, v => { S[+i].dose = { [k]: v }; });
       processPage(true); }
@@ -409,7 +440,7 @@ function applyMix(m) {
   if (Array.isArray(m.steps)) {
     const S = m.steps.filter(s => s && inR(s.min, MIX_STEP_LIMITS.min) && inR(s.No, MIX_STEP_LIMITS.No) && inR(s.Nd, MIX_STEP_LIMITS.Nd) && inR(s.p, MIX_STEP_LIMITS.p))
       .map((s, i) => ({ name: String(s.name || `Step ${i + 1}`).slice(0, 40), min: s.min, No: s.No, Nd: s.Nd, p: s.p,
-        dose: s.dose && inR(s.dose.pH, MIX_STEP_LIMITS.pH) ? { pH: s.dose.pH } : s.dose && inR(s.dose.mL, MIX_STEP_LIMITS.mL) ? { mL: s.dose.mL } : null }));
+        dose: s.dose && s.dose.recipe === true ? { recipe: true } : s.dose && inR(s.dose.pH, MIX_STEP_LIMITS.pH) ? { pH: s.dose.pH } : s.dose && inR(s.dose.mL, MIX_STEP_LIMITS.mL) ? { mL: s.dose.mL } : null }));
     if (S.length) out.steps = S;
   }
   return out;

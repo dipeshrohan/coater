@@ -2103,6 +2103,13 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .mx-comp td, .mx-comp thead th:not(:first-child) { text-align: right; }
 .mx-total > * { font-weight: 600; border-top: 1px solid var(--line); }
 .mx-foot { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.mx-recipe { display: grid; gap: 12px; }
+.mx-rec tbody th { width: auto; white-space: nowrap; }
+.mx-rec td:nth-child(2), .mx-rec thead th:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mx-rec td:nth-child(3) { color: var(--muted); }
+.mx-rec .mx-total td:nth-child(3) { font-weight: 400; }
+.mx-warn { color: var(--warn); }
+.mx-dose .mx-ro { margin-left: 6px; font-family: var(--mono); color: var(--muted); }
 .fl-card { max-width: 760px; }
 .fl-table tbody th { width: auto; white-space: nowrap; }
 .fl-table tbody th small { display: inline; margin-left: 6px; }
@@ -2849,6 +2856,7 @@ canvas { box-shadow: none; border-radius: 0; }
 .mx-draw canvas { width: 100%; display: block; }
 canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
 .mx-prog input[type="number"] { width: 78px; }
+.mx-prog input[data-mxstep$=":p"] { width: 92px; }
 .mx-prog input[type="text"] { width: 150px; font: inherit; font-family: var(--sans); text-align: left; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .mx-prog select { font: inherit; padding: 2px 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); margin-right: 6px; }
 .mx-prog td.mx-ro { font-family: var(--mono); color: var(--muted); text-align: right; }

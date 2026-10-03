@@ -22,6 +22,9 @@
  * 10. Top and bottom alike: the film symmetric.
  * 11. The line as set up: grid and time step converged; condensation at the oven's entry flagged; strong IR boils it;
  *     jets on top dry it faster.
+ * 12. A dilute film (the mixing recipe's: 0.89 vol% GO, 1.53 mm wet; its sharp compaction front): both ways out, it
+ *     runs through and dries; water conserved, the dry film wet × φ0 / φ_m, the energy's balance closing as the grid is
+ *     refined; where it dries the same on 80 and 160 cells.
  */
 const D = require('./drying.js');
 let fails = 0;
@@ -227,6 +230,16 @@ for (const where of ['top', 'both']) {
   check('hot air blown on top dries faster than still air above', w1(jets) < w1(r0), `water at 1 m: ${(w1(jets) * 1e3).toFixed(0)} vs ${(w1(r0) * 1e3).toFixed(0)} g/m²`);
 }
 
+
+// ---- 12. a dilute film: the mixing recipe's ----
+for (const where of ['top', 'both']) {
+  const run = N => { const o = base({ phi0: 0.00889, h0: 1.53e-3, where, N }), r = D.drStrip(o), E = r.energy;
+    return { o, r, eb: Math.abs((E.H - E.H0) - (E.Qin - E.Qlat - E.Qsens)) / E.Qin, wb: Math.abs(r.evT + r.evB - r.lost) / r.W0 }; };
+  const a = run(80), b = run(160), hx = a.o.h0 * a.o.phi0 / a.o.phiM;
+  check(`a dilute film (0.89 vol%, 1.53 mm wet), ${where === 'top' ? 'top only' : 'top and bottom'}: dries; water conserved within 1e-7, the dry film wet × φ0 / φ_m within 1e-4; energy within 1 %, closing on 160 cells; dry at the same place within 1 %`,
+    a.r.ovenExit.dry && b.r.ovenExit.dry && a.wb < 1e-7 && b.wb < 1e-7 && rel(a.r.ovenExit.h, hx) < 1e-4 && a.eb < 0.01 && b.eb <= a.eb && b.eb < 0.005 && rel(a.r.events.dry, b.r.events.dry) < 0.01,
+    `dry at ${a.r.events.dry.toFixed(3)} m (160 cells ${b.r.events.dry.toFixed(3)} m), ${(a.r.ovenExit.h * 1e6).toFixed(3)} µm (${(hx * 1e6).toFixed(3)}); water ${a.wb.toExponential(1)}; energy ${(a.eb * 100).toFixed(3)} % → ${(b.eb * 100).toFixed(3)} %; ${a.r.nSteps} steps`);
+}
 
 // ---- 9. the built-in laws as inputs (MC-1b, the material hub's): none given or the solver's own given -- the same
 //         result to the last bit; each law as given equals matlib's own evaluation of it; the balances hold with them ----

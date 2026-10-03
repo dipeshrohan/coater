@@ -17,6 +17,13 @@
  *  8. The batch through the default program: the GO's mass kept, the water's balance, every step's time; its history
  *     through every step and at its end, each record with its own step's speeds, the ammonia's jump in pH and heat at
  *     its step's start; the run's time.
+ *  9. The recipe: the batch's totals against the recipe sheet's own (SOP 1.3, 100 L: 3104 g of paste at 45 %, 10 + 70 kg
+ *     of water, 242 g of 25 % ammonia water -- 83,346 g in all, 81,949.2 g of liquid, 98.3 % liquid).
+ * 10. Turbulence: the Kolmogorov length of water at 1 W/kg (31.6 µm, (ν³/ε)^¼); the eddies' stress C ρ (ε a)^⅔ meeting
+ *     C μ (ε/ν)^½ at that length; without turbulence the mean shear's stress.
+ * 11. The grind gauge: hard pieces alone, nothing turning -- the reading against the size where Ns pieces of their
+ *     log-normal touch the sample, its integral computed apart (each piece's GO at the paste's solids, touching when its
+ *     centre lies within the sample's radius and its own); the whole paste at the start: off the gauge.
  */
 const MX = require('./mixer.js');
 let fails = 0;
@@ -143,18 +150,60 @@ const integrate = (pbe, N0, rates, T, n) => { const N = Float64Array.from(N0), K
 // 8. the batch through the default program
 {
   const o = { ...MX.mixDefaults(), ...slurry }, t0 = Date.now(), r = MX.mixRun(o), ms = Date.now() - t0;
-  const e = r.end, mW0 = (1 - o.phi) * o.V * o.rhoL, wBal = Math.abs(e.mW - (mW0 + e.addW - e.evap)) / mW0, gBal = Math.abs(e.goVol / e.goVol0 - 1);
+  const e = r.end, mW0 = MX.mixRecipe(o).mW0, wBal = Math.abs(e.mW - (mW0 + e.addW - e.evap)) / mW0, gBal = Math.abs(e.goVol / e.goVol0 - 1);
   const dur = o.steps.reduce((s, q) => s + q.min * 60, 0), H = r.hist;
   // (the history: through every step and at its end, each step's records with its own speeds)
   let tc = 0, hOk = H.t.length >= 400;
   o.steps.forEach((q, i) => { tc += q.min * 60; const j = H.step.lastIndexOf(i), own = H.step.map((x, k) => k).filter(k => H.step[k] === i);
     hOk = hOk && j >= 0 && Math.abs(H.t[j] - tc) < 1e-6 && own.every(k => (q.Nd > 0) === (H.PD[k] > 0)) && own.length > 50; });
-  // (the batch just before the first step's ammonia and just after it, both at its start)
-  const dOk = H.t[0] === 0 && H.t[1] === 0 && H.pH[0] < 6 && Math.abs(H.pH[1] - 7) < 1e-6 && H.T[1] > H.T[0];
+  // (the batch just before the program's ammonia and just after it, both at its step's start; the recipe's ammonia water)
+  const iD = o.steps.findIndex(q => q.dose), j0 = H.step.indexOf(iD), tD = o.steps.slice(0, iD).reduce((s, q) => s + q.min * 60, 0);
+  const dOk = iD >= 0 && H.t[j0] === tD && H.t[j0 + 1] === tD && H.pH[j0] < 6 && Math.abs(H.pH[j0 + 1] - r.doses[0].pH) < 1e-9 && H.pH[j0 + 1] > 6 && H.T[j0 + 1] > H.T[j0]
+    && Math.abs(r.doses[0].g - 242) < 1e-9;
   hOk = hOk && dOk;
   check('the batch through the default program: the GO\'s mass kept, the water\'s balance closed, the program\'s time, its history',
     !r.error && gBal < 1e-12 && wBal < 1e-14 && Math.abs(e.t - dur) < 1e-6 && hOk && ms < 5000,
-    `${(ms / 1000).toFixed(1)} s, ${e.steps} steps, ${H.t.length} records (the ammonia: pH ${H.pH[0].toFixed(2)} → ${H.pH[1].toFixed(2)}, ${H.T[0].toFixed(1)} → ${H.T[1].toFixed(1)} °C); GO off ${e1(gBal)}, water ${e1(wBal)}; ammonia ${r.doses.map(d => `${d.mL.toFixed(0)} mL to pH ${d.pH.toFixed(2)}`).join(', ')}; end: ${e.T.toFixed(1)} °C, grind ${(e.grind * 1e6).toFixed(0)} µm, ${(e.lumps * 100).toFixed(2)} % in lumps, ${e.mu27.toFixed(2)} Pa·s at 2.7 1/s and ${o.Tlaw} °C`);
+    `${(ms / 1000).toFixed(1)} s, ${e.steps} steps, ${H.t.length} records (the ammonia at ${(tD / 60).toFixed(0)} min: pH ${H.pH[j0].toFixed(2)} → ${H.pH[j0 + 1].toFixed(2)}, ${H.T[j0].toFixed(2)} → ${H.T[j0 + 1].toFixed(2)} °C); GO off ${e1(gBal)}, water ${e1(wBal)}; ammonia ${r.doses.map(d => `${d.mL.toFixed(0)} mL to pH ${d.pH.toFixed(2)}`).join(', ')}; end: ${e.T.toFixed(1)} °C, grind ${(e.grind * 1e6).toFixed(0)} µm, ${(e.lumps * 100).toFixed(2)} % in lumps, ${e.mu27.toFixed(2)} Pa·s at 2.7 1/s and ${o.Tlaw} °C`);
+}
+
+// 9. the recipe against the sheet's own totals
+{
+  const o = { ...MX.mixDefaults(), ...slurry }, R = MX.mixRecipe(o);
+  const g = x => x * 1000, got = [['batch', g(R.mTot), 83346], ['liquid, the paste\'s water in', g(R.mLiq), 81949.2], ['dry GO', g(R.mGO), 1396.8],
+    ['water and ammonia water added', g(o.mSoak + o.mWat + o.mN), 80242]];
+  const worst = Math.max(...got.map(([, a, b]) => Math.abs(a - b)));
+  check('the recipe: the batch\'s totals against the recipe sheet\'s (SOP 1.3, 100 L)', worst < 1e-6 && Math.abs(R.mLiq / R.mTot * 100 - 98.3) < 0.05,
+    `${got.map(([n, a, b]) => `${n} ${a.toFixed(1)} g (sheet ${b})`).join(', ')}; liquid ${(R.mLiq / R.mTot * 100).toFixed(2)} % (sheet 98.3 %); GO ${(R.wGO * 100).toFixed(3)} wt%, ${(R.phiEnd * 100).toFixed(3)} vol%, ${(R.Vend * 1000).toFixed(2)} L`);
+}
+
+// 10. turbulence: the Kolmogorov scale and the eddies' stress
+{
+  const mu = 1e-3, rho = 1000, eps = 1, nu = mu / rho, eta = Math.pow(nu ** 3 / eps, 0.25), C = 2, z = { tau: 0.5, eps, mu, rho, Ck: C };
+  const tK = mu * Math.sqrt(eps / nu), up = MX.mixTauOn(z, eta * (1 + 1e-9)), dn = MX.mixTauOn(z, eta * (1 - 1e-9)), big = MX.mixTauOn(z, 1e-3);
+  const exBig = C * rho * Math.pow(eps * 1e-3, 2 / 3), lam = MX.mixTauOn({ ...z, eps: 0 }, 1e-3);
+  check('turbulence: the Kolmogorov length of water at 1 W/kg; the eddies\' stress meeting the viscous scale\'s at it; none: the mean shear\'s',
+    Math.abs(eta * 1e6 - 31.62) < 0.01 && Math.abs(up / (C * tK) - 1) < 1e-8 && Math.abs(dn - Math.max(0.5, tK)) < 1e-15 && Math.abs(big / exBig - 1) < 1e-14 && lam === 0.5,
+    `η ${(eta * 1e6).toFixed(2)} µm (31.62); at η: ${up.toFixed(4)} Pa = C μ (ε/ν)^½ ${(C * tK).toFixed(4)} Pa; below it ${dn.toFixed(4)} Pa; at 1 mm ${big.toFixed(3)} Pa (C ρ (ε a)^⅔ ${exBig.toFixed(3)}); no turbulence ${lam} Pa`);
+}
+
+// 11. the grind gauge
+{
+  const rows = [], errs = [];
+  for (const [fh, sgh] of [[1e-4, 1.5], [1e-3, 1.5], [3e-4, 2]]) {
+    // (the soft pieces as single flakes, nothing turning: the hard pieces the only lumps; the gauge deep enough for them)
+    const o = { ...MX.mixDefaults(), ...slurry, fh, sgh, gR: 1e-3, a0: 5e-6 * 1.01, sg: 1.01, steps: [{ name: 'a', min: 0.1, No: 0, Nd: 0, p: 101.325, dose: null }] };
+    const r = MX.mixRun(o), got = r.hist.grind[0], R = MX.mixRecipe(o), Vb = R.mGO / o.rhoS + R.mW0 / o.rhoL, Vs = R.mGO / o.rhoS * fh;
+    const Rg = Math.cbrt(3 * o.Vg / (4 * Math.PI)), sl = Math.log(sgh), lm = Math.log(o.ah);
+    const count = x => { let c = 0; const n = 4000, l0 = Math.log(x), l1 = lm + 8 * sl, h = (l1 - l0) / n;
+      for (let i = 0; i <= n; i++) { const l = l0 + i * h, a = Math.exp(l), f = Math.exp(-0.5 * ((l - lm) / sl) ** 2) / (sl * Math.sqrt(2 * Math.PI));
+        c += (i === 0 || i === n ? 0.5 : 1) * h * f * Vs / (R.phiH * Math.PI / 6 * a ** 3) / Vb * 4 / 3 * Math.PI * (Rg + a / 2) ** 3; }
+      return c; };
+    let lo = Math.log(1e-6), hi = Math.log(1e-2); for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (count(Math.exp(m)) >= o.Ns) lo = m; else hi = m; }
+    const ex = Math.exp((lo + hi) / 2); errs.push(Math.abs(got / ex - 1)); rows.push(`${fh * 100} % at ×${sgh}: ${(got * 1e6).toFixed(2)} µm (${(ex * 1e6).toFixed(2)})`);
+  }
+  const o = { ...MX.mixDefaults(), ...slurry, steps: [{ name: 'a', min: 0.1, No: 0, Nd: 0, p: 101.325, dose: null }] }, g0 = MX.mixRun(o).hist.grind[0];
+  check('the grind gauge: hard pieces alone against their log-normal\'s count touching the sample (within 2 %); the whole paste at the start off the gauge',
+    Math.max(...errs) < 0.02 && g0 > o.gR, `${rows.join(', ')}; the paste at the start ${(g0 * 1e3).toFixed(1)} mm (the gauge ${(o.gR * 1e6).toFixed(0)} µm)`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
