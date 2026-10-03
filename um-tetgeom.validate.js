@@ -15,6 +15,11 @@
  *     3 mm, three across the gap -- a case where one tetrahedron takes both faces at the crease, its dihedral there the
  *     crease's, and a point at its middle, as flat as it is, leaves four slivers of 7–8°): no tetrahedron with a face on the
  *     blade and one on the pile; the quality limits of 4.
+ *  7. The pool's tetrahedra made quadratic (umtQuadratic, P2, for the solver): straight, the volume the faceted solid's
+ *     (to 1e-12); curved -- every node on a curved wall moved onto the true surface (the blade's underside, the pipe's
+ *     circles) -- every element positive at the solver's quadrature points, none held short, every wall node on its
+ *     surface; the volume the exact solid's: the blade alone to 1e-8 (the facets 2e-4 off), with the pipe falling faster
+ *     than the square of the sides round it (13 → 25), every surface triangle a face of its tetrahedron.
  */
 const UG = require('./um-tetgeom.js'), M = require('./um-tetmesh.js'), UC = require('./um-core.js');
 let fails = 0;
@@ -106,6 +111,26 @@ const pool = (o = {}) => UG.umgPool({ z0: 0, z1: 0.012, xCut: -0.07, xEnd: -0.00
   check(`a shallow crease (the blade meeting the pile's surface at ${crease.toFixed(1)}°): no tetrahedron on both; positive, closed, the volume the faceted solid's; dihedral 15–155°, radius ratio ≥ 0.2`,
     both === 0 && Q.opennessMax < 1e-12 && Math.abs(Q.volumeTotal / P.volumeFacets - 1) < 1e-12 && Q.tet.dihedralMin >= 15 && Q.tet.dihedralMax <= 155 && Q.tet.rhoMin >= 0.2,
     `${nT} tetrahedra, ${both} on both; dihedral ${Q.tet.dihedralMin.toFixed(1)}–${Q.tet.dihedralMax.toFixed(1)}°, radius ratio ${Q.tet.rhoMin.toFixed(3)}; points put in for creases and slivers ${V.stats.splits}`);
+}
+
+// 7. quadratic (P2) tetrahedra on the curved walls
+{
+  const FE = require('./um-fe.js'), T = FE.ufeTable('tet10', 5, 'tet4');
+  const vol = Q => { const { geo } = FE.ufeGeometry(T, Q.X, Q.Y, Q.Z, Q.conn, Q.nE); let v = 0; for (let i = 0; i < Q.nE * T.nq; i++) v += geo[10 * i + 9]; return v; };
+  const B = pool({ outlets: [] }), SB = M.umtSurface(B.G, { size: B.size }), VB = M.umtVolume(SB, { size: B.size });
+  const Q0 = M.umtQuadratic(VB, {}), QB = M.umtQuadratic(VB, { project: B.project });
+  const FT = FE.ufeElement('tet10').faces; let offB = 0, nB = 0;
+  for (const fc of QB.faces) if (fc.tag === 'blade') for (const a of FT[fc.f].nodes) { const n = QB.conn[10 * fc.e + a]; offB = Math.max(offB, Math.abs(QB.Y[n] - bladeY(QB.X[n]))); nB++; }
+  const e0 = vol(Q0) / B.volumeFacets - 1, eB = vol(QB) / B.volume - 1, eF = B.volumeFacets / B.volume - 1;
+  check('quadratic tetrahedra: straight, the faceted solid\'s volume; curved onto the blade, every node on it, positive, the exact solid\'s volume to 1e-8',
+    Math.abs(e0) < 1e-12 && Math.abs(eB) < 1e-8 && offB === 0 && QB.limited === 0 && QB.faces.length === VB.bface.length / 3,
+    `straight ${e0.toExponential(1)}; curved ${eB.toExponential(1)} (the facets ${eF.toExponential(1)}); ${nB} blade-face nodes, off by ${offB.toExponential(1)} m; ${QB.moved} nodes moved onto the wall (up to ${(QB.maxMove * 1e6).toFixed(1)} µm)`);
+  const eP = [0.1e-3, 0.025e-3].map(tol => { const P = pool({ tol }), S = M.umtSurface(P.G, { size: P.size }), V = M.umtVolume(S, { size: P.size }), Q = M.umtQuadratic(V, { project: P.project });
+    let offP = 0; for (const fc of Q.faces) if (fc.tag === 'pipe-wall' || fc.tag === 'bore') { const r = fc.tag === 'bore' ? 2e-3 : 3e-3; for (const a of FT[fc.f].nodes) { const n = Q.conn[10 * fc.e + a]; offP = Math.max(offP, Math.abs(Math.hypot(Q.X[n] + 0.055, Q.Z[n] - 0.006) / r - 1)); } }
+    return { e: vol(Q) / P.volume - 1, f: P.volumeFacets / P.volume - 1, n: UG.umgCircle(1, 3e-3, tol), offP, limited: Q.limited }; });
+  check('  with the pipe: every pipe-wall and bore node on its circle; the volume\'s error falling faster than the square of the sides (13 → 25)',
+    eP.every(r => r.offP < 1e-14 && r.limited === 0) && Math.abs(eP[1].e) * Math.pow(eP[1].n / eP[0].n, 2.5) < Math.abs(eP[0].e),
+    eP.map(r => `${r.n} sides: ${r.e.toExponential(2)} (facets ${r.f.toExponential(2)}), nodes off their circle ${r.offP.toExponential(1)}`).join('; ') + `; order ${(Math.log(Math.abs(eP[0].e / eP[1].e)) / Math.log(eP[1].n / eP[0].n)).toFixed(2)}`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
