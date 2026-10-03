@@ -39,6 +39,37 @@ function bladeSideOutline({ shape, H, R, Xup, L, faceDeg, faceLen, top, shaped =
   return { pts, xe, V, D, yTop };
 }
 
+/**
+ * A simple polygon [[x, y], ...] cut into triangles by ear clipping: index triples, each turning the polygon's own way.
+ * Any simple polygon, convex or not (a blade's profile with its notch: the exit face up to the notch corner, the bevel
+ * down to the dry edge); each triangle inside the polygon, none overlapping, their areas the polygon's.
+ */
+function polyTriangles(pts) {
+  const n = pts.length, cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  let A = 0; for (let i = 0; i < n; i++) { const p = pts[i], q = pts[(i + 1) % n]; A += p[0] * q[1] - q[0] * p[1]; }
+  const sg = A >= 0 ? 1 : -1, idx = [...Array(n).keys()], out = [];
+  // (b strictly inside the triangle a, c, d -- turning the polygon's way -- or on its sides away from its corners)
+  const inTri = (p, a, b, c) => sg * cross(a, b, p) >= 0 && sg * cross(b, c, p) >= 0 && sg * cross(c, a, p) >= 0;
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 10 * n * n) {
+    let cut = false;
+    for (let k = 0; k < idx.length; k++) {
+      const i0 = idx[(k + idx.length - 1) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length], a = pts[i0], b = pts[i1], c = pts[i2];
+      const turn = sg * cross(a, b, c);
+      if (turn < 0) continue;                                     // (a reflex corner: not an ear)
+      if (turn === 0) { idx.splice(k, 1); cut = true; break; }    // (a straight corner: dropped, no triangle)
+      let ear = true;
+      for (const j of idx) { if (j === i0 || j === i1 || j === i2) continue; const p = pts[j]; if ((p[0] !== a[0] || p[1] !== a[1]) && (p[0] !== c[0] || p[1] !== c[1]) && inTri(p, a, b, c)) { ear = false; break; } }
+      if (!ear) continue;
+      out.push([i0, i1, i2]); idx.splice(k, 1); cut = true; break;
+    }
+    if (!cut) break;   // (not a simple polygon: what is left fanned, as before)
+  }
+  if (idx.length === 3) { if (sg * cross(pts[idx[0]], pts[idx[1]], pts[idx[2]]) > 0) out.push([idx[0], idx[1], idx[2]]); }
+  else for (let k = 1; k + 1 < idx.length; k++) out.push([idx[0], idx[k], idx[k + 1]]);
+  return out;
+}
+
 /** Extrude a side profile across the web from z0 to z1 (nz segments), each z shifted up by dy(z): triangles. */
 function extrudeProfile(pts, z0, z1, nz, dy = () => 0) {
   const P = [], zs = Array.from({ length: nz + 1 }, (_, k) => z0 + (z1 - z0) * k / nz), m = pts.length;
@@ -48,10 +79,11 @@ function extrudeProfile(pts, z0, z1, nz, dy = () => 0) {
     const a = pts[i], b = pts[(i + 1) % m];
     tri(at(a, k), at(b, k), at(b, k + 1)); tri(at(a, k), at(b, k + 1), at(a, k + 1));
   }
-  // the two end caps (the profile is convex enough near its underside; fan from its centroid)
-  const cx = pts.reduce((s, p) => s + p[0], 0) / m, cy = pts.reduce((s, p) => s + p[1], 0) / m;
-  for (const [k, flip] of [[0, true], [nz, false]]) for (let i = 0; i < m; i++) {
-    const a = at(pts[i], k), b = at(pts[(i + 1) % m], k), c = at([cx, cy], k);
+  // the two end caps: the profile cut into triangles (ear clipping: the notch's corner and the dry edge make it
+  //  non-convex, so a fan from its middle would fold over itself there)
+  const caps = polyTriangles(pts);
+  for (const [k, flip] of [[0, true], [nz, false]]) for (const [i, j, l] of caps) {
+    const a = at(pts[i], k), b = at(pts[j], k), c = at(pts[l], k);
     flip ? tri(a, c, b) : tri(a, b, c);
   }
   return new Float32Array(P);
@@ -246,4 +278,4 @@ function sectionTris(t, z0) {
   return out.filter(c => c.verts.length >= 2).sort((a, b) => low(a) - low(b));
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { bladeSideOutline, extrudeProfile, sectionTris, parseSTL, writeSTL, orientTris, trisBox, placeBlade, undersideField, mesh3D, gradedStations };
+if (typeof module !== 'undefined' && module.exports) module.exports = { bladeSideOutline, polyTriangles, extrudeProfile, sectionTris, parseSTL, writeSTL, orientTris, trisBox, placeBlade, undersideField, mesh3D, gradedStations };
