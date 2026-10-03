@@ -336,7 +336,7 @@ function swbPage(A, dim) {
   }
   if (step !== 'results') panes = [pane('swbCv', step === 'geometry' ? 'section' : step === 'mesh' ? 'mesh' : 'flow', names[step], `${names[step]}: ${A.domain(dim, o)}`)];
   if (step === 'geometry') extra = swbGeoHTML(A, dim, o);
-  else if (step === 'mesh') extra = swbMeshHTML(A, dim, o);
+  else if (step === 'mesh') extra = swbMeshHTML(A, dim, o) + (dim === 3 ? swbCellsHTML(A, o) : '');
   else if (step === 'solve') extra = swbSolveHTML(A, dim, o);
   else extra = A.resultsHTML(dim);
   view.innerHTML = moduleFrame({ steps: stepBar('swb', step, swbStatus(A, dim, o)), tools: swbTools(A, dim, step, o), panes, extra });
@@ -346,6 +346,7 @@ function swbPage(A, dim) {
     const cv = document.getElementById('swbCv');
     if (A.draw) A.draw(cv, dim, o, step); else if (iso) swbDrawIso(cv, A, o, step); else swbDrawSection(cv, A, dim, o, step);
     document.getElementById('swbCvLg').innerHTML = swbLegend(A, dim, o, step);
+    if (step === 'mesh' && dim === 3) swbCellsMount(A, o);
   } else A.renderResults(dim);
   swbWire(A, dim);
 }
@@ -394,6 +395,26 @@ function swbMeshHTML(A, dim, o) {
       <tbody>${M.edges.map((e, d) => `<tr><th scope="row">${axN[d]}</th><td>${e.length - 1}</td><td>${fmt(stats.sizes[d].lo)}</td><td>${fmt(stats.sizes[d].hi)}</td><td>${fmt(e[e.length - 1] - e[0])}</td></tr>`).join('')}</tbody></table>
       <p class="fv-why">${A.extraMeshes(dim, o)}</p></section>
   </div>`;
+}
+/**
+ * The 3D mesh in the mesh viewer (mesh-view-ui.js): the solver's own (swbMesh: mp-core's structured block of 8-node
+ * hexahedra), cell by cell, before it solves; the heights drawn as the drawing above draws them (the layout's kz); first
+ * coloured by aspect ratio (a block's cells are square-cornered: no non-orthogonality to show).
+ */
+function swbCellMesh(A, o) {
+  const { M, ax } = swbMesh(A, 3, o);
+  return mvPrep(JSON.stringify(['swb', A.key, ax.axes]), () => ({ mesh: ufeMesh(M), split: false }));
+}
+const swbKz = (A, o) => A.layout(3, o).kz || 1;
+function swbCellsHTML(A, o) {
+  const P = swbCellMesh(A, o), id = 'swb_' + A.key, kz = swbKz(A, o);
+  return `<figure class="pane swb-cells"><figcaption>${uiBadge('mesh')}<span>The mesh, cell by cell <span class="acr-sub">the quarter the solve takes · ${P.elems.toLocaleString('en')} hexahedra of 8 nodes</span></span></figcaption>
+    ${mvViewHTML(id, P, { own: true, height: kz, colour: 'aspect' })}
+    <div class="pane-legend"><span>x: along the line</span><span>y: across</span><span>z: up${kz > 1 ? ` (drawn ×${kz} at first)` : ''}</span><span>The mirror planes x = 0, y = 0 at the back</span><span>Cells: checkMesh's measures, on the true heights</span><span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>`;
+}
+function swbCellsMount(A, o) {
+  const P = swbCellMesh(A, o), id = 'swb_' + A.key;
+  if (document.querySelector(`[data-mv="${id}"]`)) mvMount(id, P, { own: true, up: 2, height: swbKz(A, o), colour: 'aspect', label: `${A.t} in 3D: the mesh, cell by cell` });
 }
 /** Solve: the physics (their equations and materials), the faces (keyed to the drawing), the time and the solver; after a
  *  solve, its balances. */

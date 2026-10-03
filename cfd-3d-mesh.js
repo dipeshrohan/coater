@@ -43,6 +43,44 @@ function m3Extrude(f2, zs, scaleY) {
   return { NC, NL, NR, x, y, z, cCorner: f2.iCorner, cCL: f2.iCL };
 }
 
+/**
+ * The mesh in um-fe.js's common form, for the mesh viewer (um-core.js's umFromFE, each 27-node element split into the 8
+ * cells on its nodes): { type: 'hex27', nN, nE, X, Y, Z, conn, faces: [{ e, f, tag }] } -- each element's nodes along the
+ * flow ξ, up η, across ζ (the solver's own right-handed x, y, z); its faces the inlet (ξ−), the outlet (ξ+), the web
+ * (η−), the blade (η+, under it and up its exit face to the contact line) and the free surface beyond, the two sides
+ * (ζ±). Placed in the machine's frame: o { zo (m, the region's middle across the web: z from there), skew (degrees: a
+ * skewed blade turned about the metering edge xe at the middle, as the 3D view draws it), xe (m), skip (ex, ez, ey) ->
+ * true: elements left out, as m3Stats leaves them out -- an open edge's wedges at the web, a corner collapsed onto the
+ * contact line by design: the faces toward them tagged 'wedges') }. Returns the mesh, with skipped: the elements left out.
+ */
+function m3CellMesh(M, { zo = 0, skew = 0, xe = 0, skip = null } = {}) {
+  const { NC, NL, NR } = M, eC = (NC - 1) / 2, eL = (NL - 1) / 2, eR = (NR - 1) / 2, nN = NC * NL * NR;
+  let skipped = 0;
+  if (skip) for (let ez = 0; ez < eL; ez++) for (let ey = 0; ey < eR; ey++) for (let ex = 0; ex < eC; ex++) if (skip(ex, ez, ey)) skipped++;
+  const nE = eC * eL * eR - skipped;
+  const X = new Float64Array(nN), Y = new Float64Array(nN), Z = new Float64Array(nN);
+  const a = skew * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
+  for (let n = 0; n < nN; n++) { const dx = M.x[n] - xe, zr = M.z[n]; X[n] = xe + dx * cs + zr * sn; Y[n] = M.y[n]; Z[n] = zo - dx * sn + zr * cs; }
+  const conn = new Int32Array(27 * nE), faces = [], cl = M.cCL != null ? M.cCL / 2 : eC;
+  let el = 0;
+  for (let ez = 0; ez < eL; ez++) for (let ey = 0; ey < eR; ey++) for (let ex = 0; ex < eC; ex++) {
+    if (skip && skip(ex, ez, ey)) continue;
+    for (let g = 0; g < 3; g++) for (let b = 0; b < 3; b++) for (let c = 0; c < 3; c++) conn[27 * el + (g * 3 + b) * 3 + c] = m3Id(M, 2 * ex + c, 2 * ez + g, 2 * ey + b);
+    if (ex === 0) faces.push({ e: el, f: 0, tag: 'inlet' });
+    if (ex === eC - 1) faces.push({ e: el, f: 1, tag: 'outlet' });
+    if (ey === 0) faces.push({ e: el, f: 2, tag: 'web' });
+    if (ey === eR - 1) faces.push({ e: el, f: 3, tag: ex < cl ? 'blade' : 'surface' });
+    if (ez === 0) faces.push({ e: el, f: 4, tag: 'side0' });
+    if (ez === eL - 1) faces.push({ e: el, f: 5, tag: 'side1' });
+    // (a face toward a wedge left out: the boundary there)
+    if (skip) [[ex - 1, ez, ey], [ex + 1, ez, ey], [ex, ez, ey - 1], [ex, ez, ey + 1], [ex, ez - 1, ey], [ex, ez + 1, ey]].forEach(([a, b, c], f) => {
+      if (a >= 0 && a < eC && b >= 0 && b < eL && c >= 0 && c < eR && skip(a, b, c)) faces.push({ e: el, f, tag: 'wedges' });
+    });
+    el++;
+  }
+  return { type: 'hex27', nN, nE, X, Y, Z, conn, faces, skipped };
+}
+
 // (the triquadratic's functions and derivatives at t = -1, 0, 1 and at the 3-point Gauss points)
 const m3Q2 = t => [t * (t - 1) / 2, 1 - t * t, t * (t + 1) / 2], m3dQ2 = t => [t - 0.5, -2 * t, t + 0.5];
 const M3_NODE = [-1, 0, 1].map(t => ({ N: m3Q2(t), d: m3dQ2(t) }));
@@ -286,4 +324,4 @@ function m3StudyMetrics(R) {
   return { film: st.film, q: st.q, pMax, pEdge, gdMax, wss, cl: st.s, curv, uz: m3CrossFlow(R).uz };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { m3Id, m3Counts, m3Extrude, m3Element, m3Stats, m3ZoneOf, M3_ZONE_REACH, m3Warnings, M3_WARN, m3Section, m3CrossFlow, m3StudyMetrics, m3Jac };
+if (typeof module !== 'undefined' && module.exports) module.exports = { m3Id, m3Counts, m3Extrude, m3CellMesh, m3Element, m3Stats, m3ZoneOf, M3_ZONE_REACH, m3Warnings, M3_WARN, m3Section, m3CrossFlow, m3StudyMetrics, m3Jac };

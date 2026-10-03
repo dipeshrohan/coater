@@ -251,6 +251,27 @@ document.addEventListener('click', e => {
   if (b.dataset.ploutlet != null) POOL.outlet = +b.dataset.ploutlet;
   render();
 });
+/**
+ * The 3D pool's mesh in the mesh viewer (mesh-view-ui.js): the mesh its solve starts on, laid out as the cycle lays it out
+ * (feed-pool.js's fplStartMeshes) at the level of the part of the cycle shown -- the top flat there; the solve then frees
+ * it -- its 27-node elements each drawn as the 8 cells on its nodes. { P } or { error }; none until the 1D's cycle is solved.
+ */
+function poolCellMesh(base) {
+  if (!base) return null;
+  const part = POOL.state ? 'drain' : 'pulse';
+  try {
+    return { P: mvPrep(JSON.stringify(['pool3', part, base]), () => { const S = fplStartMeshes(base); return { mesh: S[part], split: true, info: { mirror: S.plan.mirror, round: S.plan.round, h: part === 'pulse' ? base.hP : base.hD } }; }) };
+  } catch (e) { return { error: e.message || String(e) }; }
+}
+/** The page's mesh figure: the viewer, or why there is nothing to show yet. */
+function poolMeshHTML(base) {
+  const C = poolCellMesh(base), part = POOL.state ? 'between pulses' : 'during a pulse';
+  if (!C || C.error) return `<figure class="pane pl-mesh"><figcaption>${uiBadge('mesh')}The mesh</figcaption>${emptyHint(C ? 'The mesh cannot be laid out' : 'No mesh yet', C ? mEsc(C.error.charAt(0).toUpperCase() + C.error.slice(1)) + '.' : 'The pool\'s mesh is laid out at the levels of the 1D\'s pulse cycle: Solve solves the 1D first, then the pool.')}</figure>`;
+  const P = C.P, I = P.info;
+  return `<figure class="pane pl-mesh"><figcaption>${uiBadge('mesh')}<span>The mesh <span class="acr-sub">the solve starts on it ${part}, the top flat at the level (${(I.h * 1e3).toFixed(2)} mm) · ${P.elems.toLocaleString('en')} elements of 27 nodes, each drawn as the 8 cells on its nodes${I.mirror ? ' · the outlets in mirror pairs: half the pool, mirrored at its middle' : ''}</span></span></figcaption>
+    ${mvViewHTML('pool3', P, { own: true, height: 1 })}
+    <div class="pane-legend"><span>x: along the web →</span><span>y: up from the web</span><span>z: across, from the side plate</span><span>Cells: checkMesh's measures</span><span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>`;
+}
 const view2DFeed = () => viewPoolFeed(2);
 const view3DFeed = () => viewPoolFeed(3);
 function viewPoolFeed(dim) {
@@ -272,7 +293,10 @@ function viewPoolFeed(dim) {
         note: E.at === 'the pipe' ? 'The pressure the top holds the paste with, over the pool\'s weight, in the section shown. The paste enters under the top, through the pipes: the top only rises with the level.'
           : `The pressure the top holds the paste with, over the pool's weight, in the section shown. Under ${E.at} the paste is pushed into the pool: the top there carries this push, and a free top rises into a heap.` },
     ],
+    // (3D: the mesh the solve takes, before it solves, in the mesh viewer)
+    extra: dim === 3 ? poolMeshHTML(poolBase(3)) : '',
   });
+  if (dim === 3 && document.querySelector('[data-mv="pool3"]')) { const C = poolCellMesh(poolBase(3)); if (C && C.P) mvMount('pool3', C.P, { height: 1, own: true, label: 'The pool\'s mesh in 3D, cell by cell' }); }
   const st = document.getElementById('st'), ss = document.getElementById('ss');
   const ctl = solvePending(id) ? pill('Solving…', '') + `<span class="pl-prog" id="plProg"></span>` : solveCtl(id);
   if (!S.res) {

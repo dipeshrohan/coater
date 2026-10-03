@@ -974,11 +974,15 @@ function view3D() {
       ${R && C3D.stream ? `<select data-c3d="streamDensity" aria-label="Streamline density" title="How many streamlines">${Object.entries(C3D_STREAM).map(([k, d]) => `<option value="${k}"${k === C3D.streamDensity ? ' selected' : ''}>${d.l}</option>`).join('')}</select>` : ''}
       ${vscale}`,
   }[stp];
-  const fig = `<figure class="pane v3d"><figcaption>${uiBadge(9)}${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : stp === 'mesh' ? `The 3D mesh${c3dSolvedMesh() ? ' as solved' : ''}${secOn ? ` — ${secT[1]}` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `, edge strip at the ${C3D.edgeEnd} end` : ', full web width'}${R ? tagT : ''}${R && stale ? ' — out of date' : ''}</figcaption>
+  // (the Mesh step: the solver's own mesh, cell by cell, in the mesh viewer -- before solving, the stations' starting layout)
+  const CM = stp === 'mesh' && !secOn ? c3dCellMesh() : null;
+  const cmSub = CM ? ` · ${CM.elems.toLocaleString('en')} elements of 27 nodes, each drawn as the 8 cells on its nodes${CM.info && CM.info.skipped ? `; the open edge's ${CM.info.skipped} wedges at the web (a corner collapsed onto the contact line by design) left out, as in the statistics` : ''}` : '';
+  const fig = `<figure class="pane v3d"><figcaption>${uiBadge(9)}<span>${R ? `The flow in 3D${showField ? `, coloured by ${fld.l.toLowerCase()} (${c3dFmt(range.min)} to ${c3dFmt(range.max)} ${fld.u})` : ''}` : stp === 'mesh' ? `The 3D mesh${c3dSolvedMesh() ? ' as solved' : ''}${secOn ? ` — ${secT[1]}` : ''}` : 'The blade over the web and the slurry region'}${C3D.region === 'strip' ? `, strip at L${C3D.loc + 1}` : C3D.region === 'edge' ? `, edge strip at the ${C3D.edgeEnd} end` : ', full web width'}${R ? tagT : ''}${R && stale ? ' — out of date' : ''}${cmSub ? ` <span class="acr-sub">${cmSub}</span>` : ''}</span></figcaption>
       ${secOn ? `<div class="v3d-host m3-sec" id="c3dSecHost"><canvas id="c3dSec" role="img" aria-label="The mesh: ${secT[2]}"></canvas><div class="m3-sec-read" id="c3dSecRead" aria-live="off"></div></div>`
+        : CM ? mvViewHTML('c3d', CM, { host: '<div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>' })
         : '<div class="v3d-host" id="v3dHost"><p class="v3d-msg">Loading the 3D view…</p></div>'}
       ${showField ? `<div class="v3d-bar"><span>${c3dFmt(range.min)}</span><i style="background:${c3dGradientCss(fld)}"></i><span>${c3dFmt(range.max)} ${fld.u}</span></div>` : ''}
-      ${secOn ? `<div class="pane-legend"><span>${secT[2]}</span><span id="c3dSecK"></span><span>The elements' edges through their middle nodes; the metering edge and the contact line marked</span><span>Point at the section for the position</span></div></figure>` : `<div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${(R0 ? R0.skew : P.skew) ? `<span>Blade skewed ${(R0 ? R0.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>`}`;
+      ${secOn ? `<div class="pane-legend"><span>${secT[2]}</span><span id="c3dSecK"></span><span>The elements' edges through their middle nodes; the metering edge and the contact line marked</span><span>Point at the section for the position</span></div></figure>` : `<div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${CM ? '<span>Cells: checkMesh\'s measures, on the true heights</span>' : stp === 'mesh' && !secOn && C3D.source !== 'made' && !c3dSolvedMesh() ? '<span>The solve lays its mesh out from the blade\'s file: its cells show here once solved</span>' : ''}${(R0 ? R0.skew : P.skew) ? `<span>Blade skewed ${(R0 ? R0.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>`}`;
   const extra = {
     geometry: fig,
     mesh: `<div class="step-view c3d-mesh">${fig}<aside class="step-side" id="c3dMeshSide">${c3dMeshSideHTML()}</aside>${m3StudyHTML()}</div>`,
@@ -1083,8 +1087,12 @@ function view3D() {
   const meshOn = stp === 'mesh' ? true : stp === 'geometry' ? false : C3D.mesh;
   // (drawn at once when three.js is in: an image export redraws the page and takes the view straight away)
   if (!G.mesh && !R) document.getElementById('v3dHost').innerHTML = `<p class="v3d-msg">${G.error ? 'Nothing to show: the geometry could not be built.' : 'No blade yet: import an STL or STEP file of the blade (inputs, 3D geometry).'}</p>`;
-  else if (typeof THREE !== 'undefined' && THREE.OrbitControls) v3Draw(G, R, meshOn);
-  else load3DLibs().then(() => v3Draw(G, R, meshOn)).catch(e => { const h = document.getElementById('v3dHost'); if (h) h.innerHTML = `<p class="v3d-msg">The 3D view could not start: ${mEsc(e.message)}</p>`; });
+  else {
+    // (the Mesh step with the solver's mesh: its cells drawn in the view, with the blade and the web, by the mesh viewer)
+    const draw = () => { v3Draw(G, R, CM ? 'cells' : meshOn, CM); if (CM) mvMount('c3d', CM, { draw: grp => v3Cells(grp) }); };
+    if (typeof THREE !== 'undefined' && THREE.OrbitControls) draw();
+    else load3DLibs().then(draw).catch(e => { const h = document.getElementById('v3dHost'); if (h) h.innerHTML = `<p class="v3d-msg">The 3D view could not start: ${mEsc(e.message)}</p>`; });
+  }
 }
 /**
  * The cross-flow diagnostic (Results): the largest speeds along the web, up and across it in the machine's frame, and
@@ -1644,8 +1652,9 @@ function c3dWebShear(R) {
 // ---- the 3D view (three.js) ----
 const V3 = { ready: null, renderer: null, scene: null, camera: null, controls: null, group: null, key: null, bounds: null };
 function load3DLibs() { if (!V3.ready) V3.ready = loadScript('lib/three.min.js').then(() => loadScript('lib/OrbitControls.js')); return V3.ready; }
-function v3Draw(G, R, mesh = C3D.mesh) {
+function v3Draw(G, R, mesh = C3D.mesh, cm = null) {
   V3.mesh = mesh;   // (the step decides: v3Scene draws the mesh by it)
+  V3.cm = mesh === 'cells' ? cm : null;   // (the Mesh step: the solver's mesh, its cells drawn by the mesh viewer -- v3Cells)
   const host = document.getElementById('v3dHost');
   if (!host || typeof THREE === 'undefined') return;
   if (!V3.renderer) {
@@ -1664,13 +1673,13 @@ function v3Draw(G, R, mesh = C3D.mesh) {
   if (!V3.ro && window.ResizeObserver) V3.ro = new ResizeObserver(es => { const r = es[0].contentRect; if (r.width > 0 && r.height > 0) { V3.renderer.setSize(r.width, r.height); V3.camera.aspect = r.width / r.height; V3.camera.updateProjectionMatrix(); v3Render(); } });
   if (V3.ro) { V3.ro.disconnect(); V3.ro.observe(host); }
   V3.renderer.domElement.setAttribute('role', 'img');
-  V3.renderer.domElement.setAttribute('aria-label', '3D view of the blade over the web and the slurry region');
+  V3.renderer.domElement.setAttribute('aria-label', mesh === 'cells' ? 'The 3D mesh, cell by cell, under the blade over the web' : '3D view of the blade over the web and the slurry region');
   V3.renderer.setPixelRatio(window.EXPORT_DPR || window.devicePixelRatio || 1);   // (an image export draws it at its scale)
   const w = host.clientWidth || 800, h = host.clientHeight || 420;
   V3.renderer.setSize(w, h); V3.camera.aspect = w / h; V3.camera.updateProjectionMatrix();
   V3.renderer.setClearColor(new THREE.Color(cssVar('--surface')), 1);
   const S = R ? c3dShown() : null;
-  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? c3dStreamKey() + C3D.streamColor : '', R ? '' : P.skew]);
+  const key = JSON.stringify([G.key, C3D.vscale, C3D.blade, C3D.slurry, C3D.web, mesh, isDarkTheme(), S && S.when, R ? C3D.field : '', FV.cmap, R && C3D.stream ? c3dStreamKey() + C3D.streamColor : '', R ? '' : P.skew, cm ? cm.key : '']);
   if (key !== V3.key) { v3Scene(G, R); const firstView = V3.key === null || !V3.sameRegion(G); V3.key = key; V3.region = G.key; if (firstView) v3Camera(); }
   v3Render();
 }
@@ -1686,8 +1695,9 @@ function v3Machine(skew, x0, z0) {
 /** Build the scene from the geometry (and a solved result: its own mesh, coloured by the field): in mm, the heights drawn C3D.vscale times larger. */
 function v3Scene(G, R) {
   if (V3.group) { V3.scene.remove(V3.group); V3.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
-  const grp = new THREE.Group(); grp.scale.set(1, C3D.vscale, 1); V3.group = grp; V3.scene.add(grp);
+  const grp = new THREE.Group(); grp.scale.set(1, C3D.vscale, 1); V3.group = grp; V3.scene.add(grp); V3.cells = null;
   if (R) { v3SceneSolved(G, R, grp); return; }
+  if (V3.cm) { v3SceneCells(G, grp); return; }
   if (!G.mesh) return;
   const turn = v3Machine(P.skew, G.xe * 1000, (G.rg.z0 + G.rg.z1) / 2 * 1000);
   const mm = a => { const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i] * 1000; return turn ? turn(o) : o; };
@@ -1723,6 +1733,35 @@ function v3Scene(G, R) {
   // the bounds the camera fits: the slurry region and the blade near it (in the scaled scene)
   const b = new THREE.Box3(new THREE.Vector3(bx0 - 1, 0, bz0), new THREE.Vector3(bx1 + 1, Math.min(G.box.max[1], G.cutY) * 1000 * C3D.vscale, bz1));
   V3.bounds = b;
+}
+/**
+ * The Mesh step's scene with the solver's mesh (V3.cm, mesh-view-ui.js): the blade (turned with a skewed blade, as its
+ * mesh is) and the web, the bounds the camera fits from the mesh's box; its cells go in V3.cells (v3Cells).
+ */
+function v3SceneCells(G, grp) {
+  const V = V3.cm.V, col = v => new THREE.Color(cssVar(v)), R = c3dSolvedMesh() && c3dSolvedMesh().R;
+  if (C3D.blade && G.tris) {
+    const zc = R ? (R.zOff || 0) : (G.rg.z0 + G.rg.z1) / 2, turn = v3Machine(R ? R.skew : P.skew, (R ? R.xe : G.xe) * 1000, zc * 1000);
+    const mm = Float32Array.from(G.tris, v => v * 1000); if (turn) turn(mm);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(mm, 3)); g.computeVertexNormals();
+    const cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), G.cutY * 1000 * C3D.vscale);
+    // (see-through, so the cells under it show: as over a solved flow's colours)
+    grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--blade'), roughness: 0.65, metalness: 0.15, side: THREE.DoubleSide, flatShading: true, clippingPlanes: [cut], transparent: true, opacity: 0.22, depthWrite: false })));
+  }
+  const [x0, y0, z0] = V.lo.map(v => v * 1000), [x1, y1, z1] = V.hi.map(v => v * 1000);
+  if (C3D.web) {
+    const g = new THREE.PlaneGeometry(x1 - x0 + 4, z1 - z0 + 4); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, Math.min(0, y0) - 0.001, (z0 + z1) / 2);
+    grp.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col('--fibre'), roughness: 0.9, side: THREE.DoubleSide })));
+  }
+  V3.cells = new THREE.Group(); grp.add(V3.cells);
+  V3.bounds = new THREE.Box3(new THREE.Vector3(x0 - 1, y0 * C3D.vscale, z0), new THREE.Vector3(x1 + 1, Math.min(y1, G.cutY ? G.cutY * 1000 : y1) * C3D.vscale, z1));
+}
+/** The mesh viewer's cells (a three.js group, mm) in the Mesh step's 3D view, in place of those drawn before. */
+function v3Cells(cells) {
+  if (!V3.cells) return;
+  for (const q of [...V3.cells.children]) { V3.cells.remove(q); q.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+  V3.cells.add(cells);
+  v3Render();
 }
 /** The solved flow: the region's outer faces (the blade's underside, the exit face and the free surface on top; the
  * web below; the strip's two sides; inlet and outlet) coloured by the field at the nodes, the element edges on them. */
