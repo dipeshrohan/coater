@@ -367,7 +367,8 @@ function dmpRender() {
   if (!sec.dataset.wired) dmpWireSec(sec);
   const dim = DMS.dim, o = dmpInputs(dim), r = dmpCurrent(dim) ? DMS.res[dim] : null;
   if (!o || !r) {
-    for (const id of ['dmp1', 'dmp2', 'dmp3', 'dmp4']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, id === 'dmp3' ? 0.42 : FILM_ASPECT); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }
+    paneEmptyIds(['dmp1', 'dmp2', 'dmp3', 'dmp4'], paneWhy('dmp' + dim));
+    for (const id of ['dmp1', 'dmp2', 'dmp3', 'dmp4']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }
     const st = document.getElementById('dmpStats');
     if (st) st.innerHTML = dmpFailed(dim) ? `<p class="dry-msg">${pill(`The ${DMP_DIMS[dim]} could not be solved: ${dryEsc(DMS.error[dim])}`, 'bad')}</p>` : `<p class="fv-why mp-empty">${DMS.busy && DMS.bdim === dim ? `Solving the ${DMP_DIMS[dim]}: its answers here when it is done.` : dim === 3 ? 'The 3D solves the piece of the line in about a minute: press Solve.' : 'Not solved for the inputs as they are.'}</p>`;
     ['dmpCompare', 'dmpField', 'dmpSnap'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });

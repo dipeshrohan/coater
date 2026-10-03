@@ -184,7 +184,8 @@ function fmpModelHTML(o, r) {
     <p class="mp-couple"><b>Coupling</b> heat ⇄ chemistry in one system at every node (its heat and its rate at the local temperature) → the gas each step → each piece's stress.${balT ? ` <b>Balance</b> ${balT}.` : ''} <button type="button" class="linkish" data-mat="furn">What it reads (Materials)</button></p>`;
 }
 function fmpClear() {
-  for (const id of ['fmp1', 'fmp2', 'fmp3', 'fmp4', 'fmp5']) { const cv = document.getElementById(id); if (cv) { const { c, w, h } = setupCanvas(cv, id === 'fmp5' ? 0.42 : FILM_ASPECT); c.clearRect(0, 0, w, h); } const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }
+  paneEmptyIds(['fmp1', 'fmp2', 'fmp3', 'fmp4', 'fmp5'], paneWhy('fmp' + FMS.dim));
+  for (const id of ['fmp1', 'fmp2', 'fmp3', 'fmp4', 'fmp5']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; }
   ['fmpStats', 'fmpCompare', 'fmpField', 'fmpSnap', 'fmpRunWhat'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   const ft = document.getElementById('fmpFieldT'); if (ft) ft.textContent = 'The field';
 }

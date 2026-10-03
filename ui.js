@@ -870,7 +870,11 @@ const PANE_MODEL = { contact: '1d', edge: '1d', surface: '1d', feed2d: 'pool2', 
 /** A page's charts never drawn while its model has no result at all: each frame's short box saying why (an earlier
  *  result, even out of date, is drawn instead). */
 function paneSweep() {
-  const pg = navNow(), k = PANE_MODEL[pg] || (typeof PROC_MODEL !== 'undefined' ? PROC_MODEL[pg] : null);
+  const pg = navNow();
+  let k = PANE_MODEL[pg] || (typeof PROC_MODEL !== 'undefined' ? PROC_MODEL[pg] : null);
+  // (a stage's multiphysics page in 1D, 2D or 3D: on its Results step, its own model)
+  const wb = typeof swbNow === 'function' ? swbNow() : null;
+  if (wb) k = wb.A.sid && swbStep(wb.A, wb.dim) === 'results' ? wb.A.sid + wb.dim : null;
   if (!k || typeof SOLVE_M === 'undefined' || !SOLVE_M[k] || SOLVE_M[k].has()) return;
   const why = paneWhy(k);
   document.querySelectorAll('#view figure canvas, #view .pl-canvas canvas').forEach(cv => { if (!PANE_DRAWN.has(cv)) paneEmpty(cv, why); });
