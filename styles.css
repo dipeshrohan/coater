@@ -1594,6 +1594,13 @@ body:has(#pgScope) #scope { display: none; }
 .fd-svg .fd-out { fill: var(--surface); stroke: var(--graphite); stroke-width: 1.5; }
 .fd-svg .fd-dim { stroke: var(--ink); stroke-width: .8; }
 @media (max-width: 900px) { .fd-two { flex-direction: column; } }
+/* (how the paste enters the pool: three choices filling the panel's width) */
+.fd-entry-row { padding-left: 8px; }
+.fd-entry { display: flex; width: 100%; }
+.fd-entry button { flex: 1 1 0; white-space: normal; line-height: 1.25; }
+/* (the outlets panel as tall as the drawing beside it, scrolling inside: its size not counted for the row) */
+.fd-top .acr-panel { max-height: none; contain: size; align-self: stretch; }
+@media (max-width: 1100px) { .fd-top .acr-panel { contain: none; } }
 /* Coating › 2D and 3D › Pool and feed: the section through an outlet, the pool from above */
 .pl-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .pl-top.pl-two { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }

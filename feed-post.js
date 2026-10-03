@@ -62,13 +62,18 @@ const fpInside = xi => xi && Math.max(Math.abs(xi[0]), Math.abs(xi[1]), Math.abs
 
 /** The element containing p (and p's local coordinates): the last one found and its neighbours first, then the bins. */
 function fpLocate(X, p) {
-  const M = X.M, tryE = e => { const b = X.box.subarray(6 * e, 6 * e + 6), t = 1e-9; if (p[0] < b[0] - t || p[0] > b[3] + t || p[1] < b[1] - t || p[1] > b[4] + t || p[2] < b[2] - t || p[2] > b[5] + t) return null; const xi = fpLocal(M, e, p); return fpInside(xi) ? xi : null; };
+  const M = X.M, inBox = e => { const b = X.box.subarray(6 * e, 6 * e + 6), t = 1e-9; return !(p[0] < b[0] - t || p[0] > b[3] + t || p[1] < b[1] - t || p[1] > b[4] + t || p[2] < b[2] - t || p[2] > b[5] + t); };
+  const tryE = (e, g) => { if (!inBox(e)) return null; const xi = fpLocal(M, e, p, g); return fpInside(xi) ? xi : null; };
   const near = [X.last]; for (let f = 0; f < 6; f++) { const n = X.nbr[6 * X.last + f]; if (n >= 0) near.push(n); }
   for (const e of near) { const xi = tryE(e); if (xi) { X.last = e; return { e, xi }; } }
   const L = X.bins.get(X.key(X.cell(p[0], 0), X.cell(p[1], 1), X.cell(p[2], 2))) || [];
   for (const e of L) { const xi = tryE(e); if (xi) { X.last = e; return { e, xi }; } }
+  // (an element bent hard -- a layer running down to the blade over the pool edge -- where Newton from its middle wanders
+  //  off: again from each of its corners and faces' middles)
+  for (const e of [...near, ...L]) if (inBox(e)) for (const g of FP_STARTS) { const xi = tryE(e, g); if (xi) { X.last = e; return { e, xi }; } }
   return null;
 }
+const FP_STARTS = [-1, 1].flatMap(c => [-1, 1].flatMap(b => [-1, 1].map(a => [a, b, c]))).concat([0, 1, 2].flatMap(d => [-1, 1].map(s => { const g = [0, 0, 0]; g[d] = s; return g; })));
 /** A nodal field (an array per component) at p: null outside the mesh. */
 function fpField(X, F, p) {
   const at = fpLocate(X, p); if (!at) return null;
