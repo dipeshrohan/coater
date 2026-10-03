@@ -418,8 +418,9 @@ function mixRun(o) {
     return { error: `in step ${i + 1} (${o.steps[i].name}) at pH ${sp.pH.toFixed(1)} the GO's charge does not keep its flakes apart (stability ratio ${Number.isFinite(W) ? W.toPrecision(2) : '∞'}): they flocculate within ${(1e3 / lmax).toPrecision(1)} ms, beyond what the batch model follows -- add the ammonia earlier or raise its target pH`, flocculated: { step: i, pH: sp.pH, W, t } }; };
   for (let i = 0; i < o.steps.length; i++) {
     const s = o.steps[i], No = s.No / 60, Nd = s.Nd / 60, p = s.p * 1000, dur = s.min * 60;
-    // the step's ammonia, at its start
+    // the step's ammonia, at its start (the batch just before it recorded: the history jumps with the dose)
     if (s.dose && (s.dose.pH != null || s.dose.mL > 0)) {
+      { const sb = state(T); rec(mixPower(o, G, sb.mu, sb.rho, No, Nd, sb.Vb), sb, i); }
       const before = chem(), n0 = Q.NT;
       const NT = s.dose.pH != null ? mixDoseFor(o, Q, mW / o.rhoL * 1000, s.dose.pH, cN) : n0 + s.dose.mL * 1e-6 * o.rhoN * o.wN / MIX_MNH3;
       const dn = NT - n0, mSol = dn * MIX_MNH3 / o.wN, mWadd = mSol * (1 - o.wN);

@@ -15,7 +15,8 @@
  *  7. Breakage: into two halves at a constant rate, the exact Poisson generations; into two at a uniform split with the
  *     rate the size (Ziff–McGrady), the number 1 + t exact and the distribution converging to theirs.
  *  8. The batch through the default program: the GO's mass kept, the water's balance, every step's time; its history
- *     through every step and at its end, each record with its own step's speeds; the run's time.
+ *     through every step and at its end, each record with its own step's speeds, the ammonia's jump in pH and heat at
+ *     its step's start; the run's time.
  */
 const MX = require('./mixer.js');
 let fails = 0;
@@ -148,9 +149,12 @@ const integrate = (pbe, N0, rates, T, n) => { const N = Float64Array.from(N0), K
   let tc = 0, hOk = H.t.length >= 400;
   o.steps.forEach((q, i) => { tc += q.min * 60; const j = H.step.lastIndexOf(i), own = H.step.map((x, k) => k).filter(k => H.step[k] === i);
     hOk = hOk && j >= 0 && Math.abs(H.t[j] - tc) < 1e-6 && own.every(k => (q.Nd > 0) === (H.PD[k] > 0)) && own.length > 50; });
+  // (the batch just before the first step's ammonia and just after it, both at its start)
+  const dOk = H.t[0] === 0 && H.t[1] === 0 && H.pH[0] < 6 && Math.abs(H.pH[1] - 7) < 1e-6 && H.T[1] > H.T[0];
+  hOk = hOk && dOk;
   check('the batch through the default program: the GO\'s mass kept, the water\'s balance closed, the program\'s time, its history',
     !r.error && gBal < 1e-12 && wBal < 1e-14 && Math.abs(e.t - dur) < 1e-6 && hOk && ms < 5000,
-    `${(ms / 1000).toFixed(1)} s, ${e.steps} steps, ${H.t.length} records; GO off ${e1(gBal)}, water ${e1(wBal)}; ammonia ${r.doses.map(d => `${d.mL.toFixed(0)} mL to pH ${d.pH.toFixed(2)}`).join(', ')}; end: ${e.T.toFixed(1)} °C, grind ${(e.grind * 1e6).toFixed(0)} µm, ${(e.lumps * 100).toFixed(2)} % in lumps, ${e.mu27.toFixed(2)} Pa·s at 2.7 1/s and ${o.Tlaw} °C`);
+    `${(ms / 1000).toFixed(1)} s, ${e.steps} steps, ${H.t.length} records (the ammonia: pH ${H.pH[0].toFixed(2)} → ${H.pH[1].toFixed(2)}, ${H.T[0].toFixed(1)} → ${H.T[1].toFixed(1)} °C); GO off ${e1(gBal)}, water ${e1(wBal)}; ammonia ${r.doses.map(d => `${d.mL.toFixed(0)} mL to pH ${d.pH.toFixed(2)}`).join(', ')}; end: ${e.T.toFixed(1)} °C, grind ${(e.grind * 1e6).toFixed(0)} µm, ${(e.lumps * 100).toFixed(2)} % in lumps, ${e.mu27.toFixed(2)} Pa·s at 2.7 1/s and ${o.Tlaw} °C`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

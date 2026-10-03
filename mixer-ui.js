@@ -319,11 +319,11 @@ function mixCharts(r) {
   draw('mxP', [0, Math.max(...Pt) * 1.05 || 1], [ser(Pt, ink), ser(H.PB, acc, 1.6), ser(H.PD, warm, 1.6, [6, 4])], { yl: 'power (W)' }, [['total', ink], ['blades', acc], ['disperser', warm, 'dash']]);
   const q = mixInSI(r.inp), RS = r.inp.steps, Tb = []; for (let i = 0; i < H.t.length; i++) { Tb.push(RS[H.step[i]].p < 101 ? drTsat(RS[H.step[i]].p * 1000) : NaN); }
   const yT = lim([...H.T, q.Tj, ...Tb.filter(Number.isFinite)]);
-  draw('mxT', yT, [ser(H.T, go, 2.2), ...(Tb.some(Number.isFinite) ? [ser(Tb, warm, 1.4, [6, 4])] : [])], { yl: 'temperature (°C)', hl: [{ y: q.Tj, c: mut, t: `jacket ${q.Tj} °C`, left: true }] },
+  draw('mxT', yT, [ser(H.T, go, 2.2), ...(Tb.some(Number.isFinite) ? [ser(Tb, warm, 1.4, [6, 4])] : [])], { yl: 'temperature (°C)', hl: [{ y: q.Tj, c: mut, t: `jacket ${q.Tj} °C` }] },
     [['the batch', go], ...(Tb.some(Number.isFinite) ? [['boiling point under the vacuum', warm, 'dash']] : [])]);
   draw('mxPH', lim(H.pH), [ser(H.pH, acc)], { yl: 'pH' }, [['pH', acc]]);
   const g = H.grind.map(v => v * 1e6), gR = r.inp.gR;
-  draw('mxG', [0, Math.max(gR * 1.1, Math.min(Math.max(...g) * 1.05, gR * 4))], [ser(g, acc)], { yl: 'grind gauge (µm)', hl: [{ y: gR, c: mut, t: `the gauge's range ${gR} µm`, left: true }] }, [['the largest lumps (the gauge\'s reading)', acc]]);
+  draw('mxG', [0, Math.max(gR * 1.1, Math.min(Math.max(...g) * 1.05, gR * 4))], [ser(g, acc)], { yl: 'grind gauge (µm)', hl: [{ y: gR, c: mut, t: `the gauge's range ${gR} µm` }] }, [['the largest lumps (the gauge\'s reading)', acc]]);
   draw('mxL', [0, 100], [ser(H.lumps.map(v => v * 100), acc)], { yl: 'GO in lumps (%)' }, [['GO in lumps larger than the flakes', acc]]);
   draw('mxM', lim(H.mu27), [ser(H.mu27, go)], { yl: 'viscosity at 2.7 1/s (Pa·s)' }, [['the batch, at its temperature', go]]);
   // lump sizes at the end: the GO's volume share per class against size (log); the flakes' sizes
