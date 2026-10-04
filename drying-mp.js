@@ -400,7 +400,8 @@ function dmpDry(o) {
     for (let cyc = 0; cyc < 20; cyc++) {
       matVec(x, w); let rn = 0; for (let n = 0; n < NN; n++) { r[n] = Rh[n] - w[n]; rn += r[n] * r[n]; } rn = Math.sqrt(rn);
       if (rn <= 1e-12 * bn) return x;
-      const V = [Float64Array.from(r, v => v / rn)], H = [], g = [rn], cs = [], sn = [];
+      const V0 = new Float64Array(NN); for (let n = 0; n < NN; n++) V0[n] = r[n] / rn;
+      const V = [V0], H = [], g = [rn], cs = [], sn = [];
       let j = 0;
       for (; j < m; j++) {
         stats.gmres++;
@@ -413,7 +414,7 @@ function dmpDry(o) {
         h[j] = cs[j] * h[j] + sn[j] * h[j + 1]; h[j + 1] = 0; g[j + 1] = -sn[j] * g[j]; g[j] = cs[j] * g[j];
         H.push(h);
         if (Math.abs(g[j + 1]) <= 1e-12 * bn || wn === 0) { j++; break; }
-        V.push(Float64Array.from(w, v => v / wn));
+        const Vj = new Float64Array(NN); for (let n = 0; n < NN; n++) Vj[n] = w[n] / wn; V.push(Vj);
       }
       const y = new Float64Array(j);
       for (let i = j - 1; i >= 0; i--) { let s = g[i]; for (let k = i + 1; k < j; k++) s -= H[k][i] * y[k]; y[i] = s / H[i][i]; }
