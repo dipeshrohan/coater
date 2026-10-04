@@ -2427,7 +2427,7 @@ body[data-sec="cut"] #scope, body[data-sec="stack"] #scope, body[data-sec="furn"
 .hub-at { color: var(--muted); font-size: 11px; margin-left: 6px; }
 .hub-ten { font: 12px var(--mono); color: var(--ink); }
 .hub-badv { color: var(--bad); }
-.hub-u { font: 11.5px var(--mono); color: var(--muted); max-width: 110px; overflow-wrap: anywhere; }
+.hub-u { font: 11.5px var(--mono); color: var(--muted); white-space: nowrap; }
 .hub-c-src { width: 34%; max-width: 0; }
 .hub-src { width: 100%; height: 26px; border: 1px solid transparent; border-radius: 6px; padding: 0 6px; background: transparent; color: var(--muted); font: 12px var(--sans); text-overflow: ellipsis; }
 .hub-src:hover { border-color: var(--line); }
