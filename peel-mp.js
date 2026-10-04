@@ -261,6 +261,27 @@ function pmpCohesive(c, dx, dz, kOld) {
 
 // ---- the section, solved ----
 /**
+ * The section's set-up for the inputs (as pmpFront takes them): the film's numbers, the hold's law, the force sought,
+ * the front's lengths and the mesh's options -- the page draws the mesh the solve uses from it.
+ */
+function pmpPlan(o) {
+  const L = pmpLayers(o.layers), th = o.theta, hold = o.hold, Cw = o.web.C;
+  const fSS = pmpSteady(L, th, hold.Gi), frac = o.frac ?? 0.99, fT = o.f ?? fSS * frac;
+  const K = hold.K || 50 * Cw.C33 / o.web.tw, coh = { K, d0: hold.sig / K, df: 2 * hold.Gi / hold.sig };
+  if (!(coh.df > coh.d0)) throw new Error('peel section: the hold\'s strength is too high for its energy and stiffness');
+  // (the front's lengths: the film's bending length at the force λ = √(D/f), the hold's process zone (a beam on its
+  //  softening layer) ℓ = (D δf / σ̂)^¼, the shear lag ℓs = √(A tw / G_web): over it the bonded film hands its own pull
+  //  to the web behind the front)
+  const lam = Math.sqrt(L.Dn / Math.max(fT, 1e-9)), lz = Math.pow(L.Dn * coh.df / hold.sig, 0.25), ls = Math.sqrt(L.A * o.web.tw / Cw.C55);
+  const ms = o.mesh || {};
+  const mo = { L, tw: o.web.tw, nzF: ms.nzF || 4, nzW: ms.nzW || 4, grow: ms.grow || 1.15, webGrade: ms.webGrade || 3,
+    fine: ms.fine || Math.min(L.h / 2, lz / 12), Lb: ms.Lb || Math.max(30 * lz, 8 * o.web.tw, 3 * lam, 6 * ls), La: ms.La || 7 * lam };
+  mo.zone = ms.zone || Math.min(3 * lz, mo.Lb / 3);
+  // (the bare web under the whole arm: J's rings may reach far along it; the elements along the arm at most λ/24)
+  mo.Lw = ms.Lw || mo.La; mo.capA = ms.capA || lam / 24; mo.capB = ms.capB || Math.max(lam / 6, 2 * o.web.tw);
+  return { L, th, hold, Cw, fSS, fT, coh, lam, lz, ls, mo };
+}
+/**
  * The peel front. o: {
  *   layers: [{ t, C: pmpTI(…), en }] (the film, bottom first), web: { tw, C },
  *   hold: { Gi, sig (its strength), K (its stiffness per area; default 50 × the web's through-thickness E / tw) },
@@ -271,20 +292,7 @@ function pmpCohesive(c, dx, dz, kOld) {
  * (each pair's separation, traction, damage), and the answers (see the end).
  */
 function pmpFront(o) {
-  const L = pmpLayers(o.layers), th = o.theta, hold = o.hold, Cw = o.web.C;
-  const fSS = pmpSteady(L, th, hold.Gi), frac = o.frac ?? 0.99, fT = o.f ?? fSS * frac;
-  const K = hold.K || 50 * Cw.C33 / o.web.tw, coh = { K, d0: hold.sig / K, df: 2 * hold.Gi / hold.sig };
-  if (!(coh.df > coh.d0)) throw new Error('peel section: the hold\'s strength is too high for its energy and stiffness');
-  // (the front's lengths: the film's bending length at the force λ = √(D/f), the hold's process zone (a beam on its
-  //  softening layer) ℓ = (D δf / σ̂)^¼,
-  //  the shear lag ℓs = √(A tw / G_web): over it the bonded film hands its own pull to the web behind the front)
-  const lam = Math.sqrt(L.Dn / Math.max(fT, 1e-9)), lz = Math.pow(L.Dn * coh.df / hold.sig, 0.25), ls = Math.sqrt(L.A * o.web.tw / Cw.C55);
-  const ms = o.mesh || {};
-  const mo = { L, tw: o.web.tw, nzF: ms.nzF || 4, nzW: ms.nzW || 4, grow: ms.grow || 1.15, webGrade: ms.webGrade || 3,
-    fine: ms.fine || Math.min(L.h / 2, lz / 12), Lb: ms.Lb || Math.max(30 * lz, 8 * o.web.tw, 3 * lam, 6 * ls), La: ms.La || 7 * lam };
-  mo.zone = ms.zone || Math.min(3 * lz, mo.Lb / 3);
-  // (the bare web under the whole arm: J's rings may reach far along it; the elements along the arm at most λ/12)
-  mo.Lw = ms.Lw || mo.La; mo.capA = ms.capA || lam / 24; mo.capB = ms.capB || Math.max(lam / 6, 2 * o.web.tw);
+  const { L, th, hold, Cw, fSS, fT, coh, lam, lz, ls, mo } = pmpPlan(o);
   const M = pmpMesh(mo);
   const matOf = (part, z) => { if (part === 'web') return { ...Cw, en: 0 }; const c = L.at(z); return { ...c.C, en: c.en }; };
   pmpGauss(M, matOf);
@@ -558,4 +566,54 @@ function pmpAnswers(M, L, u, coh, kap, s) {
   };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { pmpTI, pmpLayers, pmpG, pmpSteady, pmpElastica, pmpGrow, pmpGraded, pmpMesh, pmpBand, pmpAdd, pmpLDL, pmpLDLSolve, pmpCohesive, pmpDamage, pmpFront, pmpAnswers };
+// ---- the 2D run the app asks for: the film as the drying left it at the peel, at the hand's angle and the winder's ----
+/**
+ * o: { cells: [{ t, Ep, Et, nup, nupt, Gpt, en }] (the film from the web up; en from its bonded state), web: { tw, Ew,
+ * Et, nuw, nupt, G }, hold: { Gi, sig }, angles: [degrees] (the first the hand's), mesh: { nzF, nzW, grow, armN },
+ * onProgress }. Returns { angles: [each angle's answers, compact], L: the film's numbers, ms }.
+ */
+function pmpRun2D(o) {
+  const t0 = Date.now(), cells = o.cells.map(c => ({ t: c.t, C: pmpTI(c.Ep, c.Et, c.nup, c.nupt, c.Gpt), en: c.en }));
+  const web = { tw: o.web.tw, C: pmpTI(o.web.Ew, o.web.Et, o.web.nuw, o.web.nupt, o.web.G) }, L = pmpLayers(cells);
+  const n = o.angles.length, ms = o.mesh || {}, out = [];
+  o.angles.forEach((deg, i) => {
+    const th = deg * Math.PI / 180, lam = Math.sqrt(L.Dn / Math.max(pmpSteady(L, th, o.hold.Gi) * 0.99, 1e-9));
+    const t1 = Date.now();
+    const r = pmpFront({ layers: cells, web, hold: o.hold, theta: th,
+      mesh: { nzF: ms.nzF, nzW: ms.nzW, grow: ms.grow, capA: ms.armN ? lam / ms.armN : undefined },
+      onProgress: q => { if (o.onProgress) o.onProgress({ k: i * 10 + q.k, n: n * 10 }); } });
+    out.push(pmpCompact(r, deg, Date.now() - t1));
+    if (o.onProgress) o.onProgress({ k: (i + 1) * 10, n: n * 10 });
+  });
+  return { angles: out, L: { h: L.h, A: L.A, An: L.An, Bn: L.Bn, zN: L.zN, Dn: L.Dn, kFree: (L.A * L.Bn - L.B * L.An) / (L.A * L.D - L.B * L.B) }, ms: Date.now() - t0 };
+}
+/** One angle's answers, compact (rounded; the section near the front kept for the drawings). */
+function pmpCompact(r, deg, ms) {
+  const p = (x, k = 5) => (Number.isFinite(x) ? +(+x).toPrecision(k) : null), M = r.M, u = r.u;
+  // (the section drawn: the columns within a window round the front -- the hold's zone, the arm's turn -- every node)
+  const w = Math.max(1.6 * r.lam, 12 * r.lz);
+  const cols = [];
+  // (the elements' corners: every second column, every second node through)
+  for (let c = 0; c < M.nC; c += 2) {
+    const x = M.xs[c];
+    if (x < r.tipX - w || x > r.tipX + 3 * w) continue;
+    const film = [], web = [];
+    for (let k = 0; k < M.nF; k += 2) { const id = M.id(c, 'film', k); film.push([p(M.X[id] + u[2 * id], 6), p(M.Z[id] + u[2 * id + 1], 6), p(r.Sx[id] / 1e6, 4)]); }
+    if (c <= M.webC1) for (let k = 0; k < M.nW; k += 2) { const id = M.id(c, 'web', k); web.push([p(M.X[id] + u[2 * id], 6), p(M.Z[id] + u[2 * id + 1], 6), p(r.Sx[id] / 1e6, 4)]); }
+    cols.push({ x: p(x, 6), film, web });
+  }
+  const near = q => q.x > r.tipX - w && q.x < r.tipX + 3 * w;
+  return {
+    deg, f: p(r.f), fSS: p(r.fSS), G: p(r.G), Gi: r.Gi, J: { inner: p(r.J.inner), outer: p(r.J.outer) }, Phi: p(r.Phi), PhiN: p(r.PhiN),
+    tipX: p(r.tipX), zone: p(r.zone), rootPhi: p(r.rootPhi), lam: p(r.lam), lz: p(r.lz), ls: p(r.ls), iters: r.iters, ms,
+    sMax: { s: p(r.sMax.s), x: p(r.sMax.x), z: p(r.sMax.z) }, sBot: { s: p(r.sBot.s), x: p(r.sBot.x) }, sTop: { s: p(r.sTop.s), x: p(r.sTop.x) },
+    mesh: { nodes: r.mesh.nodes, elems: r.mesh.elems, unknowns: r.mesh.unknowns, band: r.mesh.band, fine: p(r.mesh.fine), Lb: p(r.mesh.Lb), La: p(r.mesh.La), nF: M.nF, nW: M.nW,
+      nxE: M.xe.length - 1, zFe: M.zFe.map(v => p(v, 6)), zWe: M.zWe.map(v => p(v, 6)) },
+    face: r.faceRow.filter(near).map(q => [p(q.x, 6), p(q.bot / 1e6, 4), p(q.top / 1e6, 4)]),
+    hold: r.holdRow.filter(near).map(q => [p(q.x, 6), p(q.tz / 1e6, 4), p(q.tx / 1e6, 4), p(q.d, 4), p(q.dz, 4), p(q.dx, 4)]),
+    arm: r.arm.map(a => [p(a.s, 6), p(a.phi, 5), p(a.M, 5), p(a.N, 5), p(a.x, 6), p(a.z, 6)]),
+    cols,
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { pmpRun2D, pmpCompact, pmpPlan, pmpTI, pmpLayers, pmpG, pmpSteady, pmpElastica, pmpGrow, pmpGraded, pmpMesh, pmpBand, pmpAdd, pmpLDL, pmpLDLSolve, pmpCohesive, pmpDamage, pmpFront, pmpAnswers };

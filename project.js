@@ -89,7 +89,7 @@ function projStopAll() {
   if (typeof SOLVE_ASK !== 'undefined') SOLVE_ASK.clear();   // (Phase 0: nothing asked for goes on)
   cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
   m3StudyStop(true); acc3Stop(); c3dStop();
-  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop();
+  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop();
   if (typeof poolStop === 'function') poolStop();
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
@@ -110,6 +110,7 @@ function projRunning() {
   if (FILM.busy) add('Peel and wind', 'the film to the peel', kn(FILM.prog));
   if (SHEET.busy) add('Cutting', 'the piece in 3D', kn(SHEET.prog));
   if (STACK.busy) { const ps = Object.values(STACK.prog); add('Pre heat treatment', 'the pressed stack', ps.length ? kn({ k: ps.reduce((a, p) => a + p.k, 0), n: ps.reduce((a, p) => a + p.n, 0) }) : ''); }
+  if (typeof PMS !== 'undefined' && PMS.busy) add('Peel and wind', `multiphysics ${PMS.bdim}D, the peel front`, kn(PMS.prog));
   if (MPS.busy) add('Pre heat treatment', `multiphysics ${MPS.bdim}D`, kn(MPS.prog, 'time step ', true));
   if (FURN.busy) add('Furnace', 'the two runs', FURN.prog && FURN.prog.n > 1 ? kn(FURN.prog, 'stack ') : '');
   if (FURN.fit && !FURN.fit.done) add('Furnace', 'a fit to your measurements', (FURN.fit.msg || '').replace(/^Fitting:?\s*|…$/g, ''));

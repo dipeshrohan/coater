@@ -2,12 +2,13 @@
  * cfd-mp-worker.js — the multiphysics solvers (MP) off the main thread. MP-1: the pressed stack in the pre heat treatment
  * (stack-mp.js on mp-core.js), in 1D, 2D or 3D: its heat, its water and each followed piece's stress, together. MP-2:
  * the furnace's stack (furnace-mp.js): its heat with its chemistry's, its gas and each followed piece's stress. MP-5: the
- * film drying on its web (drying-mp.js): its heat, its water, the air through the web and the drying stress.
+ * film drying on its web (drying-mp.js): its heat, its water, the air through the web and the drying stress. MP-PEEL: the
+ * film peeled off its web (peel-mp.js): the peel front in 2D at the hand's and the winder's angles.
  *
- * Message in:  { id, kind: 'stack' | 'furnace' | 'dry', o } (smpStack's, fmpStack's or dmpDry's inputs, plain data)
+ * Message in:  { id, kind: 'stack' | 'furnace' | 'dry' | 'peel2', o } (smpStack's, fmpStack's, dmpDry's or pmpRun2D's inputs, plain data)
  * Message out: { id, progress: { k, n } } while it works, then { id, ok: true, res, ms } or { id, ok: false, error }.
  */
-importScripts('matlib.js', 'um-fe.js', 'mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js', 'film.js', 'drying-mp.js');
+importScripts('matlib.js', 'um-fe.js', 'mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js', 'film.js', 'drying-mp.js', 'peel-mp.js');
 
 /** A run, compact: the series (minutes), the sections and the pieces' fields at the snapshots, the answers, the balances. */
 function mpStackCompact(r) {
@@ -48,10 +49,11 @@ function mpDryCompact(r) {
 onmessage = e => {
   const { id, kind, o } = e.data, t0 = Date.now();
   try {
-    if (kind !== 'stack' && kind !== 'furnace' && kind !== 'dry') throw new Error(`no such multiphysics run: ${kind}`);
+    if (kind !== 'stack' && kind !== 'furnace' && kind !== 'dry' && kind !== 'peel2') throw new Error(`no such multiphysics run: ${kind}`);
     let last = 0;
     const onProgress = q => { const now = Date.now(); if (now - last > 150 || q.k === q.n) { last = now; postMessage({ id, progress: q }); } };
-    const res = kind === 'stack' ? mpStackCompact(smpStack({ ...o, onProgress })) : kind === 'dry' ? mpDryCompact(dmpDry({ ...o, onProgress })) : mpFurnCompact(fmpStack({ ...o, onProgress }));
+    const res = kind === 'stack' ? mpStackCompact(smpStack({ ...o, onProgress })) : kind === 'dry' ? mpDryCompact(dmpDry({ ...o, onProgress }))
+      : kind === 'peel2' ? pmpRun2D({ ...o, onProgress }) : mpFurnCompact(fmpStack({ ...o, onProgress }));
     postMessage({ id, ok: true, res, ms: Date.now() - t0 });
   } catch (err) {
     postMessage({ id, ok: false, error: err.message });

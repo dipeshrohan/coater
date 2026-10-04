@@ -1,7 +1,7 @@
 /*
  * mathub.validate.js — checks of the material hub's records (mathub.js) against the solvers they describe.
  * Run: node mathub.validate.js
- *  1. Bindings: every value on the six stage cards (99) is a property of exactly one record, with no other binding
+ *  1. Bindings: every value on the six stage cards (102) is a property of exactly one record, with no other binding
  *     to a card value; every record's property ids are unique; each solver key a property names is a solver.
  *  2. Built-in laws: each equals the solver's own function, at temperatures across its range (water: drying.js
  *     drMuWater, drPsat, drLatent; air: drying.js drAir; argon: furnace-mp.js fmpArgon; graphite: fmpCg).
@@ -38,7 +38,7 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
   for (const r of all) for (const p of props(r)) if (p.b.t === 'card') { const k = `${p.b.card}.${p.b.k}`; seen.set(k, [...(seen.get(k) || []), `${r.id}.${p.id}`]); }
   const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`));
   const missing = cards.filter(k => !seen.has(k)), twice = [...seen].filter(([, v]) => v.length > 1), extra = [...seen.keys()].filter(k => !cards.includes(k));
-  check(`bindings: the ${cards.length} card values (the six stage cards' 101, the material constants' 10, the spec's three materials' 18) each a property of exactly one record`, cards.length === 129 && !missing.length && !twice.length && !extra.length,
+  check(`bindings: the ${cards.length} card values (the six stage cards' 102, the material constants' 10, the spec's three materials' 18) each a property of exactly one record`, cards.length === 130 && !missing.length && !twice.length && !extra.length,
     `missing ${missing.join(', ') || 'none'}; twice ${twice.map(([k, v]) => `${k} (${v.join(', ')})`).join('; ') || 'none'}; unknown ${extra.join(', ') || 'none'}`);
   const dup = all.filter(r => new Set(props(r).map(p => p.id)).size !== props(r).length).map(r => r.id);
   check('  property ids unique within each record; record ids unique', !dup.length && new Set(all.map(r => r.id)).size === all.length, dup.join(', '));

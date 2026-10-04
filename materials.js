@@ -86,6 +86,9 @@ const MAT_FILM = [
   ['GcF', 'Its fracture energy (a crack through it)', 'J/m²', 0.1, 10000, 1, 1, 40, 'assumed', 'multilayer GO about 39 J/m² (J-integral); thicker films may be tougher: the crack spacing measured gives it'],
   ['Gil', 'Between its layers (it splits)', 'J/m²', 0.1, 10000, 1, 1, 20, 'assumed', 'GO paper splits between its layers more easily than across them'],
   ['Gi', 'Its hold on the fibre web', 'J/m²', 0.01, 10000, 0.5, 2, 10, 'assumed', 'not known: the peel force measured gives it'],
+  // (MP-PEEL: the hold's strength -- the most it pulls before it gives way -- sets how far along the web it gives way at the
+  //  front and how much the film turns there; with its energy above, the 2D peel front's cohesive layer)
+  ['sigI', 'Its hold on the fibre web: strength', 'MPa', 0.01, 1000, 0.1, 2, 2, 'assumed', 'not known: the most the hold pulls before it gives way'],
   ['setFrac', 'Curl the roll sets (of the roll\'s)', 'fraction', 0, 1, 0.01, 2, 0, 'assumed', 'GO paper is viscoelastic (Su et al. 2012): the curl measured after the roll gives it'],
   ['Ew', 'Fibre web\'s stiffness along it', 'GPa', 0.01, 50, 0.05, 2, 1, 'assumed', 'PET filament about 8 GPa (60–90 gf/den); about a quarter of a plain weave\'s fibres run along the line and their crimp lowers it'],
   ['soft', 'Fibre web through its thickness and in shear', '× along it', 0.001, 1, 0.01, 3, 0.1, 'assumed', 'a fabric: its yarns flatten and slide'],
