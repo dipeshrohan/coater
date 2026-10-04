@@ -14,7 +14,8 @@
  *   (the film after the edge, when xEnd > 0), outlets: [{ x, z, ym (the mouth), yIn (the bore's inlet) }], d (bore), Do (the
  *   pipe's outer diameter), size ((x, y, z) -> h, or a number), tol (the chord tolerance), across (at least this many
  *   elements across the gap under the blade and across a pipe's bore, default 3: the size there at most the gap's height,
- *   or the bore, over it), grow (the size's growth away from a pipe, default 1.3) }.
+ *   or the bore, over it; round a pipe also at most 3.2 times its facets), grow (the size's growth away from a pipe,
+ *   default 1.3) }.
  *   The profile along the web (web, outlet or film, the exit face, the blade's underside, the pile's surface, the inlet)
  *   extruded across; each pipe: its outer wall from the mouth up to the pile's surface (a hole in it), the wall's end (a
  *   ring) at the mouth, the bore's wall from the mouth up to its inlet, the inlet (a disc). Tags: web, outlet, film, face,
@@ -45,13 +46,19 @@ function umgCircle(size, r, tol) {
   return Math.max(8, Math.ceil(2 * Math.PI * r / size), Math.ceil(byTol));
 }
 
+/** Round a pipe, the size at most this many times its facets (umgPool). */
+const UMG_PIPE_FACETS = 3.2;
 /** The pool with its pipes (see the header). */
 function umgPool(o) {
   const h0 = typeof o.size === 'function' ? o.size : () => o.size, tol = o.tol ?? Infinity, across = o.across ?? 3;
   const { z0, z1, xCut, xEnd, bladeY, H0 } = o, film0 = o.film0 ?? 0;
   // (under the blade, the size at most the gap's height over `across`; its slope there that of the underside over `across`)
   // (round each pipe, from its mouth to its inlet, the size at most the bore over `across`, growing away at grow - 1)
-  const g = (o.grow ?? 1.3) - 1, hPipe = o.d / across, axes = (o.outlets || []).map(q => ({ x: q.x, z: q.z, y0: q.ym, y1: q.yIn }));
+  // (and at most UMG_PIPE_FACETS times the pipe's facets round its circles, those the chord tolerance sets: the surface round
+  //  a finely cut pipe kept in proportion to its facets -- long thin triangles beside short facets are not recovered)
+  const chordOf = r => 2 * Math.PI * r / umgCircle(Infinity, r, tol);
+  const g = (o.grow ?? 1.3) - 1, hPipe = Math.min(o.d / across, UMG_PIPE_FACETS * Math.min(chordOf(o.d / 2), chordOf(o.Do / 2)));
+  const axes = (o.outlets || []).map(q => ({ x: q.x, z: q.z, y0: q.ym, y1: q.yIn }));
   const hOf = (x, y, z) => {
     let h = h0(x, y, z);
     if (x > xCut && x <= Math.min(0, xEnd) && bladeY(x) < H0) h = Math.min(h, bladeY(x) / across);
