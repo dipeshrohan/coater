@@ -379,7 +379,7 @@ function swbLegend(A, dim, o, step) {
   const sw = c => `<i class="swb-sw" style="background:${swbFill(c, step === 'mesh' ? 0.3 : 0.5)};border-color:${swbFill(c, 0.95)}"></i>`;
   const parts = L.parts.filter((p, i, a) => a.findIndex(q => q.k === p.k) === i).map(p => `<span>${sw(p.c)}${p.t}</span>`).join('');
   const note = step === 'mesh' ? A.meshNote(dim, o) : A.geoNote(dim, o);
-  return `<p class="swb-key">${parts}${(L.mirrors || []).length || dim === 3 ? '<span><i class="swb-sw swb-sw-dash"></i>a mirror plane (the domain\'s middle)</span>' : ''}</p>${note ? `<p class="fv-why">${note}</p>` : ''}`;
+  return `<p class="swb-key">${parts}${(L.mirrors || []).length || (dim === 3 && !L.noMirror) ? '<span><i class="swb-sw swb-sw-dash"></i>a mirror plane (the domain\'s middle)</span>' : ''}</p>${note ? `<p class="fv-why">${note}</p>` : ''}`;
 }
 /** Geometry: the parts and their materials (each a record on Materials: open it), the domain's sizes. */
 function swbGeoHTML(A, dim, o) {

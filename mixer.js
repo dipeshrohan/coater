@@ -91,6 +91,7 @@ const MIX_INPUTS = [
   { g: 'blades', k: 'dir', l: 'Blade spin', u: '', f: 1, v: 1, o: [[1, 'with the arm'], [-1, 'against the arm']] },
   { g: 'blades', k: 'nBlade', l: 'Blades', u: '', f: 1, v: 2, min: 1, max: 3, step: 1, d: 0 },
   { g: 'blades', k: 'nBar', l: 'Vertical bars per blade', u: '', f: 1, v: 2, min: 1, max: 4, step: 1, d: 0 },
+  { g: 'blades', k: 'phB', l: 'Blades set apart by', u: '°', f: Math.PI / 180, v: 90, min: 0, max: 180, step: 1, d: 0, h: 'each blade\'s frame turned this far against the one before, so the two intermesh where their sweeps meet at the vessel\'s axis (90° for frames of two bars)' },
   { g: 'blades', k: 'w', l: 'Bar width', u: 'mm', f: 1e-3, v: 60, min: 1, max: 500, step: 1, d: 0 },
   { g: 'blades', k: 't', l: 'Bar thickness', u: 'mm', f: 1e-3, v: 16, min: 1, max: 200, step: 1, d: 0 },
   { g: 'blades', k: 'ro', l: 'Blade axis from the vessel\'s axis', u: 'mm', f: 1e-3, v: 123.5, min: 5, max: 1500, step: 0.5, d: 1 },
@@ -101,6 +102,8 @@ const MIX_INPUTS = [
   { g: 'disp', k: 'nT', l: 'Teeth', u: '', f: 1, v: 16, min: 0, max: 64, step: 1, d: 0 },
   { g: 'disp', k: 'rD', l: 'Disc axis from the vessel\'s axis', u: 'mm', f: 1e-3, v: 165, min: 0, max: 1500, step: 0.5, d: 1 },
   { g: 'disp', k: 'hD', l: 'Disc above the floor', u: 'mm', f: 1e-3, v: 60, min: 5, max: 2000, step: 1, d: 0 },
+  { g: 'disp', k: 'tD', l: 'Disc thickness', u: 'mm', f: 1e-3, v: 3, min: 0.5, max: 50, step: 0.5, d: 1, h: 'its plate (the 2D and 3D)' },
+  { g: 'disp', k: 'dS', l: 'Disc shaft diameter', u: 'mm', f: 1e-3, v: 30, min: 0, max: 200, step: 1, d: 0, h: 'the shaft from the disc up through the batch (the 2D and 3D)' },
   { g: 'power', k: 'fB', l: 'Blades\' power factor', u: '×', f: 1, v: 1, min: 0.01, max: 100, step: 0.01, d: 2, h: 'on the bars\' drag as computed; the 2D/3D or your torque log set it' },
   { g: 'power', k: 'CD', l: 'Bars\' form drag C_D', u: '', f: 1, v: 2, min: 0, max: 10, step: 0.1, d: 1, h: 'a flat bar broadside: about 2' },
   { g: 'power', k: 'Kp', l: 'Disc\'s laminar constant Kp', u: '', f: 1, v: 16 * Math.PI ** 2 / 3, min: 1, max: 5000, step: 0.01, d: 2, h: 'Np Re at low Re; 16π²/3 = 52.64: a thin disc\'s exact Stokes torque' },
@@ -145,6 +148,13 @@ const MIX_INPUTS = [
   { g: 'visc', k: 'md', l: 'Viscosity against flake size, exponent', u: '', f: 1, v: 1, min: 0, max: 5, step: 0.1, d: 1, h: 'μ ∝ (flake size)^m' },
   { g: 'visc', k: 'cCake', l: 'Cake\'s viscosity against the slurry\'s', u: '×', f: 1, v: 1, min: 0.01, max: 100, step: 0.01, d: 2, h: 'undispersed GO against dispersed, at the same solids' },
   { g: 'num', k: 'dtMax', l: 'Longest time step', u: 's', f: 1, v: 1, min: 0.01, max: 30, step: 0.01, d: 2 },
+  // (the 2D and 3D: which step of the program they solve, where the 2D's slice is, what they count; the batch's own solve
+  //  takes none of these)
+  { g: 'mp', k: 'mpStep', l: 'Program step solved', u: '', f: 1, v: 0, min: 0, max: 50, step: 1, d: 0, steps: true, h: 'the step whose speeds and batch the 2D and 3D take (the batch as the 1D leaves it at the step\'s end: its flow curve, density and level); "the disperser at its fastest" picks the step with the disc turning fastest' },
+  { g: 'mp', k: 'zsF', l: '2D slice height', u: '% of the batch', f: 1e-2, v: 50, min: 1, max: 99, step: 1, d: 0, h: 'the horizontal slice the 2D solves, above the floor, as a share of the batch\'s depth' },
+  { g: 'mp', k: 'kP', l: 'Paste\'s heat conduction', u: 'W/(m·K)', f: 1, v: 0.6, min: 0.05, max: 10, step: 0.01, d: 2, h: 'the 2D\'s heat: the batch is mostly water (0.60 W/(m·K) at 20 °C)' },
+  { g: 'mp', k: 'gdDead', l: 'Dead zone: sheared below', u: '1/s', f: 1, v: 1, min: 0.001, max: 1000, step: 0.1, d: 3, h: 'paste never sheared faster than this counts as a dead zone' },
+  { g: 'mp', k: 'sLow', l: 'Strain a parcel needs', u: '', f: 1, v: 100, min: 1, max: 1e6, step: 1, d: 0, h: 'the shear strain (shear rate × time) a tracer must gather to count as worked; the share of tracers below it is shown' },
 ];
 /** The program's default steps: { name, min (duration), No (arm, rpm), Nd (disperser, rpm; 0 off), p (kPa abs), dose:
  *  null | { recipe: true } (the recipe's ammonia water) | { pH } (to a pH) | { mL } (an amount), at the step's start }.
@@ -177,6 +187,8 @@ const mixDR = () => (typeof drTsat === 'function' && typeof drLatent === 'functi
 const mixPsat = Tc => mixDR().drPsat(Tc), mixTsat = p => mixDR().drTsat(p);
 const mixLatent = Tc => mixDR().drLatent(Tc), mixMuW = Tc => mixDR().drMuWater(Tc);
 const MIX_CW = 4180;
+/** The shear rates the batch's flow curve is tabled at for the 2D and 3D (1/s). */
+const MIX_LAW_GD = [1e-3, 3e-3, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000, 1e4, 3e4];
 
 /** Drag per length and speed over μ of a cylinder (radius a) moving at the centre of a fixed cylinder (radius b), 2D
  *  Stokes: 4π / (ln k − (k² − 1)/(k² + 1)). */
@@ -198,8 +210,9 @@ function mixRecipe(o) {
   return { mGO, mW0, V0, phi0: mGO / rS / V0, mTot, mLiq: mTot - mGO, wGO: mGO / mTot, phiEnd: mGO / rS / Vend, Vend, wSoak, wL, phiL: vol(wL), phiH: vol(o.wPaste) };
 }
 
-/** The inputs the batch's solve does not take (the tolerances and the spec: what the recipe may be). */
-const MIX_NOSOLVE = new Set(['tPaste', 'tSoak', 'tWat', 'tN', 'wMin', 'wMax', 'cMin', 'cMax']);
+/** The inputs the batch's solve does not take (the tolerances and the spec: what the recipe may be; the 2D's and the 3D's
+ *  own: the blades' phase, the disc's plate and shaft, the step they solve, the slice, what they count). */
+const MIX_NOSOLVE = new Set(['tPaste', 'tSoak', 'tWat', 'tN', 'wMin', 'wMax', 'cMin', 'cMax', 'phB', 'tD', 'dS', 'mpStep', 'zsF', 'kP', 'gdDead', 'sLow']);
 /**
  * The recipe's spread (SI, as mixRecipe; carbon: the dry GO's carbon share as Materials has it, from its C/O and H/C).
  * The GO's share of the batch rises with the paste and its solids and falls with the water and the ammonia water, so it is
@@ -486,7 +499,7 @@ function mixRun(o) {
   };
   let T = o.T0, t = 0, evap = 0, addW = 0, heatN = 0;
   const hist = { t: [], T: [], PB: [], PD: [], TqB: [], TqD: [], pH: [], zeta: [], W: [], mu27: [], grind: [], lumps: [], d50: [], phi: [], gdBulk: [], step: [] };
-  const zonesAt = [], doses = [];
+  const zonesAt = [], doses = [], lawAt = [];
   const lumpVol = () => { let lv = 0, tot = 0; for (let k = 0; k < K; k++) { tot += (N[k] + Nh[k]) * v[k]; if (lump[k]) lv += N[k] * v[k]; if (lumpH[k]) lv += Nh[k] * v[k]; } return { lv, tot }; };
   const chem = () => mixSpecies(o, Q, mW / o.rhoL * 1000);
   const rec = (P, s, i) => {
@@ -595,6 +608,9 @@ function mixRun(o) {
     }
     const st = state(T); P = mixPower(o, G, st.mu, st.rho, No, Nd, st.Vb);
     zonesAt.push(P.zones.map(z => ({ ...z })));
+    // (the batch at the step's end, as the 2D and 3D take it: its flow curve at its temperature, its density, its volume
+    //  and the height it stands in the vessel, the speeds)
+    lawAt.push({ step: i, t, T, rho: st.rho, cp: cSl(), V: st.Vb, H: st.Vb / G.A, No, Nd, PB: P.PB, PD: P.PD, TqB: P.TqB, TqD: P.TqD, tab: MIX_LAW_GD.map(g => [g, st.mu(g)]) });
     rec(P, st, i); tRec = t;
   }
   // the end
@@ -605,7 +621,7 @@ function mixRun(o) {
   const { lv, tot } = lumpVol();
   const end = { t, T, pH: sp.pH, zeta: sf.zeta, sigma: sf.sigma, debye: sf.debye, W: sf.W, I: sp.I, grind: grind(), lumps: lv / tot, d50: d50Of(),
     mu27: muAt(2.7), mu27T: st.mu(2.7), phi: st.phiNow, rho: st.rho, evap, addW, heatN, mGO, mW, goVol: tot, goVol0: mGO / o.rhoS, steps };
-  return { G, hist, end, doses, zones: zonesAt, dist, flakes, muAt, NT: Q.NT, recipe: RC };
+  return { G, hist, end, doses, zones: zonesAt, laws: lawAt, dist, flakes, muAt, NT: Q.NT, recipe: RC };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MIX_INPUTS, MIX_STEPS, mixDefaults, mixInDefaults, mixInSI, mixCellDrag, mixRecipe, mixRecipeRange, MIX_NOSOLVE, mixTauOn, mixGeom, mixPower, mixSpecies, mixDoseFor, mixSurface, mixPBE, mixLogNormalShare, mixRun };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MIX_LAW_GD, MIX_INPUTS, MIX_STEPS, mixDefaults, mixInDefaults, mixInSI, mixCellDrag, mixRecipe, mixRecipeRange, MIX_NOSOLVE, mixTauOn, mixGeom, mixPower, mixSpecies, mixDoseFor, mixSurface, mixPBE, mixLogNormalShare, mixRun };

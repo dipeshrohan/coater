@@ -128,7 +128,7 @@ function unusedWhy(k) {
 //  web's speed; the later stages none of these (their own inputs are below them); the Line none)
 const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () => ['U', 'webW', 'oven'], peel: () => ['U'], cut: () => [], stack: () => [], furn: () => [], gfilm: () => [],
   // (MP-W: the stack's and the furnace's multiphysics pages: their stage's inputs only, as the stage's own page)
-  stack1d: () => [], stack2d: () => [], stack3d: () => [], furn1d: () => [], furn2d: () => [], furn3d: () => [], gfilm1d: () => [], gfilm2d: () => [], gfilm3d: () => [], cut1d: () => [], cut2d: () => [], cut3d: () => [],
+  stack1d: () => [], stack2d: () => [], stack3d: () => [], furn1d: () => [], furn2d: () => [], furn3d: () => [], gfilm1d: () => [], gfilm2d: () => [], gfilm3d: () => [], cut1d: () => [], cut2d: () => [], cut3d: () => [], mix2d: () => ['mu', 'n', 'ty'], mix3d: () => ['mu', 'n', 'ty'],
   // (MP-PEEL: the peel front's page: the Peel page's inputs)
   peel1d: () => ['U'], peel2d: () => ['U'], peel3d: () => ['U'],
   // (MP-5: the drying's multiphysics pages: the Drying page's inputs)

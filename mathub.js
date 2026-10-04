@@ -40,7 +40,7 @@ const hubProvL = k => (HUB_PROV[k] || HUB_PROV_RO[k] || { l: k }).l;
 
 // ---- the solvers (physics) ----
 const HUB_PHYS = [
-  { k: 'mix', l: 'Mixing', s: 'the slurry stream: composition, density, flow curve', nav: ['mix'] },
+  { k: 'mix', l: 'Mixing 1D · 2D · 3D', s: 'the batch through its program (1D: composition, density, flow curve); its flow round the moving blades and disperser, the heat the shear makes, tracers (2D, 3D)', nav: ['mix'] },
   { k: 'coat', l: 'Coating flow 1D · 2D · 3D', s: 'generalized-Newtonian Stokes flow with a free surface and contact lines', nav: ['cfd2d'] },
   { k: 'align', l: 'Flake alignment', s: 'Doi–Hess or Folgar–Tucker along the 2D flow\'s streamlines', nav: ['flakes'] },
   { k: 'dry', l: 'Drying', s: 'heat and water through the film and the web, the skin, the isotherm', nav: ['dry', 'results'] },

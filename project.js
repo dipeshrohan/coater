@@ -89,7 +89,7 @@ function projStopAll() {
   if (typeof SOLVE_ASK !== 'undefined') SOLVE_ASK.clear();   // (Phase 0: nothing asked for goes on)
   cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
   m3StudyStop(true); acc3Stop(); c3dStop();
-  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop(); if (typeof gfmStop === 'function') gfmStop(); if (typeof cmStop === 'function') cmStop();
+  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop(); if (typeof gfmStop === 'function') gfmStop(); if (typeof cmStop === 'function') cmStop(); if (typeof xmStop === 'function') xmStop();
   if (typeof poolStop === 'function') poolStop();
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
@@ -115,6 +115,9 @@ function projRunning() {
   if (FURN.busy) add('Furnace', 'the two runs', FURN.prog && FURN.prog.n > 1 ? kn(FURN.prog, 'stack ') : '');
   if (FURN.fit && !FURN.fit.done) add('Furnace', 'a fit to your measurements', (FURN.fit.msg || '').replace(/^Fitting:?\s*|…$/g, ''));
   if (FMS.busy) add('Furnace', `multiphysics ${FMS.bdim}D`, kn(FMS.prog, 'program step ', true));
+  // (the other stages' multiphysics: the drying's, the cut's, the graphene film's, the mixer's 2D and 3D)
+  for (const [S, where, what] of [[typeof DMS !== 'undefined' && DMS, 'Drying', 'multiphysics'], [typeof CMS !== 'undefined' && CMS, 'Cutting', 'multiphysics'], [typeof GFS !== 'undefined' && GFS, 'Graphene film', 'multiphysics'], [typeof XMS !== 'undefined' && XMS, 'Mixing', 'the batch in']])
+    if (S && S.busy) add(where, `${what} ${S.bdim}D`, kn(S.prog, '', true));
   if (DOE.status === 'running') add('Studies', 'the DOE', `${DOE.runs.filter(r => r.status === 'done' || r.status === 'error').length} of ${DOE.runs.length} runs`);
   if (MQ.active.size + MQ.jobs.length > 0) add('Measured data', 'the CFD at the measured points');
   if (MEAS.fitRun) add('Measured data', 'the fit to your data', `round ${MEAS.fitRun.done} of ${MEAS.fitRun.total}`);
@@ -273,7 +276,9 @@ function applyOven(o, cfdSetup) {
   //  the drying's (MP-5) also where its water leaves; the peel front's (MP-PEEL))
   OVEN.mp = {};
   if (o && o.mp && typeof o.mp === 'object') for (const [st, D] of Object.entries(o.mp)) {
-    if (!D || typeof D !== 'object' || !['stack', 'furn', 'dry', 'peel'].includes(st)) continue;
+    // (every stage's multiphysics with its own mesh settings: their adapters' keys -- the cut's, the graphene film's and the
+    //  mixer's were dropped before)
+    if (!D || typeof D !== 'object' || !(typeof SWB_ADAPT !== 'undefined' ? Object.values(SWB_ADAPT).map(A => A.key) : ['stack', 'furn', 'dry', 'peel']).includes(st)) continue;
     if (st === 'dry' && D.where === 'both') (OVEN.mp.dry = OVEN.mp.dry || {}).where = 'both';
     for (const [dim, q] of Object.entries(D)) {
       if (!['1', '2', '3'].includes(dim) || !q || typeof q !== 'object') continue;

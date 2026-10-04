@@ -224,7 +224,7 @@ function processShowStage() {
  */
 const PROC_BAR = { mix: ['mixer'], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'],
   peel1d: ['peel'], peel2d: ['peel'], peel3d: ['peel'], stack1d: ['peel'], stack2d: ['peel'], stack3d: ['peel'], furn1d: ['furn'], furn2d: ['furn'], furn3d: ['furn'], dry1d: ['oven'], dry2d: ['oven'], dry3d: ['oven'],
-  gfilm1d: ['gfuse'], gfilm2d: ['gfuse'], gfilm3d: ['gfuse'], cut1d: ['peel'], cut2d: ['peel'], cut3d: ['peel'] };
+  gfilm1d: ['gfuse'], gfilm2d: ['gfuse'], gfilm3d: ['gfuse'], cut1d: ['peel'], cut2d: ['peel'], cut3d: ['peel'], mix2d: ['mixer'], mix3d: ['mixer'] };
 function processSidebar() {
   const open = k => FV.tree[k] !== false ? ' open' : '', pg = navNow(), part = NAV[pg].fv;
   const c = MAT.slurry, row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
