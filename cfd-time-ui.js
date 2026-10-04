@@ -59,7 +59,7 @@ function timeWhat(tr, short = false) {
   if (tr.scen === 'web') return `web ${(tr.U0 * 60 / Math.cos(skewRad())).toFixed(2)} → ${(tr.U1 * 60 / Math.cos(skewRad())).toFixed(2)} m/min${short ? '' : `, ${rp}`}`;
   return `start-up from rest: web 0 → ${(tr.U1 * 60 / Math.cos(skewRad())).toFixed(2)} m/min, bead pressure ${(tr.P0 / 1000).toFixed(3)} → ${(tr.P1 / 1000).toFixed(3)} kPa${short ? '' : `, ${rp}`}`;
 }
-const fmtT = t => (t >= 100 ? `${t.toFixed(0)} s` : t >= 1 ? `${+t.toPrecision(3)} s` : t >= 1e-3 ? `${+(t * 1000).toPrecision(3)} ms` : `${t.toExponential(1)} s`);
+const fmtT = t => (t >= 100 ? `${t.toFixed(0)} s` : t >= 1 ? `${+t.toPrecision(3)} s` : t >= 1e-3 ? `${+(t * 1000).toPrecision(3)} ms` : t > 0 ? `${t.toExponential(1)} s` : `0 s`);
 
 // ---- a run's record in time, and the flow at a kept time ----
 /** A finished run's march: kept on the run (not on its result, which the rest of the app reads). */
@@ -140,10 +140,10 @@ function timeCardHTML(i) {
 /** Wire the Time toolbar control and card (after the Solve step is drawn). */
 function wireTimeControls() {
   document.querySelectorAll('[data-tmon]').forEach(b => { b.onclick = () => { const on = b.dataset.tmon === '1'; if (timeSet().on !== on) { undoHint(on ? 'Time: transient' : 'Time: steady'); timeChange('on', on); viewCFD(); } }; });
-  const sel = (id, k, f = v => v) => { const el = document.getElementById(id); if (el) el.onchange = () => { undoHint(`Time: ${k}`); timeChange(k, f(el.value)); viewCFD(); }; };
-  sel('tmScen', 'scen');
-  sel('tmStep', 'auto', v => v === 'auto');
-  sel('tmTol', 'tol', v => +v);
+  const sel = (id, k, label, f = v => v) => { const el = document.getElementById(id); if (el) el.onchange = () => { undoHint(`Time: ${label}`); timeChange(k, f(el.value)); viewCFD(); }; };
+  sel('tmScen', 'scen', 'what changes');
+  sel('tmStep', 'auto', 'time step', v => v === 'auto');
+  sel('tmTol', 'tol', 'error per step', v => +v);
   const num = (id, k, o) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -235,7 +235,7 @@ function renderTimeCharts() {
     // (the time the film at the outlet takes to come within 1 % of its last change: settled)
     const h0 = T.hOut[0], dh = L.h - h0;
     let tSet = null;
-    if (Math.abs(dh) > 1e-9) for (let k = T.t.length - 1; k >= 0; k--) if (Math.abs(T.hOut[k] - L.h) > 0.01 * Math.abs(dh)) { tSet = k + 1 < T.t.length ? T.t[k + 1] : null; break; }
+    if (T.completed && Math.abs(dh) > 1e-9) for (let k = T.t.length - 1; k >= 0; k--) if (Math.abs(T.hOut[k] - L.h) > 0.01 * Math.abs(dh)) { tSet = k + 1 < T.t.length ? T.t[k + 1] : null; break; }
     return `<tr><th scope="row"><i class="xl-sw" style="background:${locColor(i)}"></i> L${i + 1}</th><td>${(h0 * 1000).toFixed(3)}</td><td>${(L.h * 1000).toFixed(3)}</td><td>${tSet != null ? fmtT(tSet) : '—'}</td>
       <td>${(T.s[0] * 1000).toFixed(3)} → ${(L.s * 1000).toFixed(3)}${L.m === 'pinned' ? ' <small>pinned</small>' : ''}</td><td>${T.steps}<small>${T.rejected ? ` ${T.rejected} redone` : ''}${T.remeshes.length ? ` · ${T.remeshes.length} new mesh` : ''}</small></td><td>${(T.ms / 1000).toFixed(1)} s</td>
       <td>${T.error ? `<span class="warn-text" title="${escAttr(T.error)}">stopped at ${fmtT(L.t)}</span>` : T.completed ? 'done' : 'stopped'}</td></tr>`;
@@ -250,7 +250,8 @@ function renderTimeCharts() {
       <p class="cap">The march: BDF2 in time on the same finite elements as the steady solve, the free surface and the contact line moving with the flow${T0.auto ? `, each step's error kept under ${+((T0.tol || 1e-3) * 100).toPrecision(2)} % of the gap and of the fastest speed` : `, a fixed step of ${fmtT(T0.dtSet)}`}${T0.slip > 0 ? `; the liquid slides on the exit face below the contact line, slip length ${(T0.slip * 1e6).toPrecision(3)} µm` : '; no slip on the exit face'}.</p></figure>
     </div>`;
   const fr = timeFrames(), tNow = FV.tk == null || !fr.length ? null : fr[Math.min(FV.tk, fr.length - 1)].t;
-  const vl = tNow != null ? [{ x: tNow, c: cssVar('--accent'), t: `t ${fmtT(tNow)}` }] : [];
+  // (the marker's label left out near the right end, where the series' own labels are)
+  const tMax = fr.length ? fr[fr.length - 1].t : 0, vl = tNow != null ? [{ x: tNow, c: cssVar('--accent'), t: tNow < 0.85 * tMax ? `t ${fmtT(tNow)}` : '' }] : [];
   const ser = (i, pts, dash) => ({ name: name(i), short: `L${i + 1}`, color: locColor(i), stale: dash || stale(i), pts });
   const draw = (id, series, o) => {
     const cv = document.getElementById(id);

@@ -94,7 +94,9 @@ function marchInTime(o, fo, r, geo, shapeProf, onStep) {
     t: m.t, dt: m.dt, s: m.s, Qin: m.Qin, Qout: m.Qout, area: m.area, err: m.err, iterations: m.iterations, mode: m.mode,
     hOut: m.top.map(q => q.y[q.y.length - 1]),
     remeshes: m.remeshes, steps: m.steps, rejected: m.rejected, failed: m.failed, completed: m.completed, error: m.error || null,
-    frames: [{ t: 0, g: frame(r0, null) }, ...m.frames.map(q => ({ t: q.t, g: q.r }))],
+    frames: [{ t: 0, g: frame(r0, null) }, ...m.frames.map(q => ({ t: q.t, g: q.r })),
+      // (a march stopped early: its last state too, the flow it stopped at)
+      ...(!m.completed && m.last && m.t.length > 1 && m.t[m.t.length - 1] > (m.frames.length ? m.frames[m.frames.length - 1].t : 0) ? [{ t: m.t[m.t.length - 1], g: frame(m.last, m.lastInfo), last: true }] : [])],
   };
 }
 

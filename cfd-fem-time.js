@@ -207,7 +207,7 @@ function femMarch(r0, opts = {}) {
       }
     }
   }
-  out.last = hist[0].r; out.call = call;
+  out.last = hist[0].r; out.call = call; out.lastInfo = { mode, meshInfo: mInfo };   // (the newest state, its mesh's layout and the contact line's mode)
   out.completed = t >= tEnd - 1e-12 * span;
   return out;
 }
