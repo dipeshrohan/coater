@@ -616,4 +616,178 @@ function pmpCompact(r, deg, ms) {
   };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { pmpRun2D, pmpCompact, pmpPlan, pmpTI, pmpLayers, pmpG, pmpSteady, pmpElastica, pmpGrow, pmpGraded, pmpMesh, pmpBand, pmpAdd, pmpLDL, pmpLDLSolve, pmpCohesive, pmpDamage, pmpFront, pmpAnswers };
+// ---- 1D, the roll: wound turn by turn on its core, then its heat and its water through the turns ----
+/**
+ * A turn's stiffness in the roll (plane stress across its width, σz = 0), cylindrically orthotropic: along it (hoop,
+ * E_θ), through the turns (radial, E_r), ν_θr the radial strain a hoop stress gives (ε_r = −ν_θr σ_θ/E_θ; ν_rθ = ν_θr E_r/E_θ).
+ * Returns Q (σ = Q ε, [r, θ]) as [Qrr, Qrθ, Qθθ].
+ */
+function pmpRollQ(Er, Eth, nuTr) {
+  const Srr = 1 / Er, Stt = 1 / Eth, Srt = -nuTr / Eth, det = Srr * Stt - Srt * Srt;
+  return [Stt / det, -Srt / det, Srr / det];
+}
+/** The core's stiffness against a pressure on it (per radian, per width: p R0 = k u's inward push): a tube of bore Ri. */
+const pmpCoreK = (E, nu, R0, Ri) => (E > 0 ? E / ((R0 * R0 + Ri * Ri) / (R0 * R0 - Ri * Ri) - nu) : 0);
+/**
+ * The roll's 1D mesh: element e from R0 + e H to R0 + (e + 1) H (H the turns it holds × a turn's thickness), linear,
+ * two Gauss points. The stiffness of elements 0 … nE − 1 (each its Q) and the core's spring; the loads of an eigenstrain.
+ */
+function pmpRollK(R0, H, Qs, nE, kCore) {
+  const n = nE + 1, K = { d: new Float64Array(n), o: new Float64Array(n) };   // (tridiagonal: diagonal, the one above)
+  const g = [-1 / Math.sqrt(3), 1 / Math.sqrt(3)];
+  for (let e = 0; e < nE; e++) {
+    const r0 = R0 + e * H, Q = Qs[e];
+    let k00 = 0, k01 = 0, k11 = 0;
+    for (const t of g) {
+      const r = r0 + H * (1 + t) / 2, N0 = (1 - t) / 2, N1 = (1 + t) / 2, w = H / 2 * r;
+      // B rows: ε_r = (u1 − u0)/H, ε_θ = (N0 u0 + N1 u1)/r
+      const b = [[-1 / H, 1 / H], [N0 / r, N1 / r]];
+      const k = (i, j) => (b[0][i] * (Q[0] * b[0][j] + Q[1] * b[1][j]) + b[1][i] * (Q[1] * b[0][j] + Q[2] * b[1][j])) * w;
+      k00 += k(0, 0); k01 += k(0, 1); k11 += k(1, 1);
+    }
+    K.d[e] += k00; K.d[e + 1] += k11; K.o[e] += k01;
+  }
+  K.d[0] += kCore;
+  return K;
+}
+/** A symmetric tridiagonal solve (d diagonal, o the one above), n unknowns. */
+function pmpTriSym(K, f, n) {
+  const c = new Float64Array(n), x = new Float64Array(n);
+  let den = K.d[0]; c[0] = K.o[0] / den; x[0] = f[0] / den;
+  for (let i = 1; i < n; i++) { den = K.d[i] - K.o[i - 1] * c[i - 1]; c[i] = i < n - 1 ? K.o[i] / den : 0; x[i] = (f[i] - K.o[i - 1] * x[i - 1]) / den; }
+  for (let i = n - 2; i >= 0; i--) x[i] -= c[i] * x[i + 1];
+  return x;
+}
+/** Each element's stress at its middle (σ_r, σ_θ) from the displacements u and its eigenstrain [ε*_r, ε*_θ]. */
+function pmpRollStress(R0, H, Qs, nE, u, eig) {
+  const sr = new Float64Array(nE), st = new Float64Array(nE);
+  for (let e = 0; e < nE; e++) {
+    const r = R0 + (e + 0.5) * H, er = (u[e + 1] - u[e]) / H - (eig ? eig[e][0] : 0), et = (u[e] + u[e + 1]) / 2 / r - (eig ? eig[e][1] : 0), Q = Qs[e];
+    sr[e] = Q[0] * er + Q[1] * et; st[e] = Q[1] * er + Q[2] * et;
+  }
+  return { sr, st };
+}
+/**
+ * The roll. o: {
+ *   R0 (the core's radius), core: { E, nu, Ri }, h (a turn: the film, and the liner if one goes with it), n (turns), per
+ *   (turns an element holds), Tw (the pull per width it is wound with, N/m), Er, Eth, nuTr (a turn's stiffnesses through
+ *   the roll and along it; ν_θr), the time after: tEnd (s), steps; heat: { T0 (as wound), k, rhoc, hOut, Troom };
+ *   water: { X0 (as wound), gab: { Xm, C, K }, Xcap, rhoD (GO per volume of turn), Kv (vapour permeability through the
+ *   turns, kg/(m s Pa)), rhRoom }, beta, betaT (a turn's swelling along it and through it per kg/kg of water), alpha,
+ *   alphaT (per K), onProgress }.
+ * Winding: each element's turns added in turn, their pull pressing on the roll beneath, p = Σ Tw / r (Hakiel's accretion,
+ * linear here: the stiffnesses held); each turn keeps the hoop stress it was wound with, Tw / h. Then the roll at rest:
+ * its heat and its water through the turns (implicit; the outer turn to the room, the core sealed), each step's change
+ * of temperature and water a natural strain (along: β ΔX + α ΔT; through: β_t ΔX + α_t ΔT) the roll takes, the outside
+ * free, the core's spring holding.
+ * Returns { r (element middles), wound: { sr, st }, end: { sr, st }, series: [{ t, T: [..], X: [..], sr: [..], st: [..] }]
+ * (at the snapshots), coreP (the pressure on the core after winding and at the end), R1, n, H, ms }.
+ */
+function pmpRoll(o) {
+  const t0 = Date.now(), per = Math.max(1, Math.round(o.per || 1)), nE = Math.max(1, Math.ceil(o.n / per)), H = per * o.h, R0 = o.R0, R1 = R0 + nE * H;
+  const Q = pmpRollQ(o.Er, o.Eth, o.nuTr || 0), Qs = Array.from({ length: nE }, () => Q);
+  const kC = pmpCoreK(o.core.E, o.core.nu ?? 0.3, R0, Math.min(o.core.Ri ?? 0, R0 * 0.999));
+  const rM = Float64Array.from({ length: nE }, (_, e) => R0 + (e + 0.5) * H);
+  // ---- winding ----
+  const sr = new Float64Array(nE), st = new Float64Array(nE), uW = new Float64Array(nE + 1);
+  for (let e = 0; e < nE; e++) {
+    // (the element's turns' pull: Tw / r at each, onto the roll beneath, R0 … r_e)
+    const rIn = R0 + e * H;
+    let p = 0; for (let j = 0; j < per; j++) p += o.Tw / (rIn + (j + 0.5) * o.h);
+    if (e > 0) {
+      const K = pmpRollK(R0, H, Qs, e, kC), f = new Float64Array(e + 1);
+      f[e] = -p * rIn;
+      const du = pmpTriSym(K, f, e + 1), d = pmpRollStress(R0, H, Qs, e, du, null);
+      for (let i = 0; i < e; i++) { sr[i] += d.sr[i]; st[i] += d.st[i]; }
+      for (let i = 0; i <= e; i++) uW[i] += du[i];
+    } else if (kC > 0) uW[0] += -p * R0 / kC;
+    // (the new element: its turns' wound-in hoop stress; through it from the next turns' pressure to none: its mean)
+    st[e] = o.Tw / o.h; sr[e] = -p / 2;
+    if (o.onProgress && (e % 20 === 0 || e === nE - 1)) o.onProgress({ k: e + 1, n: nE + (o.steps || 0) });
+  }
+  const wound = { sr: Float64Array.from(sr), st: Float64Array.from(st) };
+  const coreW = -(sr[0] + (sr[0] - (nE > 1 ? sr[1] : sr[0])) / 2);   // (σ_r extrapolated to the core: its pressure)
+  // ---- at rest: heat and water through the turns, each step's change a natural strain ----
+  const steps = o.steps || 0, series = [];
+  const T = new Float64Array(nE).fill(o.heat ? o.heat.T0 : 0), a = new Float64Array(nE), X = new Float64Array(nE);
+  const W = o.water, Hh = o.heat;
+  const psat = typeof drPsat === 'function' ? drPsat : (typeof require === 'function' ? require('./drying.js').drPsat : null);
+  // (the isotherm: GAB, capped at the pores; or a straight line X = lin · a, the checks')
+  const Xof = q => (W && W.lin ? W.lin * q : Math.min(pmpGAB(q, W.gab), W.Xcap ?? Infinity)), dXda = q => { if (W.lin) return W.lin; const d = 1e-6, lo = Math.max(0, q - d), hi = Math.min(1, q + d); return Xof(hi) - Xof(lo) > 0 ? (Xof(hi) - Xof(lo)) / (hi - lo) : 1e-9; };
+  if (W) { const a0 = W.lin ? Math.min(1, W.X0 / W.lin) : pmpGABinv(Math.min(W.X0, W.Xcap ?? Infinity), W.gab); a.fill(a0); X.fill(Xof(a0)); }
+  const X0 = Float64Array.from(X), Tst = Float64Array.from(T);
+  const snapAt = new Set(); for (const f of [0, 0.1, 0.25, 0.5, 1]) snapAt.add(Math.round(f * steps));
+  const snap = (k, t) => series.push({ t, T: Array.from(T), X: Array.from(X), sr: Array.from(sr), st: Array.from(st) });
+  if (steps) snap(0, 0);
+  const dt = steps ? o.tEnd / steps : 0;
+  // (finite volumes on the elements: their faces at R0 + e H; the outer turn's face to the room)
+  const solveTri = (A, B, C, Rr) => { const n = B.length, cp = new Float64Array(n), dp = new Float64Array(n), x = new Float64Array(n); cp[0] = C[0] / B[0]; dp[0] = Rr[0] / B[0]; for (let i = 1; i < n; i++) { const m = B[i] - A[i] * cp[i - 1]; cp[i] = C[i] / m; dp[i] = (Rr[i] - A[i] * dp[i - 1]) / m; } x[n - 1] = dp[n - 1]; for (let i = n - 2; i >= 0; i--) x[i] = dp[i] - cp[i] * x[i + 1]; return x; };
+  for (let k = 1; k <= steps; k++) {
+    const Tn = Float64Array.from(T), Xn = Float64Array.from(X);
+    // heat: ρc ∂T/∂t = (1/r) ∂/∂r (r k ∂T/∂r), the outside h (T − T_room), the core sealed
+    if (Hh) {
+      const A = new Float64Array(nE), B = new Float64Array(nE), C = new Float64Array(nE), Rr = new Float64Array(nE);
+      for (let e = 0; e < nE; e++) {
+        const vol = rM[e] * H, cap = Hh.rhoc * vol / dt;
+        B[e] = cap; Rr[e] = cap * T[e];
+        if (e > 0) { const G = Hh.k * (R0 + e * H) / H; A[e] = -G; B[e] += G; }
+        if (e < nE - 1) { const G = Hh.k * (R0 + (e + 1) * H) / H; C[e] = -G; B[e] += G; }
+        else { const G = R1 / (1 / Hh.hOut + H / 2 / Hh.k); B[e] += G; Rr[e] += G * Hh.Troom; }
+      }
+      T.set(solveTri(A, B, C, Rr));
+    }
+    // water: ρ_D dX/da ∂a/∂t = (1/r) ∂/∂r (r K_v p_sat ∂a/∂r), the outside held at the room's humidity; Newton on a
+    if (W) {
+      for (let it = 0; it < 30; it++) {
+        const A = new Float64Array(nE), B = new Float64Array(nE), C = new Float64Array(nE), Rr = new Float64Array(nE);
+        for (let e = 0; e < nE; e++) {
+          const ps = psat(T[e]), vol = rM[e] * H;
+          Rr[e] = W.rhoD * (Xof(a[e]) - Xn[e]) * vol / dt; B[e] = W.rhoD * dXda(a[e]) * vol / dt;
+          if (e > 0) { const G = W.Kv * (R0 + e * H) / H, pl = psat(T[e - 1]); Rr[e] += G * (a[e] * ps - a[e - 1] * pl); B[e] += G * ps; A[e] = -G * pl; }
+          if (e < nE - 1) { const G = W.Kv * (R0 + (e + 1) * H) / H, pr = psat(T[e + 1]); Rr[e] += G * (a[e] * ps - a[e + 1] * pr); B[e] += G * ps; C[e] = -G * pr; }
+          else { const G = W.Kv * R1 / (H / 2), pr = W.rhRoom * psat(Hh ? Hh.Troom : T[e]); Rr[e] += G * (a[e] * ps - pr); B[e] += G * ps; }
+        }
+        const d = solveTri(A, B, C, Rr.map(v => -v));
+        let mx = 0; for (let e = 0; e < nE; e++) { const an = Math.min(1, Math.max(0, a[e] + d[e])); mx = Math.max(mx, Math.abs(an - a[e])); a[e] = an; }
+        if (mx < 1e-11) break;
+      }
+      for (let e = 0; e < nE; e++) X[e] = Xof(a[e]);
+    }
+    // the stress the step's change of water and heat gives (the outside free, the core's spring)
+    const eig = Array.from({ length: nE }, (_, e) => { const dX = X[e] - Xn[e], dT = T[e] - Tn[e]; return [(o.betaT || 0) * dX + (o.alphaT || 0) * dT, (o.beta || 0) * dX + (o.alpha || 0) * dT]; });
+    if (eig.some(q => q[0] || q[1])) {
+      const K = pmpRollK(R0, H, Qs, nE, kC), f = new Float64Array(nE + 1), g = [-1 / Math.sqrt(3), 1 / Math.sqrt(3)];
+      for (let e = 0; e < nE; e++) {
+        const r0 = R0 + e * H, Qe = Qs[e], er = eig[e][0], et = eig[e][1];
+        for (const t of g) { const r = r0 + H * (1 + t) / 2, N0 = (1 - t) / 2, N1 = (1 + t) / 2, w = H / 2 * r, sR = Qe[0] * er + Qe[1] * et, sT = Qe[1] * er + Qe[2] * et;
+          f[e] += (-1 / H * sR + N0 / r * sT) * w; f[e + 1] += (1 / H * sR + N1 / r * sT) * w; }
+      }
+      const du = pmpTriSym(K, f, nE + 1), d = pmpRollStress(R0, H, Qs, nE, du, eig);
+      for (let e = 0; e < nE; e++) { sr[e] += d.sr[e]; st[e] += d.st[e]; }
+    }
+    if (snapAt.has(k)) snap(k, k * dt);
+    if (o.onProgress && (k % 10 === 0 || k === steps)) o.onProgress({ k: nE + k, n: nE + steps });
+  }
+  const coreE = -(sr[0] + (sr[0] - (nE > 1 ? sr[1] : sr[0])) / 2);
+  return { r: Array.from(rM), wound: { sr: Array.from(wound.sr), st: Array.from(wound.st) }, end: { sr: Array.from(sr), st: Array.from(st) }, series, coreP: { wound: coreW, end: coreE },
+    R0, R1, n: nE * per, nE, per, H, kCore: kC, X0: Array.from(X0), T0: Array.from(Tst), ms: Date.now() - t0 };
+}
+/** The isotherm (GAB, as drying.js's) and its inverse (the activity at a water content), by bisection. */
+const pmpGAB = (a, g) => { const Ka = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * Ka / ((1 - Ka) * (1 - Ka + g.C * Ka)); };
+function pmpGABinv(X, g) { let lo = 0, hi = 1; if (X >= pmpGAB(1, g)) return 1; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (pmpGAB(m, g) < X) lo = m; else hi = m; } return (lo + hi) / 2; }
+/**
+ * The pressure a pull's increment on the outer turn at radius s gives at r in a roll R0 … s of constant stiffnesses with
+ * ν_θr = 0 on a core of stiffness kC (closed form: u = C1 r^g + C2 r^−g, g² = E_θ/E_r; σ_r(s) = −δp, σ_r(R0) = kC u(R0) / R0).
+ * The independent check of the winding's accretion.
+ */
+function pmpRollIncrement(R0, s, Er, Eth, kC, dp, r) {
+  const g = Math.sqrt(Eth / Er);
+  // σ_r = Er g (C1 r^(g−1) − C2 r^(−g−1)); u = C1 r^g + C2 r^−g
+  // at s: Er g (C1 s^(g−1) − C2 s^(−g−1)) = −dp; at R0: Er g (C1 R0^(g−1) − C2 R0^(−g−1)) = kC (C1 R0^(g−1) + C2 R0^(−g−1))
+  const a11 = Er * g * Math.pow(s, g - 1), a12 = -Er * g * Math.pow(s, -g - 1);
+  const a21 = (Er * g - kC) * Math.pow(R0, g - 1), a22 = -(Er * g + kC) * Math.pow(R0, -g - 1);
+  const det = a11 * a22 - a12 * a21, C1 = (-dp * a22) / det, C2 = (a11 * 0 - a21 * -dp) / det;
+  return { sr: Er * g * (C1 * Math.pow(r, g - 1) - C2 * Math.pow(r, -g - 1)), st: Eth * (C1 * Math.pow(r, g - 1) + C2 * Math.pow(r, -g - 1)) };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { pmpRoll, pmpRollQ, pmpCoreK, pmpRollIncrement, pmpGAB, pmpGABinv, pmpRun2D, pmpCompact, pmpPlan, pmpTI, pmpLayers, pmpG, pmpSteady, pmpElastica, pmpGrow, pmpGraded, pmpMesh, pmpBand, pmpAdd, pmpLDL, pmpLDLSolve, pmpCohesive, pmpDamage, pmpFront, pmpAnswers };

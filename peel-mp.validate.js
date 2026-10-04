@@ -11,6 +11,13 @@
  *  5. The arm (finite rotation): its moment against the elastica's, M = 2 √(D f) sin((θ − φ)/2) + M∞, beyond the hold.
  *  6. The steady peel: past the force where G reaches Gi there is no equilibrium (the front runs).
  *  7. The mesh: the film's stress at the front on the default mesh against a finer one; the beam's (6 M₀/h² + f/h).
+ * 1D, the roll:
+ *  8. Winding: each turn's pull pressing on the roll beneath (the elements' accretion) against the closed form of each
+ *     increment (u = C1 r^g + C2 r^−g on its core) summed over the turns; two turns to an element against one.
+ *  9. Water through the turns: the roll's mean water against Crank's series for a slab sealed at one face (the roll
+ *     thin against its radius); finer in time, closer.
+ * 10. Heat through the turns: the roll's mean temperature against the series for a slab cooled at one face (β tan β = Bi).
+ * 11. Swelling: a uniform change of water, the roll free on no core: no stress; on a rigid core: Lamé's closed form.
  */
 const P = require('./peel-mp.js'), F = require('./film.js');
 let fails = 0;
@@ -102,6 +109,62 @@ const run = (k, layers, d, extra = {}) => { const t0 = Date.now(); const r = P.p
   check('at 180° the front\'s stress is the beam\'s, 6 M₀/h² + f/h (the hold turns it little: sin(θ − φ)/2 ≈ 1)', rel(a.sBot.s, beam) < 0.02, `${(a.sBot.s / 1e6).toFixed(1)} · ${(beam / 1e6).toFixed(1)} MPa, the root turned ${(a.rootPhi * 180 / Math.PI).toFixed(1)}°`);
   const c = runs.plain90, M90 = Math.sqrt(2 * L.Dn * c.f * (1 - Math.cos(c.th))), beam90 = 6 * M90 / (16e-6) ** 2 + c.f / 16e-6;
   check('at 90° the hold lets the root turn: the front\'s stress below the beam\'s (clamped root)', c.sBot.s < beam90 && c.sBot.s > 0.7 * beam90, `${(c.sBot.s / 1e6).toFixed(1)} · ${(beam90 / 1e6).toFixed(1)} MPa, the root turned ${(c.rootPhi * 180 / Math.PI).toFixed(1)}°`);
+}
+
+// ---- 8. the roll: winding ----
+global.drPsat = global.drPsat || require('./drying.js').drPsat;
+{
+  const o = { R0: 0.038, core: { E: 5e9, nu: 0.3, Ri: 0.03 }, h: 16e-6, n: 400, per: 1, Tw: 20, Er: 50e6, Eth: 20e9, nuTr: 0 };
+  const r = P.pmpRoll(o);
+  let worst = 0;
+  for (let e = 0; e < o.n; e += 7) {
+    const rr = r.r[e]; let sr = -o.Tw / (o.R0 + (e + 0.5) * o.h) / 2;
+    for (let j = e + 1; j < o.n; j++) { const s = o.R0 + j * o.h; sr += P.pmpRollIncrement(o.R0, s, o.Er, o.Eth, r.kCore, o.Tw / (s + 0.5 * o.h), rr).sr; }
+    worst = Math.max(worst, Math.abs(r.wound.sr[e] - sr) / Math.abs(r.wound.sr[0]));
+  }
+  check('the roll wound: the pressure through it against the closed-form increments summed turn by turn (a tube core)', worst < 1e-5, `${(r.coreP.wound / 1e3).toFixed(2)} kPa on the core, worst ${(worst * 100).toFixed(5)} %`);
+  const big = { ...o, n: 2000, nuTr: 0.3 }, one = P.pmpRoll(big), two = P.pmpRoll({ ...big, per: 2 }), mid = k => k.wound.sr[Math.floor(k.nE / 2)];
+  check('the roll\'s mesh: two turns to an element against one (2000 turns, ν_θr 0.3)', rel(two.coreP.wound, one.coreP.wound) < 0.005 && rel(mid(two), mid(one)) < 0.005,
+    `${(one.coreP.wound / 1e3).toFixed(2)} · ${(two.coreP.wound / 1e3).toFixed(2)} kPa on the core, ${(mid(one) / 1e3).toFixed(2)} · ${(mid(two) / 1e3).toFixed(2)} kPa halfway`);
+  const hoop = r.wound.st[o.n - 1];
+  check('the outer turn keeps the hoop stress it was wound with, Tw / h', rel(hoop, o.Tw / o.h) < 1e-12, `${(hoop / 1e6).toFixed(3)} MPa`);
+}
+// ---- 9. the roll: water through the turns, the slab limit ----
+{
+  const Lr = 0.004, n = 200, h = Lr / n, lin = 0.2, rhoD = 1000, Kv = 1e-12, D = Kv * drPsat(25) / (rhoD * lin);
+  const run = steps => P.pmpRoll({ R0: 10, core: { E: 0, nu: 0.3, Ri: 0 }, h, n, per: 1, Tw: 0, Er: 1e9, Eth: 1e9, nuTr: 0, tEnd: 0.3 * Lr * Lr / D, steps,
+    heat: { T0: 25, k: 1, rhoc: 1e6, hOut: 10, Troom: 25 }, water: { X0: 0.02, lin, rhoD, Kv, rhRoom: 0.5 } });
+  const err = r => { let w = 0; for (const q of r.series) { if (!q.t) continue; let S = 0; for (let k = 0; k < 200; k++) { const m = 2 * k + 1; S += 8 / (m * m * Math.PI * Math.PI) * Math.exp(-D * m * m * Math.PI * Math.PI * q.t / (4 * Lr * Lr)); }
+    const crank = 0.02 + (0.1 - 0.02) * (1 - S), mean = q.X.reduce((a, b) => a + b, 0) / q.X.length; w = Math.max(w, Math.abs(mean - crank) / (crank - 0.02)); } return w; };
+  const e1 = err(run(200)), e2 = err(run(800));
+  check('the roll\'s water through its turns: its mean against Crank\'s series (a slab sealed at the core)', e2 < 0.005 && e2 < e1, `worst ${(e1 * 100).toFixed(3)} % (200 steps), ${(e2 * 100).toFixed(3)} % (800)`);
+}
+// ---- 10. the roll: heat through the turns, the slab limit ----
+{
+  const Lr = 0.004, n = 200, h = Lr / n, k = 0.2, rhoc = 1.5e6, hOut = 25, Bi = hOut * Lr / k, al = k / rhoc;
+  const run = steps => P.pmpRoll({ R0: 10, core: { E: 0, nu: 0.3, Ri: 0 }, h, n, per: 1, Tw: 0, Er: 1e9, Eth: 1e9, nuTr: 0, tEnd: 0.5 * Lr * Lr / al, steps,
+    heat: { T0: 60, k, rhoc, hOut, Troom: 20 } });
+  // (the roots of β tan β = Bi, one in each (mπ, mπ + π/2))
+  const roots = Array.from({ length: 60 }, (_, m) => { let lo = m * Math.PI + 1e-12, hi = m * Math.PI + Math.PI / 2 - 1e-12; for (let i = 0; i < 100; i++) { const c = (lo + hi) / 2; if (c * Math.tan(c) < Bi) lo = c; else hi = c; } return (lo + hi) / 2; });
+  const err = r => { let w = 0; for (const q of r.series) { if (!q.t) continue; const Fo = al * q.t / (Lr * Lr); let S = 0; for (const b of roots) S += 2 * Bi * Bi / (b * b * (b * b + Bi * Bi + Bi)) * Math.exp(-b * b * Fo);
+    const mean = q.T.reduce((a, b) => a + b, 0) / q.T.length, ex = 20 + 40 * S; w = Math.max(w, Math.abs(mean - ex) / (60 - ex)); } return w; };
+  const e1 = err(run(200)), e2 = err(run(800));
+  check('the roll\'s heat through its turns: its mean against the series for a slab cooled at one face (Bi = h L / k)', e2 < 0.005 && e2 < e1, `Bi ${Bi.toFixed(2)}, worst ${(e1 * 100).toFixed(3)} % (200 steps), ${(e2 * 100).toFixed(3)} % (800)`);
+}
+// ---- 11. the roll: swelling ----
+{
+  const E = 1e9, bet = 0.05, X0 = 0.02, X1 = 0.04;
+  const roll = core => P.pmpRoll({ R0: 0.038, core, h: 16e-6, n: 300, per: 1, Tw: 0, Er: E, Eth: E, nuTr: 0, tEnd: 1, steps: 5, beta: bet, betaT: bet,
+    water: { X0, lin: 0.2, rhoD: 1000, Kv: 1e-2, rhRoom: X1 / 0.2 } });
+  const free = roll({ E: 0, nu: 0.3, Ri: 0 }), big = Math.max(...free.end.sr.map(Math.abs), ...free.end.st.map(Math.abs));
+  check('swelling evenly on no core, free outside: no stress (a free ring grows)', big < 1e-6 * E * bet * (X1 - X0), `${big.toExponential(2)} Pa largest`);
+  const rig = roll({ E: 1e16, nu: 0.3, Ri: 0 }), R0 = 0.038, R1 = rig.R1;
+  let w = 0;
+  for (let e = 0; e < rig.nE; e++) {
+    const eps = bet * (rig.series[rig.series.length - 1].X[e] - X0), A = eps / (1 + R0 * R0 / (R1 * R1)), rr = rig.r[e];
+    w = Math.max(w, Math.abs(rig.end.st[e] - E * (A * (1 - R0 * R0 / (rr * rr)) - eps)) / (E * eps), Math.abs(rig.end.sr[e] - E * (A * (1 + R0 * R0 / (rr * rr)) - eps)) / (E * eps));
+  }
+  check('swelling evenly on a rigid core: Lamé\'s closed form, σ_θ = E (A (1 − R0²/r²) − ε*)', w < 2e-3, `worst ${(w * 100).toFixed(3)} % of E ε*`);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

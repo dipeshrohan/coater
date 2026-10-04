@@ -270,10 +270,10 @@ function applyOven(o, cfdSetup) {
   // (its batch record, MIX-R: a project from before has none)
   if (typeof applyMixRec === 'function') OVEN.mixRec = applyMixRec(o && o.mixRec);
   // (the stages' multiphysics mesh and time settings, MP-W: numbers only, each checked against its range when used;
-  //  the drying's (MP-5) also where its water leaves)
+  //  the drying's (MP-5) also where its water leaves; the peel front's (MP-PEEL))
   OVEN.mp = {};
   if (o && o.mp && typeof o.mp === 'object') for (const [st, D] of Object.entries(o.mp)) {
-    if (!D || typeof D !== 'object' || !['stack', 'furn', 'dry'].includes(st)) continue;
+    if (!D || typeof D !== 'object' || !['stack', 'furn', 'dry', 'peel'].includes(st)) continue;
     if (st === 'dry' && D.where === 'both') (OVEN.mp.dry = OVEN.mp.dry || {}).where = 'both';
     for (const [dim, q] of Object.entries(D)) {
       if (!['1', '2', '3'].includes(dim) || !q || typeof q !== 'object') continue;
