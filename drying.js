@@ -132,9 +132,12 @@ function drB(x) {
 }
 /** Scharfetter–Gummel flux (upward) between a value below (eLo) and one above (eHi) a distance h apart: diffusion D, the medium moving up at v. */
 const drSG = (D, h, v, eLo, eHi) => { const P = v * h / D; return D / h * (drB(-P) * eLo - drB(P) * eHi); };
-/** Tridiagonal solve (Thomas): a sub, b diagonal, c super, d right side; returns x. */
-function drTri(a, b, c, d) {
-  const n = b.length, cp = new Float64Array(n), dp = new Float64Array(n), x = new Float64Array(n);
+/** Tridiagonal solve (Thomas): a sub, b diagonal, c super, d right side; returns x (into out when given). */
+const DR_TRI = new Map();
+function drTri(a, b, c, d, out) {
+  const n = b.length;
+  let w = DR_TRI.get(n); if (!w) { w = [new Float64Array(n), new Float64Array(n)]; DR_TRI.set(n, w); }
+  const [cp, dp] = w, x = out || new Float64Array(n);
   let m = b[0]; cp[0] = c[0] / m; dp[0] = d[0] / m;
   for (let i = 1; i < n; i++) { m = b[i] - a[i] * cp[i - 1]; cp[i] = c[i] / m; dp[i] = (d[i] - a[i] * dp[i - 1]) / m; }
   x[n - 1] = dp[n - 1];
@@ -282,25 +285,47 @@ function drConstantRate(Z, Rf, where, o) {
  * tAt (ζ): the temperature there; TsV, TbV: the surfaces'. Returns the step's water { e, wt, wb, Et, Eb, zt, zb, FN, F0 }
  * or null (Newton did not converge).
  */
+/** drWaterStep's working arrays, kept per grid size (a step neither nests nor keeps them). */
+const DR_WSCR = new Map();
+function drWaterScratch(N) {
+  let w = DR_WSCR.get(N);
+  if (!w) {
+    const n2 = N + 2, f = k => new Float64Array(k);
+    w = { F: f(N + 1), fLo: f(N + 1), fHi: f(N + 1), fF: f(N + 1), fOk: new Uint8Array(N + 1), D0f: f(N + 1), X: f(n2), R0: f(n2), R1: f(n2),
+      A: f(N), Bd: f(N), Cu: f(N), Y: f(n2), hs: f(N), colT: f(n2), colB: f(n2), rowT: f(N), rowB: f(N), rhs: f(N), dx: f(n2), Xn: f(n2), xe: f(N), ys0: f(N), ys1: f(N) };
+    DR_WSCR.set(N, w);
+  }
+  return w;
+}
 function drWaterStep(G, S, Z, dtv, tAt, TsV, TbV, start) {
-  const { N, s, sc, ds, Phi, phiM, em, es, e0, rhoL, both, T, D0T, Dphi, evapTop, evapBot, stats } = G, { e, zt, zb, modeT, modeB } = S;
+  const { N, s, sc, ds, Phi, phiM, em, es, e0, rhoL, both, T, D0T, Dphi, stats } = G, { e, zt, zb, modeT, modeB } = S;
   stats.water++;
+  // (within a step the sides' evaporation changes only with the skin's thickness, and a face's flux only with the
+  //  water on its two sides and the fronts: each kept for the inputs it was worked out for -- the Jacobian's columns
+  //  move a third of the cells at a time -- and worked out again when an input differs in any bit)
+  const memo = f => { const m = new Map(); return (Zz, Tf, Ts, d) => { let v = m.get(d); if (v === undefined) { v = f(Zz, Tf, Ts, d); m.set(d, v); } return v; }; };
+  const evapTop = memo(G.evapTop), evapBot = memo(G.evapBot);
   const nb = (modeT === 'skin' ? 1 : 0) + (modeB === 'skin' ? 1 : 0), n = N + nb;
   const iT = modeT === 'skin' ? N : -1, iB = modeB === 'skin' ? N + (modeT === 'skin' ? 1 : 0) : -1;
   // the temperatures at the faces (old positions) for D
-  const L0 = zt - zb, D0f = new Float64Array(N + 1);
+  const W_ = drWaterScratch(N), sub = (a, k) => a.subarray(0, k);
+  const L0 = zt - zb, D0f = W_.D0f;
   for (let k = 0; k <= N; k++) D0f[k] = D0T(T.T != null ? T.T : tAt(zb + L0 * s[k]));
   const Dk = (ev, k) => T.Dconst ? T.Dconst : D0f[k] * Dphi(ev);
   const TfT = T.T != null ? T.T : modeT === 'skin' ? tAt(zt) : TsV;
   const TfB = T.T != null ? T.T : modeB === 'skin' ? tAt(zb) : TbV;
-  const F = new Float64Array(N + 1);
+  const { F, fLo, fHi, fF, fOk } = W_;
+  let fL = NaN, fWt = NaN, fWb = NaN;
   let Eused = [0, 0];   // the evaporation (kg/(m² s)) the last residual used: top, bottom
   const res = (X, R) => {
     const wt = iT >= 0 ? X[iT] : 0, wb = iB >= 0 ? X[iB] : 0;
     const zt1 = modeT === 'skin' ? zt + wt * dtv : Phi, zb1 = modeB === 'skin' ? zb + wb * dtv : 0, L = zt1 - zb1;
+    if (!(Object.is(L, fL) && Object.is(wt, fWt) && Object.is(wb, fWb))) { fOk.fill(0); fL = L; fWt = wt; fWb = wb; }
     for (let k = 1; k < N; k++) {
+      if (fOk[k] && Object.is(fLo[k], X[k - 1]) && Object.is(fHi[k], X[k])) { F[k] = fF[k]; continue; }
       const h = L * (sc[k] - sc[k - 1]), D = Dk(0.5 * (X[k - 1] + X[k]), k);
       F[k] = drSG(D, h, -(wb + s[k] * (wt - wb)), X[k - 1], X[k]);
+      fLo[k] = X[k - 1]; fHi[k] = X[k]; fF[k] = F[k]; fOk[k] = 1;
     }
     let rT = 0, rB = 0;
     if (modeT === 'skin') {
@@ -321,23 +346,25 @@ function drWaterStep(G, S, Z, dtv, tAt, TsV, TbV, start) {
     return R;
   };
   // the unknowns' start: e as it is, the fronts' last speeds
-  const X = new Float64Array(n);
+  const X = sub(W_.X, n);
   for (let j = 0; j < N; j++) X[j] = start ? start.e[j] : e[j];
   if (iT >= 0) X[iT] = start ? start.wt : S.wt || 0;
   if (iB >= 0) X[iB] = start ? start.wb : S.wb || 0;
   const wScale = Math.max(1e-12, Math.abs(evapTop(Z, TfT, TsV, 0)) / rhoL / Math.max(em, 1e-3), both ? Math.abs(evapBot(Z, TfB, TbV, 0)) / rhoL / Math.max(em, 1e-3) : 0);
-  const R0 = new Float64Array(n), R1 = new Float64Array(n);
+  const R0 = sub(W_.R0, n), R1 = sub(W_.R1, n);
   // (the residual in flux units against the water a step moves through the film: the thin cells hold little water
   // and their round-off must not rule)
   const fScale = Math.max(wScale * (e0 + 1), e0 * L0 / dtv * 1e-3);
   const norm = R => { let m = 0; for (let j = 0; j < N; j++) m = Math.max(m, Math.abs(R[j])); if (iT >= 0) m = Math.max(m, Math.abs(R[iT])); if (iB >= 0) m = Math.max(m, Math.abs(R[iB])); return m / fScale; };
   let ok = false;
-  const A = new Float64Array(N), Bd = new Float64Array(N), Cu = new Float64Array(N), Y = new Float64Array(n), hs = new Float64Array(N);
-  const colT = iT >= 0 ? new Float64Array(n) : null, colB = iB >= 0 ? new Float64Array(n) : null;
-  const rowT = iT >= 0 ? new Float64Array(N) : null, rowB = iB >= 0 ? new Float64Array(N) : null;
+  const { A, Bd, Cu, hs } = W_, Y = sub(W_.Y, n);
+  A[0] = 0; Cu[N - 1] = 0;   // (never set below: as a new array's)
+  const colT = iT >= 0 ? sub(W_.colT, n) : null, colB = iB >= 0 ? sub(W_.colB, n) : null;
+  const rowT = iT >= 0 ? W_.rowT.fill(0) : null, rowB = iB >= 0 ? W_.rowB.fill(0) : null;
+  let rAt = false;   // (R1 holds the residual at X: the line search's last, accepted point)
   for (let it = 0; it < 30; it++) {
     stats.newton++;
-    res(X, R0);
+    if (rAt) R0.set(R1); else res(X, R0);
     // the Jacobian: tridiagonal in e (three colours), the fronts' columns, their rows
     for (let col = 0; col < 3; col++) {
       Y.set(X);
@@ -358,14 +385,14 @@ function drWaterStep(G, S, Z, dtv, tAt, TsV, TbV, start) {
       for (let r = 0; r < n; r++) colv[r] = (R1[r] - R0[r]) / hw;
     }
     // solve [A B; C D] [de; dw] = −R
-    const rhs = new Float64Array(N);
+    const rhs = W_.rhs;
     for (let j = 0; j < N; j++) rhs[j] = -R0[j];
-    const xe = drTri(A, Bd, Cu, rhs);
-    const dx = new Float64Array(n);
+    const xe = drTri(A, Bd, Cu, rhs, W_.xe);
+    const dx = sub(W_.dx, n);
     if (nb === 0) { for (let j = 0; j < N; j++) dx[j] = xe[j]; }
     else {
       const idxs = [iT, iB].filter(i => i >= 0), cols = idxs.map(i => i === iT ? colT : colB), rows = idxs.map(i => i === iT ? rowT : rowB);
-      const Ys = cols.map(cv => drTri(A, Bd, Cu, Float64Array.from(cv.subarray(0, N))));
+      const Ys = cols.map((cv, b) => drTri(A, Bd, Cu, cv.subarray(0, N), b ? W_.ys1 : W_.ys0));
       const S = idxs.map((ri, a) => idxs.map((ci, b) => { let v = cols[b][ri]; for (let j = 0; j < N; j++) v -= rows[a][j] * Ys[b][j]; return v; }));
       const g = idxs.map((ri, a) => { let v = -R0[ri]; for (let j = 0; j < N; j++) v -= rows[a][j] * xe[j]; return v; });
       let dw;
@@ -377,13 +404,15 @@ function drWaterStep(G, S, Z, dtv, tAt, TsV, TbV, start) {
     // damped update: the residual's norm must fall
     const n0 = norm(R0);
     let lam = 1, Xn;
+    rAt = false;
     for (let ls = 0; ls < 12; ls++) {
-      Xn = Float64Array.from(X);
+      Xn = sub(W_.Xn, n); Xn.set(X);
       for (let r = 0; r < n; r++) Xn[r] += lam * dx[r];
       let bad = false;
       for (let j = 0; j < N; j++) if (!(Xn[j] > -0.5 * em)) { bad = true; break; }
       if (modeT === 'skin' && !(zt + Xn[iT] * dtv > zb + (modeB === 'skin' ? Xn[iB] * dtv : 0))) bad = true;
-      if (!bad) { const nn = norm(res(Xn, R1)); if (nn < n0 || nn < 1e-11) break; }
+      rAt = false;
+      if (!bad) { const nn = norm(res(Xn, R1)); rAt = true; if (nn < n0 || nn < 1e-11) break; }
       lam /= 2;
     }
     let step = 0;
