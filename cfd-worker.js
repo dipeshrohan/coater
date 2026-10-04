@@ -10,6 +10,10 @@
  *                U, Pup, rho, muRef, ty, n, muRep, gamma, g, ovenDistance,
  *                webSlip (1 / slip length, 1/m: slip over the fibre surface;
  *                0 = no slip) }
+ *                time (the flow in time after the steady solve, cfd-fem-time.js): { scen: 'pup' | 'web' | 'rest', to
+ *                (the bead pressure, Pa, or the web's speed, m/s, it goes to), ramp (s; 0: a step), end (s), auto (step
+ *                control) and tol, or dt (a fixed step, s), frames (how many times kept), slip (the exit face's slip
+ *                length, m; 0: no slip) }
  *              lengths in m, angles in degrees, U in m/s, Pup in Pa,
  *              muRef = the slider's viscosity at 2.7 1/s (the rheology
  *              law's own reference), muRep = mu at the representative
@@ -26,7 +30,7 @@
  *   used: index in solves of the solve whose solution is the result.
  */
 // (cfd-1d.js: bladeShape, the blade height over the web, shared with the 1D stage so both see the same geometry)
-importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js', 'orient.js', 'cfd-orient.js', 'drying.js', 'film.js', 'furnace.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-gap-solver.js', 'cfd-fem.js', 'cfd-fem-time.js', 'cfd-struct.js', 'cfd-blade.js', 'cfd-1d.js', 'orient.js', 'cfd-orient.js', 'drying.js', 'film.js', 'furnace.js');
 
 /** Reynolds lubrication flow rate for the same shape and pressure drop, one viscosity -- the classical estimate shown for comparison. */
 function lubricationQ(o, shape) {
@@ -50,6 +54,48 @@ function shapedOut(prof, r) {
     for (let k = 1; k <= m; k++) { const q = Math.max(s, a) + (b - Math.max(s, a)) * k / m; pts.push(F.P(q)); }
   }
   return { shaped: { k: r.meniscus ? r.meniscus.k : 0, model: r.meniscus ? r.meniscus.model : null, note: r.meniscus ? r.meniscus.note || null : null, faceAbove: pts, corners: prof.faceCorners.map(c => F.P(c.s)), sCL: s } };
+}
+
+/** A grid's node arrays as single precision (a time step kept for display: half the memory, far finer than drawn). */
+function compactGrid(g) {
+  for (const k of ['gx', 'gy', 'u', 'v', 'p', 'psi', 'gd', 'mu', 'tauXY', 'tauXX', 'tauYY', 'omega']) if (g[k] instanceof Float64Array) g[k] = Float32Array.from(g[k]);
+  return g;
+}
+/**
+ * The flow in time from the steady result r (o.time; cfd-fem-time.js's femMarch): the bead pressure (scen 'pup') or
+ * the web's speed ('web') stepped or ramped from the inputs' value to `to`, or ('rest') the gap filled at rest -- no web
+ * speed, the bead pressure the liquid's weight up to the gap -- with the web and the bead pressure ramped up to the
+ * inputs'. Returns the record in time (film, contact line, flows in and out, the steps) and the flow at o.time.frames
+ * even times (the start first), each as the post-processing grid, or { error }.
+ */
+function marchInTime(o, fo, r, geo, shapeProf, onStep) {
+  const T = o.time, t0 = Date.now(), Hr = geo.H, rhoG = o.rho * o.g;
+  let r0 = r;
+  if (T.scen === 'rest') {
+    r0 = solveCoaterFEM({ ...fo, U: 0, Pup: rhoG * Hr, fInfGuess: Hr, onStage: undefined, onIteration: undefined, onSolveStart: undefined, onSolveEnd: undefined });
+    if (!r0 || !r0.x || r0.error || !r0.converged) return { error: `the gap filled at rest did not solve${r0 && r0.error ? `: ${r0.error}` : ''}` };
+  }
+  const P0 = T.scen === 'rest' ? rhoG * Hr : o.Pup, P1 = T.scen === 'pup' ? T.to : o.Pup;
+  const U0 = T.scen === 'rest' ? 0 : o.U, U1 = T.scen === 'web' ? T.to : o.U;
+  const ramp = t => (T.ramp > 0 ? Math.min(1, t / T.ramp) : 1);
+  const at = t => { const k = ramp(t), P = P0 + (P1 - P0) * k; return { U: U0 + (U1 - U0) * k, inlet: { type: 'traction', p: y => P - rhoG * y } }; };
+  const g0 = { xe: geo.xe, H: Hr, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: U1 };
+  // (a time step's grid: its own mesh's layout and the contact line's mode, the surface's angle where it leaves it)
+  const leave = (rr, cCL) => { const NR = rr.NR, d = [-1.5, 2, -0.5]; let tx = 0, ty = 0; for (let a = 0; a < 3; a++) { const n = (cCL + a) * NR + NR - 1; tx += rr.x[n] * d[a]; ty += rr.y[n] * d[a]; } return Math.atan2(ty, tx) * 180 / Math.PI; };
+  const frame = (rr, info) => {
+    const full = info ? { ...rr, meshInfo: info.meshInfo, meniscus: { ...r0.meniscus, mode: info.mode, s: rr.surface.s, leaveDeg: leave(rr, info.meshInfo.cCL) } } : rr;
+    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full) };
+  };
+  const n = Math.max(2, Math.round(T.frames)), times = Array.from({ length: n }, (_, k) => (k + 1) * T.end / n);
+  const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0,
+    keep: (rr, t, info) => frame(rr, info), onStep });
+  return {
+    scen: T.scen, end: T.end, ramp: T.ramp, P0, P1, U0, U1, slip: T.slip || 0, auto: !!T.auto, tol: T.tol, dtSet: T.dt, ms: Date.now() - t0,
+    t: m.t, dt: m.dt, s: m.s, Qin: m.Qin, Qout: m.Qout, area: m.area, err: m.err, iterations: m.iterations, mode: m.mode,
+    hOut: m.top.map(q => q.y[q.y.length - 1]),
+    remeshes: m.remeshes, steps: m.steps, rejected: m.rejected, failed: m.failed, completed: m.completed, error: m.error || null,
+    frames: [{ t: 0, g: frame(r0, null) }, ...m.frames.map(q => ({ t: q.t, g: q.r }))],
+  };
 }
 
 onmessage = e => {
@@ -188,7 +234,22 @@ onmessage = e => {
       }
     }
 
-    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...(orient ? { orient } : {}), ...(drying ? { drying } : {}), ...(peeled ? { peeled } : {}), ...(furn ? { furn } : {}), ...shapedOut(shape.profile, r) } });
+    // The flow in time from this steady state (o.time): the march, its record and its time steps
+    let transient = null;
+    if (o.time) {
+      stage = 'in time'; lastPost = 0; post({ it: 0, residual: NaN, s: 1 });
+      let lastT = 0;
+      try {
+        transient = marchInTime(o, fo, r, { xe, H }, shape.profile, s => {
+          const t = Date.now();
+          if (t - lastT < 200 && s.t < s.tEnd) return;
+          lastT = t;
+          postMessage({ progress: { it: s.steps, residual: NaN, s: s.t / s.tEnd, stage: `in time: t = ${s.t.toPrecision(3)} s of ${s.tEnd} s`, time: { t: s.t, tEnd: s.tEnd } } });
+        });
+      } catch (err) { transient = { error: err.message }; }
+    }
+
+    postMessage({ ok: true, result: { ...g, prof1D, film, filmStart, muDownstream, qLub, Hedge: H, nEb, trace, ...(transient ? { transient } : {}), ...(r.struct ? { struct: { ...r.struct, S: o.struct, lamEdge: structColumn(r, r.lam, r.meshInfo.cCorner), lamEnd: structColumn(r, r.lam, r.NC - 1) } } : {}), ...(orient ? { orient } : {}), ...(drying ? { drying } : {}), ...(peeled ? { peeled } : {}), ...(furn ? { furn } : {}), ...shapedOut(shape.profile, r) } });
   } catch (err) {
     postMessage({ ok: false, error: err.message });
   }

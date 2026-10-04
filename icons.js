@@ -39,6 +39,7 @@ const UI_ICONS = {
   upload: `<path d="M8 10.5V3M4.8 6.2 8 3l3.2 3.2M3 12.5h10" ${UI_S}/>`,
   download: `<path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 12.5h10" ${UI_S}/>`,
   goTo: `<path d="M9 3h4v4M13 3 7.5 8.5" ${UI_S}/><path d="M11.5 9.5V13h-9V4.5H6" ${UI_S} opacity=".7"/>`,
+  clock: `<circle cx="8" cy="8" r="5.6" ${UI_S}/><path d="M8 4.8V8l2.3 1.5" ${UI_S}/>`,
 };
 /** The drawing of an icon: a name here, an input icon's name, or a view's number. */
 function uiIconPath(name) {
@@ -56,7 +57,7 @@ const GROUP_ICON = { '1d': 8, '2d': 4, '3d': 9 };
 /** The results panels' tabs (2D, DOE, Measured data, the modules' history). */
 const DOCK_ICON = {
   metrics: 'table', flakes: 'fibre', probes: 'probe', cut: 'cut', cuts: 'cut', across: 11, profiles: 'profile', fibre: 'fibre', conv: 'conv', problems: 'warn', msgs: 'msg',
-  mesh: 'grading', cases: 'cases', history: 'history', method: 'method', design: 'doe', runs: 'runs', compare: 6, fit: 'tune', dims: 'length', meshlocs: 'mesh', accuracy: 'tolerance', numerics: 'tolerance',
+  mesh: 'grading', cases: 'cases', history: 'history', method: 'method', time: 'clock', design: 'doe', runs: 'runs', compare: 6, fit: 'tune', dims: 'length', meshlocs: 'mesh', accuracy: 'tolerance', numerics: 'tolerance',
 };
 /** A number tile's icon, from its label (first match). */
 const TILE_ICON = [

@@ -53,7 +53,8 @@ const femFlows = r => ({ Qin: r.psi[r.NR - 1], Qout: r.psi[(r.NC - 1) * r.NR + r
  *             and uScale (velocities; default the larger of Ur and the fastest speed in the flow)
  *   earlier   { r, dt }: the state at t0 - dt, so the first step is already BDF2 (an exact history)
  *   times     output times: the steps land on them, and frames keeps the result there
- *   keep(r, t)  what to keep of the result at an output time (default: r itself)
+ *   keep(r, t, info)  what to keep of the result at an output time (default: r itself); info { mode, meshInfo }: the
+ *             contact line's mode and the mesh's layout (solveCoaterFEM's meshInfo) the result is on
  *   maxSteps  (default 20000); maxIter: Newton per step (default 12)
  *   faceSlip  slip length (m) on the exit face below the contact line (solveFEM's faceSlip), for the whole march
  *   onStep(rec)  after each accepted step; return false to stop
@@ -89,7 +90,7 @@ function femMarch(r0, opts = {}) {
   const relayout = opts.remesh !== false && typeof r0.relayout === 'function' ? r0.relayout : null;
   const H = Hr, pinAt = (opts.pinAt ?? 0.02) * H;
   let mode = r0.meniscus ? r0.meniscus.mode : null, layout = null, cCL = r0.meshInfo ? r0.meshInfo.cCL : null;
-  let qLay = relayout ? FT_.femQuality(call.mesh, r0.surface) : null, sLay = r0.surface ? r0.surface.s : 0;
+  let qLay = relayout ? FT_.femQuality(call.mesh, r0.surface) : null, sLay = r0.surface ? r0.surface.s : 0, mInfo = r0.meshInfo || null;
 
   // history, newest first: { t, r }
   let hist = [{ t: t0, r: r0 }];
@@ -141,7 +142,7 @@ function femMarch(r0, opts = {}) {
       out.error = `at t = ${t.toPrecision(6)} s no mesh along the surface keeps its shape (quality ${res.layout.quality.toFixed(3)}; ${why}): the surface by the contact line has turned too steep for the spines -- a film running down the exit face -- not followed further`;
       return false;
     }
-    call = quiet(res.call); layout = res.layout; mode = res.mode; cCL = res.r.meshInfo.cCL;
+    call = quiet(res.call); layout = res.layout; mode = res.mode; cCL = res.r.meshInfo.cCL; mInfo = res.r.meshInfo;
     qLay = res.layout.quality; sLay = res.r.surface.s; free = freeOf(res.r);
     hist = [{ t, r: res.r }];
     out.remeshes.push({ t, mode, quality: qLay, why });
@@ -157,12 +158,14 @@ function femMarch(r0, opts = {}) {
     else if (target - t < 2 * h) h = 0.5 * (target - t);            // two even steps rather than one long and one tiny
     const tn = t + h, two = hist.length > 1;
     let r = null, why = '';
-    try {
-      const o = { ...call, ...(opts.at ? opts.at(tn) : {}) };
-      if (o.U) o.flatEnd = false;
-      r = FT_.solveFEM({ ...o, maxIter, init: guess(h),
-        time: { t: tn, dt: h, dtPrev: two ? hist[0].t - hist[1].t : 0, prev: two ? [hist[0].r, hist[1].r] : [hist[0].r] } });
-    } catch (e) { r = null; why = e.message; }
+    const o = { ...call, ...(opts.at ? opts.at(tn) : {}) };
+    if (o.U) o.flatEnd = false;
+    const step = more => FT_.solveFEM({ ...o, maxIter: more ? Math.max(40, maxIter) : maxIter, ...(more ? { homotopy: true } : {}), init: guess(h),
+      time: { t: tn, dt: h, dtPrev: two ? hist[0].t - hist[1].t : 0, prev: two ? [hist[0].r, hist[1].r] : [hist[0].r] } });
+    try { r = step(false); } catch (e) { r = null; why = e.message; }
+    // (a jump in what is imposed -- a step of the web's speed on a yield-stress paste -- is not made smaller by a shorter
+    // step: Newton needs more of its own steps from the state before; the same step once more with them and the homotopy)
+    if (!r || !r.converged) { try { const r2 = step(true); if (r2 && r2.converged) { r = r2; why = ''; } } catch (e) { why = why || e.message; } }
     if (!r || !r.converged) {
       out.failed++;
       // (the mesh may be what fails: lay it out again once, then shorter steps)
@@ -180,7 +183,7 @@ function femMarch(r0, opts = {}) {
     t = tn; out.steps++; fresh = false;
     hist.unshift({ t, r }); if (hist.length > 3) hist.length = 3;
     record(t, r, h, lte ?? 0);
-    if (iOut < times.length && Math.abs(t - times[iOut]) <= 1e-9 * span) { out.frames.push({ t, r: keep(r, t) }); iOut++; }
+    if (iOut < times.length && Math.abs(t - times[iOut]) <= 1e-9 * span) { out.frames.push({ t, r: keep(r, t, { mode, meshInfo: mInfo }) }); iOut++; }
     if (opts.onStep && opts.onStep({ t, dt: h, err: lte, iterations: r.iterations, steps: out.steps, tEnd, mode }) === false) break;
     if (opts.fixed) dt = opts.dt0;
     else if (lte != null) dt = Math.min(dtMax, h * Math.min(2, Math.max(0.2, 0.9 * Math.pow(tol / Math.max(lte, 1e-300), 1 / 3))));

@@ -46,7 +46,7 @@ const STEP_DOCK_2D = {
   geometry: ['dims', 'problems', 'msgs', 'history'],
   mesh: ['meshlocs', 'mesh', 'accuracy', 'problems', 'msgs', 'history'],
   solve: ['conv', 'numerics', 'problems', 'msgs', 'history'],
-  results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'flakes', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method', 'numerics'],
+  results: ['metrics', 'probes', 'cuts', 'across', 'profiles', 'time', 'flakes', 'fibre', 'conv', 'problems', 'msgs', 'mesh', 'cases', 'history', 'method', 'numerics'],
 };
 /** The location a step other than Results shows (its own choice, independent of the Results' view). */
 const stepLoc2D = () => Math.max(0, Math.min(CFD_LOCS.length - 1, FV.stepLoc | 0));
@@ -100,7 +100,8 @@ function stepStatus2D() {
   else if (otherErr.length && !done) st.solve = { state: 'bad', note: `${otherErr.length} problem${otherErr.length > 1 ? 's' : ''}`, title: otherErr.map(p => p.text).join(' ') };
   else st.solve = done ? { state: stopped ? 'warn' : 'done', note: `${done} of ${CFD_LOCS.length} solved${stopped ? ' · stopped' : ''}`, title: stopped ? 'A run was stopped: the earlier result of each location is kept' : '' } : { state: stopped ? 'warn' : '', note: stopped ? 'stopped' : 'not solved' };
   const stale = locs.some(i => cfdIsStale(i));
-  st.results = !done ? { state: '', note: 'nothing yet' } : stale ? { state: 'warn', note: 'out of date', title: 'The inputs changed since: Solve again' } : { state: 'done', note: 'flow, metrics, probes' };
+  const inTime = cfdRuns.some(r => r.field && r.transient);
+  st.results = !done ? { state: '', note: 'nothing yet' } : stale ? { state: 'warn', note: 'out of date', title: 'The inputs changed since: Solve again' } : { state: 'done', note: inTime ? 'flow, in time' : 'flow, metrics, probes' };
   return st;
 }
 /** A step bar wider than its room (a phone): scrolled to show the step open. */
@@ -157,6 +158,7 @@ function stepToolsHTML2D(k) {
       <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden>${uiIco('stop')}Stop</button>${sep}${locSegHTML(i)}${sep}
       <label class="vp-ctl">Tolerance <select id="stepTol" aria-label="Newton tolerance">${SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join('')}</select></label>
       <label class="vp-ctl">Iterations <input type="number" id="stepIter" min="10" max="300" step="1" value="${CFDS.maxIter}" aria-label="Newton iterations, at most"></label>${sep}
+      ${timeToolHTML()}${sep}
       <button class="tool-btn" type="button" id="stepNumerics" title="The numerical chain: each stage's method and setting, Automatic resolved, the last solve's quality; Advanced settings">${uiIco('tolerance')}Numerics…</button>`;
   return '';
 }
@@ -173,6 +175,7 @@ function wireStepTools2D() {
   const ma = document.getElementById('stepMeshAcc'); if (ma) ma.onclick = () => { FV.dock = 'accuracy'; ACC.loc = stepLoc2D(); viewCFD(); };
   const tol = document.getElementById('stepTol'); if (tol) tol.onchange = () => { CFDS.tol = +tol.value; viewCFD(); };
   const nm = document.getElementById('stepNumerics'); if (nm) nm.onclick = () => { FV.dock = 'numerics'; viewCFD(); };
+  wireTimeControls();
   const it = document.getElementById('stepIter'); if (it) it.onchange = () => {
     const q = SOLVER_INPUTS.find(x => x.k === 'maxIter');
     guardNumber(it, { label: q.l, lo: q.lo, hi: q.hi }, v => { CFDS.maxIter = solverValue(q, v); }); it.value = CFDS.maxIter; viewCFD();
@@ -894,19 +897,22 @@ function bcListHTML(i, extra = '', face = null) {
 }
 function renderSolveStep2D(host) {
   const i = stepLoc2D(), geo = cfdGeometry(i), m = RHEO_MODELS[CFDG.model], law = m.uses;
+  const tmFirst = timeSet().on;   // (Transient: its settings first, above the boundary conditions)
   const st = (r, k) => r.status === 'running' ? 'solving' : r.status === 'done' ? `solved${cfdIsStale(k) ? ', out of date' : ''}` : r.status === 'error' || r.status === 'blocked' ? 'failed' : r.status === 'cancelled' ? 'stopped' : 'not solved';
   host.innerHTML = `<div class="step-view solve-view"><div class="step-draw" id="bcDraw"></div>
-    <aside class="step-side">${bcListHTML(i)}
+    <aside class="step-side">${tmFirst ? timeCardHTML(i) : ''}${bcListHTML(i)}
       <h4>${uiBadge('drop')}Slurry</h4><table class="kv">
       <tr><td>Rheology</td><td>${m.l}</td></tr><tr><td>Viscosity at 2.7 1/s</td><td>${(+locMuRef(i)).toPrecision(4)} Pa·s</td></tr>
       ${law.includes('n') ? `<tr><td>Shear-thinning n</td><td>${locInput(i, 'n').toFixed(2)}</td></tr>` : ''}${law.includes('ty') ? `<tr><td>Yield stress</td><td>${locInput(i, 'ty').toFixed(1)} Pa</td></tr>` : ''}
       <tr><td>Density</td><td>${geo.rho.toFixed(0)} kg/m³</td></tr></table>
       <h4>${uiBadge('tolerance')}Solver</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Iterations, at most</td><td>${CFDS.maxIter}</td></tr><tr><td>Mesh</td><td>${MESH_PRESETS[CFDS.mesh].l}${zonesActive(zonesOf()) ? ' + zones' : ''}</td></tr></table>
+      ${tmFirst ? '' : timeCardHTML(i)}
       <h4>${uiBadge('location')}Locations</h4><table class="kv">${cfdRuns.map((r, k) => `<tr${k === i ? ' class="on"' : ''}><td>L${k + 1}</td><td>${st(r, k)}${r.status === 'done' && r.elapsedMs ? ` · ${(r.elapsedMs / 1000).toFixed(1)} s` : ''}</td></tr>`).join('')}</table>
       <p class="side-note">Click a blue value on the drawing to change it (a location's own value when it has one, else the shared input).</p></aside></div>`;
   const d = document.getElementById('bcDraw'), w = Math.max(760, d.clientWidth), h = Math.max(240, d.clientHeight);
   d.innerHTML = bladeSVG(i, w, h, { dims: false, bc: bcCallouts(i) }).svg;
   wireBcEdits(d, i);
+  wireTimeControls();
 }
 /** A boundary-condition drawing's values: click (or Enter) to type a new one. */
 function wireBcEdits(d, i) {

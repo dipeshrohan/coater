@@ -487,6 +487,13 @@ async function repCfd(keep) {
       }
       FV.orTable = keepTable; FV.view = 'compare';
     }
+    // the flow in time (T-2): each location's march, its table and the Time tab's charts
+    const tRows = typeof timeReportRows === 'function' ? timeReportRows() : [];
+    if (tRows.length) {
+      html += `<h3>In time</h3>${repRows(tRows.map(r => r.map(repEsc)), ['Location', 'Change', 'Marched to', 'Film at the end of the 2D', 'Contact line up the face', 'Steps, solve time'])}`;
+      FV.view = 'compare'; FV.dock = 'time'; viewCFD(); await repFrame();
+      for (const t of imageTargets().filter(x => x.id.startsWith('chart:'))) html += repFigure(t, `${t.title()} · ${t.subtitle()}`);
+    }
   }
   if (typeof numericsReportRows === 'function') { const keep = FV.stepLoc; FV.stepLoc = 0; try { html += repNumerics('2d', 'The numerical chain as the solver runs it (at L1; every location the same but for its own gap and contact angle)'); } finally { FV.stepLoc = keep; } }
   html += '<h3>Checks and messages</h3><h4>Problems</h4>' + repProblems();
