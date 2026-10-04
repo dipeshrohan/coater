@@ -310,11 +310,11 @@ function fplPaths(A, B, starts, { T, tau, t0 = 0, xEnd, tMax = 2000, frac = 0.3,
  *   outlets: [{ x, z }] (m), r (m, the landing's radius), Qin, Qout (m³/s, the whole
  *   width: all outlets during a pulse, the web's), hP, hD (m: the level during a pulse and between), T, tau (s), mesh: {
  *   hFine, hMax, ny, zs (optional: the element boundaries across), pipes (the 3D's round pipes: fmMesh's options) }, t0 (s
- *   into a pulse the paths start, default τ/2), tMax (s, default 4000), mirror (default true), solveTol (optional: each
- *   solve's tolerance), entry ('fall', 'heap': the paste entering through the top -- over the landing, the heap's foot --
- *   or 'dip': through pipes standing in the paste, their tips in it through the cycle: the 2D's a slot across the slice,
- *   the 3D's round, on the coater's block mesh, its flow shown on the pool's grid, NaN in the pipes' walls), pipe ({ d, Do,
- *   tip } m: the outlets' bore, outside and tip, for 'dip') };
+ *   into a pulse the paths start, default τ/2), tMax (s, default 4000), mirror (default true), solveTol (each solve's
+ *   Newton tolerance, default FPL_TOL), entry ('fall', 'heap': the paste entering through the top -- over the landing,
+ *   the heap's foot -- or 'dip': through pipes standing in the paste, their tips in it through the cycle: the 2D's a slot
+ *   across the slice, the 3D's round, on the coater's block mesh, its flow shown on the pool's grid, NaN in the pipes'
+ *   walls), pipe ({ d, Do, tip } m: the outlets' bore, outside and tip, for 'dip') };
  *   onProgress(text, 0..1).
  * The paste's law by continuation: its viscosity at 2.7 1/s first, then the law with its γ̇ floor brought down tenfold
  * twice (0.1, 0.01, 0.001 of U/H), each solve from the last.
@@ -367,6 +367,10 @@ function fplStartMeshes(o) {
     : fplPoolMesh({ W: PL.W, xBack: o.xBack, xEnd: o.xEnd, h, blade: PL.blade, outlets: PL.outlets, r: o.r, mesh: PL.mesh, ...(PL.pipes ? { pipes: PL.pipes } : {}) }, null));
   return { plan: PL, pulse: at(o.hP), drain: at(o.hD) };
 }
+/** The cycle's Newton tolerance (the residual against its start, or against 1 when that is smaller). Its states are kept in
+ *  single precision, and past 1e-6 the fields move by less than that rounding (the default 3D pool: by 6e-8 of their
+ *  largest at most, every figure the page shows the same) while the last Newton steps take a third of the time. */
+const FPL_TOL = 1e-6;
 function fplCycle(o, onProgress = () => {}) {
   const { dim, M3, nO, ord, mirror, W, share, blade, solved, outlets, dip, pipes, round, mesh } = fplPlan(o);
   const L = o.law || {}, base = L.muRef - L.ty / 2.7, gd0 = o.U / o.H;
@@ -383,7 +387,7 @@ function fplCycle(o, onProgress = () => {}) {
     for (const f of stages) {
       onProgress(`${pulse ? 'During a pulse' : 'Between pulses'}: ${f == null ? (plain ? 'the flow' : 'the flow at the viscosity at 2.7 1/s') : `the paste's law, γ̇ floor ${(f * gd0).toPrecision(2)} 1/s`}`, done / n);
       const sv = { mu: f == null ? () => mu27 : law, gdMin: f == null ? undefined : f * gd0,
-        solve: { x0, ...(o.solveTol ? { tol: o.solveTol } : {}), ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } };
+        solve: { x0, tol: o.solveTol ?? FPL_TOL, ...(f == null ? {} : { lineSearch: true, maxNewton: 40 }) } };
       // (the round pipes: the whole pool's outlets to the coater's mesher, its own half when they are mirror pairs)
       r = round ? fplSolvePipes({ ...so, ...sv, W: o.W, half: mirror, outlets: o.outlets, pipe: { d: o.pipe.d, Do: o.pipe.Do, tip: o.pipe.tip, bore: 2 * o.pipe.d }, mesh: M3.pipes })
         : fplSolve({ ...so, ...sv });
