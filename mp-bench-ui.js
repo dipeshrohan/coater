@@ -23,6 +23,8 @@ const SWB_ADAPT = {};
 /** The page's own view state: the 2D drawings true to scale or stretched through the thin layers; the 3D view's angle. */
 const SWB = { scale: {}, view3: {} };
 const SWB_DIMS = { 1: '1D', 2: '2D', 3: '3D' };
+/** A solve's time in words: milliseconds below a tenth of a second (never "0.0 s"). */
+const swbSecs = ms => (ms < 100 ? `${Math.max(1, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)} s`);
 /** The page shown when it is a dimension page (never while the report draws the stages open). */
 function swbNow() {
   if (typeof PROC_ALL !== 'undefined' && PROC_ALL) return null;
@@ -269,7 +271,12 @@ function swbDrawIso(cv, A, o, what, field) {
   for (const [a, b] of [[[0, 0, 0], [X1, 0, 0]], [[0, 0, 0], [0, Y1, 0]], [[0, 0, 0], [0, 0, Z1]]]) { c.moveTo(...P(...a)); c.lineTo(...P(...b)); } c.stroke(); c.restore();
   // the sizes along the three edges in front
   c.font = '11.5px ' + cssVar('--mono'); c.fillStyle = mut; c.textAlign = 'center';
-  const lab = (a, b, t, dx, dy) => { const p = P(...a), q = P(...b); outlinedText(c, t, (p[0] + q[0]) / 2 + dx, (p[1] + q[1]) / 2 + dy, mut); };
+  const lab = (a, b, t, dx, dy) => {
+    const p = P(...a), q = P(...b), tw = c.measureText(t).width, al = c.textAlign;
+    // (inside the panel: a label that would run off its right edge is pulled back)
+    let x = (p[0] + q[0]) / 2 + dx; if (al === 'left') x = Math.min(x, w - tw - 4); else if (al === 'center') x = Math.min(Math.max(x, tw / 2 + 4), w - tw / 2 - 4);
+    outlinedText(c, t, x, (p[1] + q[1]) / 2 + dy, mut);
+  };
   lab([0, Y1, 0], [X1, Y1, 0], `${swbMm(X1)} mm`, -14, 18);
   lab([X1, Y1, 0], [X1, 0, 0], `${swbMm(Y1)} mm`, 16, 18);
   c.textAlign = 'left'; lab([X1, 0, 0], [X1, 0, Z1], `${swbMm(Z1)} mm${kz !== 1 ? ` (drawn ×${kz})` : ''}`, 10, 0);
@@ -293,7 +300,7 @@ function swbStatus(A, dim, o) {
   return {
     geometry: { state: 'done', note: A.domainShort(dim, o) },
     mesh: { state: 'done', note: `${st.nodes.toLocaleString('en')} nodes · ${st.elems.toLocaleString('en')} elements` },
-    solve: { state: cur ? 'done' : busy ? 'run' : err ? 'bad' : '', note: cur ? `solved in ${(S.res[dim].ms / 1000).toFixed(1)} s` : busy ? (S.prog ? `step ${S.prog.k} of ${S.prog.n}` : 'setting up…') : err ? 'failed' : 'not solved' },
+    solve: { state: cur ? 'done' : busy ? 'run' : err ? 'bad' : '', note: cur ? `solved in ${swbSecs(S.res[dim].ms)}` : busy ? (S.prog ? `step ${S.prog.k} of ${S.prog.n}` : 'setting up…') : err ? 'failed' : 'not solved' },
     results: { state: cur ? '' : '', note: cur ? 'the answers' : 'nothing yet' },
   };
 }
@@ -360,7 +367,7 @@ function swbStatusPills(A, dim, o) {
   if (!el) return;
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim, err = A.failed(dim);
   el.innerHTML = busy ? pill(`Solving the ${SWB_DIMS[dim]}${S.prog ? `: time step ${S.prog.k} of ${S.prog.n}` : '…'}`, '')
-    : cur ? pill(`Solved in ${(S.res[dim].ms / 1000).toFixed(1)} s for the inputs as they are`, 'ok')
+    : cur ? pill(`Solved in ${swbSecs(S.res[dim].ms)} for the inputs as they are`, 'ok')
     : err ? pill(`The ${SWB_DIMS[dim]} could not be solved: ${dryEsc(S.error[dim])}`, 'bad')
     : S.busy ? pill(`Solving the ${SWB_DIMS[S.bdim]} first; this one next when asked`, '')
     : pill(`Not solved for the inputs as they are${dim === 3 ? ` (${A.slow3.charAt(0).toLowerCase() + A.slow3.slice(1)})` : ''}: Solve`, 'warn');

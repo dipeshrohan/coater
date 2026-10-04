@@ -86,6 +86,8 @@ const MAT_FILM = [
   ['GcF', 'Its fracture energy (a crack through it)', 'J/m²', 0.1, 10000, 1, 1, 40, 'assumed', 'multilayer GO about 39 J/m² (J-integral); thicker films may be tougher: the crack spacing measured gives it'],
   ['Gil', 'Between its layers (it splits)', 'J/m²', 0.1, 10000, 1, 1, 20, 'assumed', 'GO paper splits between its layers more easily than across them'],
   ['Gi', 'Its hold on the fibre web', 'J/m²', 0.01, 10000, 0.5, 2, 10, 'assumed', 'not known: the peel force measured gives it'],
+  // (MP-CUT: what holds the film's layers on each other, at a cut's edge)
+  ['Gl', 'Its layers\' hold on each other', 'J/m²', 0.01, 10000, 0.5, 2, 10, 'assumed', 'not known: GO papers part between their layers at about 1–100 J/m² (a double cantilever test of yours gives it)'],
   // (MP-PEEL: the hold's strength -- the most it pulls before it gives way -- sets how far along the web it gives way at the
   //  front and how much the film turns there; with its energy above, the 2D peel front's cohesive layer)
   ['sigI', 'Its hold on the fibre web: strength', 'MPa', 0.01, 1000, 0.1, 2, 2, 'assumed', 'not known: the most the hold pulls before it gives way'],
@@ -96,6 +98,8 @@ const MAT_FILM = [
   ['alphaW', 'Fibre web\'s heat expansion', '×10⁻⁶/K', -50, 300, 1, 0, 20, 'assumed', 'polyester fibre expands about 0.4 % from 25 to 230 °C'],
   ['Eg', 'Wet film under a skin: its stiffness', 'kPa', 0.01, 1e6, 1, 1, 100, 'assumed', 'a GO paste: soft (its yield stress a few pascals, the Rheology card)'],
   ['stackK', 'Water along the pieces in the pressed stack', '×10⁻⁷ kg/(m·s·Pa)', 1e-4, 1e6, 0.1, 3, 3, 'assumed', 'not measured: 3 is the least that fits your answers -- dry all over out of the pre heat treatment, the size back to as cut 1–2 h later, the same a day later'],
+  // (MP-PEEL 3D, the roll in 3D: the water along the turns' faces to the roll's ends)
+  ['rollK', 'Water along the turns in the roll', '×10⁻⁷ kg/(m·s·Pa)', 1e-4, 1e6, 0.1, 3, 3, 'assumed', 'not measured: taken as the pressed stack\'s along its pieces (the turns pressed on each other as the pieces are)'],
   ['creepTau', 'Its creep time wet (as cut), in the pre heat treatment', 'min', 0.1, 1e5, 1, 1, 10, 'assumed', 'GO paper creeps, the more so with water (Su et al. 2012); not known: the waves in your photos will give it'],
   // (MP-PEEL 1D, the roll: the turns pressed on each other through their air, how a turn swells through its thickness
   //  with water and heat -- the roll's pressure rises as the turns thicken)
@@ -159,6 +163,13 @@ const MAT_FURN = [
   ['kPl', 'The holder\'s plates: heat conduction', 'W/(m·K)', 1, 500, 1, 0, 100, 'assumed', 'isostatic graphite 80–130 at the room, less as it heats; the plates\' datasheet gives it', 'heat'],
   ['rhoPl', '… their density', 'g/cm³', 1, 2.3, 0.01, 2, 1.8, 'assumed', 'isostatic graphite 1.75–1.9', 'heat'],
   ['epsF', 'The holder\'s faces to the hot zone: emissivity', '', 0.05, 1, 0.01, 2, 0.8, 'assumed', 'graphite 0.7–0.9; the hot zone at the program\'s temperature', 'heat'],
+  // (MP-GF: the graphene film in use, spreading a heater's heat -- through its thickness and from its faces)
+  ['kt', 'Graphene film: heat conduction through it', 'W/(m·K)', 0.1, 100, 0.1, 1, 5, 'assumed', 'graphite films 3–20 W/(m·K) through their thickness (graphite along its c axis about 6); a laser flash through yours gives it', 'use'],
+  ['epsG', 'Graphene film: emissivity of its faces', '', 0, 1, 0.01, 2, 0.4, 'assumed', 'graphite films 0.2–0.9: smooth and bare low, rough or coated high; an emissivity meter gives yours', 'use'],
+  ['EG', 'Graphene film: stiffness in its plane', 'GPa', 0.1, 1000, 0.5, 1, 30, 'assumed', 'graphene films from GO 10–80 GPa (denser and better ordered, stiffer); a tensile test of yours gives it', 'use'],
+  ['nuG', '… its Poisson\'s ratio in its plane', '', 0, 0.49, 0.01, 2, 0.17, 'assumed', 'graphite in its basal plane about 0.17', 'use'],
+  ['aG', '… its heat expansion in its plane', '×10⁻⁶/K', -10, 30, 0.1, 1, -1, 'assumed', 'graphite in its basal plane about −1.5 near the room (it shrinks a little as it warms), near 0 by 400 °C', 'use'],
+  ['sigG', '… its strength in its plane', 'MPa', 0.1, 5000, 1, 1, 40, 'assumed', 'graphene films from GO 20–100 MPa; a tensile test of yours gives it', 'use'],
 ];
 /**
  * The material constants the solvers had fixed in their code (MH-2), the same shape: the pre heat's aluminium plate,
@@ -203,7 +214,7 @@ const MAT_XREC = [
   ['blNu', 'Blade: Poisson\'s ratio', '', 0, 0.5, 0.01, 2, null, 'assumed', ''],
   ['blAlpha', 'Blade: thermal expansion', '×10⁻⁶/K', -10, 100, 0.1, 1, null, 'assumed', ''],
 ];
-const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)' };
+const MAT_FURN_GROUPS = { chem: 'The GO\'s chemistry as it heats', graph: 'Its layers: graphite', gas: 'The gas and the puffing', paper: 'The graphite paper', plane: 'Along the piece: its size, cracks and sticking', plate: 'The holder\'s plates (isostatic graphite)' , heat: 'The stack\'s heat (the multiphysics)', use: 'The graphene film in use (on a heater)' };
 const MAT_FLAGS = [['given', 'From you'], ['assumed', 'Assumed'], ['measured', 'Measured']];
 const matCard = rows => Object.fromEntries(rows.map(([k, , , , , , , v, flag, src]) => [k, { v, flag, src }]));
 // (rheo.side: the sidebar's slurry inputs a rheometer fit set, { k: { v, src } }: Measured while the input keeps that value;
@@ -319,7 +330,7 @@ const FURN_RUNS_DEFAULT = [
   { steps: [{ rate: 10, to: 1000, hold: 0 }, { rate: 5, to: 2000, hold: 0 }, { rate: 2, to: 2800, hold: 60 }], cool: 10, file: null },
 ];
 // (GO-7e: the top and bottom pieces touch the holder's plates directly (the user), their thickness assumed)
-const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, plateT: 30, sdMax: 30, dTload: null, pGas: 101.325, pGasSet: false, ends: 'plates', runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, plateTSet: false, sdSet: true, dTSet: false, endsSet: true };
+const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, plateT: 30, sdMax: 30, dTload: null, pGas: 101.325, pGasSet: false, gfA: 20, gfP: 1, gfH: 10, gfT: 600, gfASet: false, gfPSet: false, gfHSet: false, gfTSet: false, ends: 'plates', runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, plateTSet: false, sdSet: true, dTSet: false, endsSet: true };
 const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['paperT', 'Graphite paper\'s thickness', 'mm', 0.01, 10, 0.05, 2, 'paperSet'],
   ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet'],
   ['plateW', 'A plate resting on the stack', 'kg', 0, 1000, 0.5, 1, 'plateSet'], ['sdMax', 'Its thickness may spread (standard deviation)', 'µm', 0.1, 1000, 1, 1, 'sdSet'],
@@ -328,7 +339,10 @@ const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['pa
   // (GO-7: the load's temperature spread, its hottest stack less its coldest: not known until you give it -- empty, not assumed)
   ['dTload', 'The load\'s temperature spread (its hottest stack less its coldest)', '°C', 0, 1000, 5, 0, 'dTSet'],
   // (CFG-AUDIT: the argon's pressure in the furnace, absolute)
-  ['pGas', 'The furnace\'s gas pressure', 'kPa abs', 1, 1000, 0.1, 3, 'pGasSet']];
+  ['pGas', 'The furnace\'s gas pressure', 'kPa abs', 1, 1000, 0.1, 3, 'pGasSet'],
+  // (MP-GF: the graphene film in use -- a piece on a square heater under its middle, in the room's air: its test)
+  ['gfA', 'The heater\'s side (a square under the piece\'s middle)', 'mm', 1, 1000, 1, 0, 'gfASet'], ['gfP', 'The heater\'s power', 'W', 0.001, 1000, 0.1, 3, 'gfPSet'],
+  ['gfH', 'The room\'s air on the film\'s faces: heat transfer', 'W/(m²·K)', 0.1, 1000, 1, 1, 'gfHSet'], ['gfT', 'Time on the heater, from the room\'s temperature', 's', 1, 1e6, 10, 0, 'gfTSet']];
 const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
 const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
 // (mp: the stages' multiphysics mesh and time settings as set on their Mesh steps, MP-W -- { stage: { dim: { k: v } } };

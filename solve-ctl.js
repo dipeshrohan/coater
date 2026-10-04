@@ -40,11 +40,14 @@ const SOLVE_M = {
   furn: { l: 'Furnace (the two runs)', nav: 'furn', up: ['film', 'sheet'], has: () => !!FURN.res, cur: () => furnCurrent(), busy: () => FURN.busy, err: () => !!(FURN.error && FURN.key === furnKeyNow()),
     key: () => furnKeyNow(), ready: () => filmCurrent() && sheetCurrent(), go: () => furnRequest() },
 };
-// (the stages' multiphysics, 1D / 2D / 3D each: drying, the roll (1D) and the peel front (2D), the pressed stack, the furnace's holder)
+// (the stages' multiphysics, 1D / 2D / 3D each: drying, the roll (1D) and the peel front (2D), the pressed stack, the furnace's holder,
+//  the graphene film on a heater, the cut edge and the cut piece)
 [['dmp', 'Drying', 'dry', ['1d'], () => DMS, d => dmpKeyNow(d), d => dmpCurrent(d), d => dmpRequest(d)],
- ['pmp', 'Peel and wind', 'peel', ['film'], () => PMS, d => pmpKeyNow(d), d => pmpCurrent(d), d => pmpRequest(d), [1, 2]],
+ ['pmp', 'Peel and wind', 'peel', ['film'], () => PMS, d => pmpKeyNow(d), d => pmpCurrent(d), d => pmpRequest(d), [1, 2, 3]],
  ['mps', 'Pre heat', 'stack', ['film', 'sheet'], () => MPS, d => mpKeyNow(d), d => mpCurrent(d), d => mpStackRequest(d)],
- ['fmp', 'Furnace', 'furn', ['film', 'sheet'], () => FMS, d => fmpKeyNow(d), d => fmpCurrent(d), d => fmpRequest(d)]].forEach(([p, l, nav, up, S, key, cur, go, dims = [1, 2, 3]]) => {
+ ['fmp', 'Furnace', 'furn', ['film', 'sheet'], () => FMS, d => fmpKeyNow(d), d => fmpCurrent(d), d => fmpRequest(d)],
+ ['gmp', 'Graphene film', 'gfilm', ['furn'], () => GFS, d => gfmKeyNow(d), d => gfmCurrent(d), d => gfmRequest(d)],
+ ['cmp', 'Cutting', 'cut', ['film'], () => CMS, d => cmKeyNow(d), d => cmCurrent(d), d => cmRequest(d)]].forEach(([p, l, nav, up, S, key, cur, go, dims = [1, 2, 3]]) => {
   for (const d of dims) SOLVE_M[p + d] = { l: `${l} ${d}D`, nav: nav + d + 'd', up, dim: d, has: () => !!S().res[d], cur: () => cur(d), busy: () => S().busy && S().bdim === d,
     err: () => !!(S().error[d] && S().key[d] === key(d)), key: () => key(d), ready: () => key(d) != null, go: () => go(d) };
 });
@@ -52,7 +55,7 @@ const SOLVE_M = {
 for (const d of [2, 3]) SOLVE_M['pool' + d] = { l: `Pool and feed ${d}D`, nav: `feed${d}d`, up: ['1d'], dim: d, has: () => !!POOL[d].res, cur: () => poolCurrent(d), busy: () => POOL[d].busy,
   err: () => !!(POOL[d].error && POOL[d].key === poolKeyNow(d)), key: () => poolKeyNow(d), ready: () => poolBase(d) != null, go: () => poolRequest(d) };
 /** The order a pump starts them in (each after what it needs). */
-const SOLVE_ORDER = ['mix', '1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'pmp1', 'pmp2', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'pool2', 'pool3'];
+const SOLVE_ORDER = ['mix', '1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'pmp1', 'pmp2', 'pmp3', 'cmp1', 'cmp2', 'cmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'gmp1', 'gmp2', 'gmp3', 'pool2', 'pool3'];
 /** The line's chain, for "Solve the line". */
 const SOLVE_LINE = ['mix', '1d', 'dry', 'film', 'sheet', 'stack', 'furn'];
 
