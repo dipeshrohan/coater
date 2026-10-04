@@ -9,7 +9,8 @@
  *  3. Errors said plainly: a pipe outside the pile's surface, a mouth above the pile.
  *  4. The pool meshed (um-tetmesh.js): every tetrahedron positive, closed, the surface kept, the volume the faceted
  *     solid's exactly; the quality limits of um-tetmesh.validate.js (dihedral 15–155°, radius ratio ≥ 0.2); every
- *     patch there, the pipe's wall's area its facets'.
+ *     patch there, the pipe's wall's area its facets'. Again with the pipe cut finely (61 pieces, 0.31 mm facets beside
+ *     a 2 mm size: the size round it held to its facets, else its surface is not recovered).
  *  5. The sizes: under the blade at most the gap over `across`, round the pipe at most the bore over `across`.
  *  6. A shallow crease: the blade's underside meeting the pile's surface at 156° (a pool 14 mm wide, from x −55 to −20 mm,
  *     3 mm, three across the gap -- a case where one tetrahedron takes both faces at the crease, its dihedral there the
@@ -70,9 +71,9 @@ const pool = (o = {}) => UG.umgPool({ z0: 0, z1: 0.012, xCut: -0.07, xEnd: -0.00
   check('errors said plainly: a pipe under the blade (not in the pile), a mouth above the pile', /not inside the pile's surface/.test(a) && /mouth must be in the paste/.test(b), `"${a}" / "${b}"`);
 }
 
-// 4. the pool meshed
-{
-  const P = pool(), t0 = Date.now(), S = M.umtSurface(P.G, { size: P.size }), V = M.umtVolume(S, { size: P.size }), ms = Date.now() - t0, nT = V.tet.length / 4;
+// 4. the pool meshed; again with the pipe cut finely (61 pieces round it, 0.31 mm facets beside a 2 mm size)
+for (const [P, label] of [[pool(), 'the pool meshed'], [pool({ tol: 0.004e-3 }), `  with the pipe cut finely (${UG.umgCircle(Infinity, 3e-3, 0.004e-3)} pieces round it)`]]) {
+  const t0 = Date.now(), S = M.umtSurface(P.G, { size: P.size }), V = M.umtVolume(S, { size: P.size }), ms = Date.now() - t0, nT = V.tet.length / 4;
   let neg = 0; const Pt = v => [V.X[v], V.Y[v], V.Z[v]];
   for (let t = 0; t < nT; t++) { const [a, b, c, d] = [0, 1, 2, 3].map(k => Pt(V.tet[4 * t + k])), u = b.map((x, i) => x - a[i]), v = c.map((x, i) => x - a[i]), w = d.map((x, i) => x - a[i]);
     if (!(u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]) > 0)) neg++; }
@@ -82,7 +83,7 @@ const pool = (o = {}) => UG.umgPool({ z0: 0, z1: 0.012, xCut: -0.07, xEnd: -0.00
   // (the pipe's wall's facets: the outer polygon's perimeter times the height from the mouth to the pile)
   const wall = P.G.faces.filter(f => f.tag === 'pipe-wall').reduce((s, f) => { const [a, b, c] = f.loops[0]; return s + Math.hypot(P.G.X[a] - P.G.X[b], P.G.Z[a] - P.G.Z[b]) * Math.abs(P.G.Y[c] - P.G.Y[b]); }, 0);
   const tags = ['web', 'outlet', 'blade', 'pile', 'inlet', 'side0', 'side1', 'pipe-wall', 'pipe-end', 'bore', 'bore-inlet'];
-  check('the pool meshed: positive, closed, the surface kept, the volume the faceted solid\'s; dihedral 15–155°, radius ratio ≥ 0.2; every patch there',
+  check(`${label}: positive, closed, the surface kept, the volume the faceted solid's; dihedral 15–155°, radius ratio ≥ 0.2; every patch there`,
     neg === 0 && Q.opennessMax < 1e-12 && Math.abs(Q.volumeTotal / P.volumeFacets - 1) < 1e-12 && Q.tet.dihedralMin >= 15 && Q.tet.dihedralMax <= 155 && Q.tet.rhoMin >= 0.2 && tags.every(t => area[t] > 0) && U.patches.every(p => p.name !== 'defaultFaces'),
     `${nT} tetrahedra (${ms} ms); volume ${(Q.volumeTotal / P.volumeFacets - 1).toExponential(1)} (the exact solid's ${(Q.volumeTotal / P.volume - 1).toExponential(1)}); dihedral ${Q.tet.dihedralMin.toFixed(1)}–${Q.tet.dihedralMax.toFixed(1)}°, radius ratio ${Q.tet.rhoMin.toFixed(3)}`);
   check('  the pipe\'s wall\'s area its facets\'', Math.abs(area['pipe-wall'] / wall - 1) < 1e-12, `${(area['pipe-wall'] * 1e6).toFixed(4)} mm² (facets ${(wall * 1e6).toFixed(4)} mm²)`);
