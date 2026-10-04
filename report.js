@@ -245,7 +245,7 @@ async function repProcessAll() {
   }
   // the stack's multiphysics (MP-1): each dimension solved for the inputs as they are, its answers side by side
   if (typeof mpCurrent === 'function') {
-    const dims = [1, 2, 3].filter(d => mpCurrent(d)), mid = MP_N / 2;
+    const dims = [1, 2, 3].filter(d => mpCurrent(d)), mid = mpMid();
     if (dims.length) {
       const S = d => MPS.res[d].summary, X = (d, k) => S(d)[k].find(q => q.i === mid);
       const rows = [['Middle piece at the oven\'s end', d => `${S(d).ovenEnd.mid.toFixed(1)} °C`], ['Middle piece within 2 °C of the air', d => (S(d).midWithin2 != null ? mpMin(S(d).midWithin2 / 60) : 'not in the oven')],

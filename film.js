@@ -569,7 +569,7 @@ function fmRun(dr, o) {
     return { deg: d, f, sFront, tears: sFront >= F.sigF };
   };
   const byAngle = []; for (let d = 0; d <= 180; d += 5) byAngle.push(peelAt(d));
-  const peel = { byAngle, hand: peelAt(180), N, epsB, Ur, S: Sx, D: Dz, h: hF, bits: F.Gi > F.Gil, selfPeel: Ur >= F.Gi, wet: !LP.dry };
+  const peel = { byAngle, hand: peelAt(o.peelDeg ?? 180), N, epsB, Ur, S: Sx, D: Dz, h: hF, bits: F.Gi > F.Gil, selfPeel: Ur >= F.Gi, wet: !LP.dry };
   // the roll: the film bent round the core, its top out (stretched, convex: κ = +2/D), from its state at the peel
   const kW = 2 / o.core, An = Lp.reduce((acc, Lr) => acc + Lr.Q * Lr.t * Lr.en, 0), e0w = (An - free.B * kW) / free.A;
   let sRollMax = -Infinity;

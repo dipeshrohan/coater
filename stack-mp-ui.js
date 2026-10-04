@@ -11,9 +11,11 @@
  */
 const MPS = { dim: 2, res: {}, key: {}, busy: false, bdim: null, pending: null, prog: null, error: {}, id: 0, worker: null, field: 'T', snap: null, again: null };
 const MP_DIMS = { 1: '1D', 2: '2D', 3: '3D' };
-const MP_N = 20;   // the pieces in a stack (Q77)
-const MP_FOLLOW = [0, MP_N / 2, MP_N - 1];
-const MP_PIECE = { 0: 'bottom piece', [MP_N / 2]: 'middle piece', [MP_N - 1]: 'top piece' };
+/** The pieces in a stack (the Pre heat's input, Q77: 20), the ones followed (its bottom, middle and top), their names. */
+const mpN = () => Math.max(2, Math.round(OVEN.peel.stackN || 20));
+const mpMid = () => Math.floor(mpN() / 2);
+const mpFollow = () => [0, mpMid(), mpN() - 1];
+const mpPiece = i => (i === 0 ? 'bottom piece' : i === mpMid() ? 'middle piece' : i === mpN() - 1 ? 'top piece' : `piece ${i + 1}`);
 
 /** The stack's multiphysics inputs for a dimension: the film's piece (the way shown), the Materials cards, the stack's own. */
 function mpStackInputs(dim) {
@@ -24,10 +26,10 @@ function mpStackInputs(dim) {
   const stages = [{ tEnd: tOven, Tair: pl.dryT, creep: true }];
   if (tRest > 0) stages.push({ tEnd: tRest, Tair: P.Troom, creep: false });
   const snapMin = [5, 15, 30, 60].filter(m => m * 60 < tOven - 1);
-  return { dim, Lx: q.Lx, Ly: q.Ly, N: MP_N, h: P.h, plateT: pl.plateT / 1000, X0: P.Xcut, Troom: P.Troom, rhRoom: P.rhRoom,
-    XdryTo: P.Xdry + 0.1 * (P.Xcut - P.Xdry), stages, air: { fan: pl.stackAirU }, shelf: pl.shelf, epsPlate: pl.epsPl, epsGO: d.emis.v, al: { k: MAT.lib.alK.v, rho: MAT.lib.alRho.v, c: MAT.lib.alC.v, ...hubDefsOf({ kT: MAT.lib.alK, cT: MAT.lib.alC }) },
+  return { dim, Lx: q.Lx, Ly: q.Ly, N: mpN(), h: P.h, plateT: pl.plateT / 1000, X0: P.Xcut, Troom: P.Troom, rhRoom: P.rhRoom,
+    XdryTo: P.Xdry + 0.1 * (P.Xcut - P.Xdry), stages, air: { fan: pl.stackAirU, p: (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325) }, shelf: pl.shelf, epsPlate: pl.epsPl, epsGO: d.emis.v, al: { k: MAT.lib.alK.v, rho: MAT.lib.alRho.v, c: MAT.lib.alC.v, ...hubDefsOf({ kT: MAT.lib.alK, cT: MAT.lib.alC }) },
     go: { kIn: d.kIn.v, kThr: d.kS.v, c: d.cS.v, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS, cT: d.cS }), rhoS: P.rhoG, gab: P.gab, Xcap: P.Xcap, K: S.K, Kthr: d.skinK.v * 1e-12, alpha: MAT.film.alphaF.v * 1e-6, nu: P.nu, tab: P.tab, tau: S.tau },
-    ...mpStackMesh(dim), follow: MP_FOLLOW,
+    ...mpStackMesh(dim), follow: mpFollow(),
     ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}),
     snapTimes: [...snapMin.map(m => m * 60), tOven, ...(tRest > 0 ? [tOven + tRest] : [])] };
 }
@@ -141,16 +143,16 @@ function mpStackStatus() {
 /** The model: its domain and mesh, the physics solved and their faces, the coupling, the balances. */
 function mpStackModelHTML(o, r) {
   const pl = OVEN.peel, d = MAT.dry, dim = o.dim, mm = v => (v * 1000).toFixed(v * 1000 < 10 ? 2 : 1);
-  const dom = { 1: `Through the stack at its middle: ${MP_N} pieces of ${mm(o.h)} mm under the ${pl.plateT} mm plate`, 2: `A section from the stack's middle to its edge, ${mm(o.Lx / 2)} × ${mm(o.N * o.h + o.plateT)} mm, the stack taken long across`, 3: `A quarter of the stack, ${mm(o.Lx / 2)} × ${mm(o.Ly / 2)} × ${mm(o.N * o.h + o.plateT)} mm, on its two mirror planes` }[dim];
+  const dom = { 1: `Through the stack at its middle: ${mpN()} pieces of ${mm(o.h)} mm under the ${pl.plateT} mm plate`, 2: `A section from the stack's middle to its edge, ${mm(o.Lx / 2)} × ${mm(o.N * o.h + o.plateT)} mm, the stack taken long across`, 3: `A quarter of the stack, ${mm(o.Lx / 2)} × ${mm(o.Ly / 2)} × ${mm(o.N * o.h + o.plateT)} mm, on its two mirror planes` }[dim];
   const air = pl.stackAirU > 0 ? `a fan's air at ${pl.stackAirU} m/s along it` : 'still air (natural convection)';
   const shelf = pl.shelf === 'solid' ? 'the underside on a solid shelf at the oven\'s temperature, sealed' : 'the underside on a wire shelf: air and radiation below, its vapour to the air';
   const rows = [
     ['Heat', 'ρc ∂T/∂t = ∇·(k ∇T) − L ∂S/∂t', `plate: aluminium, k 200 W/(m·K); pieces: k ${d.kIn.v} along, ${d.kS.v} through W/(m·K)`, `the oven's air at ${pl.dryT} °C, ${air}; radiation to its walls (plate ε ${pl.epsPl}, GO ε ${d.emis.v}); ${shelf}; after the oven, the room's air`],
     ['Water', '∂S/∂t = ∇·(K_v ∇p),  S = ρS · GAB(p / p_sat(T))', `along the pieces K ${(o.go.K * 1e7).toPrecision(3)} × 10⁻⁷, through them ${d.skinK.v} × 10⁻¹² kg/(m·s·Pa); the isotherm at the local temperature`, dim === 1 ? 'the stack\'s middle: none leaves along the pieces; the underside to the air (wire shelf)' : 'the stack\'s edges at the air\'s vapour pressure (the room\'s air heated); the underside to the air (wire shelf)'],
-    ['Stress', dim === 3 ? 'plane stress in each piece: σ = C(X) (ε − ε*(X, T) − ε_c)' : dim === 2 ? 'along each piece\'s edge: σ_yy = E(X) (ε̄ − ε*(X, T) − ε_c)' : '—', dim === 1 ? 'a piece\'s middle is even: no stress' : 'held flat by the plate, free in its plane; creep as the Results step\'s (its rate with the water)', dim === 1 ? '—' : `the ${Object.values(MP_PIECE).join(', ')}`],
+    ['Stress', dim === 3 ? 'plane stress in each piece: σ = C(X) (ε − ε*(X, T) − ε_c)' : dim === 2 ? 'along each piece\'s edge: σ_yy = E(X) (ε̄ − ε*(X, T) − ε_c)' : '—', dim === 1 ? 'a piece\'s middle is even: no stress' : 'held flat by the plate, free in its plane; creep as the Results step\'s (its rate with the water)', dim === 1 ? '—' : `the ${mpFollow().map(mpPiece).join(', ')}`],
   ];
   const bal = r ? `Heat in ${(r.energy.in / 1e3).toPrecision(4)} kJ = held ${(r.energy.held / 1e3).toPrecision(4)} kJ (${Math.abs(r.energy.in - r.energy.held) / Math.max(1e-30, Math.abs(r.energy.in)) < 1e-6 ? 'closes' : 'off by ' + (Math.abs(r.energy.in - r.energy.held) / Math.abs(r.energy.in) * 100).toFixed(3) + ' %'}); water out ${(r.water.out * 1e3).toPrecision(4)} g = lost ${(r.water.lostHeld * 1e3).toPrecision(4)} g${dim === 2 ? ' (per m across)' : dim === 1 ? ' (per m²)' : ' (the quarter)'}` : '';
-  const mesh = r ? `${r.mesh.nodes} nodes, ${r.mesh.unknowns} unknowns (T and p at each)${r.mesh.stressNodes ? `; each piece's stress on ${r.mesh.stressNodes} nodes` : ''}` : `${dim === 3 ? '9 × 9' : dim === 2 ? '17' : '1'} nodes across × ${MP_N + 1 + 4} through`;
+  const mesh = r ? `${r.mesh.nodes} nodes, ${r.mesh.unknowns} unknowns (T and p at each)${r.mesh.stressNodes ? `; each piece's stress on ${r.mesh.stressNodes} nodes` : ''}` : `${dim === 3 ? '9 × 9' : dim === 2 ? '17' : '1'} nodes across × ${mpN() + 1 + 4} through`;
   return `<table class="mp-kv"><tbody>
       <tr><th>Domain</th><td colspan="3">${dom}</td></tr>
       <tr><th>Mesh and time</th><td colspan="3">${mesh}; linear elements, the flows at the nodes (no overshoot); BDF2 in time, ${o.steps} steps a stage; heat and water solved together (Newton)${r ? `; solved in ${(r.ms / 1000).toFixed(1)} s` : ''}</td></tr>
@@ -189,7 +191,7 @@ function mpStackRender() {
 const mpMin = t => (t == null ? '—' : t < 10 ? `${t.toFixed(1)} min` : t < 120 ? `${t.toFixed(0)} min` : `${(t / 60).toFixed(1)} h`);
 const mpPct = x => `${(x * 100).toFixed(1)} %`;
 function mpStackTiles(o, r) {
-  const s = r.summary, mid = MP_N / 2, F = MAT.film, pl = OVEN.peel;
+  const s = r.summary, mid = mpMid(), F = MAT.film, pl = OVEN.peel;
   const xo = s.Xoven.find(q => q.i === mid), xt = s.Xout.find(q => q.i === mid);
   const tile = (l, v, sub, ic, lv) => `<div class="stat${lv ? ' stat-' + lv : ''}" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
   document.getElementById('mpStats').innerHTML = [
@@ -215,7 +217,7 @@ function mpStackCharts(o, r) {
   plotChart(document.getElementById('mp1'), FILM_ASPECT, { x0: 0, x1: tEnd, y0: Math.floor(Math.min(...Ts) / 10) * 10, y1: Math.ceil(Math.max(...Ts) / 10) * 10, xl: 'time (min)', yl: 'temperature (°C)', xd: 0, yd: 0, bands: band, vl, s: [air, ...lines] });
   document.getElementById('mp1Lg').innerHTML = oneDLegend([...lines.map(s => [s.l, s.c, s.dash ? 'dash' : '']), ['the air', mut, 'dash']]) + `<p class="fv-why">At the middle of each piece${o.dim > 1 ? '; the middle piece also at the stack\'s edge' : ''}. Shaded: in the oven.</p>`;
   // water: the followed pieces' means, light to dark up the stack; the Results step's middle piece (the pieces at the oven's temperature)
-  const ws = MP_FOLLOW.map((i, k) => ({ p: ser.map(q => [q.t, q.X[i][0] * 100]), c: mpShade(blue, k, MP_FOLLOW.length), w: 2, l: MP_PIECE[i] }));
+  const ws = mpFollow().map((i, k) => ({ p: ser.map(q => [q.t, q.X[i][0] * 100]), c: mpShade(blue, k, 3), w: 2, l: mpPiece(i) }));
   const run = typeof stackCurrent === 'function' && stackCurrent() ? STACK.res.runs.find(x => x.where === SHEET.way) : null;
   const ref = run ? { p: run.stack.mean.map(([t, X]) => [t, X * 100]), c: mut, w: 1.5, dash: [6, 4], l: 'the Results step (at the oven\'s temperature)' } : null;
   const Xs = [...ws.flatMap(s => s.p.map(p => p[1])), ...(ref ? ref.p.map(p => p[1]) : [])];
@@ -239,7 +241,7 @@ function mpStackField() {
   document.getElementById('mpField').innerHTML = fields.map(([k, t]) => `<button type="button" role="tab" data-mpfield="${k}" aria-selected="${k === MPS.field}">${t}</button>`).join('');
   const tOvMin = OVEN.peel.tOven * 60;
   document.getElementById('mpSnap').innerHTML = snaps.map((s, i) => `<button type="button" role="tab" data-mpsnap="${i}" aria-selected="${i === MPS.snap}" title="${s.stage ? `under the plate in the room, ${mpMin(s.t - tOvMin)} after the oven` : 'in the oven'}">${s.stage ? `out +${mpMin(s.t - tOvMin)}` : mpMin(s.t)}</button>`).join('');
-  const sn = snaps[MPS.snap], mid = MP_N / 2;
+  const sn = snaps[MPS.snap], mid = mpMid();
   if (dim === 3) mpStackIso(r, sn);
   const title = document.getElementById('mpFieldT');
   const bar = (lut, sc, unit, fmtv) => `<div class="mp-cbar"><span class="mp-cbar-scale" style="background:linear-gradient(90deg,${[0, 0.25, 0.5, 0.75, 1].map(t => lutColor(lut, t)).join(',')})"></span><span class="mp-cbar-t"><span>${fmtv(sc.min)}</span><span>${unit}</span><span>${fmtv(sc.max)}</span></span></div>`;
@@ -248,12 +250,12 @@ function mpStackField() {
   if (dim === 1) {
     const z = r.mesh.z.map(v => v * 1000), isX = MPS.field === 'X', vals = sn[isX ? 'secX' : 'secT'].map(row => row[0] * (isX ? 100 : 1));
     // (the pieces' nodes are the first N + 1 up the stack: the plate's above hold no water)
-    const pts = z.map((zz, k) => [vals[k], zz]).filter((p, k) => !isX || k <= MP_N);
+    const pts = z.map((zz, k) => [vals[k], zz]).filter((p, k) => !isX || k <= mpN());
     const xs = pts.map(p => p[0]), lo = Math.min(...xs), hi = Math.max(...xs), pad = (hi - lo) * 0.1 || 1;
     title.textContent = `${isX ? 'Water' : 'Temperature'} up the stack at its middle`;
     plotChart(cv, 0.34, { x0: lo - pad, x1: hi + pad, y0: 0, y1: isX ? r.mesh.Hs * 1000 : r.mesh.H * 1000, xl: isX ? 'water (% of the GO)' : 'temperature (°C)', yl: 'height (mm)', xd: isX ? 1 : 0, yd: 1,
       hl: isX ? [] : [{ y: r.mesh.Hs * 1000, c: cssVar('--muted'), t: 'the plate', left: true }], s: [{ p: pts, c: isX ? '#1c7ed6' : cssVar('--heat').trim(), w: 2, dots: false }] });
-    lg.innerHTML = `<p class="fv-why">${when}. ${isX ? 'Only the pieces hold water; the plate above is dry.' : `The stack's ${MP_N} pieces below ${(r.mesh.Hs * 1000).toFixed(1)} mm, the aluminium plate above.`}</p>`;
+    lg.innerHTML = `<p class="fv-why">${when}. ${isX ? 'Only the pieces hold water; the plate above is dry.' : `The stack's ${mpN()} pieces below ${(r.mesh.Hs * 1000).toFixed(1)} mm, the aluminium plate above.`}</p>`;
     return;
   }
   // 2D / 3D: a colour map -- the temperature on the section (to scale), the water in the pieces (the stack's height stretched,
@@ -287,7 +289,7 @@ function mpStackField() {
     c.strokeStyle = cssVar('--ink'); c.setLineDash([4, 3]); const zy = m.t + ph - Hs / H * ph; c.beginPath(); c.moveTo(m.l, zy); c.lineTo(m.l + pw, zy); c.stroke(); c.setLineDash([]);
     axes(0, xs[xs.length - 1], 0, H, 'from the middle out (mm)', 'height (mm)', niceTicks(0, xs[xs.length - 1], 6), niceTicks(0, H, 4));
     title.textContent = `Temperature on a section through the stack${dim === 3 ? ' (its middle across)' : ''}`;
-    lg.innerHTML = bar(lut, sc, '°C', v => v.toFixed(1)) + `<p class="fv-why">${when}. To scale: the ${MP_N} pieces below the dashed line (${Hs.toFixed(1)} mm), the aluminium plate above; the stack's edge at the right.</p>`;
+    lg.innerHTML = bar(lut, sc, '°C', v => v.toFixed(1)) + `<p class="fv-why">${when}. To scale: the ${mpN()} pieces below the dashed line (${Hs.toFixed(1)} mm), the aluminium plate above; the stack's edge at the right.</p>`;
     return;
   }
   if (MPS.field === 'X') {
@@ -300,9 +302,9 @@ function mpStackField() {
       lg.innerHTML = bar(lut, sc, '% of the GO', v => v.toFixed(1)) + `<p class="fv-why">${when}. The stack's ${Hs.toFixed(1)} mm drawn tall (its height stretched); the stack's edge at the right, where the water leaves.</p>`;
     } else {
       const sx = r.mesh.sx.map(v => v * 1000), sy = r.mesh.sy.map(v => v * 1000), n1 = sx.length;
-      const all = MP_FOLLOW.flatMap(i => sn.pieces[i].X.map(v => v * 100)), sc = { min: Math.min(...all), max: Math.max(...all), levels: 0 };
+      const all = mpFollow().flatMap(i => sn.pieces[i].X.map(v => v * 100)), sc = { min: Math.min(...all), max: Math.max(...all), levels: 0 };
       if (sc.max - sc.min < 1e-4) { sc.min -= 0.05; sc.max += 0.05; }
-      mpPlanes(c, w, h, sx, sy, MP_FOLLOW.map(i => ({ t: MP_PIECE[i], v: (k, j) => sn.pieces[i].X[k * n1 + j] * 100 })), lut, sc);
+      mpPlanes(c, w, h, sx, sy, mpFollow().map(i => ({ t: mpPiece(i), v: (k, j) => sn.pieces[i].X[k * n1 + j] * 100 })), lut, sc);
       title.textContent = 'Water in the pieces\' planes (a quarter each)';
       lg.innerHTML = bar(lut, sc, '% of the GO', v => v.toFixed(1)) + `<p class="fv-why">${when}. Each quarter piece from its middle (lower left) to its edges (right and top), where the water leaves.</p>`;
     }
@@ -310,16 +312,16 @@ function mpStackField() {
   }
   // the pull
   if (dim === 2) {
-    const strips = MP_FOLLOW.map((i, k) => ({ i, p: (sn.pieces[i].strip || []).map(([x, s]) => [x * 1000, s]), c: mpShade('#c2255c', k, MP_FOLLOW.length) }));
+    const strips = mpFollow().map((i, k) => ({ i, p: (sn.pieces[i].strip || []).map(([x, s]) => [x * 1000, s]), c: mpShade('#c2255c', k, 3) }));
     const all = strips.flatMap(s => s.p.map(p => p[1])), lo = Math.min(0, ...all), hi = Math.max(1, ...all);
     plotChart(cv, 0.34, { x0: 0, x1: xs[xs.length - 1], y0: lo * 1.1, y1: hi * 1.1, xl: 'from the middle out (mm)', yl: 'pull along the edge σ_yy (MPa)', xd: 0, yd: 0, hl: [{ y: MAT.film.sigF.v, c: cssVar('--bad'), t: `its strength (${MAT.film.sigF.v} MPa)`, left: true }], s: strips.map(s => ({ p: s.p, c: s.c, w: 2 })) });
     title.textContent = 'The pull along each piece';
-    lg.innerHTML = oneDLegend(strips.map(s => [MP_PIECE[s.i], s.c])) + `<p class="fv-why">${when}. Held flat and free along x, each piece pulls along its edge where it has dried and shrunk (tension) against its wetter middle (compression).</p>`;
+    lg.innerHTML = oneDLegend(strips.map(s => [mpPiece(s.i), s.c])) + `<p class="fv-why">${when}. Held flat and free along x, each piece pulls along its edge where it has dried and shrunk (tension) against its wetter middle (compression).</p>`;
     return;
   }
   const sx = r.mesh.sx.map(v => v * 1000), sy = r.mesh.sy.map(v => v * 1000), n1 = sx.length, lut = getLut('div');
-  const all = MP_FOLLOW.flatMap(i => Array.from(sn.pieces[i].s1 || [])), mx = Math.max(1e-6, ...all.map(Math.abs)), sc = { min: -mx, max: mx, levels: 0 };
-  mpPlanes(c, w, h, sx, sy, MP_FOLLOW.map(i => ({ t: MP_PIECE[i], v: (k, j) => (sn.pieces[i].s1 ? sn.pieces[i].s1[k * n1 + j] : 0) })), lut, sc);
+  const all = mpFollow().flatMap(i => Array.from(sn.pieces[i].s1 || [])), mx = Math.max(1e-6, ...all.map(Math.abs)), sc = { min: -mx, max: mx, levels: 0 };
+  mpPlanes(c, w, h, sx, sy, mpFollow().map(i => ({ t: mpPiece(i), v: (k, j) => (sn.pieces[i].s1 ? sn.pieces[i].s1[k * n1 + j] : 0) })), lut, sc);
   title.textContent = 'The largest principal pull in the pieces (a quarter each)';
   lg.innerHTML = bar(lut, sc, 'MPa (− compression, + tension)', v => v.toFixed(v >= 10 ? 0 : 1)) + `<p class="fv-why">${when}. Held flat by the plate, free in their planes. The film's strength is ${MAT.film.sigF.v} MPa.</p>`;
 }
@@ -367,7 +369,7 @@ function mpPlanes(c, w, h, sx, sy, planes, lut, sc) {
 function mpStackCompare(o, r) {
   const el = document.getElementById('mpCompare'), run = typeof stackCurrent === 'function' && stackCurrent() ? STACK.res.runs.find(x => x.where === SHEET.way).stack : null;
   if (!run) { el.innerHTML = ''; return; }
-  const s = r.summary, mid = MP_N / 2, pl = OVEN.peel, xo = s.Xoven.find(q => q.i === mid), xt = s.Xout.find(q => q.i === mid);
+  const s = r.summary, mid = mpMid(), pl = OVEN.peel, xo = s.Xoven.find(q => q.i === mid), xt = s.Xout.find(q => q.i === mid);
   const rows = [
     ['The pieces\' temperature', `the oven's, ${pl.dryT} °C, from the start`, `heats up: the middle piece ${s.ovenEnd.mid.toFixed(1)} °C at the oven's end`],
     ['Middle piece\'s middle dry after', run.dryThrough != null ? mpMin(run.dryThrough) : `over ${pl.tOven} h`, s.dryThrough != null ? mpMin(s.dryThrough / 60) : `not in ${pl.tOven} h`],
@@ -384,8 +386,8 @@ function mpStackCsv() {
   const r = mpCurrent(MPS.dim) ? MPS.res[MPS.dim] : null;
   if (!r) return;
   const rows = [['dimension', 'time (min)', 'stage', 'air (°C)', 'plate top (°C)', 'top piece (°C)', 'middle piece (°C)', 'bottom piece (°C)', 'middle piece at the edge (°C)',
-    ...MP_FOLLOW.flatMap(i => [`${MP_PIECE[i]} water, mean (kg/kg)`, `${MP_PIECE[i]} water, its middle (kg/kg)`, `${MP_PIECE[i]} pull (MPa)`])]];
-  for (const q of r.series) rows.push([MP_DIMS[r.dim], q.t, q.stage ? 'room' : 'oven', q.Tair, q.T.plateTop, q.T.top, q.T.mid, q.T.bottom, q.T.midEdge ?? '', ...MP_FOLLOW.flatMap(i => [q.X[i][0], q.X[i][1], q.pull[i]])]);
+    ...mpFollow().flatMap(i => [`${mpPiece(i)} water, mean (kg/kg)`, `${mpPiece(i)} water, its middle (kg/kg)`, `${mpPiece(i)} pull (MPa)`])]];
+  for (const q of r.series) rows.push([MP_DIMS[r.dim], q.t, q.stage ? 'room' : 'oven', q.Tair, q.T.plateTop, q.T.top, q.T.mid, q.T.bottom, q.T.midEdge ?? '', ...mpFollow().flatMap(i => [q.X[i][0], q.X[i][1], q.pull[i]])]);
   downloadCSV(`stack-multiphysics-${MP_DIMS[r.dim]}-${csvStamp()}.csv`, rows);
 }
 
@@ -410,7 +412,7 @@ SWB_ADAPT['film:stack'] = {
     ...(dim > 1 ? [{ k: 'nx', t: dim === 3 ? 'Elements along, middle to edge' : 'Elements from the middle to the edge', min: 2, max: dim === 3 ? 30 : 80, step: 1, int: true, def: MP_MESH_DEF[dim].nx }] : []),
     ...(dim === 3 ? [{ k: 'ny', t: 'Elements across, middle to edge', min: 2, max: 30, step: 1, int: true, def: MP_MESH_DEF[3].ny }] : []),
     ...(dim > 1 ? [{ k: 'grade', t: 'Grading to the edge (largest / smallest)', min: 1, max: 100, step: 1, def: MP_MESH_DEF[dim].grade }] : []),
-    { k: 'per', t: 'Pieces in an element, through the stack', min: 1, max: MP_N, step: 1, int: true, def: 1 },
+    { k: 'per', t: 'Pieces in an element, through the stack', min: 1, max: 1000, step: 1, int: true, def: 1 },
     { k: 'nPlate', t: 'Elements through the plate', min: 1, max: 20, step: 1, int: true, def: 4 },
     { k: 'steps', t: 'Time steps a stage (the oven, the room)', min: 5, max: 400, step: 5, int: true, def: MP_MESH_DEF[dim].steps },
   ],

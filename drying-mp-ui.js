@@ -310,7 +310,7 @@ SWB_ADAPT.dry = {
     ['The time step', `drying.js's rule, × ${o.dtScale}`], ['The stress', dim === 1 ? 'film.js\'s laminate on the place\'s history' : `${o.stressN} solves along the line, placed where the film sets, and at each snapshot; each layer from its strain where it set; plane strain + no net force along`],
     ...(r ? [['Balances', dmpBal(r)], ['Solved in', `${(r.ms / 1000).toFixed(1)} s`]] : [])],
   solveTiles: (dim, o, r) => {
-    const len = o.zones.reduce((a, z) => a + z.len, 0), dp = o.zones.map(z => (z.airU > 0 ? drAir(z.airT, 101325).mu * z.airU * o.webT / o.webK : 0));
+    const len = o.zones.reduce((a, z) => a + z.len, 0), dp = o.zones.map(z => (z.airU > 0 ? drAir(z.airT, o.P || 101325).mu * z.airU * o.webT / o.webK : 0));
     return [['Stretches', `${o.zones.length + (o.room.len > 0 ? 1 : 0)}`, `the room and ${o.zones.length} zones, ${+(o.room.len + len).toFixed(2)} m`, 'period'],
       ['Water leaves', dmpWhere() === 'both' ? 'both sides' : 'the top', dmpWhere() === 'both' ? 'top and underside' : 'the underside sealed', 'drop'],
       ['Plenum', dim === 1 ? `${Math.max(...o.zones.map(z => z.airU))} m/s` : `${Math.max(...dp).toFixed(0)} Pa`, dim === 1 ? 'up through the web' : 'drives the zone\'s air through the bare web', 'flow'],

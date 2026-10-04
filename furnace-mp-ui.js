@@ -34,7 +34,7 @@ function fmpInputs(dim) {
   return { dim, Lx: fo.Lx, Ly: fo.Ly, margin: fo.margin, N, h: P.h, tp: fo.paper.t, ends: fo.ends, plateT: fo.plate.t,
     go: { rho: P.rhoG, c: d.cS.v, kIn: d.kIn.v, kThr: d.kS.v, Xin: P.Xroom, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS }) },
     paper: { rho: fo.paper.rho, kIn: v('kPin'), kThr: v('kPthr'), D: fo.paper.D, ...hubDefsOf({ kInT: MAT.furn.kPin, kThrT: MAT.furn.kPthr }) }, plate: { rho: v('rhoPl') * 1000, k: v('kPl'), B: fo.plate.B, ...hubDefsOf({ kT: MAT.furn.kPl }) }, Rc: v('Rc') * 1e-4,
-    runs: fo.runs, chem: fo.chem, stages: fo.stages, Hr: v('Hr') * 1e6, furnace: { eps: v('epsF'), gas: true },
+    runs: fo.runs, chem: fo.chem, stages: fo.stages, Hr: v('Hr') * 1e6, furnace: { eps: v('epsF'), gas: true, p: (OVEN.furn.pGas ?? 101.325) * 1000 },
     gas: { Dgal: fo.Dgal, Dmin: fo.Dmin, dIn: fo.dIn, sigZ: fo.sigZ, plateP: fo.plateP },
     plane: { Ep: fo.plane.Ep, nu: fo.plane.nu, bO: fo.plane.bO, bG: fo.plane.bG, am: fo.plane.am },
     ...fmpMesh(dim), tol: 1e-7, follow: [0, mid, N - 1], snapUneven: true, snapTimes: fmpSnapTimes(fo.runs),
@@ -435,7 +435,7 @@ SWB_ADAPT['furn:runs'] = {
     return [{ t: 'Pieces', c: '--go-film', mat: 'Dried GO film', rec: 'gofilm', size: `${o.N} × ${swbMm(o.h)} mm, ${swbMm(o.Lx)} × ${swbMm(o.Ly)} mm`, how: 'in the stack, combined with the papers as layers' },
       { t: 'Papers', c: '#a8a29a', mat: 'Graphite paper', rec: 'paper', size: `${nPap} × ${swbMm(o.tp)} mm, ${swbMm(mg)} mm larger all round`, how: 'in the stack; alone in the margin' },
       ...(dim > 1 ? [{ t: 'Plates', c: '--graphite', mat: 'Isostatic graphite', rec: 'plate', size: `2 × ${swbMm(plT)} mm, the papers' size`, how: 'their own elements' }] : []),
-      { t: 'The furnace\'s gas', c: '#7048e8', mat: 'Argon', rec: 'argon', size: `at ${(101325 / 1000).toFixed(0)} kPa`, how: 'on every outer face, and in the papers' }];
+      { t: 'The furnace\'s gas', c: '#7048e8', mat: 'Argon', rec: 'argon', size: `at ${+(+(OVEN.furn.pGas ?? 101.325)).toFixed(1)} kPa`, how: 'on every outer face, and in the papers' }];
   },
   domainRows: (dim, o) => {
     const { hx, hy, mg, Hs, plT, H } = fmpAxes(o);

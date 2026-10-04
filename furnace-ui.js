@@ -43,7 +43,7 @@ function furnPositions(N, ends = 'papers') {
 /** furnace.js's options for a piece from its film's plate (thickness, GO per volume, the room's water and temperature). */
 function furnOpts(P, Lx, Ly) {
   const f = MAT.furn, fu = OVEN.furn, v = k => f[k].v;
-  return { runs: [0, 1].map(r => furnProgram(r, P.Troom)), Lx, Ly, margin: fu.margin / 1000, h0: P.h, rhoG: P.rhoG, Xin: P.Xroom,
+  return { runs: [0, 1].map(r => furnProgram(r, P.Troom)), Lx, Ly, margin: fu.margin / 1000, pa: (fu.pGas ?? 101.325) * 1000, Tin: P.Troom + 273.15, h0: P.h, rhoG: P.rhoG, Xin: P.Xroom,
     chem: { co: MAT.slurry.co.v, hc: v('hc'), s1: v('s1'), c1CO2: v('c1CO2'), c1CO: v('c1CO'), s2: v('s2'), c2CO: v('c2CO') },
     stages: { water: { Tp: v('Tw'), sig: 5e3 }, labile: { Tp: v('T1'), sig: v('w1') * 1e3 }, stable: { Tp: v('T2'), sig: v('w2') * 1e3 },
       last: { Tp: v('T3'), sig: v('w3') * 1e3 }, graph: { Tp: v('Tg'), sig: v('wg') * 1e3 } },
@@ -659,6 +659,7 @@ function furnTreeHTML() {
     <input type="file" id="furnFile" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
     <p class="prop-note">A cycle's file: two columns, time and temperature (°C), one row per point; its time's unit from its header (h, min or s) or chosen when you upload it.</p>
     <div class="ovz-pic">${furnPicHolder()}</div>
+    ${field('pGas', 'furnPGas')}
     ${field('N', 'furnN')}${field('paperT', 'furnPaperT')}${field('margin', 'furnMargin')}${field('plateW', 'furnPlate')}
     <div class="prop"><span class="prop-l">Above the stack</span><div class="seg seg-sm" role="tablist" aria-label="Above the stack in the holder" id="furnRoom">${Object.entries(FURN_ROOM).map(([k, t]) => `<button type="button" role="tab" data-furnroom="${k}" aria-selected="${k === fu.room}">${t}</button>`).join('')}</div></div>
     ${fu.room === 'gap' ? field('gap', 'furnGap') : ''}

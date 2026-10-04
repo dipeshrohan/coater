@@ -54,7 +54,7 @@ function filmPicPeel(sc = 1) {
     <path d="M74,${h - 21} C88,${h - 21} 92,${h - 40} 110,${h - 52} L136,${h - 62}" stroke="${FILM_DARK}" stroke-width="5" fill="none"/>
     <circle cx="146" cy="${h - 64}" r="11" fill="var(--soft)" stroke="var(--muted)" stroke-width="1.5"/><circle cx="146" cy="${h - 64}" r="3" fill="var(--muted)"/>
     <path d="M86,${h - 21} A14,14 0 0 0 96,${h - 31}" stroke="var(--accent)" stroke-width="1.5" fill="none"/><text x="100" y="${h - 22}" font-size="10" fill="var(--accent)" font-weight="600">θ ?</text>
-    <path d="M40,${h - 36} L16,${h - 36}" stroke="var(--muted)" stroke-width="1.4"/><path d="M20,${h - 39} L15,${h - 36} L20,${h - 33}" stroke="var(--muted)" stroke-width="1.4" fill="none"/><text x="44" y="${h - 33}" font-size="9" fill="var(--muted)">hand, 180°</text>`, sc);
+    <path d="M40,${h - 36} L16,${h - 36}" stroke="var(--muted)" stroke-width="1.4"/><path d="M20,${h - 39} L15,${h - 36} L20,${h - 33}" stroke="var(--muted)" stroke-width="1.4" fill="none"/><text x="44" y="${h - 33}" font-size="9" fill="var(--muted)">hand, ${OVEN.peel.peelDeg}°</text>`, sc);
 }
 /** Q64: on the roll, the film's top (the side that faced the oven's air) out. */
 function filmPicRoll(sc = 1) {
@@ -81,7 +81,9 @@ function filmOpts() {
       sigF: v('sigF') * 1e6, GcF: v('GcF'), Gil: v('Gil'), Gi: v('Gi'), setFrac: v('setFrac') },
     web: { Ew: v('Ew') * 1e9, nuw: v('nuw'), alphaW: v('alphaW') * 1e-6, tw: P.tf / 1000, soft: v('soft'), nupt: MAT.lib.webNupt.v },
     gel: { Eg: v('Eg') * 1e3, nu: MAT.lib.gelNu.v }, gab: { Xm: d.gabXm.v, C: d.gabC.v, K: d.gabK.v }, rhoS: MAT.slurry.rhoS.v * 1000, rhoL: MAT.slurry.rhoL.v,
-    skinK: d.skinK.v * 1e-12, K: 120, core: OVEN.peel.core / 1000, Troom: d.Troom.v, rhRoom: d.rhRoom.v / 100, P: 101325, Tdry: OVEN.peel.dryT,
+    skinK: d.skinK.v * 1e-12, K: 120, core: OVEN.peel.core / 1000, Troom: d.Troom.v, rhRoom: d.rhRoom.v / 100, P: (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325), Tdry: OVEN.peel.dryT,
+    // (the curl's lift on a piece as cut; the peel by hand at its angle -- CFG-AUDIT)
+    sheet: OVEN.peel.pieceL / 1000, peelDeg: OVEN.peel.peelDeg,
   };
 }
 /** The drying's inputs followed to the peel: the room stretch after the oven. */
@@ -128,14 +130,22 @@ async function filmWait() {
   return false;
 }
 const filmRuns = key => FILM.res ? ['top', 'both'].map(w => FILM.res.runs.find(r => r.key === key && r.where === w)) : [null, null];
-const filmAngle = (r, d) => r.peel.byAngle.find(q => q.deg === d) || r.peel.byAngle[r.peel.byAngle.length - 1];
+/** The peel at an angle d (°): the computed angles' own, or between the two either side of it (the force linear in
+ *  between; it tears there when either does). */
+const filmAngle = (r, d) => {
+  const a = r.peel.byAngle, j = a.findIndex(q => q.deg >= d);
+  if (j < 0) return a[a.length - 1];
+  if (j === 0 || a[j].deg === d) return a[j];
+  const p = a[j - 1], q = a[j], w = (d - p.deg) / (q.deg - p.deg);
+  return { deg: d, f: p.f + w * (q.f - p.f), sFront: p.sFront + w * (q.sFront - p.sFront), tears: p.tears || q.tears };
+};
 const filmN = v => v == null || !Number.isFinite(v) ? '—' : Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
 /** A curvature (1/m) as a radius and which way: its top concave (κ < 0) rolls toward its top. */
 const filmCurlText = k => !Number.isFinite(k) || Math.abs(k) < 1e-6 ? 'flat' : `${(1000 / Math.abs(k)).toFixed(0)} mm, ${k < 0 ? 'toward its top' : 'away from its top'}`;
 /** A sheet of length L (m) lying on a table curled to κ: how far its edges lift (m). */
 const filmLift = (k, L) => { if (!Number.isFinite(k) || Math.abs(k) < 1e-9) return 0; const R = 1 / Math.abs(k); return L / 2 < Math.PI * R ? R * (1 - Math.cos(L / (2 * R))) : 2 * R; };
 /** The sheet length the lift is shown for: a measured curl's, else 100 mm. */
-const filmSheet = key => { const q = (MAT.filmMeas.curl || []).find(c => c.loc === key && Number.isFinite(c.sheet)); return q ? q.sheet / 1000 : 0.1; };
+const filmSheet = key => { const q = (MAT.filmMeas.curl || []).find(c => c.loc === key && Number.isFinite(c.sheet)); return q ? q.sheet / 1000 : OVEN.peel.pieceL / 1000; };   // (none measured: a piece as cut)
 /** Its curl unwound from the roll, settled: the settled curl and what the roll set (the Film card's share of the roll's bend). */
 const filmUnwound = r => r.curl.settled.kappa + r.roll.set;
 const FILM_WHEN = { settled: 'settled', peel: 'right after peeling', roll: 'unwound from the roll' };
@@ -253,7 +263,7 @@ function filmChecks(rt, rb) {
   const F = MAT.film, both = f => `<span class="film-v"><b>top only</b> ${f(rt)}</span><span class="film-v"><b>top and bottom</b> ${f(rb)}</span>`;
   const bad = t => `<span class="warn-text">${t}</span>`;
   const crack = r => !r.worst ? 'nowhere in tension' : r.worst.ratio >= 1 ? bad(`cracks at ${dryPlace(r.worst.x)} (${r.worst.which === 'float' ? 'the skin over the wet film' : 'the film on the web'}; ${r.worst.ratio.toFixed(1)}× its toughness)${r.spacing ? `, ${(r.spacing.lo * 1000).toFixed(1)}–${(r.spacing.hi * 1000).toFixed(1)} mm apart` : ''}`) : `no cracks (at most ${r.worst.ratio.toFixed(2)}× its toughness, at ${dryPlace(r.worst.x)})`;
-  const peel = r => r.peel.selfPeel ? bad('comes off by itself: its stored stress beats its hold on the web') : `by hand ${filmN(r.peel.hand.f)} N/m; at the winder ${filmN(filmAngle(r, 150).f)} (150°) to ${filmN(filmAngle(r, 30).f)} N/m (30°)`;
+  const peel = r => r.peel.selfPeel ? bad('comes off by itself: its stored stress beats its hold on the web') : `by hand ${filmN(r.peel.hand.f)} N/m; at the winder ${filmN(filmAngle(r, OVEN.peel.windHi).f)} (${OVEN.peel.windHi}°) to ${filmN(filmAngle(r, OVEN.peel.windLo).f)} N/m (${OVEN.peel.windLo}°)`;
   const tear = r => { const t = r.peel.byAngle.filter(q => q.tears); return t.length ? bad(`tears when peeled at ${t[0].deg}°–${t[t.length - 1].deg}° (the pull and the bend at the peel front beat its strength)`) : r.peel.bits ? bad('leaves bits: its hold on the web is more than its layers\' hold on each other') : 'peels cleanly'; };
   const curl = r => { const L = filmSheet(DRY.sel) * 1000; return `${filmCurlText(r.curl.atPeel.kappa)} right after; ${filmCurlText(r.curl.settled.kappa)} settled (a ${L.toFixed(0)} mm sheet's edges lift ${(filmLift(r.curl.settled.kappa, L / 1000) * 1000).toFixed(1)} mm)`; };
   const unw = r => `; unwound, ${F.setFrac.v > 0 ? `it curls ${filmCurlText(filmUnwound(r))} (it keeps ${(F.setFrac.v * 100).toFixed(0)} % of the roll's bend)` : 'it springs back to its settled curl (the Film card\'s curl the roll sets is 0)'}`;
@@ -274,7 +284,7 @@ function filmStats(rt, rb) {
   const tiles = [
     ['Cracks', both(r => r.worst ? r.worst.ratio : 0, v => `${v.toFixed(2)}×`), 'cut'],
     ['Crack spacing', both(r => r.spacing, s => s ? `${(s.lo * 1000).toFixed(1)}–${(s.hi * 1000).toFixed(1)} mm` : '—'), 'length'],
-    ['Peel by hand (180°)', both(r => r.peel.hand.f, v => `${filmN(v)} N/m`), 'shear'],
+    [`Peel by hand (${OVEN.peel.peelDeg}°)`, both(r => r.peel.hand.f, v => `${filmN(v)} N/m`), 'shear'],
     ['Peel at 90°', both(r => filmAngle(r, 90).f, v => `${filmN(v)} N/m`), 'shear'],
     ['Curl radius, settled', both(r => r.curl.settled.kappa, k => Math.abs(k) < 1e-6 ? 'flat' : `${(1000 / Math.abs(k)).toFixed(0)} mm`), 'radius'],
     ['On the roll', both(r => r.roll.sMax / 1e6, v => `${v.toFixed(0)} MPa`), 'ratio'],
@@ -528,18 +538,18 @@ function filmPeelTreeHTML(prop, part = null) {
     ${has('film') ? `<div class="ovz-pic">${filmPicPlace()}</div>
     ${row(0, 'ovzPeelLen')}
     <div class="ovz-pic ovz-roll">${filmPicRoll()}</div>
-    ${row(1, 'ovzPeelCore')}
+    ${row(1, 'ovzPeelCore')}${row(11, 'ovzPeelDeg')}${row(12, 'ovzWindLo')}${row(13, 'ovzWindHi')}
     <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>` : ''}
     ${has('piece') ? `<div class="ovz-pic">${filmPicCut()}</div>
     ${row(2, 'ovzPieceL')}${row(3, 'ovzPieceW')}` : ''}
     ${has('stack') ? `<div class="ovz-pic">${filmPicDryStack()}</div>
-    ${row(4, 'ovzDryT')}${row(5, 'ovzTOven')}
+    ${row(10, 'ovzStackN')}${row(4, 'ovzDryT')}${row(5, 'ovzTOven')}
     ${typeof filmPicStackRest === 'function' ? `<div class="ovz-pic">${filmPicStackRest()}</div>` : ''}
     ${row(6, 'ovzTRest')}
     <div class="ovz-h ovz-sub"><span>The stack's heat <small>the multiphysics solver (MP-1)</small></span></div>
     ${row(7, 'ovzPlateT')}${row(8, 'ovzStackAir')}${row(9, 'ovzEpsPl')}
     <div class="prop"><span class="prop-l" id="ovzShelfL">What it stands on</span><span class="prop-v"><span class="seg seg-sm" role="radiogroup" aria-labelledby="ovzShelfL" id="ovzShelf">${Object.entries(OVEN_SHELVES).map(([k, t]) => `<button type="button" role="radio" data-ovshelf="${k}" aria-checked="${k === pl.shelf}">${t}</button>`).join('')}</span></span></div>` : ''}
-    ${has('piece') || has('stack') ? '<p class="prop-note">The pieces are cut from the roll later, stacked 20 at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film\'s section).</p>' : ''}</div>`;
+    ${has('piece') || has('stack') ? `<p class="prop-note">The pieces are cut from the roll later, stacked ${pl.stackN} at a time under an aluminium plate and heated in the pre heat treatment, then left under the plate in the room until they are taken out to be looked at and measured (the stack and the piece in 3D: the film\'s section).</p>` : ''}</div>`;
 }
 function wireFilmPeel(changed) {
   document.querySelectorAll('#setupExtra [data-ovshelf]').forEach(b => b.addEventListener('click', () => {
