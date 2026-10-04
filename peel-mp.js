@@ -18,6 +18,11 @@
  * field gives up per area, f (1 − cos θ) + (f + Aₙ)² / (2A) (A the film's stiffness along it, Aₙ its natural strains'
  * force), reaches Gi. The section is solved at forces rising to just under it; J around the front (two rings) and the
  * energy the cohesive layer takes check it.
+ *
+ * 1D, the roll: the film wound turn by turn on the winder's core (linear elements out through the roll; each turn's pull
+ * pressing the roll beneath, Hakiel's accretion, linear), then at rest its heat and water through the turns, their change
+ * a natural strain along and through the turns; the turns push on each other and on the core but cannot pull (a gap opens,
+ * the roll lifts off the core). A turn bent round the roll: its layers' stress against the film's strength.
  * SI (m, Pa, N/m).
  */
 
@@ -679,9 +684,12 @@ function pmpRollStress(R0, H, Qs, nE, u, eig) {
  * linear here: the stiffnesses held); each turn keeps the hoop stress it was wound with, Tw / h. Then the roll at rest:
  * its heat and its water through the turns (implicit; the outer turn to the room, the core sealed), each step's change
  * of temperature and water a natural strain (along: β ΔX + α ΔT; through: β_t ΔX + α_t ΔT) the roll takes, the outside
- * free, the core's spring holding.
+ * free, the core's spring holding. The turns cannot pull on each other or on the core: where they would, they lift apart
+ * (a gap, nothing through it) or off the core, until they close again.
  * Returns { r (element middles), wound: { sr, st }, end: { sr, st }, series: [{ t, T: [..], X: [..], sr: [..], st: [..] }]
- * (at the snapshots), coreP (the pressure on the core after winding and at the end), R1, n, H, ms }.
+ * (at the snapshots), hist: [{ t, coreP, X, T, pMax, gaps, onCore }] (each step: the core's pressure, the mean water and
+ * temperature, the largest pressure, the gaps between elements, on the core or lifted off it), gaps (1 where element i
+ * has lifted off element i − 1), onCore, coreP (the pressure on the core after winding and at the end), R1, n, H, ms }.
  */
 function pmpRoll(o) {
   const t0 = Date.now(), per = Math.max(1, Math.round(o.per || 1)), nE = Math.max(1, Math.ceil(o.n / per)), H = per * o.h, R0 = o.R0, R1 = R0 + nE * H;
@@ -716,14 +724,35 @@ function pmpRoll(o) {
   const Xof = q => (W && W.lin ? W.lin * q : Math.min(pmpGAB(q, W.gab), W.Xcap ?? Infinity)), dXda = q => { if (W.lin) return W.lin; const d = 1e-6, lo = Math.max(0, q - d), hi = Math.min(1, q + d); return Xof(hi) - Xof(lo) > 0 ? (Xof(hi) - Xof(lo)) / (hi - lo) : 1e-9; };
   if (W) { const a0 = W.lin ? Math.min(1, W.X0 / W.lin) : pmpGABinv(Math.min(W.X0, W.Xcap ?? Infinity), W.gab); a.fill(a0); X.fill(Xof(a0)); }
   const X0 = Float64Array.from(X), Tst = Float64Array.from(T);
+  // (at rest, each element's stiffness on its own two nodes; elements i − 1 and i share a node where they touch, their push
+  //  on each other as wound sW -- each side's own nodal force from its stress as wound, their mean -- let go where a gap
+  //  opens; the core's spring pushes only)
+  const gp = [-1 / Math.sqrt(3), 1 / Math.sqrt(3)], gapOpen = new Uint8Array(nE), sW = new Float64Array(nE);
+  const Kel = { d: new Float64Array(2 * nE), o: new Float64Array(2 * nE) }, fW = new Float64Array(2 * nE);
+  for (let e = 0; e < nE; e++) {
+    const r0 = R0 + e * H; let k00 = 0, k01 = 0, k11 = 0;
+    for (const t of gp) {
+      const r = r0 + H * (1 + t) / 2, N0 = (1 - t) / 2, N1 = (1 + t) / 2, w = H / 2 * r, b = [[-1 / H, 1 / H], [N0 / r, N1 / r]];
+      const kk = (i, j) => (b[0][i] * (Q[0] * b[0][j] + Q[1] * b[1][j]) + b[1][i] * (Q[1] * b[0][j] + Q[2] * b[1][j])) * w;
+      k00 += kk(0, 0); k01 += kk(0, 1); k11 += kk(1, 1);
+      fW[2 * e] += (-1 / H * wound.sr[e] + N0 / r * wound.st[e]) * w; fW[2 * e + 1] += (1 / H * wound.sr[e] + N1 / r * wound.st[e]) * w;
+    }
+    Kel.d[2 * e] += k00; Kel.d[2 * e + 1] += k11; Kel.o[2 * e] += k01;
+  }
+  for (let i = 1; i < nE; i++) sW[i] = (fW[2 * i] - fW[2 * i - 1]) / 2;
+  const tolS = 1e-9 * (Q[0] * R0 + Math.max(0, ...sW.map(Math.abs)));
+  let coreOn = kC > 0 ? 1 : 0;
   const snapAt = new Set(); for (const f of [0, 0.1, 0.25, 0.5, 1]) snapAt.add(Math.round(f * steps));
   const snap = (k, t) => series.push({ t, T: Array.from(T), X: Array.from(X), sr: Array.from(sr), st: Array.from(st) });
-  if (steps) snap(0, 0);
+  // (each step's few numbers: the core's pressure, the roll's mean water and temperature, the largest pressure in it)
+  const hist = [], corePOf = () => -(sr[0] + (sr[0] - (nE > 1 ? sr[1] : sr[0])) / 2);
+  const histAdd = t => { let xm = 0, tm = 0, w = 0, pm = 0, nOpen = 0; for (let e = 0; e < nE; e++) { xm += X[e] * rM[e]; tm += T[e] * rM[e]; w += rM[e]; pm = Math.max(pm, -sr[e]); nOpen += gapOpen[e]; } hist.push({ t, coreP: coreOn ? corePOf() : 0, X: xm / w, T: tm / w, pMax: pm, gaps: nOpen, onCore: coreOn }); };
+  if (steps) { snap(0, 0); histAdd(0); }
   const dt = steps ? o.tEnd / steps : 0;
   // (finite volumes on the elements: their faces at R0 + e H; the outer turn's face to the room)
   const solveTri = (A, B, C, Rr) => { const n = B.length, cp = new Float64Array(n), dp = new Float64Array(n), x = new Float64Array(n); cp[0] = C[0] / B[0]; dp[0] = Rr[0] / B[0]; for (let i = 1; i < n; i++) { const m = B[i] - A[i] * cp[i - 1]; cp[i] = C[i] / m; dp[i] = (Rr[i] - A[i] * dp[i - 1]) / m; } x[n - 1] = dp[n - 1]; for (let i = n - 2; i >= 0; i--) x[i] = dp[i] - cp[i] * x[i + 1]; return x; };
   for (let k = 1; k <= steps; k++) {
-    const Tn = Float64Array.from(T), Xn = Float64Array.from(X);
+    const Xn = Float64Array.from(X);
     // heat: ρc ∂T/∂t = (1/r) ∂/∂r (r k ∂T/∂r), the outside h (T − T_room), the core sealed
     if (Hh) {
       const A = new Float64Array(nE), B = new Float64Array(nE), C = new Float64Array(nE), Rr = new Float64Array(nE);
@@ -753,24 +782,87 @@ function pmpRoll(o) {
       }
       for (let e = 0; e < nE; e++) X[e] = Xof(a[e]);
     }
-    // the stress the step's change of water and heat gives (the outside free, the core's spring)
-    const eig = Array.from({ length: nE }, (_, e) => { const dX = X[e] - Xn[e], dT = T[e] - Tn[e]; return [(o.betaT || 0) * dX + (o.alphaT || 0) * dT, (o.beta || 0) * dX + (o.alpha || 0) * dT]; });
-    if (eig.some(q => q[0] || q[1])) {
-      const K = pmpRollK(R0, H, Qs, nE, kC), f = new Float64Array(nE + 1), g = [-1 / Math.sqrt(3), 1 / Math.sqrt(3)];
-      for (let e = 0; e < nE; e++) {
-        const r0 = R0 + e * H, Qe = Qs[e], er = eig[e][0], et = eig[e][1];
-        for (const t of g) { const r = r0 + H * (1 + t) / 2, N0 = (1 - t) / 2, N1 = (1 + t) / 2, w = H / 2 * r, sR = Qe[0] * er + Qe[1] * et, sT = Qe[1] * er + Qe[2] * et;
-          f[e] += (-1 / H * sR + N0 / r * sT) * w; f[e + 1] += (1 / H * sR + N1 / r * sT) * w; }
+    // the stress since the roll was wound: its stress as wound, and what the change of water and heat since gives (the
+    // outside free, the core's spring). The turns cannot pull on each other or on the core: neighbouring elements share a
+    // node only while they push on each other (a gap opens where they would pull, closes where they would overlap), and the
+    // core's spring pushes only (the roll lifts off it). Solved in total each step, the gaps and the core's contact
+    // found again until they hold; the as-wound state's own imbalance (the mesh's) taken off: no change, no stress change
+    const dEr = new Float64Array(nE), dEt = new Float64Array(nE);
+    // (element e's own nodal force at its bottom (j 0) or top (1) from its stress: as wound, less its natural strain's, and
+    //  the displacement's since)
+    const nodalF = (e, u, j) => {
+      const r0 = R0 + e * H; let F = 0;
+      for (const t of gp) {
+        const r = r0 + H * (1 + t) / 2, N0 = (1 - t) / 2, N1 = (1 + t) / 2, w = H / 2 * r, er = (u[2 * e + 1] - u[2 * e]) / H - dEr[e], et = (N0 * u[2 * e] + N1 * u[2 * e + 1]) / r - dEt[e];
+        const sR = wound.sr[e] + Q[0] * er + Q[1] * et, sT = wound.st[e] + Q[1] * er + Q[2] * et;
+        F += (j ? 1 / H * sR + N1 / r * sT : -1 / H * sR + N0 / r * sT) * w;
       }
-      const du = pmpTriSym(K, f, nE + 1), d = pmpRollStress(R0, H, Qs, nE, du, eig);
-      for (let e = 0; e < nE; e++) { sr[e] += d.sr[e]; st[e] += d.st[e]; }
+      return F;
+    };
+    let any = false;
+    for (let e = 0; e < nE; e++) { const dX = X[e] - X0[e], dT = T[e] - Tst[e]; dEr[e] = (o.betaT || 0) * dX + (o.alphaT || 0) * dT; dEt[e] = (o.beta || 0) * dX + (o.alpha || 0) * dT; any = any || !!(dEr[e] || dEt[e]); }
+    if (any || gapOpen.some(v => v) || !coreOn) {
+      const nD = 2 * nE, Fs = new Float64Array(nD);
+      // (the natural strains' load, element by element on its own two nodes)
+      for (let e = 0; e < nE; e++) {
+        const r0 = R0 + e * H, sR = Q[0] * dEr[e] + Q[1] * dEt[e], sT = Q[1] * dEr[e] + Q[2] * dEt[e];
+        for (const t of gp) { const r = r0 + H * (1 + t) / 2, N0 = (1 - t) / 2, N1 = (1 + t) / 2, w = H / 2 * r; Fs[2 * e] += (-1 / H * sR + N0 / r * sT) * w; Fs[2 * e + 1] += (1 / H * sR + N1 / r * sT) * w; }
+      }
+      const now = Uint8Array.from(gapOpen);
+      let cNow = coreOn, u = null, map = null;
+      for (let it = 0; it < 80; it++) {
+        // (the nodes: an element's bottom shares the one under it where they touch, its own where a gap is)
+        map = new Int32Array(nD); let nd = 0;
+        for (let e = 0; e < nE; e++) { map[2 * e] = e === 0 ? nd++ : now[e] ? nd++ : map[2 * e - 1]; map[2 * e + 1] = nd++; }
+        const K = { d: new Float64Array(nd), o: new Float64Array(nd) }, f = new Float64Array(nd);
+        for (let e = 0; e < nE; e++) { const a0 = map[2 * e], a1 = map[2 * e + 1]; K.d[a0] += Kel.d[2 * e]; K.d[a1] += Kel.d[2 * e + 1]; K.o[a0] += Kel.o[2 * e]; f[a0] += Fs[2 * e]; f[a1] += Fs[2 * e + 1]; }
+        for (let i = 1; i < nE; i++) if (now[i]) { f[map[2 * i - 1]] += sW[i]; f[map[2 * i]] -= sW[i]; }
+        if (cNow) K.d[0] += kC; else f[0] += kC * uW[0];
+        const v = pmpTriSym(K, f, nd);
+        u = Float64Array.from(map, q => v[q]);
+        // (where they touch, the push between them: each side's own nodal force from its stress, their mean; where a gap
+        //  is, the gap)
+        let changed = false;
+        for (let i = 1; i < nE; i++) {
+          let want;
+          if (now[i]) want = u[2 * i] - u[2 * i - 1] > 1e-9 * H ? 1 : 0;
+          else { const fTop = nodalF(i - 1, u, 1), fBot = nodalF(i, u, 0); want = (fBot - fTop) / 2 < -tolS ? 1 : 0; }
+          if (want !== now[i]) { now[i] = want; changed = true; }
+        }
+        const cWant = kC > 0 && uW[0] + u[0] <= 0 ? 1 : 0;
+        if (cWant !== cNow) { cNow = cWant; changed = true; }
+        if (!changed) break;
+      }
+      coreOn = cNow; gapOpen.set(now);
+      for (let e = 0; e < nE; e++) {
+        const er = (u[2 * e + 1] - u[2 * e]) / H - dEr[e], et = (u[2 * e] + u[2 * e + 1]) / 2 / rM[e] - dEt[e];
+        sr[e] = wound.sr[e] + Q[0] * er + Q[1] * et; st[e] = wound.st[e] + Q[1] * er + Q[2] * et;
+      }
     }
     if (snapAt.has(k)) snap(k, k * dt);
+    histAdd(k * dt);
     if (o.onProgress && (k % 10 === 0 || k === steps)) o.onProgress({ k: nE + k, n: nE + steps });
   }
-  const coreE = -(sr[0] + (sr[0] - (nE > 1 ? sr[1] : sr[0])) / 2);
-  return { r: Array.from(rM), wound: { sr: Array.from(wound.sr), st: Array.from(wound.st) }, end: { sr: Array.from(sr), st: Array.from(st) }, series, coreP: { wound: coreW, end: coreE },
+  const coreE = coreOn ? corePOf() : 0;
+  return { r: Array.from(rM), wound: { sr: Array.from(wound.sr), st: Array.from(wound.st) }, end: { sr: Array.from(sr), st: Array.from(st) }, series, hist, coreP: { wound: coreW, end: coreE },
+    gaps: Array.from(gapOpen), onCore: coreOn,
     R0, R1, n: nE * per, nE, per, H, kCore: kC, X0: Array.from(X0), T0: Array.from(Tst), ms: Date.now() - t0 };
+}
+/**
+ * A turn of film on the roll, bent round it (its top out: κ = 1/r stretches the top) and carrying the hoop force N (per
+ * width, N/m) the roll gives it: each layer's stress σ = Q (e0 + κ z − en) at its faces, e0 from the force, z up from its
+ * underside; layers [{ t, Q, en }] from its underside up (film.js's roll at the core: N = 0, κ = 2/D). Returns
+ * { top, bot, max, min } (Pa).
+ */
+function pmpTurnStress(layers, kappa, N) {
+  let A = 0, B = 0, An = 0, z = 0;
+  const zs = layers.map(L => { const z0 = z; z += L.t; return z0; });
+  layers.forEach((L, i) => { const zm = zs[i] + L.t / 2; A += L.Q * L.t; B += L.Q * L.t * zm; An += L.Q * L.t * L.en; });
+  const e0 = (An + N - B * kappa) / A;
+  let max = -Infinity, min = Infinity;
+  layers.forEach((L, i) => { for (const zz of [zs[i], zs[i] + L.t]) { const s = L.Q * (e0 + kappa * zz - L.en); max = Math.max(max, s); min = Math.min(min, s); } });
+  const Lt = layers[layers.length - 1], Lb = layers[0];
+  return { top: Lt.Q * (e0 + kappa * z - Lt.en), bot: Lb.Q * (e0 - Lb.en), max, min };
 }
 /** The isotherm (GAB, as drying.js's) and its inverse (the activity at a water content), by bisection. */
 const pmpGAB = (a, g) => { const Ka = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * Ka / ((1 - Ka) * (1 - Ka + g.C * Ka)); };
@@ -790,4 +882,4 @@ function pmpRollIncrement(R0, s, Er, Eth, kC, dp, r) {
   return { sr: Er * g * (C1 * Math.pow(r, g - 1) - C2 * Math.pow(r, -g - 1)), st: Eth * (C1 * Math.pow(r, g - 1) + C2 * Math.pow(r, -g - 1)) };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { pmpRoll, pmpRollQ, pmpCoreK, pmpRollIncrement, pmpGAB, pmpGABinv, pmpRun2D, pmpCompact, pmpPlan, pmpTI, pmpLayers, pmpG, pmpSteady, pmpElastica, pmpGrow, pmpGraded, pmpMesh, pmpBand, pmpAdd, pmpLDL, pmpLDLSolve, pmpCohesive, pmpDamage, pmpFront, pmpAnswers };
+if (typeof module !== 'undefined' && module.exports) module.exports = { pmpRoll, pmpTurnStress, pmpRollQ, pmpCoreK, pmpRollIncrement, pmpGAB, pmpGABinv, pmpRun2D, pmpCompact, pmpPlan, pmpTI, pmpLayers, pmpG, pmpSteady, pmpElastica, pmpGrow, pmpGraded, pmpMesh, pmpBand, pmpAdd, pmpLDL, pmpLDLSolve, pmpCohesive, pmpDamage, pmpFront, pmpAnswers };

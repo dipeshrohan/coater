@@ -48,6 +48,7 @@ const HUB_PHYS = [
   { k: 'film', l: 'Peel and wind', s: 'plane-strain FEM of the film on the web: stress, cracks, peel, curl', nav: ['peel', 'results'] },
   { k: 'stack', l: 'Pre heat: pressed stack', s: 'in-plane drying of the pieces, creep held flat, release buckling', nav: ['stack', 'results'] },
   { k: 'mp4', l: 'Peel and wind: multiphysics 2D', s: 'the peel front: the film\'s layers on the web, the hold giving way, the arm turning', nav: ['peel2d'] },
+  { k: 'mp6', l: 'Peel and wind: the roll 1D', s: 'the roll wound turn by turn on its core: the turns\' pressure and pull, their water and heat at rest', nav: ['peel1d'] },
   { k: 'mp1', l: 'Pre heat: multiphysics 1D · 2D · 3D', s: 'heat, water and stress in the stack under the aluminium plate', nav: ['stack2d'] },
   { k: 'furn', l: 'Furnace', s: 'conversion kinetics, gas and puffing, graphitization, the piece on its papers', nav: ['furn', 'results'] },
   { k: 'mp2', l: 'Furnace: multiphysics 1D · 2D · 3D', s: 'heat with the reaction heat in the holder, the papers and the pieces', nav: ['furn2d'] },
@@ -287,6 +288,7 @@ const HUB_RECORDS = [
         { id: 'stackK', sym: 'K_v,11', l: 'in the plane (along the pieces in the stack)', b: hC('film', 'stackK'), phys: ['stack', 'mp1'], sub: true },
         { id: 'skinK', sym: 'K_v,33', l: 'through the thickness (the skin)', b: hC('dry', 'skinK'), phys: ['dry', 'film', 'mp1'], sub: true },
         { id: 'beta', sym: 'β', l: 'Hygroscopic swelling in the plane', b: hC('film', 'beta'), phys: ['film', 'stack', 'furn', 'mp2'] },
+        { id: 'betaT', sym: 'β₃', l: 'Hygroscopic swelling through the thickness', b: hC('film', 'betaT'), phys: [] },
         { id: 'swell', sym: 'β X_cap', l: 'Swelling from dry to its pores full of water', b: hCalc(() => MAT.film.beta.v * hubXcap() * 100, '%', 2, 'β × the most water its pores hold (in the plane): along the film, its water from none to the most the dry film\'s pores hold'), phys: ['film'] },
         { id: 'Xh', sym: 'X_h', l: 'Softening: water content that halves its stiffness', b: hC('film', 'Xh'), phys: ['film'] },
       ] },
@@ -298,9 +300,14 @@ const HUB_RECORDS = [
         { id: 'nupt', sym: 'ν₁₃', l: 'Poisson\'s ratio, plane to thickness', b: hC('film', 'nupt'), phys: ['film'], sub: true },
         { id: 'Gpt', sym: 'G₁₃', l: 'Shear modulus between the layers', b: hC('film', 'Gpt'), phys: ['film'], sub: true },
         { id: 'alphaF', sym: 'α₁', l: 'Thermal expansion in the plane', b: hC('film', 'alphaF'), phys: ['film', 'mp1'] },
+        { id: 'alphaT', sym: 'α₃', l: 'Thermal expansion through the thickness', b: hC('film', 'alphaT'), phys: [] },
         { id: 'creepTau', sym: 'τ_c', l: 'Creep time, wet', b: hC('film', 'creepTau'), phys: ['stack', 'mp1'] },
         { id: 'setFrac', sym: 's', l: 'Set: share of the roll\'s curl kept', b: hC('film', 'setFrac'), phys: ['film'] },
         { id: 'Ewet', sym: 'E₁(X_cap)', l: 'Young\'s modulus in the plane, wet', b: hCalc(() => MAT.film.Ep.v / (1 + hubXcap() / MAT.film.Xh.v), 'GPa', 1, 'E₁ / (1 + X/X_h) at the most water its pores hold: softer with water, as its X_h sets'), phys: ['film'] },
+      ] },
+      { l: 'Wound on a roll', props: [
+        { id: 'Er', sym: 'E_r', l: 'The turns\' stiffness through the roll', b: hC('film', 'Er'), phys: [] },
+        { id: 'nuR', sym: 'ν_θr', l: 'A hoop stress thinning the turns', b: hC('film', 'nuR'), phys: [] },
       ] },
       { l: 'Strength and fracture', props: [
         { id: 'sigF', sym: 'σ_f', l: 'Tensile strength', b: hC('film', 'sigF'), phys: ['film', 'furn', 'mp1', 'mp2'] },
@@ -473,6 +480,13 @@ const HUB_RECORDS = [
 {
   const mp4 = { gofilm: ['Xh', 'Ep', 'Et', 'nup', 'nupt', 'Gpt', 'sigF'], web: ['Ew', 'soft', 'nuw', 'nupt', 'Gpt'], gel: ['Eg', 'nu', 'G'] };
   for (const r of HUB_RECORDS) for (const g of r.groups || []) for (const q of g.props) if (q.phys && !q.phys.includes('mp4') && (mp4[r.id] || []).includes(q.id)) q.phys.push('mp4');
+}
+// (MP-PEEL 1D: the roll reads the film's stiffness along it and its softening with water, its strength, how it swells along
+//  and through it with water and heat, the roll's stiffness through its turns, the GO's isotherm, its vapour permeability
+//  through it, its heat conduction through it and heat capacity)
+{
+  const mp6 = { gofilm: ['Xh', 'Ep', 'nup', 'sigF', 'beta', 'betaT', 'alphaF', 'alphaT', 'Er', 'nuR', 'gabXm', 'gabC', 'gabK', 'Kv', 'skinK', 'k', 'kS', 'cS', 'rho', 'phiDry'] };
+  for (const r of HUB_RECORDS) for (const g of r.groups || []) for (const q of g.props) if (q.phys && !q.phys.includes('mp6') && (mp6[r.id] || []).includes(q.id)) q.phys.push('mp6');
 }
 const HUB_IFACES = [
   { id: 'i-slurry-air', name: 'Slurry | air', a: 'slurry', bb: 'air', sub: 'Free surface', icon: 'flow', domains: ['Coating: the meniscus and the free film (1D, 2D, 3D)'],

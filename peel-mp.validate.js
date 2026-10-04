@@ -17,7 +17,10 @@
  *  9. Water through the turns: the roll's mean water against Crank's series for a slab sealed at one face (the roll
  *     thin against its radius); finer in time, closer.
  * 10. Heat through the turns: the roll's mean temperature against the series for a slab cooled at one face (β tan β = Bi).
- * 11. Swelling: a uniform change of water, the roll free on no core: no stress; on a rigid core: Lamé's closed form.
+ * 11. Swelling: a uniform change of water, the roll free on no core: no stress; drying on a rigid core: Lamé's closed form;
+ *     swelling on a rigid core: the roll lifts off it, no stress; the outer turns swelling first lift off the turns beneath:
+ *     no pull between any, the lifted ones a free ring.
+ * 12. A turn bent round the roll: one layer (bending and the hoop force), two (Timoshenko's bimetal at its free curvature).
  */
 const P = require('./peel-mp.js'), F = require('./film.js');
 let fails = 0;
@@ -151,20 +154,46 @@ global.drPsat = global.drPsat || require('./drying.js').drPsat;
   const e1 = err(run(200)), e2 = err(run(800));
   check('the roll\'s heat through its turns: its mean against the series for a slab cooled at one face (Bi = h L / k)', e2 < 0.005 && e2 < e1, `Bi ${Bi.toFixed(2)}, worst ${(e1 * 100).toFixed(3)} % (200 steps), ${(e2 * 100).toFixed(3)} % (800)`);
 }
-// ---- 11. the roll: swelling ----
+// ---- 11. the roll: swelling and shrinking ----
 {
-  const E = 1e9, bet = 0.05, X0 = 0.02, X1 = 0.04;
-  const roll = core => P.pmpRoll({ R0: 0.038, core, h: 16e-6, n: 300, per: 1, Tw: 0, Er: E, Eth: E, nuTr: 0, tEnd: 1, steps: 5, beta: bet, betaT: bet,
+  const E = 1e9, bet = 0.05;
+  const roll = (core, X0, X1) => P.pmpRoll({ R0: 0.038, core, h: 16e-6, n: 300, per: 1, Tw: 0, Er: E, Eth: E, nuTr: 0, tEnd: 1, steps: 5, beta: bet, betaT: bet,
     water: { X0, lin: 0.2, rhoD: 1000, Kv: 1e-2, rhRoom: X1 / 0.2 } });
-  const free = roll({ E: 0, nu: 0.3, Ri: 0 }), big = Math.max(...free.end.sr.map(Math.abs), ...free.end.st.map(Math.abs));
-  check('swelling evenly on no core, free outside: no stress (a free ring grows)', big < 1e-6 * E * bet * (X1 - X0), `${big.toExponential(2)} Pa largest`);
-  const rig = roll({ E: 1e16, nu: 0.3, Ri: 0 }), R0 = 0.038, R1 = rig.R1;
-  let w = 0;
+  const free = roll({ E: 0, nu: 0.3, Ri: 0 }, 0.02, 0.04), big = Math.max(...free.end.sr.map(Math.abs), ...free.end.st.map(Math.abs));
+  check('swelling evenly on no core, free outside: no stress (a free ring grows)', big < 1e-6 * E * bet * 0.02, `${big.toExponential(2)} Pa largest`);
+  // (drying evenly on a rigid core: the turns shrink onto it -- pressed together throughout, the linear closed form)
+  const X0 = 0.04, rig = roll({ E: 1e16, nu: 0.3, Ri: 0 }, X0, 0.02), R0 = 0.038, R1 = rig.R1;
+  let w = 0, pos = 0;
   for (let e = 0; e < rig.nE; e++) {
     const eps = bet * (rig.series[rig.series.length - 1].X[e] - X0), A = eps / (1 + R0 * R0 / (R1 * R1)), rr = rig.r[e];
-    w = Math.max(w, Math.abs(rig.end.st[e] - E * (A * (1 - R0 * R0 / (rr * rr)) - eps)) / (E * eps), Math.abs(rig.end.sr[e] - E * (A * (1 + R0 * R0 / (rr * rr)) - eps)) / (E * eps));
+    w = Math.max(w, Math.abs(rig.end.st[e] - E * (A * (1 - R0 * R0 / (rr * rr)) - eps)) / (E * -eps), Math.abs(rig.end.sr[e] - E * (A * (1 + R0 * R0 / (rr * rr)) - eps)) / (E * -eps));
+    pos = Math.max(pos, rig.end.sr[e]);
   }
-  check('swelling evenly on a rigid core: Lamé\'s closed form, σ_θ = E (A (1 − R0²/r²) − ε*)', w < 2e-3, `worst ${(w * 100).toFixed(3)} % of E ε*`);
+  check('drying evenly on a rigid core: Lamé\'s closed form, σ_θ = E (A (1 − R0²/r²) − ε*), the turns pressed together', w < 2e-3 && pos <= 0, `worst ${(w * 100).toFixed(3)} % of E ε*`);
+  // (swelling evenly on a rigid core: the roll would pull on it; it lifts off instead -- no stress)
+  const up = roll({ E: 1e16, nu: 0.3, Ri: 0 }, 0.02, 0.04), bigU = Math.max(...up.end.sr.map(Math.abs), ...up.end.st.map(Math.abs)), lin = E * bet * 0.02, hu = up.hist[up.hist.length - 1];
+  check('swelling evenly on a rigid core: the roll lifts off it (it cannot pull on the core), no stress', bigU < 1e-6 * lin && !hu.onCore,
+    `${bigU.toExponential(2)} Pa largest (Lamé, held on, would give ${(lin / 1e6).toFixed(2)} MPa); off the core: ${!hu.onCore}`);
+  // (wound, then its outer turns swelling first: they lift off the turns beneath -- no pull between any; the lifted ones a
+  //  free ring, no hoop stress either)
+  const sw = P.pmpRoll({ R0: 0.038, core: { E: 5e9, nu: 0.3, Ri: 0.03 }, h: 16e-6, n: 300, per: 1, Tw: 20, Er: 20e6, Eth: 16e9, nuTr: 0, tEnd: 3600, steps: 100, beta: 0.08, betaT: 1.5,
+    water: { X0: 0.06, lin: 0.2, rhoD: 1000, Kv: 1e-15, rhRoom: 0.5 } });
+  // (a turn free both sides -- a gap under it and over it, or the outside -- is a free ring: no stress at all)
+  const hs = sw.hist[sw.hist.length - 1], tens = Math.max(...sw.end.sr), lifted = [];
+  for (let e = 1; e < sw.nE; e++) if (sw.gaps[e] && (e === sw.nE - 1 || sw.gaps[e + 1])) lifted.push(Math.max(Math.abs(sw.end.st[e]), Math.abs(sw.end.sr[e])));
+  const hoopL = lifted.length ? Math.max(...lifted) : NaN, ref = 16e9 * 0.08 * (0.1 - 0.06);
+  check('the outer turns swelling first lift off the turns beneath: no pull between any turns, a turn lifted clear (a free ring) no stress', tens <= 1e-6 * 20e6 && hs.gaps > 0 && lifted.length > 0 && hoopL < 1e-4 * ref,
+    `${hs.gaps} gaps, ${lifted.length} turns clear; the most pull between turns ${tens.toExponential(1)} Pa; stress in those clear ${hoopL.toExponential(1)} Pa (free swelling held, ${(ref / 1e6).toFixed(0)} MPa)`);
+}
+
+// ---- 12. a turn bent round the roll ----
+{
+  const Q = 25e9, h = 16e-6, k = 1 / 0.04, N = 20, one = P.pmpTurnStress([{ t: h, Q, en: 3e-3 }], k, N);
+  const w1 = Math.max(rel(one.top, N / h + Q * k * h / 2), rel(one.bot, N / h - Q * k * h / 2));
+  // (Timoshenko's bimetal, equal layers: free at κ = 3Δ/(2h), its faces ±QΔ/4, the interface ∓QΔ/2)
+  const D = 2e-3, two = P.pmpTurnStress([{ t: h / 2, Q, en: 0 }, { t: h / 2, Q, en: D }], 3 * D / (2 * h), 0);
+  const w2 = Math.max(rel(two.top, Q * D / 4), rel(two.bot, -Q * D / 4), rel(two.max, Q * D / 2), rel(two.min, -Q * D / 2));
+  check('a turn bent round the roll: one layer against N/h ± Q κ h/2; two at Timoshenko\'s free curvature, its faces ±QΔ/4, the interface ∓QΔ/2', Math.max(w1, w2) < 1e-12, `worst ${Math.max(w1, w2).toExponential(1)}`);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all passed');

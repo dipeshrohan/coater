@@ -130,7 +130,7 @@ const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () =>
   // (MP-W: the stack's and the furnace's multiphysics pages: their stage's inputs only, as the stage's own page)
   stack1d: () => [], stack2d: () => [], stack3d: () => [], furn1d: () => [], furn2d: () => [], furn3d: () => [],
   // (MP-PEEL: the peel front's page: the Peel page's inputs)
-  peel2d: () => ['U'],
+  peel1d: () => ['U'], peel2d: () => ['U'],
   // (MP-5: the drying's multiphysics pages: the Drying page's inputs)
   dry1d: () => ['U', 'webW', 'oven'], dry2d: () => ['U', 'webW', 'oven'], dry3d: () => ['U', 'webW', 'oven'],
   // (the pool and its feed: the 1D's inputs, which give the film and its sensitivity to the pool, and the feed's own)

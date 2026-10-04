@@ -3,9 +3,10 @@
  * Results: the peel front, a section along the line where the film leaves the web, solved in peel-mp.js (in
  * cfd-mp-worker.js) at the hand's angle and the winder's. The film as the drying left it at the peel (film.js's layers:
  * each its water and its stress on the web); the web under it, held; the hold between them a cohesive layer that gives
- * way; the arm turning through the angle. The Peel page itself (film.js) is the stage's Results.
+ * way; the arm turning through the angle. The Peel page itself (film.js) is the stage's Results. The 1D (the roll the
+ * winder makes) is peel-roll-ui.js's, on the same adapter and solve state.
  */
-const PMS = { dim: 2, res: {}, key: {}, busy: false, bdim: null, pending: null, prog: null, error: {}, id: 0, worker: null, again: null, ang: 0, view: 'front', fview: 'near' };
+const PMS = { dim: 2, res: {}, key: {}, busy: false, bdim: null, pending: null, prog: null, error: {}, id: 0, worker: null, again: null, ang: 0, view: 'front', fview: 'near', rollF: 'X' };
 /** The mesh's settings' defaults (the Mesh step's, editable): elements through the film and the web, each next element's
  *  growth along, the elements along the arm per bending length. */
 const PMP_MESH_DEF = { 2: { nzF: 4, nzW: 4, grow: 1.15, armN: 24 } };
@@ -29,6 +30,8 @@ function pmpRunNow() {
  * energy and its strength); the angles; the mesh's settings.
  */
 function pmpInputs(dim) {
+  // (the 1D: the roll, peel-roll-ui.js)
+  if (dim === 1) return typeof prlInputs === 'function' ? prlInputs() : null;
   if (dim !== 2) return null;
   const run = pmpRunNow();
   if (!run || !run.profile || !run.profile.cells.length) return null;
@@ -71,7 +74,7 @@ function pmpRequest(dim) {
     done();
   };
   PMS.worker.onerror = ev => { PMS.key[dim] = key; PMS.res[dim] = null; PMS.error[dim] = ev.message || 'the multiphysics worker failed'; PMS.worker = null; done(); };
-  PMS.worker.postMessage({ id, kind: 'peel2', o });
+  PMS.worker.postMessage({ id, kind: dim === 1 ? 'peel1' : 'peel2', o });
 }
 /** Stop the solve (New, Open): its worker ended, what was asked next dropped. */
 function pmpStop() {
