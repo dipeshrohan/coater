@@ -539,7 +539,9 @@ function filmPeelTreeHTML(prop, part = null) {
     ${row(0, 'ovzPeelLen')}
     <div class="ovz-pic ovz-roll">${filmPicRoll()}</div>
     ${row(1, 'ovzPeelCore')}${row(11, 'ovzPeelDeg')}${row(12, 'ovzWindLo')}${row(13, 'ovzWindHi')}
-    <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>` : ''}
+    <p class="prop-note">The film runs through the room (its temperature and humidity: the Drying card) to where it is peeled by hand and taken up by the winder, its top out on the roll.</p>
+    <div class="ovz-h ovz-sub"><span>The roll <small>the 1D multiphysics</small></span></div>
+    ${row(14, 'ovzWindT')}${row(15, 'ovzRollL')}${row(16, 'ovzRollRest')}${row(17, 'ovzCoreWall')}${row(18, 'ovzCoreE')}${row(19, 'ovzCoreNu')}${row(20, 'ovzRollH')}` : ''}
     ${has('piece') ? `<div class="ovz-pic">${filmPicCut()}</div>
     ${row(2, 'ovzPieceL')}${row(3, 'ovzPieceW')}` : ''}
     ${has('stack') ? `<div class="ovz-pic">${filmPicDryStack()}</div>

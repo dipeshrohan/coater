@@ -86,6 +86,9 @@ const MAT_FILM = [
   ['GcF', 'Its fracture energy (a crack through it)', 'J/m²', 0.1, 10000, 1, 1, 40, 'assumed', 'multilayer GO about 39 J/m² (J-integral); thicker films may be tougher: the crack spacing measured gives it'],
   ['Gil', 'Between its layers (it splits)', 'J/m²', 0.1, 10000, 1, 1, 20, 'assumed', 'GO paper splits between its layers more easily than across them'],
   ['Gi', 'Its hold on the fibre web', 'J/m²', 0.01, 10000, 0.5, 2, 10, 'assumed', 'not known: the peel force measured gives it'],
+  // (MP-PEEL: the hold's strength -- the most it pulls before it gives way -- sets how far along the web it gives way at the
+  //  front and how much the film turns there; with its energy above, the 2D peel front's cohesive layer)
+  ['sigI', 'Its hold on the fibre web: strength', 'MPa', 0.01, 1000, 0.1, 2, 2, 'assumed', 'not known: the most the hold pulls before it gives way'],
   ['setFrac', 'Curl the roll sets (of the roll\'s)', 'fraction', 0, 1, 0.01, 2, 0, 'assumed', 'GO paper is viscoelastic (Su et al. 2012): the curl measured after the roll gives it'],
   ['Ew', 'Fibre web\'s stiffness along it', 'GPa', 0.01, 50, 0.05, 2, 1, 'assumed', 'PET filament about 8 GPa (60–90 gf/den); about a quarter of a plain weave\'s fibres run along the line and their crimp lowers it'],
   ['soft', 'Fibre web through its thickness and in shear', '× along it', 0.001, 1, 0.01, 3, 0.1, 'assumed', 'a fabric: its yarns flatten and slide'],
@@ -94,6 +97,12 @@ const MAT_FILM = [
   ['Eg', 'Wet film under a skin: its stiffness', 'kPa', 0.01, 1e6, 1, 1, 100, 'assumed', 'a GO paste: soft (its yield stress a few pascals, the Rheology card)'],
   ['stackK', 'Water along the pieces in the pressed stack', '×10⁻⁷ kg/(m·s·Pa)', 1e-4, 1e6, 0.1, 3, 3, 'assumed', 'not measured: 3 is the least that fits your answers -- dry all over out of the pre heat treatment, the size back to as cut 1–2 h later, the same a day later'],
   ['creepTau', 'Its creep time wet (as cut), in the pre heat treatment', 'min', 0.1, 1e5, 1, 1, 10, 'assumed', 'GO paper creeps, the more so with water (Su et al. 2012); not known: the waves in your photos will give it'],
+  // (MP-PEEL 1D, the roll: the turns pressed on each other through their air, how a turn swells through its thickness
+  //  with water and heat -- the roll's pressure rises as the turns thicken)
+  ['Er', 'Its roll: the turns\' stiffness through the roll', 'MPa', 0.01, 100000, 1, 1, 20, 'assumed', 'not measured: the turns pressed on each other with air between them, far softer than the film itself (wound rolls of paper and plastic film about 1–100 MPa, stiffer the harder they are pressed)'],
+  ['nuR', 'Its roll: a hoop stress thinning the turns, ν_θr', '', 0, 0.49, 0.01, 2, 0, 'assumed', 'the turns slide on their air: winding models take none'],
+  ['betaT', 'Swelling through it with its water, β_t', 'per kg/kg', 0, 20, 0.05, 2, 1.5, 'assumed', 'GO\'s layers part as they take up water: their spacing from about 0.7 nm dry to about 1 nm at 25 % water (reported)'],
+  ['alphaT', 'Its heat expansion through it', '×10⁻⁶/K', -50, 500, 1, 0, 25, 'assumed', 'graphite across its layers about 25×10⁻⁶/K'],
 ];
 /**
  * The furnace (GO-5; furnace.js), the same shape plus its group: the GO's chemistry as it heats (each stage's share of
@@ -280,7 +289,10 @@ const OVEN_ZONE_DEFAULT = { len: 2, airU: 1, airT: 100, plenum: 100, rh: 20, top
 // below it) or 'solid' (a shelf at the oven's temperature); all assumed until you say)
 const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true, tOven: 1.5, tRest: 1.5, stackSet: true,
   stackN: 20, peelDeg: 180, windLo: 30, windHi: 150, peelSet: true,
-  plateT: 37.8, plateSet: false, stackAirU: 0, stackAirSet: false, epsPl: 0.09, epsPlSet: false, shelf: 'wire', shelfSet: false };
+  plateT: 37.8, plateSet: false, stackAirU: 0, stackAirSet: false, epsPl: 0.09, epsPlSet: false, shelf: 'wire', shelfSet: false,
+  // (MP-PEEL 1D, the roll: not known yet -- the winder's pull, the film on a roll, its time there, the core's wall and
+  //  stiffness, the room's air on it)
+  windT: 20, rollL: 100, rollRest: 24, coreWall: 10, coreE: 3, coreNu: 0.3, rollH: 8, rollSet: false };
 const OVEN_SHELVES = { wire: 'A wire shelf', solid: 'A solid shelf' };
 const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet'],
   ['pieceL', 'Piece\'s length (along the line)', 'mm', 10, 2000, 1, 0, 'pieceSet'], ['pieceW', 'Piece\'s width', 'mm', 10, 2000, 1, 0, 'pieceSet'],
@@ -291,7 +303,12 @@ const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 
   // (CFG-AUDIT: the pieces in a pre heat stack -- Q77: 20; the peel by hand -- Q59: pulled back, about 180°; the winder's
   //  angle not known -- every angle is computed, these two summed up)
   ['stackN', 'Pieces in the stack', '', 2, 1000, 1, 0, 'stackSet'], ['peelDeg', 'Peeled by hand at', '°', 0, 180, 5, 0, 'peelSet'],
-  ['windLo', 'Winder\'s angle, lowest shown', '°', 0, 180, 5, 0, 'peelSet'], ['windHi', 'Winder\'s angle, highest shown', '°', 0, 180, 5, 0, 'peelSet']];
+  ['windLo', 'Winder\'s angle, lowest shown', '°', 0, 180, 5, 0, 'peelSet'], ['windHi', 'Winder\'s angle, highest shown', '°', 0, 180, 5, 0, 'peelSet'],
+  // (MP-PEEL 1D: the roll the winder makes)
+  ['windT', 'Winder\'s pull on the film', 'N/m', 0, 5000, 1, 0, 'rollSet'], ['rollL', 'Film wound on a roll', 'm', 1, 100000, 1, 0, 'rollSet'],
+  ['rollRest', 'On the roll until it is cut', 'h', 0, 10000, 1, 1, 'rollSet'], ['coreWall', 'Core\'s wall', 'mm', 0.1, 200, 0.5, 1, 'rollSet'],
+  ['coreE', 'Core\'s stiffness', 'GPa', 0.01, 500, 0.1, 2, 'rollSet'], ['coreNu', 'Core\'s Poisson\'s ratio', '', 0, 0.49, 0.01, 2, 'rollSet'],
+  ['rollH', 'Room air on the roll: heat transfer', 'W/(m²·K)', 0.1, 1000, 0.5, 1, 'rollSet']];
 // (furn: the furnace, GO-5 -- Q87: two runs, to about 1000 °C then to 2800 °C, in argon (Q91); each a program of steps
 // (heat at a rate to a temperature, hold) and its cooling, or a cycle from your file (Q97: yours to come; these assumed,
 // 12–48 h a run, Q88); Q89: one piece between two graphite papers, bigger than it (Q104: by how much not known), 0.3–1 mm

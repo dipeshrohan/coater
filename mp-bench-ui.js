@@ -13,6 +13,8 @@
  *
  * A stage plugs in an adapter, SWB_ADAPT[its step key] (stack-mp-ui.js: the pre heat treatment's stack; furnace-mp-ui.js:
  * the furnace's holder): its solver's state and inputs, its domain's parts and faces, its mesh's settings, its results.
+ * A model with a mesh of its own (peel-mp-ui.js: the peel front) gives meshStats, meshHTML and its own drawing instead of
+ * mp-core's block; one solved by load steps rather than in time names that card (timeTitle, timeCols).
  * The mesh and time settings are inputs like any other: saved in the project (OVEN.mp), one undo step each.
  */
 
@@ -286,7 +288,8 @@ function swbDrawIso(cv, A, o, what, field) {
 function swbStatus(A, dim, o) {
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim, err = A.failed(dim);
   if (!o) return { geometry: { note: 'after the stage before' }, mesh: {}, solve: {}, results: {} };
-  const st = swbMesh(A, dim, o).stats;
+  // (a model with its own mesh -- not mp-core's block -- gives its numbers itself)
+  const st = A.meshStats ? A.meshStats(dim, o) : swbMesh(A, dim, o).stats;
   return {
     geometry: { state: 'done', note: A.domainShort(dim, o) },
     mesh: { state: 'done', note: `${st.nodes.toLocaleString('en')} nodes · ${st.elems.toLocaleString('en')} elements` },
@@ -309,9 +312,10 @@ function swbTools(A, dim, step, o) {
 function swbTiles(A, dim, step, o) {
   if (!o) return '';
   const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong>${sub ? `<small>${sub}</small>` : ''}</div>`;
-  const st = swbMesh(A, dim, o).stats, S = A.S(), r = A.current(dim) ? S.res[dim] : null;
+  const S = A.S(), r = A.current(dim) ? S.res[dim] : null;
   if (step === 'geometry') return A.geoTiles(dim, o).map(q => tile(...q)).join('');
   if (step === 'mesh' && A.meshTiles) return A.meshTiles(dim, o).map(q => tile(...q)).join('');
+  const st = step === 'mesh' ? swbMesh(A, dim, o).stats : null;
   if (step === 'mesh') return [tile('Nodes', st.nodes.toLocaleString('en'), `${A.dofs(dim)} unknowns at each`, 'mesh'), tile('Elements', st.elems.toLocaleString('en'), dim === 1 ? 'linear, on a line' : dim === 2 ? 'linear quadrilaterals' : 'linear hexahedra', 'grading'),
     tile('Unknowns', st.unknowns.toLocaleString('en'), `solved together, ${A.coupled}`, 'tune'), tile('Matrix', `${st.mb < 10 ? st.mb.toFixed(1) : st.mb.toFixed(0)} MB`, `banded, ${st.band.toLocaleString('en')} wide`, 'table'),
     tile('Worst element', dim === 1 ? '—' : `${st.worst < 10 ? st.worst.toFixed(1) : st.worst.toFixed(0)} : 1`, dim === 1 ? 'a line' : 'its longest side to its shortest', 'ratio')].join('');
@@ -336,7 +340,7 @@ function swbPage(A, dim) {
   }
   if (step !== 'results') panes = [pane('swbCv', step === 'geometry' ? 'section' : step === 'mesh' ? 'mesh' : 'flow', names[step], `${names[step]}: ${A.domain(dim, o)}`)];
   if (step === 'geometry') extra = swbGeoHTML(A, dim, o);
-  else if (step === 'mesh') extra = swbMeshHTML(A, dim, o) + (dim === 3 ? swbCellsHTML(A, o) : '');
+  else if (step === 'mesh') extra = (A.meshHTML ? A.meshHTML(dim, o) : swbMeshHTML(A, dim, o)) + (dim === 3 && !A.meshHTML ? swbCellsHTML(A, o) : '');
   else if (step === 'solve') extra = swbSolveHTML(A, dim, o);
   else extra = A.resultsHTML(dim);
   view.innerHTML = moduleFrame({ steps: stepBar('swb', step, swbStatus(A, dim, o)), tools: swbTools(A, dim, step, o), panes, extra });
@@ -346,7 +350,7 @@ function swbPage(A, dim) {
     const cv = document.getElementById('swbCv');
     if (A.draw) A.draw(cv, dim, o, step); else if (iso) swbDrawIso(cv, A, o, step); else swbDrawSection(cv, A, dim, o, step);
     document.getElementById('swbCvLg').innerHTML = swbLegend(A, dim, o, step);
-    if (step === 'mesh' && dim === 3) swbCellsMount(A, o);
+    if (step === 'mesh' && dim === 3 && !A.meshHTML) swbCellsMount(A, o);
   } else A.renderResults(dim);
   swbWire(A, dim);
 }
@@ -429,8 +433,8 @@ function swbSolveHTML(A, dim, o) {
       <table class="swb-t"><thead><tr><th scope="col">#</th><th scope="col">Face</th>${A.bcCols.map(t => `<th scope="col">${t}</th>`).join('')}</tr></thead>
       <tbody>${faces.map((f, i) => `<tr><td><i class="swb-n" style="background:${f.c || cssVar('--ink')}">${i + 1}</i></td><th scope="row">${f.t}</th>${f.bc.map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody></table></section>
     <div class="swb-tables">
-      <section class="swb-card"><h4>${uiBadge('period')}Time</h4>
-        <table class="swb-t"><thead><tr><th scope="col">Stage</th><th scope="col">For</th><th scope="col">Conditions</th><th scope="col">Steps</th></tr></thead>
+      <section class="swb-card"><h4>${uiBadge('period')}${A.timeTitle || 'Time'}</h4>
+        <table class="swb-t"><thead><tr>${(A.timeCols || ['Stage', 'For', 'Conditions', 'Steps']).map(t => `<th scope="col">${t}</th>`).join('')}</tr></thead>
         <tbody>${A.time(dim, o).map(q => `<tr>${q.map((v, n) => n ? `<td>${v}</td>` : `<th scope="row">${v}</th>`).join('')}</tr>`).join('')}</tbody></table></section>
       <section class="swb-card"><h4>${uiBadge('tolerance')}Solver</h4>
         <table class="swb-t swb-kv"><tbody>${A.solver(dim, o, r).map(([k, v]) => `<tr><th scope="row">${k}</th><td>${v}</td></tr>`).join('')}</tbody></table></section>
