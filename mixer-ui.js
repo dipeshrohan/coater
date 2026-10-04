@@ -11,7 +11,7 @@
  */
 
 const MIX = { res: null, key: null, busy: false, error: null, ms: 0 };
-const MIX_GROUPS = [['recipe', 'Recipe'], ['vessel', 'Vessel and jacket'], ['blades', 'Planetary blades'], ['disp', 'High-speed disperser'], ['chem', 'Chemistry and ammonia'],
+const MIX_GROUPS = [['recipe', 'Recipe'], ['tol', 'Weighing tolerances'], ['spec', 'Paste spec'], ['vessel', 'Vessel and jacket'], ['blades', 'Planetary blades'], ['disp', 'High-speed disperser'], ['chem', 'Chemistry and ammonia'],
   ['lumps', 'Paste pieces and the grind gauge'], ['flakes', 'Flakes'], ['visc', 'Viscosity'], ['power', 'Power constants'], ['num', 'Solver']];
 const MIX_ASPECT = 0.42;   // (the charts' height / width: the page scrolls, so they keep their shape)
 const MIX_STEP_LIMITS = { min: [0.1, 1440], No: [0, 200], Nd: [0, 10000], p: [1, 200], pH: [3, 12], mL: [0, 1e5] };
@@ -44,7 +44,8 @@ function mixSyncSlurry() {
 const mixProps = () => (typeof matSolverProps === 'function' ? matSolverProps() : null);
 function mixKeyNow() {
   const c = MAT.slurry;
-  return JSON.stringify([mixIn(), c.phi.v, c.rhoS.v, c.rhoL.v, c.dMean.v, c.dMin.v, c.dMax.v, c.tFlake.v, MAT.dry.cS.v, mixLaw().key, mixProps()]);
+  const d = Object.fromEntries(Object.entries(mixIn()).filter(([k]) => !MIX_NOSOLVE.has(k)));   // (the tolerances and the spec: not the solve's)
+  return JSON.stringify([d, c.phi.v, c.rhoS.v, c.rhoL.v, c.dMean.v, c.dMin.v, c.dMax.v, c.tFlake.v, MAT.dry.cS.v, mixLaw().key, mixProps()]);
 }
 const mixCurrent = () => !!MIX.res && MIX.key === mixKeyNow();
 /** Solve the batch when asked for (the solve controller's pump calls it). */
@@ -208,19 +209,38 @@ function mixRecipeHTML() {
   const d = mixIn(), o = mixOpts(), R = mixRecipe(o), g = v => Math.round(v * 1000).toLocaleString('en-US'), g1 = v => (v * 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const at = d.steps.map((q, i) => (q.dose && q.dose.recipe ? i + 1 : 0)).filter(Boolean);
   const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
-  const row = (t, m, note) => `<tr><th scope="row">${t}</th><td>${m}</td><td>${note}</td></tr>`;
-  return `<div class="mx-recipe"><div class="oned-scroll"><table class="cfd-table mx-rec"><thead><tr><th scope="col">Item</th><th scope="col">Amount <small>g</small></th><th scope="col">Note</th></tr></thead><tbody>
-      ${row('GO paste', g(o.mPaste), `${+(+d.wPaste).toFixed(1)} % solids: ${g1(R.mGO)} g of dry GO`)}
-      ${row('Water, the soak', g(o.mSoak), `the paste soaks in it in a bucket: ${(R.wSoak * 100).toFixed(1)} % GO`)}
-      ${row('Water, the mixer', g(o.mWat), 'to the target weight in the mixing container')}
-      ${row(`Ammonia water, ${+(+d.wN).toFixed(1)} %`, g1(o.mN), at.length ? `poured in at step ${at.join(', ')}` : '<span class="mx-warn">no step takes it: the program doses none</span>')}
-      <tr class="mx-total"><th scope="row">Batch</th><td>${g(R.mTot)}</td><td>${g1(R.mLiq)} g of liquid with the paste's water: ${(R.mLiq / R.mTot * 100).toFixed(1)} %</td></tr></tbody></table></div>
+  const tol = v => `± ${+(v * 1000).toFixed(2)}`;
+  const row = (t, m, tl, note) => `<tr><th scope="row">${t}</th><td>${m}</td><td>${tl}</td><td>${note}</td></tr>`;
+  return `<div class="mx-recipe"><div class="oned-scroll"><table class="cfd-table mx-rec"><thead><tr><th scope="col">Item</th><th scope="col">Amount <small>g</small></th><th scope="col">Tolerance <small>g</small></th><th scope="col">Note</th></tr></thead><tbody>
+      ${row('GO paste', g(o.mPaste), tol(o.tPaste), `${+(+d.wPaste).toFixed(1)} % solids: ${g1(R.mGO)} g of dry GO`)}
+      ${row('Water, the soak', g(o.mSoak), tol(o.tSoak), `the paste soaks in it in a bucket: ${(R.wSoak * 100).toFixed(1)} % GO`)}
+      ${row('Water, the mixer', g(o.mWat), tol(o.tWat), 'to the target weight in the mixing container')}
+      ${row(`Ammonia water, ${+(+d.wN).toFixed(1)} %`, g1(o.mN), tol(o.tN), at.length ? `poured in at step ${at.join(', ')}` : '<span class="mx-warn">no step takes it: the program doses none</span>')}
+      <tr class="mx-total"><th scope="row">Batch</th><td>${g(R.mTot)}</td><td>${tol(o.tPaste + o.tSoak + o.tWat + o.tN)}</td><td>${g1(R.mLiq)} g of liquid with the paste's water: ${(R.mLiq / R.mTot * 100).toFixed(1)} %</td></tr></tbody></table></div>
     <div class="stats mx-stats">${[
       tile('GO in the batch', `${(R.wGO * 100).toFixed(2)} wt%`, `${(R.phiEnd * 100).toFixed(3)} vol%`, 'weight'),
       tile('Batch volume', `${(R.Vend * 1000).toFixed(1)} L`, `${(R.V0 * 1000).toFixed(1)} L before the ammonia`, 'drop'),
       tile('Paste pieces', `${(R.wL * 100).toFixed(1)} wt%`, `GO, swollen in the soak (${(R.phiL * 100).toFixed(1)} vol%)`, 'ratio'),
       tile('Hard pieces', `${(o.fh * 100).toPrecision(2)} %`, `of the GO, not swollen: ${(R.phiH * 100).toFixed(1)} vol%`, 'ratio'),
-    ].join('')}</div></div>`;
+    ].join('')}</div>${mixSpecHTML(o)}</div>`;
+}
+/** The dry GO's carbon share as Materials has it (its C/O and H/C, the furnace's chemistry); null without the hub. */
+const mixCarbon = () => (typeof hubChem === 'function' ? hubChem().carbon / 100 : null);
+/** The recipe's spread (the recipe sheet's layout): the paste spec's lowest, as made and highest -- its solids, its carbon,
+ *  the dry GO and the carbon per mix -- and the GO's share of the batch within the weighing's tolerances, and with the spec's
+ *  solids too; a value as made outside the spec marked. */
+function mixSpecHTML(o) {
+  const c = mixCarbon(), S = mixRecipeRange(o, c ?? NaN), g1 = v => (Number.isFinite(v) ? (v * 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—');
+  const pc = (v, d = 1) => (Number.isFinite(v) ? (v * 100).toFixed(d) : '—'), out = (v, lo, hi) => Number.isFinite(v) && (v < lo - 1e-12 || v > hi + 1e-12);
+  const row = (t, u, [a, b, cc], f, bad) => `<tr><th scope="row">${t} <small>${u}</small></th><td>${f(a)}</td><td${bad ? ' class="mx-out" title="outside the spec"' : ''}>${f(b)}</td><td>${f(cc)}</td></tr>`;
+  return `<div class="oned-scroll"><table class="cfd-table mx-spec"><caption>The paste spec and the weighing's tolerances</caption><thead><tr><th scope="col"></th><th scope="col">Lowest</th><th scope="col">As made</th><th scope="col">Highest</th></tr></thead><tbody>
+    ${row('Paste solids', 'wt%', S.solids, v => pc(v), out(S.solids[1], S.solids[0], S.solids[2]))}
+    ${row('Carbon in the dry GO', 'wt%', S.cShare, v => pc(v), out(S.cShare[1], S.cShare[0], S.cShare[2]))}
+    ${row('Dry GO per mix', 'g', S.dry, g1)}
+    ${row('Carbon per mix', 'g', S.carbon, g1)}
+    ${row('GO in the batch, within the tolerances', 'wt%', [S.tol.w[0], S.wGO, S.tol.w[1]], v => pc(v, 3))}
+    ${row('GO in the batch, the spec\'s solids too', 'wt%', [S.both.w[0], S.wGO, S.both.w[1]], v => pc(v, 3))}
+  </tbody></table></div>`;
 }
 const MIX_CHARTS = [['mxP', 'Power'], ['mxT', 'Temperature'], ['mxPH', 'pH'], ['mxG', 'Grind gauge'], ['mxL', 'GO in lumps'], ['mxM', 'Viscosity'], ['mxS', 'Lump sizes'], ['mxK', 'Flake sizes'], ['mxF', 'Flow curve']];
 /** The page's frame (filled by mixRender after it is drawn). */
@@ -238,6 +258,7 @@ function mixPageHTML() {
         <span class="vp-spacer"></span><button type="button" class="btn btn-secondary btn-sm" data-chain="mixrecipe">${uiIco('tune')}Its amounts (inputs bar)</button></div>${mixRecipeHTML()}</div>
     <div class="furn-block" data-pstep="setup"><div class="furn-bh"><h4>The mixed slurry</h4><span class="fv-why">${MAT.mixLink ? 'what the coater takes: its solids from the recipe, its flow law and flakes from Materials' : 'what the coater takes: Materials\' slurry'}</span></div>
       ${MAT.mixLink ? '' : `<p class="dry-msg">${pill(`Materials types its own solids, ${+MAT.slurry.phi.v.toFixed(3)} vol%: the recipe gives ${(mixRecipe(q).phiEnd * 100).toFixed(3)} vol%`, 'warn')}<button type="button" class="btn btn-secondary btn-sm" id="mxUseRecipe">Use the recipe's</button></p>`}${procSlurryHTML()}</div>
+    <div class="furn-block" data-pstep="setup results" id="mxRecBlock"><div class="furn-bh"><h4>Batch record</h4><span class="fv-why">measured, one row per mix: the water each step loses, the coating's, the films weighed</span></div>${mixRecHTML()}</div>
     <div id="mxState" data-pstep="solve results"></div>
     <div class="furn-block" data-pstep="solve"><div class="furn-bh"><h4>How it is solved</h4></div>
       <table class="cfd-table mx-how"><tbody>
@@ -406,6 +427,15 @@ function mixWire(sec) {
       processPage(true); return; }
     if (el.dataset.mxname != null) { S[+el.dataset.mxname].name = el.value.trim().slice(0, 40) || `Step ${+el.dataset.mxname + 1}`; processPage(true); return; }
     if (el.dataset.mxdose != null) { const i = +el.dataset.mxdose; S[i].dose = el.value === 'recipe' ? { recipe: true } : el.value === 'pH' ? { pH: 7 } : el.value === 'mL' ? { mL: 500 } : null; processPage(true); return; }
+    if (el.dataset.mxrec) { const [i, k, j] = el.dataset.mxrec.split(':'), r = mixRec()[+i]; if (!r) return;
+      if (k === 'name') r.name = el.value.trim().slice(0, 40) || `Mix ${+i + 1}`;
+      else guardNumber(el, { label: `${r.name}: ${k === 'lost' ? `water lost in ${S[+j] ? S[+j].name : 'step ' + (+j + 1)}` : { coat: 'water lost at the coating', go: 'GO film', gr: 'graphene film' }[k]}`, lo: 0, hi: MIXREC_HI, unit: 'g', allowEmpty: true },
+        v => { if (k === 'lost') r.lost[+j] = v; else r[k] = v; });
+      processPage(true); return; }
+    if (el.id === 'mxRecFile') { const f = el.files && el.files[0]; el.value = ''; if (!f) return;
+      f.text().then(t => { const p = mixRecParse(t, S); if (p.error) { imgToast(`The batch record from ${f.name}: ${p.error}`, 'error'); return; }
+        undoHint(`Mixing: the batch record from ${f.name}`); OVEN.mixRec = [...mixRec(), ...p.rows].slice(0, MIXREC_MAX); imgToast(`${p.rows.length} mix${p.rows.length > 1 ? 'es' : ''} from ${f.name}`); processPage(true); });
+      return; }
     if (el.dataset.mxdosev) { const [i, k] = el.dataset.mxdosev.split(':'), [lo, hi] = MIX_STEP_LIMITS[k];
       guardNumber(el, { label: `Mixing step ${+i + 1}: ammonia ${k === 'pH' ? 'to pH' : 'water'}`, lo, hi, unit: k === 'pH' ? '' : 'mL' }, v => { S[+i].dose = { [k]: v }; });
       processPage(true); }
@@ -413,9 +443,93 @@ function mixWire(sec) {
   sec.addEventListener('click', e => {
     const del = e.target.closest && e.target.closest('[data-mxdel]');
     if (del) { mixIn().steps.splice(+del.dataset.mxdel, 1); processPage(true); return; }
+    const rd = e.target.closest && e.target.closest('[data-mxrecdel]');
+    if (rd) { mixRec().splice(+rd.dataset.mxrecdel, 1); processPage(true); return; }
+    if (e.target.closest && e.target.closest('#mxRecAdd')) { const R = mixRec(); if (R.length < MIXREC_MAX) R.push({ name: `Mix ${R.length + 1}`, lost: mixIn().steps.map(() => null), coat: null, go: null, gr: null }); processPage(true); return; }
+    if (e.target.closest && e.target.closest('#mxRecCsv')) { saveBlob(new Blob([mixRecCSV()], { type: 'text/csv' }), 'batch-record.csv'); return; }
     if (e.target.closest && e.target.closest('#mxUseRecipe')) { undoHint('Materials: the solids from the Mixing recipe'); MAT.mixLink = true; render(); return; }
     if (e.target.closest && e.target.closest('#mxAddStep')) { const S = mixIn().steps, last = S[S.length - 1] || MIX_STEPS[0]; S.push({ ...last, name: `Step ${S.length + 1}`, dose: null }); processPage(true); }
   });
+}
+
+// ---- the batch record: measured, one row per mix ----
+/** The record's rows (OVEN.mixRec, with the project): [{ name, lost: [the water each program step loses, g, or null],
+ *  coat (the water lost at the coating, g), go, gr (the GO film and the graphene film weighed, g; or null) }]. */
+const mixRec = () => OVEN.mixRec || (OVEN.mixRec = []);
+const MIXREC_HI = 1e6, MIXREC_MAX = 2000;
+/** A project's record (none, or from before it: empty; a weight a number from 0 to 10⁶ g, else empty). */
+function applyMixRec(rows) {
+  const num = v => (Number.isFinite(v) && v >= 0 && v <= MIXREC_HI ? v : null);
+  if (!Array.isArray(rows)) return [];
+  return rows.filter(r => r && typeof r === 'object').slice(0, MIXREC_MAX).map((r, i) => ({ name: String(r.name ?? `Mix ${i + 1}`).slice(0, 40),
+    lost: Array.isArray(r.lost) ? r.lost.slice(0, 24).map(num) : [], coat: num(r.coat), go: num(r.go), gr: num(r.gr) }));
+}
+/** The record's summary over nSteps program steps: each column's mean over the mixes that have it, the water lost per mix
+ *  (its steps and its coating, over the mixes with any), and the films below the mix's lowest carbon cMin (g). */
+function mixRecStats(rows, nSteps, cMin) {
+  const mean = a => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null), col = f => rows.map(f).filter(v => v != null);
+  const tot = rows.map(r => { const xs = [...r.lost.slice(0, nSteps), r.coat].filter(v => v != null); return xs.length ? xs.reduce((s, x) => s + x, 0) : null; }).filter(v => v != null);
+  const film = k => { const v = col(r => r[k]); return { n: v.length, low: v.filter(x => x < cMin).length, mean: mean(v) }; };
+  return { n: rows.length, steps: Array.from({ length: nSteps }, (_, j) => mean(col(r => r.lost[j] ?? null))), coat: mean(col(r => r.coat)), total: mean(tot), nTot: tot.length, go: film('go'), gr: film('gr') };
+}
+/** The record as a table (each cell typed in), its means and its share of the batch's water, the films below the mix's
+ *  lowest carbon, and the record's summary. */
+function mixRecHTML() {
+  const S = mixIn().steps, rows = mixRec(), o = mixSetup(), R = mixRecipe(o), cMin = mixRecipeRange(o, mixCarbon() ?? NaN).carbon[0] * 1000, water = R.mLiq * 1000;
+  const st = mixRecStats(rows, S.length, cMin), m1 = v => (v == null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: 1 })), pc = v => (v == null ? '—' : (v / water * 100).toFixed(3));
+  const cell = (i, key, v, what, low) => `<td><input type="number" min="0" max="${MIXREC_HI}" step="0.1" value="${v ?? ''}" data-mxrec="${i}:${key}" aria-label="${mixEsc(rows[i].name)}: ${what}, g"${low ? ` class="mx-low" title="below the mix's lowest carbon, ${cMin.toFixed(1)} g"` : ''}></td>`;
+  const body = rows.length ? rows.map((r, i) => `<tr><td><input type="text" value="${mixEsc(r.name)}" data-mxrec="${i}:name" maxlength="40" aria-label="Mix ${i + 1}: name"></td>
+      ${S.map((s, j) => cell(i, `lost:${j}`, r.lost[j], `water lost in ${mixEsc(s.name)}`)).join('')}${cell(i, 'coat', r.coat, 'water lost at the coating')}
+      ${cell(i, 'go', r.go, 'GO film weighed', r.go != null && r.go < cMin)}${cell(i, 'gr', r.gr, 'graphene film weighed', r.gr != null && r.gr < cMin)}
+      <td><button type="button" class="icon-btn" data-mxrecdel="${i}" title="Remove ${mixEsc(r.name)}" aria-label="Remove ${mixEsc(r.name)}">${uiIco('trash')}</button></td></tr>`).join('')
+    : `<tr><td colspan="${S.length + 5}" class="mx-rec-empty">No mix recorded yet: add one, or import your sheet as CSV.</td></tr>`;
+  const foot = rows.length ? `<tfoot><tr><th scope="row">Mean</th>${st.steps.map(v => `<td>${m1(v)}</td>`).join('')}<td>${m1(st.coat)}</td><td>${m1(st.go.mean)}</td><td>${m1(st.gr.mean)}</td><td></td></tr>
+      <tr><th scope="row">% of the batch's water</th>${st.steps.map(v => `<td>${pc(v)}</td>`).join('')}<td>${pc(st.coat)}</td><td></td><td></td><td></td></tr></tfoot>` : '';
+  const tile = (l, v, sub, ic, bad) => `<div class="stat${bad ? ' mx-stat-bad' : ''}" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>${sub}</small></div>`;
+  const low = f => (f.n ? `${f.low} of ${f.n}` : '—');
+  return `<div class="oned-scroll"><table class="cfd-table mx-rec-tab"><thead><tr><th scope="col" rowspan="2">Mix</th><th scope="colgroup" colspan="${S.length + 1}">Water lost <small>g</small></th><th scope="colgroup" colspan="2">Film weighed <small>g</small></th><th rowspan="2"></th></tr>
+      <tr>${S.map(s => `<th scope="col">${mixEsc(s.name)}</th>`).join('')}<th scope="col">At coating</th><th scope="col">GO film</th><th scope="col">Graphene film</th></tr></thead>
+      <tbody>${body}</tbody>${foot}</table></div>
+    <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="mxRecAdd">${uiIco('plus')}Add a mix</button>
+      <label class="btn btn-secondary btn-sm" for="mxRecFile">${uiIco('upload')}Import CSV</label><input type="file" id="mxRecFile" accept=".csv,.txt,text/csv" hidden>
+      <button type="button" class="btn btn-secondary btn-sm" id="mxRecCsv"${rows.length ? '' : ' disabled'}>${uiIco('download')}Export CSV</button></div>
+    <div class="stats mx-stats">${[
+      tile('Mixes recorded', String(st.n), st.nTot ? `${st.nTot} with water lost` : 'none with water lost yet', 'table'),
+      tile('Water lost per mix', st.total == null ? '—' : `${m1(st.total)} g`, st.total == null ? 'its steps and its coating' : `${pc(st.total)} % of its ${m1(water)} g of water`, 'drop'),
+      tile('GO film below lowest carbon', low(st.go), `${cMin.toFixed(1)} g: the spec's lowest solids × lowest carbon`, 'weight', st.go.low > 0),
+      tile('Graphene film below lowest carbon', low(st.gr), 'lighter than the carbon put in', 'weight', st.gr.low > 0),
+    ].join('')}</div>`;
+}
+/** The record as CSV (one row per mix; the program's steps as its columns). */
+function mixRecCSV() {
+  const S = mixIn().steps, q = t => `"${String(t).replace(/"/g, '""')}"`, v = x => (x == null ? '' : x);
+  return [['mix', ...S.map(s => `water lost ${s.name} (g)`), 'water lost at coating (g)', 'GO film (g)', 'graphene film (g)'].map(q).join(','),
+    ...mixRec().map(r => [q(r.name), ...S.map((_, j) => v(r.lost[j])), v(r.coat), v(r.go), v(r.gr)].join(','))].join('\n') + '\n';
+}
+/** A CSV of the record read back (comma or semicolon separated, a decimal point or comma; the columns by their names:
+ *  "step n" or a step's name, "coat", "GO film", "graphene"; the first, the mix's name): { rows } or { error }. */
+function mixRecParse(text, S) {
+  const lines = String(text).replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return { error: 'no rows under the header' };
+  const sep = lines[0].includes(';') ? ';' : ',', split = l => { const out = []; let cur = '', qt = false;
+    for (const ch of l) { if (ch === '"') qt = !qt; else if (ch === sep && !qt) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map(s => s.trim()); };
+  const head = split(lines[0]).map(h => h.toLowerCase()), map = head.map((h, c) => {
+    if (c === 0) return { k: 'name' };
+    if (/graph/.test(h)) return { k: 'gr' };
+    if (/\bgo\b.*film|go film/.test(h)) return { k: 'go' };
+    if (/coat/.test(h)) return { k: 'coat' };
+    const n = h.match(/step\s*(\d+)/); if (n && +n[1] >= 1 && +n[1] <= S.length) return { k: 'lost', j: +n[1] - 1 };
+    const j = S.findIndex(s => h.includes(s.name.toLowerCase())); if (j >= 0) return { k: 'lost', j };
+    return null; });
+  if (!map.slice(1).some(Boolean)) return { error: 'none of its columns is a step, the coating or a film' };
+  const num = s => { if (s == null || s === '') return null; const t = sep === ';' ? s.replace(/\s/g, '').replace(',', '.') : s.replace(/\s/g, ''); const x = Number(t); return Number.isFinite(x) ? x : NaN; };
+  const rows = [];
+  for (const [li, l] of lines.slice(1).entries()) {
+    const cs = split(l), r = { name: cs[0] || `Mix ${li + 1}`, lost: S.map(() => null), coat: null, go: null, gr: null };
+    for (const [c, m] of map.entries()) { if (!m || m.k === 'name') continue; const x = num(cs[c]); if (Number.isNaN(x) || (x != null && (x < 0 || x > MIXREC_HI))) return { error: `row ${li + 2}, "${head[c]}": "${cs[c]}" is not a weight from 0 to ${MIXREC_HI} g` }; if (m.k === 'lost') r.lost[m.j] = x; else r[m.k] = x; }
+    rows.push(r);
+  }
+  return rows.length > MIXREC_MAX ? { error: `more than ${MIXREC_MAX} mixes` } : { rows: applyMixRec(rows) };
 }
 
 // ---- the inputs bar ----

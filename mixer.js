@@ -73,6 +73,15 @@ const MIX_INPUTS = [
   { g: 'recipe', k: 'mSoak', l: 'Water in the soak', u: 'g', f: 1e-3, v: 10000, min: 0, max: 1e7, step: 10, d: 0, h: 'the bucket the paste soaks in (at least 12 h)' },
   { g: 'recipe', k: 'mWat', l: 'Water in the mixer', u: 'g', f: 1e-3, v: 70000, min: 0, max: 1e7, step: 10, d: 0, h: 'added in the mixing container to the target weight' },
   { g: 'recipe', k: 'mN', l: 'Ammonia water', u: 'g', f: 1e-3, v: 242, min: 0, max: 1e6, step: 0.1, d: 1, h: 'weighed in and poured in at the step the program says' },
+  // (the weighing's tolerances and the paste's spec: what the recipe may be, not what the batch is -- the solve takes none)
+  { g: 'tol', k: 'tPaste', l: 'GO paste, ±', u: 'g', f: 1e-3, v: 3, min: 0, max: 1e5, step: 0.5, d: 1, h: 'the traveler\'s tolerance on the paste weighed in' },
+  { g: 'tol', k: 'tSoak', l: 'Water in the soak, ±', u: 'g', f: 1e-3, v: 100, min: 0, max: 1e6, step: 1, d: 0, h: 'the traveler\'s tolerance' },
+  { g: 'tol', k: 'tWat', l: 'Water in the mixer, ±', u: 'g', f: 1e-3, v: 100, min: 0, max: 1e6, step: 1, d: 0, h: 'the traveler\'s tolerance' },
+  { g: 'tol', k: 'tN', l: 'Ammonia water, ±', u: 'g', f: 1e-3, v: 0.22, min: 0, max: 1e5, step: 0.01, d: 2, h: 'the traveler\'s tolerance' },
+  { g: 'spec', k: 'wMin', l: 'Paste solids, lowest', u: 'wt%', f: 1e-2, v: 41, min: 1, max: 100, step: 0.5, d: 1, h: 'the paste spec (SE2430W-F-SHT: 41–47 %)' },
+  { g: 'spec', k: 'wMax', l: 'Paste solids, highest', u: 'wt%', f: 1e-2, v: 47, min: 1, max: 100, step: 0.5, d: 1, h: 'the paste spec' },
+  { g: 'spec', k: 'cMin', l: 'Carbon in the dry GO, lowest', u: 'wt%', f: 1e-2, v: 48, min: 1, max: 100, step: 0.5, d: 1, h: 'the paste spec (48–54 %)' },
+  { g: 'spec', k: 'cMax', l: 'Carbon in the dry GO, highest', u: 'wt%', f: 1e-2, v: 54, min: 1, max: 100, step: 0.5, d: 1, h: 'the paste spec' },
   { g: 'vessel', k: 'D', l: 'Inside diameter', u: 'mm', f: 1e-3, v: 500, min: 50, max: 3000, step: 1, d: 0 },
   { g: 'vessel', k: 'Hv', l: 'Height', u: 'mm', f: 1e-3, v: 520, min: 50, max: 3000, step: 1, d: 0 },
   { g: 'vessel', k: 'T0', l: 'Batch at the start', u: '°C', f: 1, v: 20, min: 0, max: 90, step: 0.5, d: 1 },
@@ -187,6 +196,26 @@ function mixRecipe(o) {
   const vol = w => (w / rS) / (w / rS + (1 - w) / rL);   // (a GO mass share in water, as a volume share)
   const wSoak = mGO / (o.mPaste + o.mSoak), wL = o.wPaste + o.sw * (wSoak - o.wPaste);
   return { mGO, mW0, V0, phi0: mGO / rS / V0, mTot, mLiq: mTot - mGO, wGO: mGO / mTot, phiEnd: mGO / rS / Vend, Vend, wSoak, wL, phiL: vol(wL), phiH: vol(o.wPaste) };
+}
+
+/** The inputs the batch's solve does not take (the tolerances and the spec: what the recipe may be). */
+const MIX_NOSOLVE = new Set(['tPaste', 'tSoak', 'tWat', 'tN', 'wMin', 'wMax', 'cMin', 'cMax']);
+/**
+ * The recipe's spread (SI, as mixRecipe; carbon: the dry GO's carbon share as Materials has it, from its C/O and H/C).
+ * The GO's share of the batch rises with the paste and its solids and falls with the water and the ammonia water, so it is
+ * lowest with the paste light and the rest heavy by their tolerances, highest the other way round. Returns { wGO, phi
+ * (as made), tol: { w: [lo, hi], phi: [lo, hi] } (the weighing's tolerances, at the paste's solids), both (the spec's solids
+ * too: the lowest with the lowest, the highest with the highest), solids, cShare, dry (the dry GO per mix), carbon (the
+ * carbon per mix): each [lowest, as made, highest] -- the spec's lowest solids and carbon together and its highest
+ * (the sheet's minimum: a film lighter than its carbon is not explained by water or the GO's decomposition) }.
+ */
+function mixRecipeRange(o, carbon) {
+  const at = (s, w) => mixRecipe({ ...o, wPaste: w, mPaste: Math.max(0, o.mPaste + s * o.tPaste), mSoak: Math.max(0, o.mSoak - s * o.tSoak),
+    mWat: Math.max(0, o.mWat - s * o.tWat), mN: Math.max(0, o.mN - s * o.tN) });
+  const R = mixRecipe(o), lo = at(-1, o.wPaste), hi = at(1, o.wPaste), blo = at(-1, o.wMin), bhi = at(1, o.wMax), dry = w => o.mPaste * w;
+  return { wGO: R.wGO, phi: R.phiEnd, tol: { w: [lo.wGO, hi.wGO], phi: [lo.phiEnd, hi.phiEnd] }, both: { w: [blo.wGO, bhi.wGO], phi: [blo.phiEnd, bhi.phiEnd] },
+    solids: [o.wMin, o.wPaste, o.wMax], cShare: [o.cMin, carbon, o.cMax], dry: [dry(o.wMin), dry(o.wPaste), dry(o.wMax)],
+    carbon: [dry(o.wMin) * o.cMin, dry(o.wPaste) * carbon, dry(o.wMax) * o.cMax] };
 }
 
 /** The mixer's geometry (see the header): the batch's volume o.V, else the recipe's before the ammonia. */
@@ -579,4 +608,4 @@ function mixRun(o) {
   return { G, hist, end, doses, zones: zonesAt, dist, flakes, muAt, NT: Q.NT, recipe: RC };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MIX_INPUTS, MIX_STEPS, mixDefaults, mixInDefaults, mixInSI, mixCellDrag, mixRecipe, mixTauOn, mixGeom, mixPower, mixSpecies, mixDoseFor, mixSurface, mixPBE, mixLogNormalShare, mixRun };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MIX_INPUTS, MIX_STEPS, mixDefaults, mixInDefaults, mixInSI, mixCellDrag, mixRecipe, mixRecipeRange, MIX_NOSOLVE, mixTauOn, mixGeom, mixPower, mixSpecies, mixDoseFor, mixSurface, mixPBE, mixLogNormalShare, mixRun };

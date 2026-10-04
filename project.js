@@ -266,6 +266,8 @@ function applyOven(o, cfdSetup) {
   OVEN.furn = applyFurn(o && o.furn);
   // (the mixer, MIX-1: a project from before has none -- the defaults)
   if (typeof applyMix === 'function') OVEN.mix = applyMix(o && o.mix);
+  // (its batch record, MIX-R: a project from before has none)
+  if (typeof applyMixRec === 'function') OVEN.mixRec = applyMixRec(o && o.mixRec);
   // (the stages' multiphysics mesh and time settings, MP-W: numbers only, each checked against its range when used;
   //  the drying's (MP-5) also where its water leaves)
   OVEN.mp = {};
