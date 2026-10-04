@@ -409,12 +409,103 @@ function ffRobinFace(S, F, x, R, lin) {
   }
 }
 
+/** The hexahedron's tables along one axis: L[3q + a] the 1D quadratic a at Gauss point q, D its slope. FF_REF is their
+ *  product (node a = ax + 3 ay + 9 az, point q = qx + 3 qy + 9 qz) -- checked here, to the last bit; null if it is not. */
+const FF_TP = (() => {
+  const L = new Float64Array(9), D = new Float64Array(9);
+  FF_G.forEach((s, q) => { const [l, d] = FF_UFE.ufeLag1(2, s); for (let a = 0; a < 3; a++) { L[3 * q + a] = l[a]; D[3 * q + a] = d[a]; } });
+  for (let q = 0; q < 27; q++) for (let a = 0; a < 27; a++) {
+    const x = [q % 3, Math.floor(q / 3) % 3, Math.floor(q / 9)], y = [a % 3, Math.floor(a / 3) % 3, Math.floor(a / 9)], l = d => L[3 * x[d] + y[d]], g = d => D[3 * x[d] + y[d]];
+    if (FF_REF.N[q * 27 + a] !== l(0) * l(1) * l(2) || FF_REF.Na[q * 27 + a] !== g(0) * l(1) * l(2) || FF_REF.Nb[q * 27 + a] !== l(0) * g(1) * l(2) || FF_REF.Ng[q * 27 + a] !== l(0) * l(1) * g(2)) return null;
+  }
+  return { L, D };
+})();
+/** y += J x over a block of hexahedra, the same sums as ffJacVec's element loop but factored by axis (sum factorization):
+ *  the velocity and its slopes at the 27 points by three passes of 3 x 3 sums, the test functions' sums back the same way --
+ *  about a seventh of the plain loop's multiplications. */
+function ffJacVecHex(S, B, x, y) {
+  const { geo, pOf, nU, st, fix } = S, Re = S.Re, conn = B.conn, nE = B.nE, g0 = B.g0, Ref = B.K.T, CORNER = B.K.corner;
+  const L = FF_TP.L, D = FF_TP.D;
+  const ue = new Float64Array(81), pe = new Float64Array(8), u = new Float64Array(27);
+  // (per component: the value and its slopes along ξ, η, ζ at the 27 points; then what each point gives the test sums)
+  const Uv = new Float64Array(81), Ux = new Float64Array(81), Uy = new Float64Array(81), Uz = new Float64Array(81);
+  const Fx = new Float64Array(81), Fy = new Float64Array(81), Fz = new Float64Array(81), F0 = new Float64Array(81);
+  const t1L = new Float64Array(27), t1D = new Float64Array(27), tLL = new Float64Array(27), tDL = new Float64Array(27), tLD = new Float64Array(27);
+  const re = new Float64Array(81), rp = new Float64Array(8);
+  for (let e = 0; e < nE; e++) {
+    const o27 = 27 * e;
+    for (let a = 0; a < 27; a++) {
+      const n = conn[o27 + a];
+      if (S.rot[n] < 0) for (let c = 0; c < 3; c++) ue[3 * a + c] = fix[3 * n + c] ? 0 : x[3 * n + c];
+      else { const f = S.frm, o = 9 * S.rot[n], p0 = fix[3 * n] ? 0 : x[3 * n], p1 = fix[3 * n + 1] ? 0 : x[3 * n + 1], p2 = fix[3 * n + 2] ? 0 : x[3 * n + 2];
+        for (let c = 0; c < 3; c++) ue[3 * a + c] = p0 * f[o + c] + p1 * f[o + 3 + c] + p2 * f[o + 6 + c]; }
+    }
+    for (let c = 0; c < 8; c++) { const i = nU + pOf[conn[o27 + CORNER[c]]]; pe[c] = fix[i] ? 0 : x[i]; }
+    for (let c = 0; c < 3; c++) {
+      for (let a = 0; a < 27; a++) u[a] = ue[3 * a + c];
+      // x: (ax -> qx), for each (ay, az)
+      for (let r = 0; r < 9; r++) { const b = 3 * r, u0 = u[b], u1 = u[b + 1], u2 = u[b + 2];
+        for (let q = 0; q < 3; q++) { t1L[b + q] = L[3 * q] * u0 + L[3 * q + 1] * u1 + L[3 * q + 2] * u2; t1D[b + q] = D[3 * q] * u0 + D[3 * q + 1] * u1 + D[3 * q + 2] * u2; } }
+      // y: (ay -> qy), for each (qx, az)
+      for (let az = 0; az < 3; az++) for (let qx = 0; qx < 3; qx++) { const b = 9 * az + qx, a0 = t1L[b], a1 = t1L[b + 3], a2 = t1L[b + 6], d0 = t1D[b], d1 = t1D[b + 3], d2 = t1D[b + 6];
+        for (let q = 0; q < 3; q++) { const l0 = L[3 * q], l1 = L[3 * q + 1], l2 = L[3 * q + 2], k = b + 3 * q;
+          tLL[k] = l0 * a0 + l1 * a1 + l2 * a2; tDL[k] = l0 * d0 + l1 * d1 + l2 * d2; tLD[k] = D[3 * q] * a0 + D[3 * q + 1] * a1 + D[3 * q + 2] * a2; } }
+      // z: (az -> qz), for each (qx, qy)
+      for (let r = 0; r < 9; r++) { const a0 = tLL[r], a1 = tLL[r + 9], a2 = tLL[r + 18], d0 = tDL[r], d1 = tDL[r + 9], d2 = tDL[r + 18], e0 = tLD[r], e1 = tLD[r + 9], e2 = tLD[r + 18];
+        for (let q = 0; q < 3; q++) { const l0 = L[3 * q], l1 = L[3 * q + 1], l2 = L[3 * q + 2], k = 3 * (r + 9 * q) + c;
+          Uv[k] = l0 * a0 + l1 * a1 + l2 * a2; Ux[k] = l0 * d0 + l1 * d1 + l2 * d2; Uy[k] = l0 * e0 + l1 * e1 + l2 * e2; Uz[k] = D[3 * q] * a0 + D[3 * q + 1] * a1 + D[3 * q + 2] * a2; } }
+    }
+    rp.fill(0);
+    for (let q = 0; q < 27; q++) {
+      const gi = (g0 + e * 27 + q) * 10, si = (g0 + e * 27 + q) * 20, w = geo[gi + 9];
+      const G0 = geo[gi], G1 = geo[gi + 1], G2 = geo[gi + 2], G3 = geo[gi + 3], G4 = geo[gi + 4], G5 = geo[gi + 5], G6 = geo[gi + 6], G7 = geo[gi + 7], G8 = geo[gi + 8];
+      const k0 = 3 * q, u0 = Uv[k0], u1 = Uv[k0 + 1], u2 = Uv[k0 + 2];
+      const b00 = Ux[k0] * G0 + Uy[k0] * G3 + Uz[k0] * G6, b01 = Ux[k0] * G1 + Uy[k0] * G4 + Uz[k0] * G7, b02 = Ux[k0] * G2 + Uy[k0] * G5 + Uz[k0] * G8;
+      const b10 = Ux[k0 + 1] * G0 + Uy[k0 + 1] * G3 + Uz[k0 + 1] * G6, b11 = Ux[k0 + 1] * G1 + Uy[k0 + 1] * G4 + Uz[k0 + 1] * G7, b12 = Ux[k0 + 1] * G2 + Uy[k0 + 1] * G5 + Uz[k0 + 1] * G8;
+      const b20 = Ux[k0 + 2] * G0 + Uy[k0 + 2] * G3 + Uz[k0 + 2] * G6, b21 = Ux[k0 + 2] * G1 + Uy[k0 + 2] * G4 + Uz[k0 + 2] * G7, b22 = Ux[k0 + 2] * G2 + Uy[k0 + 2] * G5 + Uz[k0 + 2] * G8;
+      let p = 0; for (let c = 0; c < 8; c++) p += Ref.P[q * 8 + c] * pe[c];
+      const mu = st[si], ka = st[si + 1], D00 = st[si + 2], D11 = st[si + 3], D22 = st[si + 4], D01 = st[si + 5], D02 = st[si + 6], D12 = st[si + 7];
+      const d00 = b00, d11 = b11, d22 = b22, d01 = (b01 + b10) / 2, d02 = (b02 + b20) / 2, d12 = (b12 + b21) / 2;
+      const DD = D00 * d00 + D11 * d11 + D22 * d22 + 2 * (D01 * d01 + D02 * d02 + D12 * d12), kk = ka * DD;
+      const T00 = 2 * mu * d00 + kk * D00 - p, T11 = 2 * mu * d11 + kk * D11 - p, T22 = 2 * mu * d22 + kk * D22 - p;
+      const T01 = 2 * mu * d01 + kk * D01, T02 = 2 * mu * d02 + kk * D02, T12 = 2 * mu * d12 + kk * D12;
+      const U0 = st[si + 8], U1 = st[si + 9], U2 = st[si + 10];
+      const c0 = Re * (u0 * st[si + 11] + u1 * st[si + 12] + u2 * st[si + 13] + U0 * b00 + U1 * b01 + U2 * b02);
+      const c1 = Re * (u0 * st[si + 14] + u1 * st[si + 15] + u2 * st[si + 16] + U0 * b10 + U1 * b11 + U2 * b12);
+      const c2 = Re * (u0 * st[si + 17] + u1 * st[si + 18] + u2 * st[si + 19] + U0 * b20 + U1 * b21 + U2 * b22);
+      // (the test functions' reference derivatives' weights: dx = Na G0 + Nb G3 + Ng G6, ...)
+      Fx[k0] = w * (T00 * G0 + T01 * G1 + T02 * G2); Fy[k0] = w * (T00 * G3 + T01 * G4 + T02 * G5); Fz[k0] = w * (T00 * G6 + T01 * G7 + T02 * G8); F0[k0] = w * c0;
+      Fx[k0 + 1] = w * (T01 * G0 + T11 * G1 + T12 * G2); Fy[k0 + 1] = w * (T01 * G3 + T11 * G4 + T12 * G5); Fz[k0 + 1] = w * (T01 * G6 + T11 * G7 + T12 * G8); F0[k0 + 1] = w * c1;
+      Fx[k0 + 2] = w * (T02 * G0 + T12 * G1 + T22 * G2); Fy[k0 + 2] = w * (T02 * G3 + T12 * G4 + T22 * G5); Fz[k0 + 2] = w * (T02 * G6 + T12 * G7 + T22 * G8); F0[k0 + 2] = w * c2;
+      const div = b00 + b11 + b22;
+      for (let c = 0; c < 8; c++) rp[c] -= w * Ref.P[q * 8 + c] * div;
+    }
+    // the test sums, factored: re = Σ_q Dx Ly Lz Fx + Lx Dy Lz Fy + Lx Ly (Lz F0 + Dz Fz)
+    for (let c = 0; c < 3; c++) {
+      // z: (qz -> az): Zx (-> Dx Ly), Zy (-> Lx Dy), Z0 (-> Lx Ly), into tLL/tDL/tLD (index qx + 3qy + 9az)
+      for (let r = 0; r < 9; r++) { const i0 = 3 * r + c, i1 = 3 * (r + 9) + c, i2 = 3 * (r + 18) + c;
+        const x0 = Fx[i0], x1 = Fx[i1], x2 = Fx[i2], y0 = Fy[i0], y1 = Fy[i1], y2 = Fy[i2], f0 = F0[i0], f1 = F0[i1], f2 = F0[i2], z0 = Fz[i0], z1 = Fz[i1], z2 = Fz[i2];
+        for (let a = 0; a < 3; a++) { const l0 = L[a], l1 = L[3 + a], l2 = L[6 + a], k = r + 9 * a;
+          tDL[k] = l0 * x0 + l1 * x1 + l2 * x2; tLD[k] = l0 * y0 + l1 * y1 + l2 * y2; tLL[k] = l0 * f0 + l1 * f1 + l2 * f2 + D[a] * z0 + D[3 + a] * z1 + D[6 + a] * z2; } }
+      // y: (qy -> ay): Yx (-> Dx) in t1D, Y0 (-> Lx) in t1L (index qx + 3ay + 9az)
+      for (let az = 0; az < 3; az++) for (let qx = 0; qx < 3; qx++) { const b = 9 * az + qx, x0 = tDL[b], x1 = tDL[b + 3], x2 = tDL[b + 6], y0 = tLD[b], y1 = tLD[b + 3], y2 = tLD[b + 6], f0 = tLL[b], f1 = tLL[b + 3], f2 = tLL[b + 6];
+        for (let a = 0; a < 3; a++) { const l0 = L[a], l1 = L[3 + a], l2 = L[6 + a], k = b + 3 * a;
+          t1D[k] = l0 * x0 + l1 * x1 + l2 * x2; t1L[k] = l0 * f0 + l1 * f1 + l2 * f2 + D[a] * y0 + D[3 + a] * y1 + D[6 + a] * y2; } }
+      // x: (qx -> ax)
+      for (let r = 0; r < 9; r++) { const b = 3 * r, x0 = t1D[b], x1 = t1D[b + 1], x2 = t1D[b + 2], f0 = t1L[b], f1 = t1L[b + 1], f2 = t1L[b + 2];
+        for (let a = 0; a < 3; a++) re[3 * (b + a) + c] = D[a] * x0 + D[3 + a] * x1 + D[6 + a] * x2 + L[a] * f0 + L[3 + a] * f1 + L[6 + a] * f2; }
+    }
+    for (let a = 0; a < 27; a++) ffAddNodal(S, y, conn[o27 + a], re[3 * a], re[3 * a + 1], re[3 * a + 2]);
+    for (let c = 0; c < 8; c++) y[nU + pOf[conn[o27 + CORNER[c]]]] += rp[c];
+  }
+}
 /** y = J x (the Newton Jacobian at the state last given to ffResidual), element by element. Fixed rows: y = x. */
 function ffJacVec(S, x, y = new Float64Array(S.nD)) {
   y.fill(0);
   const { geo, pOf, nU, st } = S, Re = S.Re;
   const fix = S.fix;
   for (const B of S.B) {
+  if (B.K.hex && FF_TP) { ffJacVecHex(S, B, x, y); continue; }
   const K = B.K, nE = B.nE, Ref = K.T, npe = K.npe, nq = K.nq, npp = K.npp, CORNER = K.corner, conn = B.conn, g0 = B.g0;
   const dNx = new Float64Array(npe), dNy = new Float64Array(npe), dNz = new Float64Array(npe), ue = new Float64Array(3 * npe), pe = new Float64Array(npp), re = new Float64Array(3 * npe), rp = new Float64Array(npp);
   for (let e = 0; e < nE; e++) {
@@ -568,23 +659,24 @@ function ffCoarseSolve(C, b) {
   for (let i = n - 1; i >= 0; i--) { let s = x[i]; for (let j = i + 1; j < n; j++) s -= LU[i * n + j] * x[j]; x[i] = s / (LU[i * n + i] || 1e-300); }
   return x;
 }
-/** Symmetric Gauss–Seidel sweep on A x = b. */
-function ffSGS(A, diag, b, x) {
-  for (let pass = 0; pass < 2; pass++) for (let t = 0; t < A.n; t++) {
-    const i = pass ? A.n - 1 - t : t; let s = b[i];
+/** One Gauss–Seidel sweep on A x = b, forward or (back) backward. */
+function ffGS(A, diag, b, x, back) {
+  for (let t = 0; t < A.n; t++) {
+    const i = back ? A.n - 1 - t : t; let s = b[i];
     for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (j !== i) s -= A.val[p] * x[j]; }
     x[i] = s / diag[i];
   }
 }
-/** One V-cycle for A x = b from x = 0. */
+/** One V-cycle for A x = b from x = 0: a forward Gauss–Seidel sweep down, a backward one up (the cycle symmetric, as CG
+ *  needs; each sweep's two passes before took a quarter longer for the same iterations). */
 function ffVcycle(H, b, lev = 0) {
   if (lev === H.levels.length) return ffCoarseSolve(H.coarse, b);
   const L = H.levels[lev], x = new Float64Array(L.A.n);
-  ffSGS(L.A, L.diag, b, x);
+  ffGS(L.A, L.diag, b, x, false);
   const r = ffMatVec(L.A, x); for (let i = 0; i < r.length; i++) r[i] = b[i] - r[i];
   const ec = ffVcycle(H, ffMatVec(L.R, r), lev + 1), e = ffMatVec(L.P, ec);
   for (let i = 0; i < x.length; i++) x[i] += e[i];
-  ffSGS(L.A, L.diag, b, x);
+  ffGS(L.A, L.diag, b, x, true);
   return x;
 }
 
@@ -795,6 +887,14 @@ function ffFGMRES(S, PC, b, opts = {}) {
   return { x, it, res };
 }
 
+/** The preconditioner at the current state: the one built last when the viscosity it took is the same at every quadrature
+ *  point (a constant viscosity: every Newton step's), else a new one. */
+function ffPrecondAt(S) {
+  const st = S.st, nQ = st.length / 20;
+  if (S.pcMu && S.pcMu.length === nQ) { let same = true; for (let q = 0; q < nQ; q++) if (st[20 * q] !== S.pcMu[q]) { same = false; break; } if (same) return S.pc; }
+  S.pc = ffPrecond(S); S.pcMu = new Float64Array(nQ); for (let q = 0; q < nQ; q++) S.pcMu[q] = st[20 * q];
+  return S.pc;
+}
 /**
  * Solve: Newton from x0 (default: the fixed values, zero elsewhere), each step by FGMRES. Returns the state (SI at the
  * nodes: u, v, w, p) and the history.
@@ -806,7 +906,7 @@ function ffSolve(S, opts = {}) {
   let R = ffResidual(S, x), r0 = Math.sqrt(R.reduce((s, v) => s + v * v, 0)), r = r0;
   const t0 = Date.now();
   for (let k = 0; k < maxNewton && r > tol * Math.max(1, r0) && r > 1e-14; k++) {
-    const tp = Date.now(), PC = ffPrecond(S), tg = Date.now();
+    const tp = Date.now(), PC = ffPrecondAt(S), tg = Date.now();
     const lin = ffFGMRES(S, PC, R.map(v => -v), { tol: opts.linTol ?? Math.min(1e-3, Math.max(1e-10, 0.1 * r / Math.max(r0, 1e-300))), restart: opts.restart, maxIt: opts.maxIt, onIt: opts.onLinIt });
     // (a backtracking line search: a yield stress makes the full step overshoot far from the answer)
     let al = 1, rn = Infinity; const x0 = Float64Array.from(x);
