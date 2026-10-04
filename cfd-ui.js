@@ -336,7 +336,9 @@ const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
 // A mesh preset scales the default element counts (along the blade about 0.6 gap per element, 12..40;
 // up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
 // the counts given (along the blade empty = from the blade's length, as Medium).
-const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null, gdMin: null };
+// (time, T-2 -- cfd-time-ui.js: steady, or the flow in time after a change; never edited in place, replaced)
+const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0 });
+const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null, gdMin: null, time: TIME_DEFAULTS };
 const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' }, adapted: { l: 'Adapted' } };
 /** The presets a shared setting can pick ("Adapted" is a location's own, from meshing to an accuracy). */
 const sharedMeshPresets = () => Object.entries(MESH_PRESETS).filter(([k]) => k !== 'adapted');
@@ -468,6 +470,8 @@ const FV = {
   meshShow: 'solved',     // Mesh: the solved mesh when there is one up to date, else the starting one
   meshShade: true,        // Mesh: elements shaded by their quality
   stepAuto: false,        // a Run from Solve: open Results when it ends
+  tk: null,               // the flow in time (cfd-time-ui.js): the kept time shown, null = the steady flow; tkLast the last one picked
+  tkLast: null,
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -593,7 +597,8 @@ function runLocation(i) {
   if (!cfdBatch.includes(i)) cfdBatch.push(i);
   run.status = 'running'; run.error = null; run.progress = null;
   run.live = { r: [], solves: [], t0: performance.now(), tol: geo.solver.tol };
-  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT, !!geo.struct, !!geo.orient);
+  const tm = timeOn() ? timeMsg(i, geo) : null;   // (the flow in time after the steady solve, when set)
+  run.prog = prog2D(geo.solver.tol || TOL_DEFAULT, !!geo.struct, !!geo.orient, !!tm);
   let lastStage = null;
   logCFD(i, `run started: ${geo.shape === 'round' ? `round entry R ${(geo.R * 1000).toFixed(0)} mm` : geo.shape === 'flat' ? 'flat land' : bladeText()}${geo.clModel === 'simple' ? ' (simple contact-line model)' : ''}, gap ${(geo.H * 1000).toFixed(3)} mm, web ${(geo.U * 60).toFixed(2)} m/min, ${RHEO_MODELS[geo.model].l}, contact angle ${geo.contactDeg.toFixed(1)}°, ${MESH_PRESETS[geo.solver.mesh].l.toLowerCase()} mesh (${geo.solver.nEb} + ${geo.solver.nEf} + ${geo.solver.nEs} by ${geo.solver.nEy})`);
   const finish = () => { worker.terminate(); if (cfdWorkers[i] === worker) cfdWorkers[i] = null; };
@@ -618,6 +623,7 @@ function runLocation(i) {
         field: makeFlowField(r, { rho: geo.rho, ty: geo.ty }), streamCache: new Map(),
       });
       run.metrics = flowMetrics(run.field);
+      timeTake(run, r, i, geo);
     }
     if (run.status === 'done') {
       const tr = r.trace;
@@ -631,7 +637,7 @@ function runLocation(i) {
   };
   // (a worker stopped while its scripts load reports their load failing afterwards: not an error of the run)
   worker.onerror = e => { if (cfdWorkers[i] !== worker) return; finish(); run.status = 'error'; run.error = e.message || 'worker error'; logCFD(i, `failed: ${run.error}`, 'bad'); renderRunChips(); renderCFD(); stepAfterRuns2D(); };
-  worker.postMessage(cfdWorkerMessage(geo, geo.solver, true));
+  worker.postMessage({ ...cfdWorkerMessage(geo, geo.solver, true), ...(tm ? { time: tm } : {}) });
   renderRunChips();
   renderCFD();
 }
@@ -887,13 +893,14 @@ function viewCFD() {
         <div id="cfdBusy"></div>
         <div class="live-res" id="cfdLive" hidden><div class="xl-chart"><canvas role="img" aria-label="Newton residuals of the solves running"></canvas></div></div>
         <div id="cfdSeeds"></div>
+        <div id="cfdTimeBar" hidden></div>
         <div id="cfdPlots"></div>
         <div class="fv-legend" id="cfdLegend"></div>
       </div>
       <div class="split split-h" id="dockSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the results panel" tabindex="0"></div>
       <section class="dock" aria-label="Results">
         <div class="dock-tabs" role="tablist" aria-label="Results">
-          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('flakes', 'Flakes')}${dockTab('fibre', 'Fibre')}${dockTab('conv', 'Convergence')}${dockTab('numerics', 'Numerics', 'solve')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
+          ${dockTab('dims', 'Dimensions')}${dockTab('meshlocs', 'Mesh of each location')}${dockTab('mesh', 'Mesh study', 'mesh')}${dockTab('accuracy', 'Mesh to an accuracy', 'mesh')}${dockTab('metrics', 'Flow metrics')}${dockTab('probes', 'Probes')}${dockTab('cuts', 'Cut lines')}${dockTab('across', 'Across the web')}${dockTab('profiles', 'Profiles')}${dockTab('flakes', 'Flakes')}${dockTab('fibre', 'Fibre')}${dockTab('time', 'Time')}${dockTab('conv', 'Convergence')}${dockTab('numerics', 'Numerics', 'solve')}${dockTab('problems', 'Problems')}${dockTab('msgs', 'Messages')}${dockTab('history', 'History', 'geometry mesh solve')}
           ${dockMore(['mesh', 'Mesh study'], ['cases', 'Saved cases'], ['history', 'History'], ['method', 'Method'], ['numerics', 'Numerics'])}
         </div>
         <div class="dock-body">
@@ -915,6 +922,7 @@ function viewCFD() {
           ${panel('profiles', '<h3 class="dock-h" id="cfdProfTitle">Profiles</h3><div id="cfdProfiles"></div>')}
           ${panel('flakes', '<div id="cfdFlakes"></div>')}
           ${panel('fibre', '<div id="cfdFibre"></div>')}
+          ${panel('time', '<div id="cfdTime"></div>')}
           ${panel('conv', '<div id="cfdConv"></div>')}
           ${panel('numerics', '<div id="cfdNumerics"></div>')}
           ${panel('mesh', '<div id="cfdMeshStudy"></div>')}
@@ -1115,6 +1123,7 @@ function renderCFD() {
   stepBarScroll();
   if (onResults) renderSeedPanel();
   updateBusy();
+  renderTimeBar();
   if (onResults) {
     renderLegend();          // (before the plots: its height sets theirs)
     renderFlowPlots();
@@ -1133,6 +1142,7 @@ function renderCFD() {
   renderProfiles();
   renderFlakes();
   renderConvergence();
+  renderTimeCharts();
   if (typeof renderNumerics2D === 'function') renderNumerics2D();
   renderSolverNote();
   if (typeof renderAccuracy === 'function') renderAccuracy();
@@ -1178,7 +1188,7 @@ function exportField() {
   const rows = [['location', 'z_mm', 'i', 'j', 'boundary', 'x_mm', 'y_mm', 'u_mm_s', 'v_mm_s', 'speed_mm_s', 'p_Pa', 'shear_rate_1_s', 'viscosity_Pa_s', 'unyielded',
     'vorticity_1_s', 'strain_rate_stretching_1_s', 'strain_rate_compression_1_s', 'stretching_direction_deg', 'dissipation_W_m3', 'stream_function_mm2_s', 'structure_lambda']];
   for (const L of exportLocs()) {
-    const f = cfdRuns[L].field;
+    const f = shownRun(L).field;
     for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) {
       const k = j * f.nx + i;
       rows.push([L + 1, CFD_LOCS[L].z, i, j, nodeKind(f, i, j), f.gx[k] * 1e3, f.gy[k] * 1e3, f.u[k] * 1e3, f.v[k] * 1e3, f.speed[k] * 1e3, f.p[k], f.shear[k], f.mu[k],
@@ -1190,7 +1200,7 @@ function exportField() {
 function exportBoundaries() {
   const rows = [['location', 'z_mm', 'column', 'web_x_mm', 'web_p_Pa', 'web_u_mm_s', 'top', 'top_x_mm', 'top_y_mm', 'top_p_Pa']];
   for (const L of exportLocs()) {
-    const r = cfdRuns[L].result, f = cfdRuns[L].field;
+    const r = shownRun(L).result, f = shownRun(L).field;
     for (let i = 0; i < f.nx; i++) rows.push([L + 1, CFD_LOCS[L].z, i, r.xWeb[i] * 1e3, r.pWeb[i], r.uWeb[i] * 1e3, nodeKind(f, i, f.ny - 1), r.xTop[i] * 1e3, r.yTop[i] * 1e3, r.pTop[i]]);
   }
   downloadCSV(`cfd-boundaries-${csvStamp()}.csv`, rows);
@@ -1218,7 +1228,7 @@ function renderProbes() {
   if (!cfdProbes.length) { host.innerHTML = `<p class="cap">No probes yet. ${placeProbes ? 'Click a plot to place one.' : 'Place them by clicking a plot, or enter a point.'}</p>`; return; }
   const locs = exportLocs(), esc = t => t.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const cell = (L, q) => {
-    const f = cfdRuns[L].field, pv = probeValues(f, q);
+    const f = shownRun(L).field, pv = probeValues(f, q);
     if (!pv) return '<td><small>outside the fluid</small></td>';
     return `<td>|V| ${fmtNum(pv.speed * 1000)} <small>u ${fmtNum(pv.u * 1000)} · v ${fmtNum(pv.v * 1000)} mm/s</small><small>p ${fmtNum(pv.p)} Pa · γ̇ ${fmtNum(pv.shear)} 1/s</small><small>μ ${pv.unyielded ? '&gt; cap (unyielded)' : fmtNum(pv.mu) + ' Pa·s'}</small></td>`;
   };
@@ -1231,7 +1241,7 @@ function renderProbes() {
 function exportProbes() {
   const rows = [['probe', 'x_mm', 'y_mm', 'location', 'z_mm', 'inside_fluid', 'u_mm_s', 'v_mm_s', 'speed_mm_s', 'p_Pa', 'shear_rate_1_s', 'viscosity_Pa_s', 'unyielded']];
   for (const q of cfdProbes) for (const L of exportLocs()) {
-    const pv = probeValues(cfdRuns[L].field, q);
+    const pv = probeValues(shownRun(L).field, q);
     rows.push([q.name, q.x * 1e3, q.y * 1e3, L + 1, CFD_LOCS[L].z, pv ? 1 : 0, ...(pv ? [pv.u * 1e3, pv.v * 1e3, pv.speed * 1e3, pv.p, pv.shear, pv.mu, pv.unyielded ? 1 : 0] : ['', '', '', '', '', '', ''])]);
   }
   downloadCSV(`cfd-probes-${csvStamp()}.csv`, rows);
@@ -1277,7 +1287,7 @@ function renderCuts() {
     for (const k of fields) {
       const d = SCALARS[k], cv = host.querySelector(`canvas[data-cutchart="${k}"]`);
       const ss = series.map(sr => {
-        const pr = cutProfile(cfdRuns[sr.L].field, sr.q, d.arr(cfdRuns[sr.L].field), d.scale);
+        const pr = cutProfile(shownRun(sr.L).field, sr.q, d.arr(shownRun(sr.L).field), d.scale);
         // (split at gaps: a series per stretch inside the fluid, drawn in the same colour)
         const runs = []; let cur = [];
         for (const p of pr) { if (p.v == null) { if (cur.length) runs.push(cur); cur = []; } else cur.push([p.s * 1000, p.v]); }
@@ -1313,7 +1323,7 @@ function exportCuts() {
   const keys = Object.keys(SCALARS);
   const rows = [['line', 'location', 'z_mm', 'distance_mm', 'x_mm', 'y_mm', 'inside_fluid', ...keys.map(k => `${k}_${SCALARS[k].unit.replace(/[^A-Za-z0-9]+/g, '_')}`)]];
   for (const q of cfdCuts) for (const L of exportLocs()) {
-    const f = cfdRuns[L].field, prof = keys.map(k => cutProfile(f, q, SCALARS[k].arr(f), SCALARS[k].scale));
+    const f = shownRun(L).field, prof = keys.map(k => cutProfile(f, q, SCALARS[k].arr(f), SCALARS[k].scale));
     prof[0].forEach((p, n) => rows.push([q.name, L + 1, CFD_LOCS[L].z, p.s * 1e3, p.x * 1e3, p.y * 1e3, p.v == null ? 0 : 1, ...prof.map(pr => pr[n].v ?? '')]));
   }
   downloadCSV(`cfd-cut-lines-${csvStamp()}.csv`, rows);
@@ -1870,7 +1880,7 @@ function colourControls(key) {
   if (key === 'quality') return `<div class="cc">${head}<p class="fv-note">Mesh quality keeps its own scale (worse = stronger), from the worst element to 1.</p></div>`;
   if (key === 'none' || !SCALARS[key]) return `<div class="cc">${head}${key === 'time' ? '<p class="fv-note">Time along the lines: 0 to the 90th percentile of the lines\' times (automatic).</p>' : ''}</div>`;
   const d = SCALARS[key], locs = viewLocs().filter(i => cfdRuns[i].field);
-  const r = locs.length ? scalarRange(key, locs.map(i => cfdRuns[i].field)) : null, man = FV.crange[key] || {};
+  const r = locs.length ? scalarRange(key, locs.map(i => shownRun(i).field)) : null, man = FV.crange[key] || {};
   const logOk = LOG_OK.has(key);
   return `<div class="cc" data-key="${key}">
     ${head}
@@ -1962,8 +1972,9 @@ function renderFlowPlots() {
     </div>`;
   if (FV.view === 'diff') { renderDiffPlot(host, zoomCtl); return; }
 
+  const sr = CFD_LOCS.map((_, i) => shownRun(i)), at = i => sr[i].frame != null ? ` · <b>t = ${fmtT(sr[i].t)}</b>` : '';
   host.innerHTML = list.map(i => `
-    ${compare ? '' : `<div class="fv-caption">${locationTitle(i)} · ${cfdRuns[i].result.mesh.nEx} × ${cfdRuns[i].result.mesh.nEy} finite elements · <span class="fv-ex"></span>${cfdIsStale(i) ? ' · <span class="warn-text">out of date: inputs changed since this run</span>' : ''}${cfdRuns[i].result.converged ? '' : ` · <span class="warn-text">converged only to residual ${cfdRuns[i].result.residual.toExponential(1)}</span>`}</div>`}
+    ${compare ? '' : `<div class="fv-caption">${locationTitle(i)}${at(i)} · ${sr[i].result.mesh.nEx} × ${sr[i].result.mesh.nEy} finite elements · <span class="fv-ex"></span>${cfdIsStale(i) ? ' · <span class="warn-text">out of date: inputs changed since this run</span>' : ''}${cfdRuns[i].result.converged ? '' : ` · <span class="warn-text">converged only to residual ${cfdRuns[i].result.residual.toExponential(1)}</span>`}</div>`}
     <div class="fv-plot${compare ? ' compact' : ''}" data-i="${i}">
       <canvas class="fv-main" role="img" aria-label="${locationTitle(i)}: CFD field with flow overlays"></canvas>
       <canvas class="fv-over" aria-hidden="true"></canvas>
@@ -1974,7 +1985,7 @@ function renderFlowPlots() {
   // one location: the plot fills the viewport's height (what the caption leaves)
   const cap = host.querySelector('.fv-caption');
   const maxH = compare ? null : host.clientHeight - (cap ? cap.offsetHeight + 6 : 0) - 4;
-  const ctx = { compare, list, maxH: maxH > 150 ? maxH : null, fields: list.map(i => cfdRuns[i].field) };
+  const ctx = { compare, list, maxH: maxH > 150 ? maxH : null, fields: list.map(i => sr[i].field), ...(sr.some(r => r.frame != null) ? { runs: sr } : {}) };
   ctx.shared = plotRanges(ctx.fields, list, null);
   ctx.yMax = Math.max(...ctx.fields.map(f => f.Ly));
   ctx.vmax = Math.max(...ctx.fields.map(f => f.vmax));
@@ -2019,7 +2030,7 @@ function paintPlot(el, fast) {
     mesh: mo ? { quality: ctx.quality ? meshQuality(f) : null } : FV.mesh && f.curv ? { quality: FV.meshQuality && !ds ? meshQuality(f) : null } : null,
     contours: mo ? null : ds ? diffContours(ds, ranges.base) : contourSpec(f, ranges, zoom, ctx.fields),
     cuts: ds || mo ? [] : cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
-    flakes: FV.flakes && !ds && !mo ? orFlakeMarks(run) : null,
+    flakes: FV.flakes && !ds && !mo && run.frame == null ? orFlakeMarks(run) : null,
   });
   el._map = map;
   if (zoom) FV.zoom[zk] = map.view;           // (kept as clamped to the domain)
@@ -2313,7 +2324,7 @@ function wirePlotZoom(el) {
 
 /** Hover/touch probe (crosshair + values at the point, read from the stored field) and click-to-seed in manual mode. */
 function wirePlotProbe(el) {
-  const i = +el.dataset.i, run = cfdRuns[i], f = run.field, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over'), tip = el.querySelector('.fv-tip');
+  const i = +el.dataset.i, run = el._ctx && el._ctx.runs ? el._ctx.runs[i] : cfdRuns[i], f = run.field, cv = el.querySelector('.fv-main'), over = el.querySelector('.fv-over'), tip = el.querySelector('.fv-tip');
   const oc = over.getContext('2d');
   const size = () => [cv.clientWidth, parseFloat(cv.style.height) || cv.clientHeight];
   cv.style.cursor = placeCut || placeProbes || (FV.seedMode === 'manual' && FV.streamlines) ? 'crosshair' : '';
@@ -2517,7 +2528,7 @@ function renderMetrics() {
     ['Solver', '', r => `${r.result.converged ? 'converged' : 'partly converged'} <small>${r.result.iterations} Newton steps, residual ${r.result.residual.toExponential(1)}, ${(r.elapsedMs / 1000).toFixed(1)} s</small>`],
   ];
   const head = compare ? `<tr><th>Metric</th>${idx.map(i => `<th>Location ${i + 1}<small>z ${CFD_LOCS[i].z} mm</small></th>`).join('')}</tr>` : '';
-  const body = rows.map(([name, unit, fn]) => `<tr><th scope="row">${name}${unit ? `<small>${unit}</small>` : ''}</th>${idx.map(i => `<td>${cfdRuns[i].field ? fn(cfdRuns[i]) : '—'}</td>`).join('')}</tr>`).join('');
+  const body = rows.map(([name, unit, fn]) => `<tr><th scope="row">${name}${unit ? `<small>${unit}</small>` : ''}</th>${idx.map(i => `<td>${cfdRuns[i].field ? fn(shownRun(i)) : '—'}</td>`).join('')}</tr>`).join('');
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table${compare ? ' cmp' : ''}">${head ? `<thead>${head}</thead>` : ''}<tbody>${body}</tbody></table></div>
     <p class="fv-note">Pressure is gauge pressure, ambient air = 0, including the hydrostatic head; at the free surface it balances surface tension. Left out on purpose: velocity at the active metering edge (a no-slip solid corner, so 0 by definition).</p>`;
 }
@@ -2982,7 +2993,7 @@ function renderProfiles() {
   const host = document.getElementById('cfdProfiles');
   const i = multiView() ? FV.profileLoc : FV.view;
   document.getElementById('cfdProfTitle').textContent = `Profiles · Location ${i + 1}` + (multiView() ? ' (pick a single location above to change)' : '');
-  const run = cfdRuns[i];
+  const run = shownRun(i);
   if (!run.field) { host.innerHTML = '<p class="cap">No result for this location yet: press Run in the toolbar.</p>'; return; }
   const r = run.result, geo = run.geo, round = geo.shape === 'round';
   const qDiff = (r.Q / r.qLub - 1) * 100;

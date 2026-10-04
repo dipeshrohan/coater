@@ -132,7 +132,8 @@ const UNDO_UNITS = (() => {
   for (const k of Object.keys(SOLVER_DEFAULTS)) {
     const q = SOLVER_INPUTS.find(x => x.k === k);
     const [l, f] = k === 'mesh' ? ['Mesh', v => (MESH_PRESETS[v] || {}).l || v] : k === 'tol' ? ['Newton tolerance', fmtTol] : k === 'zones' ? ['Refinement zones', v => zonesText(v)]
-      : k === 'gdMin' ? ['Yield-stress floor γ̇min', v => (v > 0 ? `${v} 1/s` : 'Automatic')] : [q ? q.l : k, v => undoNum(v, q && q.d)];
+      : k === 'gdMin' ? ['Yield-stress floor γ̇min', v => (v > 0 ? `${v} 1/s` : 'Automatic')]
+        : k === 'time' ? ['Time', v => (!v || !v.on ? 'steady' : `transient, ${(TIME_SCEN.find(q => q[0] === v.scen) || [0, v.scen])[1].toLowerCase()}`)] : [q ? q.l : k, v => undoNum(v, q && q.d)];
     u.push({ id: 'cfds.' + k, get: () => CFDS[k], set: v => { CFDS[k] = v; }, label: (a, b) => undoChange(l, a, b, f) });
   }
   CFD_LOCS.forEach((loc, i) => {
@@ -243,7 +244,7 @@ function doeSetupId() {
   return JSON.stringify([d, cfdInputsKey(cfdGeometry(DOE.loc))]);
 }
 function undoKeepResults() {
-  for (const r of cfdRuns) if (r.field && r.key) undoRemember(r.key, { status: 'done', result: r.result, geo: r.geo, key: r.key, orientKey: r.orientKey || null, elapsedMs: r.elapsedMs, field: r.field, streamCache: r.streamCache || new Map(), metrics: r.metrics });
+  for (const r of cfdRuns) if (r.field && r.key) undoRemember(r.key, { status: 'done', result: r.result, geo: r.geo, key: r.key, orientKey: r.orientKey || null, elapsedMs: r.elapsedMs, field: r.field, streamCache: r.streamCache || new Map(), metrics: r.metrics, transient: r.transient || null });
   if (DOE.status !== 'running' && DOE.design && DOE.runs.length) undoRemember('doe ' + doeResultsId(), { design: DOE.design, runs: DOE.runs, status: DOE.status, key: DOE.key, t0: DOE.t0, t1: DOE.t1 });
 }
 function undoRestoreResults() {

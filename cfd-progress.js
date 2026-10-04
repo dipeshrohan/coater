@@ -21,6 +21,7 @@ const PROG = {
   outer: 0.3,     //   each outer iteration: this share of what is left
   sweeps: 6,      // the full width: sweeps expected before two have shown how fast they converge
   aflow: 0.6,     // the 2D with the flakes' alignment: the flow's share; the alignment (line by line) the rest
+  tflow: 0.3,     // the 2D in time: the steady solve (and what follows it)'s share; the march in time (by its time reached) the rest
 };
 
 /** A Newton solve's share done (0..1): its residual r fallen from its first, r0, toward tol on a log scale, or its continuation's path (0..1), whichever is further. */
@@ -37,8 +38,15 @@ function progNewton(r0, r, tol, path) {
  * number, from 0), it (its Newton steps so far), f (its share) }. tol: the Newton tolerance; struct: the run carries
  * the structure (its outer iterations after the first coating flow).
  */
-function prog2D(tol, struct = false, orient = false) { return { tol, struct, orient, share: 0, solve: -1, k: 0, f: 0, it: 0 }; }
+function prog2D(tol, struct = false, orient = false, time = false) { return { tol, struct, orient, time, share: 0, solve: -1, k: 0, f: 0, it: 0 }; }
 function prog2DFeed(P, pr, live) {
+  // (in time: the steady solve first, PROG.tflow of the whole; then the march, by the time it has reached of its end)
+  if (P.time) {
+    if (pr && pr.time) { P.share = Math.max(P.share, PROG.tflow + (1 - PROG.tflow) * Math.min(1, Math.max(0, pr.time.t / pr.time.tEnd))); return P; }
+    const share = P.share, Q = prog2DFeed(Object.assign(P, { time: false, share: share / PROG.tflow }), pr, live);
+    Q.time = true; Q.share = Math.max(share, PROG.tflow * Q.share);
+    return Q;
+  }
   // (the flakes' alignment after the flow: its stage says so, s = the lines done of all; the flow before it PROG.aflow)
   if (P.orient && pr && /^flake alignment/.test(pr.stage || '')) { P.share = Math.max(P.share, PROG.aflow + (1 - PROG.aflow) * Math.min(1, Math.max(0, pr.s || 0))); return P; }
   const sv = (live && live.solves) || [], n = sv.length, r = (live && live.r) || [];

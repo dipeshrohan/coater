@@ -99,6 +99,28 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
   (0.03 mm in 2.5 s with slip 0.03 gap), so the surface under it steepens into a film running down the face, which the
   spine mesh cannot follow: the march stops there with that message. Following it needs a mesh along the face (T-2
   question to the owner, with the app's own output). Steps and ramps of pressure and web speed from a running state work.
+- T-2 built (4 Oct): Coating › 2D in time. Solve: Time Steady | Transient on the toolbar; with Transient its card
+  first on the side panel: what changes (bead pressure, web speed, start-up from the gap filled at rest), the value it
+  goes to (empty: the location's own + 25 %), over (0: a step), end time (Automatic: the ramp and twice the web's run
+  through the 2D domain), time step (Automatic with the error per step, or fixed), times kept (5 to 200), exit-face slip
+  length (0: no slip, as steady). Each location solves the steady flow as before, then marches in its worker
+  (cfd-worker.js marchInTime): the run's steady result stays what the rest of the app reads; the march is kept on the
+  run (run.transient). Results: a time bar over the plots (Steady | In time, Play, the slider over the kept times):
+  the plots, metrics, probes, cut lines and profiles show the flow at the time chosen; the Time tab: the film at the end
+  of the 2D, the contact line, the flows in and out against time, and a table (film at start and end, settled within
+  1 %, steps, solve time). Project files keep the march (the typed arrays as base64), undo and redo take the settings,
+  help on every control, the report has an In time section (its table and the Time tab's charts).
+  Found and fixed in the march: a step of the web's speed on the yield-stress paste stalled Newton at the first time
+  step (shorter steps do not help: the jump is in what is imposed); a step that fails is now taken once more with more
+  Newton steps and the homotopy before it is shortened (cfd-fem-time.validate.js unchanged, all pass). A march that
+  stops keeps its last state as a kept time.
+  Measured in the browser (the structure off): bead pressure 0.490 -> 0.613 kPa, 5.8 s, the four locations in 16-22 s
+  each, film 1.469 -> 1.554 mm (L1), settled within 1 % at 4.5 s; the steady solve at 0.613 kPa draws the same flow.
+  Web 0.28 -> 0.35 m/min: film 1.469 -> 1.411 mm, 17 s. Start-up from rest: stops at 2.0 s with the film running down
+  the exit face (the T-1 finding, now the app's own output).
+  Open: with the structure (thixotropy) model on -- the app's default paste -- Transient is not run (the card and the
+  button say why; never mixed with the plain flow curve): the structure in time (lambda carried by the moving flow)
+  is not built yet. Question to the owner, with the app's screenshots.
 
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),

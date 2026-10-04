@@ -2892,3 +2892,21 @@ canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
 .pane-empty > canvas, .pane-empty > .pane-legend, .pane-empty > .pane-tools { display: none !important; }
 .pane-empty::after { content: attr(data-empty); display: block; width: fit-content; max-width: calc(100% - 24px); margin: 14px auto 10px; padding: 10px 16px;
   border: 1px dashed var(--line); border-radius: 8px; background: var(--soft); color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Coating › 2D in time (cfd-time-ui.js): the time bar over the plots, the Time card on Solve, the Time tab */
+#cfdTimeBar[hidden] { display: none !important; }
+#cfdWb:not([data-step="results"]) #cfdTimeBar { display: none !important; }
+.viewport #cfdTimeBar { flex: 0 0 auto; }
+.time-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 10px; margin: 0 0 6px; background: var(--soft); border: 1px solid var(--line-soft); border-radius: 9px; font-size: 12.5px; }
+.time-bar input[type=range] { flex: 1 1 220px; min-width: 140px; accent-color: var(--accent); }
+.time-bar input[type=range]:disabled { opacity: .45; }
+/* (the bar is on the soft ground the track's unfilled part has elsewhere: a line-coloured track here) */
+.time-bar input[type=range]::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--primary) 0%, var(--primary) var(--val, 0%), var(--line) var(--val, 0%), var(--line) 100%); }
+.time-bar input[type=range]::-moz-range-track { background: var(--line); }
+.time-bar .t-now { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time-bar .t-what { color: var(--muted); min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-kv td:first-child small { color: var(--muted); font-weight: 400; }
+.tm-kv select.tm-sel { width: auto; max-width: 150px; text-align: left; font-family: inherit; }
+.tm-table td small { color: var(--muted); margin-left: 4px; }
+.t-what-cap { margin: 0 0 8px; }
+.tm-kv input.geo-in { width: 92px; }
