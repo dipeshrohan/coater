@@ -147,11 +147,11 @@ function lineStreams() {
   S[0].cells = { x: cell(pct(X0)), rho: cell((slurryRho() / 1000).toFixed(2)) };
   const f0 = typeof dryFilms === 'function' ? dryFilms().find(f => f.key === sel) : null;
   if (f0) {
-    const mb = massBalance(f0.h0, lineSpeed(), ACROSS_W / 1000);
+    const mb = massBalance(f0.h0, lineSpeed(), webWidth() / 1000);
     S[1].cells = { h: cell(um(f0.h0), sel === 'web' ? 'the web\'s mean' : sel), x: cell(pct(X0)), m: cell(mb.coatDry.toFixed(0)), rho: cell((slurryRho() / 1000).toFixed(2)) };
   } else S[1].cells = { h: busy };
   const dr = typeof dryCurrent === 'function' && dryCurrent() ? linePick(dryRuns(sel)) : null;
-  S[2].cells = dr ? { h: cell(um(dr.exit.h)), x: cell(pct(dr.exit.waterPct / 100), dr.exit.dry ? 'dry' : 'wet'), m: f0 ? cell(massBalance(f0.h0, lineSpeed(), ACROSS_W / 1000).coatDry.toFixed(0)) : null } : { h: busy };
+  S[2].cells = dr ? { h: cell(um(dr.exit.h)), x: cell(pct(dr.exit.waterPct / 100), dr.exit.dry ? 'dry' : 'wet'), m: f0 ? cell(massBalance(f0.h0, lineSpeed(), webWidth() / 1000).coatDry.toFixed(0)) : null } : { h: busy };
   const fr = typeof filmCurrent === 'function' && filmCurrent() ? linePick(filmRuns(sel)) : null;
   if (fr) {
     const pl = fr.plate, part = fr.wetAtPeel ? 'its dry part only' : '';

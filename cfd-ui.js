@@ -296,10 +296,19 @@ function ovenAirGroups() {
   }
   return out;
 }
-const CFD_WEB_WIDTH_MM = 300; // the across-web axis the Contact line tab already uses
 // Each location reads its own inputs (over) first, falling back to the shared values: the
 // sidebar's, and for the gap and the contact angle the across-web variation at its z.
-const CFD_LOCS = [37.5, 112.5, 187.5, 262.5].map((z, i) => ({ id: i + 1, z, over: {}, solver: {} }));
+/** A location's place across the web when not typed (mm): the middle of its share of the web (four: its quarters). */
+const locZEven = (i, W = webWidth(), n = 4) => W * (i + 0.5) / n;
+/** A location's typed place from a project or case: none (null) when it is the even spread for the width it was made at. */
+const locZTyped = (z, i, W) => (z == null || !Number.isFinite(+z) || Math.abs(+z - locZEven(i, W)) < 1e-9 ? null : +z);
+// (z: where the location is, mm -- the typed place (zSet, within the web) or, not typed, the middle of its quarter, so the
+//  four follow the web's width; setting z types it, null spreads it evenly again)
+const CFD_LOCS = [0, 1, 2, 3].map(i => {
+  const l = { id: i + 1, zSet: null, over: {}, solver: {} };
+  Object.defineProperty(l, 'z', { enumerable: true, get() { return this.zSet != null ? Math.min(this.zSet, webWidth()) : locZEven(i); }, set(v) { this.zSet = v == null ? null : +v; } });
+  return l;
+});
 // Inputs a location can set for itself, in the sidebar's units.
 const LOC_INPUTS = [
   { k: 'gap', l: 'Gap at edge', u: 'mm', step: 0.001, d: 3, lo: 0.01, hi: 10 },
@@ -1467,7 +1476,7 @@ function saveCase() {
     CFDS: { ...CFDS },
     across: JSON.parse(JSON.stringify(ACR)),
     materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
-    locs: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
+    locs: CFD_LOCS.map(l => ({ z: l.zSet, over: { ...l.over }, solver: { ...l.solver } })),
     probes: cfdProbes.map(q => ({ ...q })),
     cuts: cfdCuts.map(q => ({ ...q })),
     summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
@@ -1485,10 +1494,11 @@ function loadCase(name) {
   if (!c) return;
   undoHint(`Load case ${name}`);
   // sidebar: set each slider as the reset button does, so everything that listens updates
+  const cP = 'webW' in c.P ? c.P : { ...c.P, webW: 300 };   // (a case from before the web's width: the 300 mm it was made at)
   for (const q of CFG) {
-    if (!(q.k in c.P)) continue;
+    if (!(q.k in cP)) continue;
     const sl = document.getElementById('s_' + q.k);
-    if (sl) { sl.value = c.P[q.k]; sl.dispatchEvent(new Event('input')); } else P[q.k] = c.P[q.k];
+    if (sl) { sl.value = cP[q.k]; sl.dispatchEvent(new Event('input')); } else P[q.k] = cP[q.k];
   }
   for (const k of Object.keys(CFDG)) if (c.CFDG && k in c.CFDG) CFDG[k] = c.CFDG[k];   // (older cases: fields since renamed are skipped)
   Object.assign(CFDS, SOLVER_DEFAULTS, c.CFDS || {});   // (older cases: the default solver settings)
@@ -1496,7 +1506,7 @@ function loadCase(name) {
   if (c.materials) applyMaterials(c.materials);   // (older cases: the slurry's card as it is now)
   if (c.oven) applyOven(c.oven);
   else for (const z of OVEN.zones) for (const k of ['airU', 'airT', 'plenum']) if (c.CFDG && Number.isFinite(c.CFDG[k])) z[k] = c.CFDG[k];   // (older cases: their single drying-air setting in every zone)
-  c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].z = l.z; CFD_LOCS[i].over = { ...l.over }; CFD_LOCS[i].solver = { ...(l.solver || {}) }; } });
+  c.locs.forEach((l, i) => { if (CFD_LOCS[i]) { CFD_LOCS[i].zSet = locZTyped(l.z, i, cP.webW); CFD_LOCS[i].over = { ...l.over }; CFD_LOCS[i].solver = { ...(l.solver || {}) }; } });
   if (Array.isArray(c.probes)) { cfdProbes = c.probes.map(q => ({ ...q })); saveProbes(); }
   if (Array.isArray(c.cuts)) { cfdCuts = c.cuts.map(q => ({ ...q })); saveCuts(); }
   cfdEditLoc = null;
@@ -1716,7 +1726,7 @@ function renderLocCards() {
     const sel = FV.view === i ? ' sel' : '', own = Object.keys(loc.over).length + Object.keys(loc.solver).length;
     return `<div class="loc-row${sel}">
       <button class="loc-pick" type="button" data-pick="${i}" aria-pressed="${FV.view === i}" title="Show location ${loc.id} in the viewport"><i class="loc-dot" style="background:${locColor(i)}"></i>L${loc.id}</button>
-      <label class="loc-z"><span>z</span><input type="number" min="0" max="${CFD_WEB_WIDTH_MM}" step="0.5" value="${loc.z}" data-i="${i}" id="locz_${i}" aria-label="Location ${loc.id} position across the web, mm"><span>mm</span></label>
+      <label class="loc-z"><span>z</span><input type="number" min="0" max="${webWidth()}" step="0.5" value="${loc.zSet ?? ''}" placeholder="${+loc.z.toFixed(1)}" data-i="${i}" id="locz_${i}" title="Empty: the middle of its quarter of the ${webWidth()} mm web (shown faint)" aria-label="Location ${loc.id} position across the web, mm (empty = spread evenly)"><span>mm</span></label>
       <button class="icon-btn loc-in-btn${own ? ' on' : ''}" type="button" data-edit="${i}" aria-expanded="${cfdEditLoc === i}" aria-controls="cfdLocEdit" title="Inputs for location ${loc.id} only${own ? ` (${own} set here)` : ''}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h7M12 4h2M2 12h3M8 12h6M9 2.5v3M5 10.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>${own ? `<span class="badge">${own}</span>` : ''}</button>
       <button class="icon-btn" type="button" data-run="${i}"${r.status === 'running' ? ' disabled' : ''} title="Run location ${loc.id}" aria-label="Run location ${loc.id}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg></button>
       <div class="loc-state ${cls}" data-state="${i}"${r.error ? ` title="${r.error}"` : ''}>${txt}</div>
@@ -1742,8 +1752,8 @@ function renderLocCards() {
   }
   host.querySelectorAll('input[data-i]').forEach(inp => inp.addEventListener('change', () => {
     const loc = CFD_LOCS[+inp.dataset.i];
-    guardNumber(inp, { label: `Location ${loc.id} position across the web`, lo: 0, hi: CFD_WEB_WIDTH_MM, unit: 'mm' }, v => { loc.z = v; });
-    inp.value = loc.z;
+    guardNumber(inp, { label: `Location ${loc.id} position across the web`, lo: 0, hi: webWidth(), unit: 'mm', allowEmpty: true }, v => { loc.zSet = v; });   // (empty: spread evenly)
+    inp.value = loc.zSet ?? '';
     renderCFD();
   }));
   document.querySelectorAll('#cfdLocs button[data-edit], #cfdLocEdit button[data-edit]').forEach(b => { b.onclick = () => { cfdEditLoc = cfdEditLoc === +b.dataset.edit ? null : +b.dataset.edit; renderLocCards(); }; });
@@ -2659,7 +2669,7 @@ function renderAcross() {
     let lo = pts.length ? Math.min(...pts.map(o => o.v)) : 0, hi = pts.length ? Math.max(...pts.map(o => o.v)) : 1;
     const pad = (hi - lo) * 0.25 || Math.abs(hi) * 0.05 || 1; lo -= pad; hi += pad;
     cv.setAttribute('aria-label', `${m.l} against position across the web`);
-    const map = plotChart(cv, 0.32, { x0: 0, x1: CFD_WEB_WIDTH_MM, y0: lo, y1: hi, xl: 'z across the web (mm)', yl: `${m.l}${m.u ? ' (' + m.u + ')' : ''}`, xd: 0, yd: Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(hi - lo || 1)))),
+    const map = plotChart(cv, 0.32, { x0: 0, x1: webWidth(), y0: lo, y1: hi, xl: 'z across the web (mm)', yl: `${m.l}${m.u ? ' (' + m.u + ')' : ''}`, xd: 0, yd: Math.max(0, Math.min(4, 2 - Math.floor(Math.log10(hi - lo || 1)))),
       s: [{ p: pts.map(o => [o.z, o.v]), c: cssVar('--muted'), w: 1.5 }] });
     const c = cv.getContext('2d'), surf = cssVar('--surface'), ink = cssVar('--ink');
     c.font = `11px ${cssVar('--mono')}`; c.textBaseline = 'middle';

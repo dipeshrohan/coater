@@ -58,7 +58,7 @@ const picon = name => `<svg class="pi" viewBox="0 0 16 16" aria-hidden="true">${
 
 // ---- which icon and group each input has ----
 const INPUT_ICON = {
-  U: 'speed', Hm: 'height', tf: 'thickness', oven: 'oven', mu: 'drop', n: 'thinning', ty: 'yield', g: 'tension', Pup: 'pressure', L: 'length', th: 'angle', face: 'face',
+  U: 'speed', webW: 'position', Hm: 'height', tf: 'thickness', oven: 'oven', mu: 'drop', n: 'thinning', ty: 'yield', g: 'tension', Pup: 'pressure', L: 'length', th: 'angle', face: 'face',
   dH: 'wave', lw: 'wavelength', tilt: 'angle', skew: 'angle', dt: 'bumpy', dth: 'wetting', a0e: 'edge', lam: 'ripple', vib: 'vibration',
   cfdR: 'radius', cfdPool: 'pool', cfdExit: 'exit', cfdShape: 'shape', cfdModel: 'model', cfdFibreSel: 'fibre', cfdGsm: 'weight', cfdRhoF: 'density', cfdDFrom: 'yarn',
   cfdDen: 'yarn', cfdNf: 'count', cfdAirPerm: 'air', cfdAirDP: 'pressure', cfdKoz: 'count', cfdAirFrac: 'air', cfdAirU: 'air', cfdAirT: 'temp', cfdPlenum: 'plenum',
@@ -106,7 +106,7 @@ const USES = [
 ];
 const cfdUses = () => {
   const uses = RHEO_MODELS[CFDG.model].uses;
-  return ['U', 'Hm', 'tf', 'oven', 'mu', 'g', 'Pup', 'th', 'dH', 'lw', 'tilt', 'skew', 'dt', 'dth', ...(uses.includes('n') ? ['n'] : []), ...(uses.includes('ty') ? ['ty'] : []), ...(bladeUsesL() ? ['L'] : [])];
+  return ['U', 'webW', 'Hm', 'tf', 'oven', 'mu', 'g', 'Pup', 'th', 'dH', 'lw', 'tilt', 'skew', 'dt', 'dth', ...(uses.includes('n') ? ['n'] : []), ...(uses.includes('ty') ? ['ty'] : []), ...(bladeUsesL() ? ['L'] : [])];
 };
 /** Why a tab does not use an input (its hover note). */
 function unusedWhy(k) {
@@ -122,13 +122,15 @@ function unusedWhy(k) {
 }
 // (the 1D pages use the 2D's inputs; To the oven also the ripple's, Across the web and the 3D blade the notch face)
 // (the 3D also the contact angle on the web: its open edges)
+// (the web's width: the coating's pages (the locations, across the web, the 3D, the pool), the Drying's (its water per second,
+//  the 2D and 3D sections))
 // (WF-2: a stage's tab, its own: Mixing the slurry's flow, Drying the web's speed and the room to the oven, Peel and wind the
 //  web's speed; the later stages none of these (their own inputs are below them); the Line none)
-const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () => ['U', 'oven'], peel: () => ['U'], cut: () => [], stack: () => [], furn: () => [], gfilm: () => [],
+const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () => ['U', 'webW', 'oven'], peel: () => ['U'], cut: () => [], stack: () => [], furn: () => [], gfilm: () => [],
   // (MP-W: the stack's and the furnace's multiphysics pages: their stage's inputs only, as the stage's own page)
   stack1d: () => [], stack2d: () => [], stack3d: () => [], furn1d: () => [], furn2d: () => [], furn3d: () => [],
   // (MP-5: the drying's multiphysics pages: the Drying page's inputs)
-  dry1d: () => ['U', 'oven'], dry2d: () => ['U', 'oven'], dry3d: () => ['U', 'oven'],
+  dry1d: () => ['U', 'webW', 'oven'], dry2d: () => ['U', 'webW', 'oven'], dry3d: () => ['U', 'webW', 'oven'],
   // (the pool and its feed: the 1D's inputs, which give the film and its sensitivity to the pool, and the feed's own)
   feed1d: () => [...cfdUses(), ...FEED_IN],
   // (the pool in 2D and 3D: the 1D's (its cycle), the feed's, and its own mesh)

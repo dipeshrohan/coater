@@ -297,8 +297,8 @@ function mixClear() {
  *  limit, or null), lv ('ok' | 'warn' | 'bad'), say (the warning when not ok) }]. Lumps against the blade's gap (they stick
  *  under it: streaks) and the dry film (specks), the grind gauge's range, boiling under the vacuum, the flakes' charge. */
 function mixChecks(r) {
-  const e = r.end, gR = r.inp.gR, gap = typeof localGap === 'function' ? localGap(ACROSS_W / 2) / 1000 : null;
-  const web = typeof processWeb === 'function' ? processWeb() : null, dry = web && typeof massBalance === 'function' ? massBalance(web.mean, lineSpeed(), ACROSS_W / 1000).dry : null;
+  const e = r.end, gR = r.inp.gR, gap = typeof localGap === 'function' ? localGap(webWidth() / 2) / 1000 : null;
+  const web = typeof processWeb === 'function' ? processWeb() : null, dry = web && typeof massBalance === 'function' ? massBalance(web.mean, lineSpeed(), webWidth() / 1000).dry : null;
   const g = mixGrind(e.grind), out = [];
   if (gap) out.push({ t: 'Lumps pass under the blade', res: `largest ${g}`, lim: `${(gap * 1000).toFixed(2)} mm gap`, v: e.grind / gap, lv: e.grind > gap ? 'bad' : 'ok',
     say: `Lumps up to ${g} are larger than the blade's gap (${(gap * 1000).toFixed(2)} mm): they would stick under it and streak the film` });

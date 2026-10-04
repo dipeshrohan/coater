@@ -280,6 +280,7 @@ function viewA() {
     az = document.getElementById('az'), azo = document.getElementById('azo');
   const syncPlayButton = () => { ap.innerHTML = ANIM.playing ? `${uiIco('pause')}Pause` : `${uiIco('play')}Play`; ap.setAttribute('aria-pressed', ANIM.playing); };
   syncPlayButton();
+  az.max = webWidth(); if (ANIM.z > webWidth()) ANIM.z = webWidth();   // (across the web's width)
   az.value = ANIM.z; azo.textContent = ANIM.z + ' mm'; syncSliderFill(az);
   syncSliderFill(at);
 
@@ -353,7 +354,7 @@ function fillA() {
 function contactAcross() {
   const X = ansAcross();
   if (!X) return null;
-  const N = X.z.length, WIDTH = 300, pts = X.z.map((z, k) => [z, X.s[k] * 1000]), film = X.z.map((z, k) => [z, X.film[k] * 1000]);
+  const N = X.z.length, WIDTH = webWidth(), pts = X.z.map((z, k) => [z, X.s[k] * 1000]), film = X.z.map((z, k) => [z, X.film[k] * 1000]);
   const ss = pts.map(q => q[1]), hs = film.map(q => q[1]);
   const mx = Math.max(...ss), mn = Math.min(...ss), hmn = Math.min(...hs), hmx = Math.max(...hs), over = ss.filter(s => s > P.face).length;
   const peakToPeak = mx - mn, wetFraction = over / N * 100, filmDeviation = (hmx - hmn) / ((hmx + hmn) / 2) * 100;
@@ -405,7 +406,7 @@ function ansWaiting() {
 // ---------------------------------------------------------------------
 function view1() {
   oneDRequest(true);
-  const ca = contactAcross(), mid = ca ? ansAcrossAt(150) : null;
+  const ca = contactAcross(), mid = ca ? ansAcrossAt(webWidth() / 2) : null;
   view.innerHTML = moduleFrame({
     cols: workbenchFits() ? 2 : 1,
     panes: [
@@ -417,7 +418,7 @@ function view1() {
   });
   if (!ca) { ansWaiting(); return; }
   const c1 = document.getElementById('c1');
-  drawSection(c1, workbenchFits() ? fitAspect(c1, 0.95) : 0.66, { H: localGap(150), h: mid.film * 1000, s: mid.s * 1000 });
+  drawSection(c1, workbenchFits() ? fitAspect(c1, 0.95) : 0.66, { H: localGap(webWidth() / 2), h: mid.film * 1000, s: mid.s * 1000 });
 
   const { WIDTH, pts, mx, mn, hmn, hmx, peakToPeak, filmDeviation, verdict } = ca;
   const c2 = document.getElementById('c2');

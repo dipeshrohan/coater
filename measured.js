@@ -223,11 +223,11 @@ function measModel(ds) {
   const K = ds.kind, rows = ds.rows;
   if (K === 'film_z' || K === 'cl_z') {
     const X = ansAcross(); if (!X) return null;
-    return { vals: rows.map(p => (K === 'film_z' ? ansInterp(X.z, X.film, p.z ?? 150) : ansInterp(X.z, X.s, p.z ?? 150)) * 1000), src: X.label };
+    return { vals: rows.map(p => (K === 'film_z' ? ansInterp(X.z, X.film, p.z ?? webWidth() / 2) : ansInterp(X.z, X.s, p.z ?? webWidth() / 2)) * 1000), src: X.label };
   }
   if (K === 'menisc') {
-    const a = ansAcrossAt(150); if (!a) return null;
-    return { vals: rows.map(p => measMeniscusAt(p.x, localGap(150), a.film * 1000, a.s * 1000, CFDG.exitAngle)), src: `${a.label}, at the web's centre; the static meniscus from its contact line` };
+    const a = ansAcrossAt(webWidth() / 2); if (!a) return null;
+    return { vals: rows.map(p => measMeniscusAt(p.x, localGap(webWidth() / 2), a.film * 1000, a.s * 1000, CFDG.exitAngle)), src: `${a.label}, at the web's centre; the static meniscus from its contact line` };
   }
   if (K === 'edge_x') { const ed = edgeOutlook(); if (!ed) return null; return { vals: rows.map(p => edgeAmplitudeAt(p.x, ed.h)), src: `the edge bead on the film at the ${ed.side} edge, ${ed.label}` }; }
   if (K === 'ripple_x') { const sf = surfaceOutlook(); if (!sf) return null; return { vals: rows.map(p => sf.lv.at(p.t ?? p.x / 1000 / (P.U / 60)) * 1e6), src: `the 1D's levelling at L${sf.loc + 1}, on the film ${ansFrom(sf.src)}` }; }
@@ -249,7 +249,7 @@ function measGeometry(ds, p, over) {
       loc.solver = {};
       loc.over = {};
       if (p.z != null) loc.z = p.z;
-      else { loc.z = CFD_WEB_WIDTH_MM / 2; loc.over.gap = gapHeight(); loc.over.th = P.th; }   // (no position: the web without its variation)
+      else { loc.z = webWidth() / 2; loc.over.gap = gapHeight(); loc.over.th = P.th; }   // (no position: the web without its variation)
       if (set.gap != null) loc.over.gap = set.gap;
       return cfdGeometry(0);
     } finally { Object.assign(loc, keep); }

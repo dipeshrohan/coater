@@ -21,6 +21,7 @@
 // ---------------------------------------------------------------------
 const CFG = [
   { g: 'Process', k: 'U', l: 'Web speed', min: 0.1, max: 1.0, step: 0.01, u: 'm/min', d: 2, v: 0.28 },
+  { k: 'webW', l: 'Web width', min: 50, max: 2000, step: 1, u: 'mm', d: 0, v: 620, h: 'the film covers it' },
   { k: 'Hm', l: 'Machine scraper height', min: 1.5, max: 2.3, step: 0.01, u: 'mm', d: 2, v: 1.90 },
   { k: 'tf', l: 'Fibre thickness', min: 0.05, max: 1.0, step: 0.01, u: 'mm', d: 2, v: 0.20 },
   { k: 'oven', l: 'Distance to oven', min: 0.1, max: 2, step: 0.05, u: 'm', d: 2, v: 0.5 },
@@ -43,8 +44,8 @@ const CFG = [
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
   { k: 'lw', l: 'Waviness wavelength', min: 20, max: 300, step: 5, u: 'mm', d: 0, v: 120 },
-  { k: 'tilt', l: 'Blade tilt across the web', min: -500, max: 500, step: 5, u: 'µm', d: 0, v: 0, h: 'gap difference edge to edge, centred; + wider at z = 300 mm' },
-  { k: 'skew', l: 'Blade skew across the web', min: -5, max: 5, step: 0.1, u: '°', d: 1, v: 0, h: 'edge\'s angle to the cross direction; + its end at z = 300 mm further downstream' },
+  { k: 'tilt', l: 'Blade tilt across the web', min: -500, max: 500, step: 5, u: 'µm', d: 0, v: 0, h: 'gap difference edge to edge, centred; + wider at the far edge (z = the web\'s width)' },
+  { k: 'skew', l: 'Blade skew across the web', min: -5, max: 5, step: 0.1, u: '°', d: 1, v: 0, h: 'edge\'s angle to the cross direction; + its end at the far edge (z = the web\'s width) further downstream' },
   { k: 'dt', l: 'Fibre thickness variation', min: 0, max: 60, step: 1, u: 'µm', d: 0, v: 10 },
   { k: 'dth', l: 'Wetting variation on blade', min: 0, max: 20, step: 0.5, u: '°', d: 1, v: 4, h: 'contamination, residue' },
 
@@ -86,7 +87,7 @@ const FEED_POS = { z: null, entry: 'fall' };
 const FEED_ENTRY = [['fall', 'Falls from the tips'], ['heap', 'A heap up to the tips'], ['dip', 'Tips in the paste']];
 const feedEntry = () => (FEED_ENTRY.some(e => e[0] === FEED_POS.entry) ? FEED_POS.entry : 'fall');
 /** The outlets' positions now (mm): as placed if placed for this many outlets, else equidistant. */
-const feedZs = (n = P.fN, W = 300) => FEED_POS.z && FEED_POS.z.length === n ? FEED_POS.z.slice() : Array.from({ length: n }, (_, i) => +(W * (i + 0.5) / n).toFixed(3));
+const feedZs = (n = P.fN, W = webWidth()) => FEED_POS.z && FEED_POS.z.length === n ? FEED_POS.z.slice() : Array.from({ length: n }, (_, i) => +(W * (i + 0.5) / n).toFixed(3));
 
 // ---------------------------------------------------------------------
 // Constants
@@ -255,13 +256,15 @@ function rebuildOnWeb() {
   return { S, law: rheoCompile(P.mu, P.ty, P.n), lam0: rheoLamEq((P.U / 60) / (gapHeight() / 1000), S) };
 }
 
-/** Local gap (mm) and contact angle (deg) at position z (mm) across the web (0 to 300 mm): waviness, the blade's tilt
+/** The web's width (mm), the sidebar's input: the film covers it (z from 0 to it across the web). */
+const webWidth = () => P.webW;
+/** Local gap (mm) and contact angle (deg) at position z (mm) across the web (0 to its width): waviness, the blade's tilt
  *  (the gap difference from edge to edge, centred on the middle), fibre thickness and wetting variation; and the blade
  *  across the web's other parts (across-ui.js: a bow, more sines, chamfered ends, a measured gap, a crown -- none on:
  *  nothing added, and the waviness's crest where it always was). */
-const localGap = z => gapHeight() + (acrossWave(z) + P.tilt * (z / 300 - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000 + acrossExtraMm(z);
+const localGap = z => gapHeight() + (acrossWave(z) + P.tilt * (z / webWidth() - 0.5) - P.dt * spatialNoise(z, 1.7)) / 1000 + acrossExtraMm(z);
 const localContactAngle = z => P.th + P.dth * spatialNoise(z, 4.1);
-/** The blade skewed across the web: its metering edge at P.skew degrees to the cross direction (+: the end at z = 300 mm
+/** The blade skewed across the web: its metering edge at P.skew degrees to the cross direction (+: the end at z = the web's width
  *  further downstream). The 1D, 2D and 3D work in the blade's frame: the web crosses the blade at U cos(skew) and moves
  *  along it at U sin(skew); distances along the flow are measured across the blade (the oven's: oven cos(skew)). */
 const skewRad = () => (P.skew || 0) * Math.PI / 180;

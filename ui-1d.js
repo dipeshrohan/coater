@@ -10,7 +10,7 @@
 const ONE_D = { loc: 0, res: null, key: null, across: null, acrossKey: null, busy: false, again: false, worker: null, id: 0, error: null, ms: 0 };
 /** Stop the 1D (New, Open): its worker ended. */
 function oneDStop() { if (ONE_D.worker) { ONE_D.worker.terminate(); ONE_D.worker = null; } ONE_D.busy = false; ONE_D.again = false; }
-const ACROSS_N = 61, ACROSS_W = 300;   // positions across the web (mm) for Across the web
+const ACROSS_N = 61;   // positions across the web for Across the web (over its width, webWidth(), mm)
 
 /** The 1D's inputs from a 2D geometry (cfd-ui.js's cfdGeometry), SI. */
 const oneDFromGeo = g => ({ z: g.z, shape: g.shape, U: g.U, H: g.H, L: g.L, R: g.R, Xup: g.Xup, exitAngle: g.exitAngle, contactDeg: g.contactDeg, webSlip: g.webSlip,
@@ -27,8 +27,8 @@ const oneDRipple = () => ({ dHum: P.dH, vibUm: P.vib, lamMm: P.lam });
 
 /** The positions across the web the 1D solves (mm): evenly where both the web and the blade are (the blade may end inside). */
 function acrossPositions() {
-  const sp = acrossSpanNow(), a = Math.max(0, sp[0]), b = Math.min(ACROSS_W, sp[1]);
-  return Array.from({ length: ACROSS_N }, (_, k) => a === 0 && b === ACROSS_W ? ACROSS_W * k / (ACROSS_N - 1) : a + (b - a) * k / (ACROSS_N - 1));
+  const sp = acrossSpanNow(), a = Math.max(0, sp[0]), b = Math.min(webWidth(), sp[1]);
+  return Array.from({ length: ACROSS_N }, (_, k) => a === 0 && b === webWidth() ? webWidth() * k / (ACROSS_N - 1) : a + (b - a) * k / (ACROSS_N - 1));
 }
 /** Ask the worker for the 1D results these inputs need (the positions across the web only for that page). */
 function oneDRequest(needAcross) {
@@ -315,11 +315,11 @@ function view1DAcross() {
   // (a crown found for these inputs: the film each variant gives, dashed)
   const cr = acrossCrownNow(), crS = cr ? [{ p: cr.zs.map((x, k) => [x, cr.parab[k] * 1000]), c: ACROSS_COLS.bow, w: 1.6, dash: [6, 4] }, { p: cr.zs.map((x, k) => [x, cr.free[k] * 1000]), c: ACROSS_COLS.meas, w: 1.6, dash: [6, 4] }] : [];
   const allF = [...films, ...(cr ? [...cr.parab, ...cr.free].map(v => v * 1000) : [])], fLo = Math.min(...allF), fHi = Math.max(...allF), padF = Math.max((fHi - fLo) * 0.3, 0.01);
-  plotChart(c1, fitAspect(c1, 0.5), { x0: Math.min(0, zA), x1: Math.max(ACROSS_W, zB), y0: fLo - padF, y1: fHi + padF, yl: 'wet film (mm)', xl: 'position across the web (mm)', yd: 3,
+  plotChart(c1, fitAspect(c1, 0.5), { x0: Math.min(0, zA), x1: Math.max(webWidth(), zB), y0: fLo - padF, y1: fHi + padF, yl: 'wet film (mm)', xl: 'position across the web (mm)', yd: 3,
     s: [{ p: z.map((x, k) => [x, films[k]]), c: acc, w: 2.2 }, ...crS, ...(two.length ? [{ p: two.map(o => [o.l.z, o.t.r.Q / o.t.geo.U * 1000]), c: ink, line: false, dots: true }] : [])] });
   const sMax = Math.max(...s, P.face);
   const c2 = document.getElementById('a2');
-  plotChart(c2, fitAspect(c2, 0.5), { x0: Math.min(0, zA), x1: Math.max(ACROSS_W, zB), y0: 0, y1: sMax * 1.25, yl: 'contact line up the face (mm)', xl: 'position across the web (mm)',
+  plotChart(c2, fitAspect(c2, 0.5), { x0: Math.min(0, zA), x1: Math.max(webWidth(), zB), y0: 0, y1: sMax * 1.25, yl: 'contact line up the face (mm)', xl: 'position across the web (mm)',
     s: [{ p: z.map((x, k) => [x, s[k]]), c: acc, w: 2.2 }, ...(two.length ? [{ p: two.map(o => [o.l.z, o.t.r.mode === 'climbed' ? o.t.r.sCL * 1000 : 0]), c: ink, line: false, dots: true }] : [])],
     hl: [{ y: P.face, c: bad, t: 'notch corner: slurry reaches the dry edge' }] });
   const over = s.filter(v => v > P.face).length, sMn = Math.min(...s), sMx = Math.max(...s), qs = A.map(r => r.q * 1e6);
@@ -348,7 +348,7 @@ function view1DAcross() {
 function feedNow() {
   const R = ONE_D.res;
   if (!R || R.locs.some(L => !Number.isFinite(L.dfdP))) return null;
-  const g0 = oneDGeo(0), n = R.locs.length, mean = f => R.locs.reduce((a, L) => a + f(L), 0) / n, W = ACROSS_W / 1000;
+  const g0 = oneDGeo(0), n = R.locs.length, mean = f => R.locs.reduce((a, L) => a + f(L), 0) / n, W = webWidth() / 1000;
   const round = g0.shape === 'round' && !g0.blade;
   const o = { W, U: R.locs[0].U, film0: mean(L => L.film), dfdP: mean(L => L.dfdP), rho: g0.rho, g: g0.g, Pup: g0.Pup, R: g0.R, H: mean(L => L.H),
     xBack: P.fBack / 1000, V: P.fV * 1e-6, tau: P.fTau, ...(round ? {} : { meets: () => g0.Xup }),
@@ -410,7 +410,7 @@ function feedSideSVG(F, w, h) {
 /** The pool and its outlets seen from above (across the web to the right, along it downward: the web moves down; mm, true
  *  scale): the side plates, the pool, the blade from where the pool meets it to the edge, the outlets. */
 function feedPlanSVG(F, w, h) {
-  const { c } = F, W = ACROSS_W, xB = -P.fBack, xO = -P.fX, d = Math.max(P.fDo, P.fD), xm = -c.meetsLow * 1e3, xMin = Math.min(xB, xO - d) - 6, xMax = 14;
+  const { c } = F, W = webWidth(), xB = -P.fBack, xO = -P.fX, d = Math.max(P.fDo, P.fD), xm = -c.meetsLow * 1e3, xMin = Math.min(xB, xO - d) - 6, xMax = 14;
   const L = 12, Rg = 40, T = 16, B = 22, s = Math.min((w - L - Rg) / (W + 16), (h - T - B) / (xMax - xMin));
   const Z = z => L + (z + 8) * s, X = x => T + (x - xMin) * s, f = v => v.toFixed(1), g = [];
   g.push(`<rect class="fd-webp" x="${f(Z(-8))}" y="${f(X(xMin))}" width="${f((W + 16) * s)}" height="${f((xMax - xMin) * s)}"/>`);
@@ -426,7 +426,7 @@ function feedPlanSVG(F, w, h) {
 /** The outlets' table: each one's position across the web (editable), and the stream it gives. */
 function feedPanelHTML(F) {
   const zs = feedZs(), placed = !!(FEED_POS.z && FEED_POS.z.length === P.fN);
-  const rows = zs.map((z, i) => `<div class="acr-row"><span class="acr-l">Outlet ${i + 1}</span><span class="acr-v"><input class="acr-in" type="number" step="0.5" min="0" max="${ACROSS_W}" value="${z}" data-feedz="${i}" aria-label="Outlet ${i + 1} position across the web, mm"><span class="u">mm</span></span></div>`).join('');
+  const rows = zs.map((z, i) => `<div class="acr-row"><span class="acr-l">Outlet ${i + 1}</span><span class="acr-v"><input class="acr-in" type="number" step="0.5" min="0" max="${webWidth()}" value="${z}" data-feedz="${i}" aria-label="Outlet ${i + 1} position across the web, mm"><span class="u">mm</span></span></div>`).join('');
   const o = F && F.out, entry = feedEntry(), mm = v => (v * 1e3).toFixed(1);
   const seg = `<div class="seg fd-entry" role="radiogroup" aria-label="How the paste enters the pool">${FEED_ENTRY.map(([k, t]) => `<button type="button" role="radio" data-feedentry="${k}" aria-checked="${k === entry}" aria-selected="${k === entry}">${t}</button>`).join('')}</div>`;
   const how = !o ? '' : entry === 'heap' ? `
@@ -446,7 +446,7 @@ function feedPanelHTML(F) {
     <div class="acr-grp">Outlets across the web</div>
     <div class="acr-row"><span class="acr-l">${P.fN} outlet${P.fN === 1 ? '' : 's'}, ${placed ? 'placed' : 'equidistant'}</span><span class="acr-v"><button type="button" class="btn btn-secondary btn-sm" id="feedEq"${placed ? '' : ' disabled'}>Equidistant</button></span></div>
     ${rows}
-    <p class="acr-note">Positions from the web's edge at z = 0 (the side plates at 0 and ${ACROSS_W} mm). The count, the tip's height, the distance before the edge, the pipe's diameters and the pulse are on the left.</p>
+    <p class="acr-note">Positions from the web's edge at z = 0 (the side plates at 0 and ${webWidth()} mm). The count, the tip's height, the distance before the edge, the pipe's diameters and the pulse are on the left.</p>
     ${o ? `<div class="acr-grp">Each outlet during a pulse</div>
     <div class="acr-row"><span class="acr-l">Flow</span><span class="acr-v">${(o.q * 1e6).toFixed(2)} <span class="u">ml/s</span></span></div>
     <div class="acr-row"><span class="acr-l">Speed out of the tip</span><span class="acr-v">${(o.v0 * 1e3).toFixed(1)} <span class="u">mm/s</span></span></div>${how}` : ''}`;
@@ -454,7 +454,7 @@ function feedPanelHTML(F) {
 document.addEventListener('change', e => {
   const t = e.target;
   if (!t || !t.dataset || t.dataset.feedz == null) return;
-  const zs = feedZs(), i = +t.dataset.feedz, v = Math.min(ACROSS_W, Math.max(0, +t.value));
+  const zs = feedZs(), i = +t.dataset.feedz, v = Math.min(webWidth(), Math.max(0, +t.value));
   // (a render after this event, not in it: the input being replaced still has the focus)
   if (!Number.isFinite(v)) { queueRender(); return; }
   zs[i] = +v.toFixed(3); FEED_POS.z = zs; queueRender();

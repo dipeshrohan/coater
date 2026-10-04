@@ -137,7 +137,7 @@ const UNDO_UNITS = (() => {
   }
   CFD_LOCS.forEach((loc, i) => {
     const L = `L${i + 1}`;
-    u.push({ id: `loc${i}.z`, get: () => CFD_LOCS[i].z, set: v => { CFD_LOCS[i].z = v; }, label: (a, b) => undoChange(`${L} position across the web`, a, b, undefined, 'mm') });
+    u.push({ id: `loc${i}.z`, get: () => CFD_LOCS[i].zSet, set: v => { CFD_LOCS[i].zSet = v; }, label: (a, b) => undoChange(`${L} position across the web`, a, b, v => (v == null ? 'spread evenly' : `${undoNum(v)} mm`)) });
     u.push({ id: `loc${i}.over`, get: () => CFD_LOCS[i].over, set: v => { CFD_LOCS[i].over = { ...(v || {}) }; }, label: (a, b) => {
       const k = [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].find(x => (a || {})[x] !== (b || {})[x]);
       const q = LOC_INPUTS.find(x => x.k === k);
