@@ -2910,3 +2910,4 @@ canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
 .tm-table td small { color: var(--muted); margin-left: 4px; }
 .t-what-cap { margin: 0 0 8px; }
 .tm-kv input.geo-in { width: 92px; }
+.dock-grid .tm-wide { grid-column: 1 / -1; }

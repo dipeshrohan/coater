@@ -171,4 +171,184 @@ function solveCoaterStruct(fo, S, law, { tol = 0.02, tolQ = 5e-4, maxOuter = 10,
   return out;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { structField, structLamAt, structColumn, solveCoaterStruct };
+// ---- the structure in time (T-2b): lambda carried by a moving, changing flow ----
+
+/**
+ * A result's node grid as a coordinate system: at(xi, eta, out) gives the position, the velocity in grid rates (as
+ * structField's) and the shear rate at grid point (xi, eta), bilinear in each cell of the node grid; locate(px, py, c, k)
+ * the grid point at a position (Newton in the cell, from node (c, k)'s cells outward, then any cell holding it; outside
+ * the mesh: the nearest node's, inside false).
+ */
+function structGrid(r) {
+  const NC = r.NC, NR = r.NR, X = r.x, Y = r.y, U = r.u, V = r.v, G = r.gd, id = (c, k) => c * NR + k;
+  const cell = (xi, eta) => [Math.min(NC - 2, Math.max(0, Math.floor(xi))), Math.min(NR - 2, Math.max(0, Math.floor(eta)))];
+  function at(xi, eta, out) {
+    const [c, k] = cell(xi, eta), s = xi - c, t = eta - k, a = id(c, k), b = id(c + 1, k), d = id(c, k + 1), e = id(c + 1, k + 1);
+    const w0 = (1 - s) * (1 - t), w1 = s * (1 - t), w2 = (1 - s) * t, w3 = s * t;
+    const u = w0 * U[a] + w1 * U[b] + w2 * U[d] + w3 * U[e], v = w0 * V[a] + w1 * V[b] + w2 * V[d] + w3 * V[e];
+    const xs = (1 - t) * (X[b] - X[a]) + t * (X[e] - X[d]), xt = (1 - s) * (X[d] - X[a]) + s * (X[e] - X[b]);
+    const ys = (1 - t) * (Y[b] - Y[a]) + t * (Y[e] - Y[d]), yt = (1 - s) * (Y[d] - Y[a]) + s * (Y[e] - Y[b]);
+    const J = xs * yt - xt * ys;
+    out.x = w0 * X[a] + w1 * X[b] + w2 * X[d] + w3 * X[e]; out.y = w0 * Y[a] + w1 * Y[b] + w2 * Y[d] + w3 * Y[e];
+    out.gd = w0 * G[a] + w1 * G[b] + w2 * G[d] + w3 * G[e];
+    if (!(Math.abs(J) > 1e-300)) { out.ok = false; out.xi = out.eta = 0; return out; }
+    out.ok = true; out.xi = (yt * u - xt * v) / J; out.eta = (xs * v - ys * u) / J;
+    return out;
+  }
+  const value = (f, xi, eta) => {
+    const [c, k] = cell(xi, eta), s = xi - c, t = eta - k;
+    return (1 - s) * (1 - t) * f[id(c, k)] + s * (1 - t) * f[id(c + 1, k)] + (1 - s) * t * f[id(c, k + 1)] + s * t * f[id(c + 1, k + 1)];
+  };
+  // the point in cell (c, k): Newton on the bilinear map; null when it is not in it
+  const inCell = (c, k, px, py) => {
+    const a = id(c, k), b = id(c + 1, k), d = id(c, k + 1), e = id(c + 1, k + 1);
+    const ax = X[a], ay = Y[a], bx = X[b] - ax, by = Y[b] - ay, cx = X[d] - ax, cy = Y[d] - ay, dx = X[e] - X[b] - X[d] + ax, dy = Y[e] - Y[b] - Y[d] + ay;
+    let s = 0.5, t = 0.5;
+    for (let it = 0; it < 12; it++) {
+      const Fx = ax + bx * s + cx * t + dx * s * t - px, Fy = ay + by * s + cy * t + dy * s * t - py;
+      const a11 = bx + dx * t, a12 = cx + dx * s, a21 = by + dy * t, a22 = cy + dy * s, det = a11 * a22 - a12 * a21;
+      if (!(Math.abs(det) > 0)) return null;
+      const ds = (a22 * Fx - a12 * Fy) / det, dt = (a11 * Fy - a21 * Fx) / det;
+      s -= ds; t -= dt;
+      if (Math.abs(ds) + Math.abs(dt) < 1e-13) break;
+    }
+    return s > -1e-7 && s < 1 + 1e-7 && t > -1e-7 && t < 1 + 1e-7 ? [c + Math.min(1, Math.max(0, s)), k + Math.min(1, Math.max(0, t))] : null;
+  };
+  let bins = null, x0, x1, y0, y1;
+  const nb = 48;
+  const binOf = (px, py) => Math.min(nb - 1, Math.max(0, Math.floor((py - y0) / (y1 - y0) * nb))) * nb + Math.min(nb - 1, Math.max(0, Math.floor((px - x0) / (x1 - x0) * nb)));
+  function locate(px, py, c0 = null, k0 = null) {
+    if (c0 != null) for (let ring = 0; ring <= 2; ring++)
+      for (let c = Math.max(0, c0 - 1 - ring); c <= Math.min(NC - 2, c0 + ring); c++) for (let k = Math.max(0, k0 - 1 - ring); k <= Math.min(NR - 2, k0 + ring); k++) {
+        if (ring && c > c0 - 1 - ring && c < c0 + ring && k > k0 - 1 - ring && k < k0 + ring) continue;
+        const g = inCell(c, k, px, py);
+        if (g) return { xi: g[0], eta: g[1], inside: true };
+      }
+    if (!bins) {
+      x0 = Infinity; x1 = -Infinity; y0 = Infinity; y1 = -Infinity;
+      for (let n = 0; n < X.length; n++) { x0 = Math.min(x0, X[n]); x1 = Math.max(x1, X[n]); y0 = Math.min(y0, Y[n]); y1 = Math.max(y1, Y[n]); }
+      bins = Array.from({ length: nb * nb }, () => []);
+      for (let c = 0; c < NC - 1; c++) for (let k = 0; k < NR - 1; k++) {
+        const q = [id(c, k), id(c + 1, k), id(c, k + 1), id(c + 1, k + 1)];
+        const bx0 = binOf(Math.min(...q.map(n => X[n])), Math.min(...q.map(n => Y[n]))), bx1 = binOf(Math.max(...q.map(n => X[n])), Math.max(...q.map(n => Y[n])));
+        for (let j = Math.floor(bx0 / nb); j <= Math.floor(bx1 / nb); j++) for (let i = bx0 % nb; i <= bx1 % nb; i++) bins[j * nb + i].push(c * NR + k);
+      }
+    }
+    for (const cl of bins[binOf(px, py)]) { const g = inCell(Math.floor(cl / NR), cl % NR, px, py); if (g) return { xi: g[0], eta: g[1], inside: true }; }
+    let best = 0, bd = Infinity;
+    for (let n = 0; n < X.length; n++) { const q = (X[n] - px) ** 2 + (Y[n] - py) ** 2; if (q < bd) { bd = q; best = n; } }
+    return { xi: Math.floor(best / NR), eta: best % NR, inside: false };
+  }
+  return { at, value, locate, NC, NR };
+}
+
+/**
+ * The structure in femMarch (cfd-fem-time.js's carry): lambda, the slurry's own state, carried with it in time.
+ * lambda at a point at time T is the slurry's memory along its own path: the path is traced back through the flows of
+ * the march (each step's flow; between two kept flows the mean of the two, node by node) to where it was at the start
+ * (lambda there: the starting field, interpolated), or to where it came in through the inlet (lambda steady at the
+ * inlet's shear rate there, as the steady structure's inflow), or until its memory has faded ((1 + gd / gdc) t / tb
+ * above `memory`, default 12: then steady at the shear rate there); lambda is then carried forward along the path
+ * exactly, piece by piece at each piece's shear rate (rheoLamStep) -- as structField does along a steady flow, so a
+ * steady start stays as it is, and lambda is never re-interpolated from step to step (no numerical diffusion).
+ * The flows kept for this thin out with their age (two kept flows at most keepRel, default 0.1, of their age apart).
+ * The flow of a step is solved with lambda as the steady solve has it (the law at lambda_e(gd) + the deviation, at the
+ * nodes: solveCoaterStruct's representation): the deviation predicted with the flow before the step continued over it,
+ * then lambda along the step's own flow and, where it differs from what the solve was handed by more than tolLam
+ * (default 0.01), the step solved once more with it.
+ * S: the structure's values; law: rheo.js's compiled law.
+ */
+function structMarch(S, law, opts = {}) {
+  const clamp = l => l < 0 ? 0 : l > 1 ? 1 : l, tolLam = opts.tolLam ?? 0.01, memory = opts.memory ?? 12, keepRel = opts.keepRel ?? 0.1, hCell = opts.h ?? 0.5;
+  const muL = (gd, d) => CS_R.rheoMuStruct(gd, clamp(CS_R.rheoLamEq(gd, S) + d), law, S);
+  const avg = (a, b) => { const o = new Float64Array(a.length); for (let i = 0; i < a.length; i++) o[i] = 0.5 * (a[i] + b[i]); return o; };
+  const entry = (r, t) => ({ t, NC: r.NC, NR: r.NR, x: r.x, y: r.y, u: r.u, v: r.v, gd: r.gd, g: null, gPair: null });
+  const gridOf = e => e.g || (e.g = structGrid(e));
+  // the flow over the interval from kept flow a to the next, b: their mean node by node (the same mesh's nodes), else b's
+  const pairGrid = (a, b) => b.gPair || (b.gPair = a.NC === b.NC && a.NR === b.NR
+    ? structGrid({ NC: b.NC, NR: b.NR, x: avg(a.x, b.x), y: avg(a.y, b.y), u: avg(a.u, b.u), v: avg(a.v, b.v), gd: avg(a.gd, b.gd) }) : gridOf(b));
+  let hist = [], g0 = null, lam0 = null;   // (the kept flows, oldest first; the start's grid and lambda)
+  const p1 = {}, p2 = {};
+  let segD = new Float64Array(4096), segG = new Float64Array(4096);
+  const grow = () => { const d = new Float64Array(segD.length * 2), g = new Float64Array(segG.length * 2); d.set(segD); g.set(segG); segD = d; segG = g; };
+  /** lambda at points (X, Y) at time T; first: { g, len } the newest stretch (T back to the newest kept flow), or null (T is its time). */
+  function trace(X, Y, first, hint) {
+    const n = X.length, out = new Float64Array(n);
+    const spans = [];
+    if (first && first.len > 0) spans.push(first);
+    for (let j = hist.length - 1; j > 0; j--) { const len = hist[j].t - hist[j - 1].t; if (len > 0) spans.push({ g: pairGrid(hist[j - 1], hist[j]), len }); }
+    for (let m = 0; m < n; m++) {
+      let px = X[m], py = Y[m], hc = hint ? hint(m)[0] : null, hk = hint ? hint(m)[1] : null, start = null, nseg = 0, mem = 0;
+      for (const sp of spans) {
+        const g = sp.g, L = g.locate(px, py, hc, hk);
+        let xi = L.xi, eta = L.eta, rem = sp.len;
+        while (rem > 1e-12 * sp.len) {
+          g.at(xi, eta, p1);
+          const v = p1.ok ? Math.max(Math.abs(p1.xi), Math.abs(p1.eta)) : 0, rate = (1 + Math.abs(p1.gd) / S.gdc) / S.tb;
+          let d = Math.min(rem, v > 0 ? hCell / v : rem, 0.1 / rate);
+          g.at(xi - 0.5 * d * p1.xi, Math.min(g.NR - 1, Math.max(0, eta - 0.5 * d * p1.eta)), p2);
+          if (!p2.ok) { p2.xi = p1.xi; p2.eta = p1.eta; p2.gd = p1.gd; }
+          let nxi = xi - d * p2.xi, neta = eta - d * p2.eta;
+          if (nseg >= segD.length) grow();
+          if (nxi < 0) {
+            const f = xi / (xi - nxi); d *= f; neta = eta + f * (neta - eta);
+            segD[nseg] = d; segG[nseg] = p2.gd; nseg++;
+            g.at(0, Math.min(g.NR - 1, Math.max(0, neta)), p1);
+            start = opts.lamIn ?? CS_R.rheoLamEq(p1.gd, S);
+            break;
+          }
+          segD[nseg] = d; segG[nseg] = p2.gd; nseg++;
+          mem += (1 + Math.abs(p2.gd) / S.gdc) * d / S.tb;
+          xi = Math.min(g.NC - 1, nxi); eta = Math.min(g.NR - 1, Math.max(0, neta)); rem -= d;
+          if (mem > memory) { g.at(xi, eta, p1); start = CS_R.rheoLamEq(p1.gd, S); break; }
+        }
+        if (start != null) break;
+        g.at(xi, eta, p1); px = p1.x; py = p1.y; hc = Math.round(xi); hk = Math.round(eta);
+      }
+      if (start == null) { const q = g0.locate(px, py, hc, hk); start = g0.value(lam0, q.xi, q.eta); }
+      let l = start;
+      for (let j = nseg - 1; j >= 0; j--) l = CS_R.rheoLamStep(l, segG[j], segD[j], S);
+      out[m] = l;
+    }
+    return out;
+  }
+  const nodeHint = r => m => [Math.floor(m / r.NR), m % r.NR];
+  const devAt = (r, lam) => {
+    // (the deviation at r's nodes, interpolated to where the solve's nodes start)
+    const dev = Float64Array.from(lam, (l, n) => l - CS_R.rheoLamEq(r.gd[n], S));
+    return (X, Y) => { const g = r._sg || (r._sg = structGrid(r)); return Float64Array.from(X, (x, m) => { const q = g.locate(x, Y[m], Math.floor(m / r.NR), m % r.NR); return g.value(dev, q.xi, q.eta); }); };
+  };
+  // the kept flows thinned: a flow goes when its neighbours are close enough for its age
+  const thin = tNow => {
+    for (let j = hist.length - 2; j > 0; j--) if (hist[j + 1].t - hist[j - 1].t <= keepRel * (tNow - hist[j + 1].t)) { hist.splice(j, 1); hist[j].gPair = null; }
+  };
+  return {
+    muL,
+    /** The start (r0 at t0): its lambda (r0.lam, else carried along its own flow, steady: structField). */
+    start: (r0, t0) => { lam0 = r0.lam || structField(r0, S).lam; g0 = structGrid(r0); hist = [entry(r0, t0)]; return lam0; },
+    fixed: r => ({ muL, lamAt: devAt(r, r.lam) }),
+    predict: (rPrev, tPrev, h) => {
+      const e = hist[hist.length - 1], first = { g: gridOf(e), len: h };
+      const lamAt = (X, Y) => {
+        const lp = trace(X, Y, first, nodeHint(rPrev));
+        // (the deviation from the steady structure at the shear rate the flow before had there)
+        const g = gridOf(e);
+        return (lamAt.last = lp.map((l, m) => { const q = g.locate(X[m], Y[m], Math.floor(m / rPrev.NR), m % rPrev.NR); return l - CS_R.rheoLamEq(g.value(rPrev.gd, q.xi, q.eta), S); }));
+      };
+      return { muL, lamAt };
+    },
+    correct: (rPrev, tPrev, r, h, devUsed) => {
+      const e = hist[hist.length - 1], b = entry(r, tPrev + h);
+      const lam = trace(r.x, r.y, { g: pairGrid(e, b), len: h }, nodeHint(r));
+      let diff = 0;
+      if (devUsed) for (let n = 0; n < lam.length; n++) diff = Math.max(diff, Math.abs(lam[n] - clamp(CS_R.rheoLamEq(r.gd[n], S) + devUsed[n])));
+      return { lam, diff, again: devUsed && diff > tolLam ? { muL, lamAt: devAt(r, lam) } : null };
+    },
+    accept: (r, t) => { hist.push(entry(r, t)); thin(t); },
+    /** A new mesh at time t (the march's newest state carried onto it): lambda at its nodes, and it kept from then on. */
+    remap: (rFrom, rTo, t) => { const lam = trace(rTo.x, rTo.y, null, null); hist.push(entry(rTo, t)); return lam; },
+    kept: () => hist.length,
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { structField, structLamAt, structColumn, solveCoaterStruct, structGrid, structMarch };

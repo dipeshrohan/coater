@@ -18,8 +18,8 @@ const TIME_SCEN = [['pup', 'Bead pressure'], ['web', 'Web speed'], ['rest', 'Sta
 const TIME_TOLS = [1e-2, 1e-3, 1e-4];
 /** The time settings now (the defaults where none is set). */
 const timeSet = () => ({ ...TIME_DEFAULTS, ...(CFDS.time || {}) });
-/** Why a run cannot go in time (or ''). */
-const timeBlocked = () => (typeof matStruct === 'function' && matStruct() ? 'the structure (thixotropy) model is on, and the flow in time with it is not modelled yet: in time the slurry follows its plain flow curve only' : '');
+/** Why a run cannot go in time (or ''): none now -- with the structure (thixotropy) model on, its lambda goes with the slurry in time (T-2b). */
+const timeBlocked = () => '';
 /** Transient chosen, and possible. */
 const timeOn = () => timeSet().on && !timeBlocked();
 /** A setting changed: a new object (the defaults stay untouched; undo sees the change). */
@@ -135,7 +135,8 @@ function timeCardHTML(i) {
     <p class="side-note">${T.scen === 'rest' ? `From the gap filled at rest (no web speed, the bead at the liquid's own weight), the web and the bead pressure go to the inputs' ${T.ramp > 0 ? `over ${fmtT(T.ramp)}` : 'at once'}`
       : `From the steady flow at ${from} ${unit}, the ${T.scen === 'pup' ? 'bead pressure' : 'web\'s speed'} goes to ${to} ${unit} ${T.ramp > 0 ? `over ${fmtT(T.ramp)}` : 'at once (a step)'}`};
       marched to ${fmtT(end)}${tr ? ` (the web carries the film through the 2D in ${fmtT(tr)})` : ''}, the flow kept at ${T.frames || 40} even times.
-      ${(T.slip || 0) > 0 ? `The liquid slides on the exit face below the contact line (slip length ${T.slip} µm).` : 'No slip on the exit face, as the steady solve: a contact line far from its steady place moves slowly.'}</p>`;
+      ${(T.slip || 0) > 0 ? `The liquid slides on the exit face below the contact line (slip length ${T.slip} µm).` : 'No slip on the exit face, as the steady solve: a contact line far from its steady place moves slowly.'}
+      ${typeof matStruct === 'function' && matStruct() ? `The slurry's structure λ goes with it: rebuilt and broken down along each path as it was in the steady solve (rebuild time ${matStruct().tb} s), so it can take longer than the film to settle.` : ''}</p>`;
 }
 /** Wire the Time toolbar control and card (after the Solve step is drawn). */
 function wireTimeControls() {
@@ -225,7 +226,7 @@ function renderTimeCharts() {
     host.innerHTML = `<p class="cap">${timeSet().on && !why ? 'Transient is set: run the locations (Solve) to march them in time.' : why ? `Transient: ${why}.` : 'No run in time yet: on the Solve step set Time to Transient, choose what changes, and run.'}</p>`;
     return;
   }
-  const T0 = cfdRuns[locs[0]].transient, stale = timeStale;
+  const T0 = cfdRuns[locs[0]].transient, stale = timeStale, withLam = locs.some(i => cfdRuns[i].transient.lamEdge);
   const name = i => `Location ${i + 1}${stale(i) ? ' (out of date)' : ''}`;
   const legend = `<div class="xl-legend">${locs.map(i => `<span class="lg"><i class="xl-sw" style="background:${locColor(i)}"></i>${name(i)}</span>`).join('')}</div>`;
   const chart = id => `<div class="xl-chart"><canvas id="${id}" role="img"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div>`;
@@ -246,7 +247,8 @@ function renderTimeCharts() {
     <figure class="dock-fig">${chart('tmFilm')}<p class="cap"><b>Wet film at the end of the 2D domain</b> against time (it then moves on with the web): the change reaches it when the web has carried the new film there.</p></figure>
     <figure class="dock-fig">${chart('tmCL')}<p class="cap"><b>Contact line</b>: how far up the exit face it is (0: pinned at the metering edge).</p></figure>
     <figure class="dock-fig">${chart('tmQ')}<p class="cap"><b>Flow into the gap</b> (solid) <b>and out of the 2D domain</b> (dashed), per metre of width. Their difference fills or drains the bead and the meniscus.</p></figure>
-    <figure class="dock-fig"><div class="table-wrap"><table class="cfd-table tm-table"><thead><tr><th></th><th>Film at the start<small>mm</small></th><th>Film at the end<small>mm</small></th><th>Settled within 1 %<small>at</small></th><th>Contact line<small>mm up the face</small></th><th>Time steps</th><th>Solve time</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${withLam ? `<figure class="dock-fig">${chart('tmLam')}<p class="cap"><b>Structure λ leaving the edge</b>, flux weighted (0 broken down, 1 built up): what the film takes away with it.</p></figure>` : ''}
+    <figure class="dock-fig tm-wide"><div class="table-wrap"><table class="cfd-table tm-table"><thead><tr><th></th><th>Film at the start<small>mm</small></th><th>Film at the end<small>mm</small></th><th>Settled within 1 %<small>at</small></th><th>Contact line<small>mm up the face</small></th><th>Time steps</th><th>Solve time</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="cap">The march: BDF2 in time on the same finite elements as the steady solve, the free surface and the contact line moving with the flow${T0.auto ? `, each step's error kept under ${+((T0.tol || 1e-3) * 100).toPrecision(2)} % of the gap and of the fastest speed` : `, a fixed step of ${fmtT(T0.dtSet)}`}${T0.slip > 0 ? `; the liquid slides on the exit face below the contact line, slip length ${(T0.slip * 1e6).toPrecision(3)} µm` : '; no slip on the exit face'}.</p></figure>
     </div>`;
   const fr = timeFrames(), tNow = FV.tk == null || !fr.length ? null : fr[Math.min(FV.tk, fr.length - 1)].t;
@@ -270,6 +272,8 @@ function renderTimeCharts() {
     { aria: 'Contact line up the exit face against time', yl: 'contact line up the face (mm)', fmt: v => v.toFixed(4) + ' mm' });
   draw('tmQ', locs.flatMap(i => { const T = cfdRuns[i].transient; return [ser(i, T.t.map((t, k) => [t, T.Qin[k] * 1e6])), { ...ser(i, T.t.map((t, k) => [t, T.Qout[k] * 1e6]), true), name: `${name(i)}, out`, short: `L${i + 1} out` }]; }),
     { aria: 'Flow in and out against time', yl: 'flow per width (mm²/s)', fmt: v => fmtNum(v) + ' mm²/s' });
+  if (withLam) draw('tmLam', locs.filter(i => cfdRuns[i].transient.lamEdge).map(i => { const T = cfdRuns[i].transient; return ser(i, T.t.map((t, k) => [t, T.lamEdge[k]])); }),
+    { aria: 'Structure leaving the edge against time', yl: 'structure λ leaving the edge', yd: 3, fmt: v => v.toFixed(4) });
 }
 /** The run report's lines on the flow in time (report.js): one per location that has one. */
 function timeReportRows() {
