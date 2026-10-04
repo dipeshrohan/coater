@@ -731,6 +731,9 @@ const NAV = {
   cut1d: { v: 12, st: 'film', fv: 'piece', md: 1, t: '1D', icon: 8, note: 'The film as peeled, cut with a knife: its layers (Peel and wind), the piece\'s size (The pieces cut, the inputs bar), the Film card (its layers\' hold on each other).', q: 'The film at the cut, in 1D: each layer\'s stress the cut sheds, and the energy to part the layers there against their hold.' },
   cut2d: { v: 12, st: 'film', fv: 'piece', md: 2, t: '2D', icon: 4, note: 'The film as peeled, cut with a knife: its layers (Peel and wind), the piece\'s size (The pieces cut, the inputs bar), the Film card.', q: 'The section across the cut, in 2D: the peel and the shear between the layers near the cut, the stress along and across it.' },
   cut3d: { v: 12, st: 'film', fv: 'piece', md: 3, t: '3D', icon: 9, note: 'The film as peeled, cut into a piece: its plate (Peel and wind), the piece\'s size (The pieces cut, the inputs bar).', q: 'The cut piece in 3D: how it curls held up and lying on a table, its corners and edges.' },
+  // (MP-MIX: the mixer's batch, a slice of it in time (2D), the whole vessel over the blades' cycle (3D); its 1D the batch's page)
+  mix2d: { v: 12, st: 'slurry', md: 2, t: '2D', icon: 4, note: 'The batch as the 1D leaves it at a step of the program: the mixer\'s inputs and their "2D and 3D" group (the step, the slice\'s height).', q: 'A slice of the batch in the mixer, in 2D and in time: the paste\'s flow round the moving blades and disperser, its shear and viscosity, the heat it makes, where it goes and how far it mixes.' },
+  mix3d: { v: 12, st: 'slurry', md: 3, t: '3D', icon: 9, note: 'The batch as the 1D leaves it at a step of the program: the mixer\'s inputs and their "2D and 3D" group (the step).', q: 'The whole batch in the mixer, in 3D, over the blades\' cycle: each part\'s power and torque, the shear through the batch, its dead zones, where lumps break, and how far it mixes.' },
   // (MP-GF: the graphene film on a heater, its heat and the stress it gives)
   gfilm1d: { v: 12, st: 'furn', fp: 'product', md: 1, t: '1D', icon: 8, note: 'The furnace\'s graphene film on a heater: the heater\'s test on the inputs bar, the film\'s own values on its card (Materials).', q: 'The graphene film on a heater, in 1D: its temperature along it from the heater to its edge, in time and steady, and the stress across it.' },
   gfilm2d: { v: 12, st: 'furn', fp: 'product', md: 2, t: '2D', icon: 4, note: 'The furnace\'s graphene film on a heater: the heater\'s test on the inputs bar, the film\'s own values on its card (Materials).', q: 'The graphene film on a heater, in 2D: its temperature along it and through it, in time and steady, and the stress across it.' },
@@ -771,7 +774,7 @@ function navGo(k, step) {
 const SECTIONS = [
   { k: 'line', t: 'Line', icon: 14, pages: ['line'] },
   { k: 'materials', t: 'Materials', icon: 13, pages: ['materials'] },
-  { k: 'mix', n: 1, t: 'Mixing', pages: ['mix'] },
+  { k: 'mix', n: 1, t: 'Mixing', groups: [{ k: 'mix1d', d: '1d', t: '1D', pages: ['mix'] }, { k: 'mix2d', d: '2d', t: '2D', pages: ['mix2d'] }, { k: 'mix3d', d: '3d', t: '3D', pages: ['mix3d'] }] },
   { k: 'coat', n: 2, t: 'Coating', groups: [{ k: '1d', t: '1D', pages: ['gap', 'oven1d', 'across', 'feed1d', 'startup'] }, { k: '2d', t: '2D', pages: ['cfd2d', 'feed2d'] }, { k: '3d', t: '3D', pages: ['cfd3d', 'feed3d'] },
     { k: 'res', t: 'Results', pages: ['contact', 'edge', 'surface', 'wetdry', 'flakes'] }] },
   { k: 'dry', n: 3, t: 'Drying', groups: [{ k: 'dry1d', d: '1d', t: '1D', pages: ['dry1d'] }, { k: 'dry2d', d: '2d', t: '2D', pages: ['dry2d'] }, { k: 'dry3d', d: '3d', t: '3D', pages: ['dry3d'] }, { k: 'dryres', t: 'Results', pages: ['dry'] }] },

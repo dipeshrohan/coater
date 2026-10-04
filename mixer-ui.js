@@ -12,7 +12,7 @@
 
 const MIX = { res: null, key: null, busy: false, error: null, ms: 0 };
 const MIX_GROUPS = [['recipe', 'Recipe'], ['tol', 'Weighing tolerances'], ['spec', 'Paste spec'], ['vessel', 'Vessel and jacket'], ['blades', 'Planetary blades'], ['disp', 'High-speed disperser'], ['chem', 'Chemistry and ammonia'],
-  ['lumps', 'Paste pieces and the grind gauge'], ['flakes', 'Flakes'], ['visc', 'Viscosity'], ['power', 'Power constants'], ['num', 'Solver']];
+  ['lumps', 'Paste pieces and the grind gauge'], ['flakes', 'Flakes'], ['visc', 'Viscosity'], ['power', 'Power constants'], ['num', 'Solver'], ['mp', '2D and 3D']];
 const MIX_ASPECT = 0.42;   // (the charts' height / width: the page scrolls, so they keep their shape)
 const MIX_STEP_LIMITS = { min: [0.1, 1440], No: [0, 200], Nd: [0, 10000], p: [1, 200], pH: [3, 12], mL: [0, 1e5] };
 /** The page's inputs (the units it shows): OVEN.mix. */
@@ -536,18 +536,22 @@ function mixRecParse(text, S) {
 /** The mixer's inputs by group, each with its unit and what it is. */
 function mixTreeHTML() {
   const d = mixIn(), open = k => (FV.tree['mx-' + k] ? ' open' : '');
-  const row = q => q.o ? `<div class="prop"><label class="prop-l" for="mxi_${q.k}" title="${mixEsc(q.h || q.l)}">${q.l}</label><span class="prop-v"><select id="mxi_${q.k}" data-mxin="${q.k}">${q.o.map(([v, t]) => `<option value="${v}"${v === d[q.k] ? ' selected' : ''}>${t}</option>`).join('')}</select></span></div>`
+  // (the program's steps as a choice: the 2D's and the 3D's step)
+  const opts = q => (q.steps ? mixStepOpts() : q.o);
+  const row = q => q.o || q.steps ? `<div class="prop"><label class="prop-l" for="mxi_${q.k}" title="${mixEsc(q.h || q.l)}">${q.l}</label><span class="prop-v"><select id="mxi_${q.k}" data-mxin="${q.k}">${opts(q).map(([v, t]) => `<option value="${v}"${v === d[q.k] ? ' selected' : ''}>${mixEsc(t)}</option>`).join('')}</select></span></div>`
     : `<div class="prop"><label class="prop-l" for="mxi_${q.k}" title="${mixEsc(q.h || q.l)}">${q.l}</label><span class="prop-v"><input type="number" id="mxi_${q.k}" min="${q.min}" max="${q.max}" step="${q.step}" value="${+(+d[q.k]).toFixed(q.d)}" data-mxin="${q.k}"${q.h ? ` title="${mixEsc(q.h)}"` : ''}><span class="prop-u">${q.u}</span></span></div>`;
   return `<div id="mixIn">${MIX_GROUPS.map(([g, t]) => `<details class="grp cfd-grp" data-tree="mx-${g}"${open(g)}><summary>${t}</summary>${MIX_INPUTS.filter(q => q.g === g).map(row).join('')}</details>`).join('')}
     <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="mxReset">${uiIco('restart')}The mixer's defaults</button></div></div>`;
 }
+/** The program's steps as a choice (0: the step with the disperser at its fastest). */
+const mixStepOpts = () => [[0, 'the disperser at its fastest'], ...mixIn().steps.map((st, i) => [i + 1, `${i + 1}. ${st.name}`])];
 function wireMixTree() {
   const box = document.getElementById('mixIn');
   if (!box) return;
   box.addEventListener('change', e => {
     const el = e.target, k = el.dataset.mxin; if (!k) return;
     const q = mixQ(k);
-    if (q.o) mixIn()[k] = +el.value;
+    if (q.o || q.steps) mixIn()[k] = +el.value;
     else guardNumber(el, { label: `Mixing: ${q.l.toLowerCase()}`, lo: q.min, hi: q.max, unit: q.u }, v => { mixIn()[k] = v; });
     processPage(true);
   });
@@ -558,7 +562,7 @@ function wireMixTree() {
 function applyMix(m) {
   const out = mixInDefaults();
   if (!m || typeof m !== 'object') return out;
-  for (const q of MIX_INPUTS) { const v = m[q.k]; if (q.o ? q.o.some(([x]) => x === v) : Number.isFinite(v) && v >= q.min && v <= q.max) out[q.k] = v; }
+  for (const q of MIX_INPUTS) { const v = m[q.k]; if (q.o ? q.o.some(([x]) => x === v) : Number.isFinite(v) && v >= q.min && v <= q.max && (!q.steps || Number.isInteger(v))) out[q.k] = v; }
   const inR = (v, [lo, hi]) => Number.isFinite(v) && v >= lo && v <= hi;
   if (Array.isArray(m.steps)) {
     const S = m.steps.filter(s => s && inR(s.min, MIX_STEP_LIMITS.min) && inR(s.No, MIX_STEP_LIMITS.No) && inR(s.Nd, MIX_STEP_LIMITS.Nd) && inR(s.p, MIX_STEP_LIMITS.p))

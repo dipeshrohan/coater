@@ -6,12 +6,13 @@
  * film peeled off its web (peel-mp.js): the peel front in 2D at the hand's and the winder's angles, the roll in 1D and in 3D
  * (roll3-mp.js). MP-GF: the graphene film
  * on a heater (gf-mp.js), 1D, 2D or 3D: its heat and the stress it gives. MP-CUT: the film cut with a knife (cut-mp.js): its
- * cut edge in 1D, 2D, and the cut piece in 3D (sheet.js).
+ * cut edge in 1D, 2D, and the cut piece in 3D (sheet.js). MP-MIX: the mixer's batch (mix-mp.js), a horizontal slice in
+ * time (2D) and the whole vessel over the blades' cycle (3D).
  *
- * Message in:  { id, kind: 'stack' | 'furnace' | 'dry' | 'peel2' | 'peel1' | 'peel3' | 'gfilm' | 'cut', o } (smpStack's, fmpStack's, dmpDry's, pmpRun2D's, pmpRoll's, r3Run's, gfRun's or cutRun's inputs, plain data)
+ * Message in:  { id, kind: 'stack' | 'furnace' | 'dry' | 'peel2' | 'peel1' | 'peel3' | 'gfilm' | 'cut' | 'mix2' | 'mix3', o } (smpStack's, fmpStack's, dmpDry's, pmpRun2D's, pmpRoll's, r3Run's, gfRun's, cutRun's, mx2Run's or mx3Run's inputs, plain data)
  * Message out: { id, progress: { k, n } } while it works, then { id, ok: true, res, ms } or { id, ok: false, error }.
  */
-importScripts('matlib.js', 'um-fe.js', 'mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js', 'film.js', 'drying-mp.js', 'peel-mp.js', 'roll3-mp.js', 'gf-mp.js', 'sheet.js', 'cut-mp.js');
+importScripts('matlib.js', 'um-fe.js', 'mp-core.js', 'drying.js', 'press.js', 'stack-mp.js', 'furnace.js', 'furnace-mp.js', 'film.js', 'drying-mp.js', 'peel-mp.js', 'roll3-mp.js', 'gf-mp.js', 'sheet.js', 'cut-mp.js', 'mix-mp.js');
 
 /** A run, compact: the series (minutes), the sections and the pieces' fields at the snapshots, the answers, the balances. */
 function mpStackCompact(r) {
@@ -52,11 +53,12 @@ function mpDryCompact(r) {
 onmessage = e => {
   const { id, kind, o } = e.data, t0 = Date.now();
   try {
-    if (kind !== 'stack' && kind !== 'furnace' && kind !== 'dry' && kind !== 'peel2' && kind !== 'peel1' && kind !== 'peel3' && kind !== 'gfilm' && kind !== 'cut') throw new Error(`no such multiphysics run: ${kind}`);
+    if (!['stack', 'furnace', 'dry', 'peel2', 'peel1', 'peel3', 'gfilm', 'cut', 'mix2', 'mix3'].includes(kind)) throw new Error(`no such multiphysics run: ${kind}`);
     let last = 0;
     const onProgress = q => { const now = Date.now(); if (now - last > 150 || q.k === q.n) { last = now; postMessage({ id, progress: q }); } };
     const res = kind === 'stack' ? mpStackCompact(smpStack({ ...o, onProgress })) : kind === 'dry' ? mpDryCompact(dmpDry({ ...o, onProgress }))
-      : kind === 'peel2' ? pmpRun2D({ ...o, onProgress }) : kind === 'peel1' ? pmpRoll({ ...o, onProgress }) : kind === 'peel3' ? r3Run({ ...o, onProgress }) : kind === 'gfilm' ? gfRun({ ...o, onProgress }) : kind === 'cut' ? cutRun({ ...o, onProgress }) : mpFurnCompact(fmpStack({ ...o, onProgress }));
+      : kind === 'peel2' ? pmpRun2D({ ...o, onProgress }) : kind === 'peel1' ? pmpRoll({ ...o, onProgress }) : kind === 'peel3' ? r3Run({ ...o, onProgress }) : kind === 'gfilm' ? gfRun({ ...o, onProgress }) : kind === 'cut' ? cutRun({ ...o, onProgress })
+      : kind === 'mix2' ? mx2Run({ ...o, onProgress }) : kind === 'mix3' ? mx3Run({ ...o, onProgress }) : mpFurnCompact(fmpStack({ ...o, onProgress }));
     postMessage({ id, ok: true, res, ms: Date.now() - t0 });
   } catch (err) {
     postMessage({ id, ok: false, error: err.message });
