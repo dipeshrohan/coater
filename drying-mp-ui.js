@@ -45,7 +45,7 @@ function dmpInputs(dim) {
   const o = { ...base, dim, where: dmpWhere(), kIn: MAT.dry.kIn.v, kFib: MAT.dry.kFib.v, webT: P.tf / 1000, webEps: fs.eps, webK: kD, N: m.dN, mesh, dtScale: m.ddt,
     stress: { film: fo.film, web: fo.web, gel: fo.gel, gab: fo.gab, rhoS: fo.rhoS, rhoL: fo.rhoL, skinK: fo.skinK, K: 60 }, stressN: m.dsN || 0, snapX: dmpSnapX(base) };
   if (dim === 1) { o.h0 = sel.h0; o.film = sel.key; }
-  else { o.W = ACROSS_W / 1000; o.prof = { y: web.A.map(r => r.z / 1000), h: web.A.map(r => r.film) }; }
+  else { o.W = webWidth() / 1000; o.prof = { y: web.A.map(r => r.z / 1000), h: web.A.map(r => r.film) }; }
   return o;
 }
 const dmpKeyNow = dim => { const o = dmpInputs(dim); return o ? JSON.stringify(o) : null; };
@@ -106,7 +106,7 @@ const dmpMmTxt = v => (v * 1000 >= 10 ? (v * 1000).toFixed(0) : (v * 1000).toFix
 
 /**
  * A section across the web (2D; the 3D's at the piece's middle along the line), through the web and the film: the web's
- * height and the film's drawn in bands (the web 0.2 mm, the film a millimetre or so, the web 300 mm wide), the film's own
+ * height and the film's drawn in bands (the web 0.2 mm, the film a millimetre or so, the web hundreds of mm wide), the film's own
  * thickness at each place. what: 'geometry' | 'mesh' | 'solve' | a field { v (node) → value, lut, sc }.
  * z: the nodes' heights (the snapshot's, or the wet film's as it arrives).
  */
@@ -238,7 +238,7 @@ SWB_ADAPT.dry = {
     const ax = dmpAxes(o), H = Math.max(...ax.h0), tf = o.webT;
     const parts = [{ k: 'web', t: 'Fibre web', c: DMP_WEB_C, rects: [[0, 0, dim === 1 ? H * 0.2 : ax.W, tf]] }, { k: 'film', t: 'Wet film', c: DMP_FILM_C, rects: [[ax.a, tf, dim === 1 ? H * 0.2 : ax.b, tf + H]] }];
     if (dim === 3) return { parts, partAt: (x, y, z) => (z <= tf * (1 + 1e-9) || y < ax.a - 1e-12 || y > ax.b + 1e-12 ? parts[0] : parts[1]), zLines: [tf], kz: Math.max(1, Math.round(0.25 * Math.min(ax.W, ax.Lx) / (tf + H))) };
-    // (no true-scale drawing to toggle: 300 mm across a film a millimetre thick -- the heights always in bands)
+    // (no true-scale drawing to toggle: the web's width across a film a millimetre thick -- the heights always in bands)
     return { x0: 0, x1: dim === 1 ? H * 0.2 : ax.W, z0: 0, z1: tf + H, parts };
   },
   draw: (cv, dim, o, step) => {

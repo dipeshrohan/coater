@@ -20,10 +20,9 @@ const ACR_DEFAULTS = {
   edgeBand: 10,                                     // mm: the crown evens the film between a band this wide at each edge
 };
 const ACR = JSON.parse(JSON.stringify(ACR_DEFAULTS));
-const ACR_W = 300;   // the web's width (mm), as the sidebar's positions across it
 
 /** The blade's span (mm): its left and right ends. */
-const acrossSpanNow = () => acrossSpan(ACR_W, ACR.bladeEnds);
+const acrossSpanNow = () => acrossSpan(webWidth(), ACR.bladeEnds);
 /** Is any new part on (the gap then differs from today's)? */
 const acrossAny = () => !!(ACR.bow.on || ACR.sines.length || ACR.ends.on || (ACR.meas.on && ACR.meas.pts.length) || ACR.crown.on);
 
@@ -65,7 +64,7 @@ function acrossBowComputed() {
   const t0 = performance.now(), span = acrossSpanNow(), L = (span[1] - span[0]) / 1000, b = ACR.bow;
   const sec = beamSection(b), EI = b.E * 1e9 * sec.I, weight = b.rhoB * GRAVITY * sec.A;
   // (where there are both web and blade: the slurry's load; elsewhere none)
-  const c0 = Math.max(0, span[0]), c1 = Math.min(ACR_W, span[1]), zs = Array.from({ length: ACR_BOW_N }, (_, k) => c0 + (c1 - c0) * k / (ACR_BOW_N - 1));
+  const c0 = Math.max(0, span[0]), c1 = Math.min(webWidth(), span[1]), zs = Array.from({ length: ACR_BOW_N }, (_, k) => c0 + (c1 - c0) * k / (ACR_BOW_N - 1));
   const out = { sig, span, EI, weight, zs, loads: null, s: null, w: null, iters: 0, error: null, ms: 0 };
   ACR_BOW_BUSY = true;
   try {
@@ -308,10 +307,10 @@ function acrossCurves(zA, zB, n = 360, acr = ACR) {
   try {
     const span = acrossSpanNow(), g0 = gapHeight() * 1000, out = { z: [], wave: [], tilt: [], fibre: [], bow: [], ends: [], meas: [], crown: [], sum: [] };
     for (let i = 0; i <= n; i++) {
-      const z = zA + (zB - zA) * i / n, onWeb = z >= 0 && z <= ACR_W, onBlade = z >= span[0] && z <= span[1], pt = onBlade ? acrossParts(z) : null;
+      const z = zA + (zB - zA) * i / n, onWeb = z >= 0 && z <= webWidth(), onBlade = z >= span[0] && z <= span[1], pt = onBlade ? acrossParts(z) : null;
       out.z.push(z);
       out.wave.push(onBlade ? acrossWave(z) + pt.sines : NaN);
-      out.tilt.push(onBlade ? P.tilt * (z / 300 - 0.5) : NaN);
+      out.tilt.push(onBlade ? P.tilt * (z / webWidth() - 0.5) : NaN);
       out.fibre.push(onWeb ? -P.dt * spatialNoise(z, 1.7) : NaN);
       for (const k of ['bow', 'ends', 'meas', 'crown']) out[k].push(onBlade ? pt[k] : NaN);
       out.sum.push(onWeb && onBlade ? localGap(z) * 1000 - g0 : NaN);
@@ -321,7 +320,7 @@ function acrossCurves(zA, zB, n = 360, acr = ACR) {
 }
 /** The front view (SVG) for a box w x h px; acr: the settings drawn (a drag's trial ones), p: the sidebar inputs drawn. */
 function acrossFrontSVG(w, h, acr = ACR, fixed = null) {
-  const sp = acrossSpan(ACR_W, acr.bladeEnds), zA = Math.min(0, sp[0]) - 6, zB = Math.max(ACR_W, sp[1]) + 6;
+  const sp = acrossSpan(webWidth(), acr.bladeEnds), zA = Math.min(0, sp[0]) - 6, zB = Math.max(webWidth(), sp[1]) + 6;
   const C = acrossCurves(zA, zB, 360, acr), col = ACROSS_COLS;
   const on = { bow: acr.bow.on, ends: acr.ends.on, meas: acr.meas.on && acr.meas.pts.length > 0, crown: acr.crown.on };
   const series = [['wave', true], ['tilt', !!P.tilt], ['fibre', !!P.dt], ['bow', on.bow], ['ends', on.ends], ['meas', on.meas], ['crown', on.crown]].filter(q => q[1]).map(q => q[0]);
@@ -337,19 +336,19 @@ function acrossFrontSVG(w, h, acr = ACR, fixed = null) {
   let body = '', first = null;
   C.sum.forEach((v, i) => { const z = C.z[i]; if (z < sp[0] || z > sp[1]) return; const vv = Number.isFinite(v) ? v : (C.bow[i] || 0) + (C.ends[i] || 0) + (C.crown[i] || 0) + (C.wave[i] || 0) + (C.tilt[i] || 0) + (C.meas[i] || 0); body += `${first == null ? 'M' : 'L'}${f(X(z))} ${f(Y(vv))}`; if (first == null) first = z; });
   if (body) g.push(`<path class="acr-blade" d="${body}L${f(X(sp[1]))} ${T} L${f(X(sp[0]))} ${T} Z"/>`);
-  g.push(`<rect class="acr-web" x="${f(X(0))}" y="${f(yWeb)}" width="${f(X(ACR_W) - X(0))}" height="10"/><line class="acr-webline" x1="${f(X(0))}" x2="${f(X(ACR_W))}" y1="${f(yWeb)}" y2="${f(yWeb)}"/>`);
-  g.push(`<text class="acr-t" x="${f(X(ACR_W / 2))}" y="${f(yWeb + 24)}" text-anchor="middle">position across the web, mm · the web ${gapHeight().toFixed(3)} mm below the dashed line (the nominal gap)</text>`);
+  g.push(`<rect class="acr-web" x="${f(X(0))}" y="${f(yWeb)}" width="${f(X(webWidth()) - X(0))}" height="10"/><line class="acr-webline" x1="${f(X(0))}" x2="${f(X(webWidth()))}" y1="${f(yWeb)}" y2="${f(yWeb)}"/>`);
+  g.push(`<text class="acr-t" x="${f(X(webWidth() / 2))}" y="${f(yWeb + 24)}" text-anchor="middle">position across the web, mm · the web ${gapHeight().toFixed(3)} mm below the dashed line (the nominal gap)</text>`);
   // axes
   g.push(`<line class="acr-zero" x1="${L}" x2="${w - R}" y1="${f(Y(0))}" y2="${f(Y(0))}"/>`);
   const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500].find(s => (hi - lo) / s <= 6) || 1000;
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) g.push(`<text class="acr-t" x="${L - 6}" y="${f(Y(v) + 4)}" text-anchor="end">${v > 0 ? '+' : ''}${v}</text><line class="acr-grid" x1="${L}" x2="${w - R}" y1="${f(Y(v))}" y2="${f(Y(v))}"/>`);
   g.push(`<text class="acr-t" x="14" y="${f((T + h - B) / 2)}" transform="rotate(-90 14 ${f((T + h - B) / 2)})" text-anchor="middle">gap change, µm</text>`);
-  for (let z = 0; z <= ACR_W; z += 50) g.push(`<text class="acr-t" x="${f(X(z))}" y="${f(yWeb - 4)}" text-anchor="middle">${z}</text>`);
+  for (let z = 0; z <= webWidth(); z += 50) g.push(`<text class="acr-t" x="${f(X(z))}" y="${f(yWeb - 4)}" text-anchor="middle">${z}</text>`);
   // the locations (the 2D's four)
   CFD_LOCS.forEach((l, i) => g.push(`<line class="acr-loc" x1="${f(X(l.z))}" x2="${f(X(l.z))}" y1="${T}" y2="${f(yWeb)}"/><text class="acr-t acr-loct" x="${f(X(l.z) + 3)}" y="${T + 10}">L${i + 1}</text>`));
   // beyond the blade's ends (it ends inside the web): no metering there
   if (sp[0] > 0) g.push(`<rect class="acr-nob" x="${f(X(0))}" y="${T}" width="${f(X(sp[0]) - X(0))}" height="${f(yWeb - T)}"/>`);
-  if (sp[1] < ACR_W) g.push(`<rect class="acr-nob" x="${f(X(sp[1]))}" y="${T}" width="${f(X(ACR_W) - X(sp[1]))}" height="${f(yWeb - T)}"/>`);
+  if (sp[1] < webWidth()) g.push(`<rect class="acr-nob" x="${f(X(sp[1]))}" y="${T}" width="${f(X(webWidth()) - X(sp[1]))}" height="${f(yWeb - T)}"/>`);
   // the parts, then their sum
   for (const k of series) g.push(path(k, 'acr-part-line', ` stroke="${col[k]}"`));
   g.push(path('sum', 'acr-sum'));
@@ -362,7 +361,7 @@ function acrossFrontSVG(w, h, acr = ACR, fixed = null) {
   const zc = (sp[0] + sp[1]) / 2;
   if (on.bow && acr.bow.mode === 'typed') g.push(hd('bow', zc, acrossBowTyped(zc, acr.bow.um, acr.bow.shape, sp), `Bow ${acr.bow.um} µm at the middle: drag up or down`), `<text class="acr-ht" x="${f(X(zc))}" y="${f(Y(acr.bow.um) - 12)}" text-anchor="middle" fill="${col.bow}">bow ${+acr.bow.um.toFixed(1)} µm</text>`);
   if (on.crown && acr.crown.kind === 'parabola') g.push(hd('crown', zc + (sp[1] - sp[0]) * 0.12, acrossBowTyped(zc + (sp[1] - sp[0]) * 0.12, acr.crown.um, 'parabola', sp), `Crown ${acr.crown.um} µm at the middle: drag up or down`));
-  g.push(hd('tilt', ACR_W, P.tilt / 2, `Tilt ${P.tilt} µm edge to edge: drag up or down`), `<text class="acr-ht" x="${f(X(ACR_W) - 10)}" y="${f(Y(P.tilt / 2) + 20)}" text-anchor="end" fill="${col.tilt}">tilt ${P.tilt} µm</text>`);
+  g.push(hd('tilt', webWidth(), P.tilt / 2, `Tilt ${P.tilt} µm edge to edge: drag up or down`), `<text class="acr-ht" x="${f(X(webWidth()) - 10)}" y="${f(Y(P.tilt / 2) + 20)}" text-anchor="end" fill="${col.tilt}">tilt ${P.tilt} µm</text>`);
   const cz = acr.crest ?? P.lw / 4;
   if (P.dH > 0 || acr.crest != null) g.push(hd('wave', cz, P.dH, `Waviness ${P.dH} µm, first crest at ${+cz.toFixed(1)} mm: drag up or down for the amplitude, sideways for the crest`), `<text class="acr-ht" x="${f(X(cz))}" y="${f(Y(P.dH) - 12)}" text-anchor="middle" fill="${col.wave}">waviness ${P.dH} µm</text>`);
   if (on.ends) {
@@ -390,7 +389,7 @@ function drawAcrossFront(host) {
     const pc = k => CFG.find(q => q.k === k), clampP = (k, v) => { const c = pc(k); return Math.min(c.max, Math.max(c.min, Math.round(v / c.step) * c.step)); };
     const cl = (path, v) => { const m = ACR_NUM[path]; return Math.min(m.hi, Math.max(m.lo, v)); };
     // (the change follows the pointer's movement from where the handle was grabbed: no jump on grabbing it)
-    const F0 = F, z0 = F0.inv.z(e.clientX - r.left), v0 = F0.inv.v(e.clientY - r.top), a0 = JSON.parse(JSON.stringify(ACR)), sp0 = acrossSpan(ACR_W, a0.bladeEnds);
+    const F0 = F, z0 = F0.inv.z(e.clientX - r.left), v0 = F0.inv.v(e.clientY - r.top), a0 = JSON.parse(JSON.stringify(ACR)), sp0 = acrossSpan(webWidth(), a0.bladeEnds);
     const cz0 = a0.crest ?? P.lw / 4, xc = (z0 - (sp0[0] + sp0[1]) / 2) / ((sp0[1] - sp0[0]) / 2), fc = 1 - Math.min(0.95, xc * xc);
     const move = ev => {
       const dz = F0.inv.z(ev.clientX - r.left) - z0, dv = F0.inv.v(ev.clientY - r.top) - v0;   // (the mapping it was grabbed with)
@@ -509,7 +508,7 @@ function acrossCrownInput() {
   const keep = ACR.crown.on;
   ACR.crown.on = false;
   try {
-    const zs = acrossPositions(), sp = acrossSpanNow(), a = Math.max(0, sp[0]) + ACR.edgeBand, b = Math.min(ACR_W, sp[1]) - ACR.edgeBand;
+    const zs = acrossPositions(), sp = acrossSpanNow(), a = Math.max(0, sp[0]) + ACR.edgeBand, b = Math.min(webWidth(), sp[1]) - ACR.edgeBand;
     return { zs, geos: zs.map(z => oneDGeoAt(z)), counted: zs.map(z => z >= a - 1e-9 && z <= b + 1e-9), p: zs.map(z => acrossBowTyped(z, 1, 'parabola', sp)) };
   } finally { ACR.crown.on = keep; }
 }

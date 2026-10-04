@@ -125,7 +125,7 @@ function c3dFileIn(f) {
 function c3dRegion() {
   // (the full width with its edges open: from one end's outer side to the other's, the edge strips at its ends)
   if (C3D.region === 'full' && C3D.webEdges === 'open') { const z0 = c3dEdgeGeom('left').out / 1000, z1 = c3dEdgeGeom('right').out / 1000; return { z0, z1, zc: (z0 + z1) / 2, nz: C3D.nzFull + 2 * C3D.edgeNz }; }
-  if (C3D.region === 'full') return { z0: 0, z1: ACROSS_W / 1000, zc: ACROSS_W / 2000, nz: C3D.nzFull };
+  if (C3D.region === 'full') return { z0: 0, z1: webWidth() / 1000, zc: webWidth() / 2000, nz: C3D.nzFull };
   if (C3D.region === 'edge') { const r = c3dEdgeRange(); return { ...r, zc: (r.z0 + r.z1) / 2, nz: C3D.edgeNz }; }
   const zc = CFD_LOCS[C3D.loc].z / 1000, w = C3D.stripW / 1000;
   return { z0: zc - w / 2, z1: zc + w / 2, zc, nz: C3D.nzStrip };
@@ -137,7 +137,7 @@ function c3dRegion() {
  */
 function c3dEdgeGeom(end = C3D.edgeEnd) {
   const left = end === 'left', be = ACR.bladeEnds || { left: 0, right: 0 };
-  const bladeEnd = left ? -(be.left || 0) : ACROSS_W + (be.right || 0), webEdge = left ? 0 : ACROSS_W;
+  const bladeEnd = left ? -(be.left || 0) : webWidth() + (be.right || 0), webEdge = left ? 0 : webWidth();
   return { left, side: left ? 'lo' : 'hi', bladeEnd, webEdge, out: left ? Math.max(bladeEnd, webEdge) : Math.min(bladeEnd, webEdge) };
 }
 /** An end's edge strip across the web (m): its outer side and edgeW inward. */
@@ -336,8 +336,8 @@ function c3dSetupTree() {
     <details class="grp cfd-grp" data-c3dgrp="region"${C3D_OPEN.region ? ' open' : ''}><summary>3D region</summary>
       ${seg('Across the web', 'region', [['strip', 'Strip'], ['edge', 'Edge'], ['full', 'Full width']])}
       ${C3D.region === 'strip' ? sel('Around', 'loc', CFD_LOCS.map((l, i) => opt(i, `L${i + 1} · z ${l.z} mm`, C3D.loc)).join('')) + num('Strip width', 'stripW', 'mm')
-        : C3D.region === 'edge' ? seg('End', 'edgeEnd', [['left', 'Left (z 0)'], ['right', `Right (z ${ACROSS_W})`]]) + num('Strip width', 'edgeW', 'mm') + `<p class="prop-note">${c3dEdgeNote()}</p>`
-        : `<p class="prop-note">The full ${ACROSS_W} mm of the web, with the shared inputs (the locations' own inputs are theirs only).</p>` + seg('Web edges', 'webEdges', [['sym', 'Symmetry'], ['open', 'Open (edge bead)']]) + `<p class="prop-note">${C3D.webEdges === 'open' ? 'Each end is first solved as an edge strip (Edge), the bead pressure raised in steps from none; if both hold it, the full width is solved with its edges open, the edge strips its outer strips.' : 'No flow across the web\'s edges: the edge bead is not modelled.'}</p>`}
+        : C3D.region === 'edge' ? seg('End', 'edgeEnd', [['left', 'Left (z 0)'], ['right', `Right (z ${webWidth()})`]]) + num('Strip width', 'edgeW', 'mm') + `<p class="prop-note">${c3dEdgeNote()}</p>`
+        : `<p class="prop-note">The full ${webWidth()} mm of the web, with the shared inputs (the locations' own inputs are theirs only).</p>` + seg('Web edges', 'webEdges', [['sym', 'Symmetry'], ['open', 'Open (edge bead)']]) + `<p class="prop-note">${C3D.webEdges === 'open' ? 'Each end is first solved as an edge strip (Edge), the bead pressure raised in steps from none; if both hold it, the full width is solved with its edges open, the edge strips its outer strips.' : 'No flow across the web\'s edges: the edge bead is not modelled.'}</p>`}
     </details>
     <details class="grp cfd-grp" data-c3dgrp="mesh"${C3D_OPEN.mesh ? ' open' : ''}><summary>3D mesh</summary>
       ${c3dPresetSeg()}
@@ -480,7 +480,7 @@ function c3dEstimateText() {
     // (the end strips, as large as the edge strips, in every sweep too)
     const tE = eE ? eE.NL * 1.7 + 3 * eE.secs3 : 0, secs = tE + (NL / L.workers + 4) * 3 + 2 * perColour * e.secs3 * (1 + 0.6 * 5) + (eE ? eE.secs3 * (1 + 0.6 * 5) : 0);
     if (eE) return `Each end first as an edge strip (${C3D.edgeW} mm, the bead pressure raised in steps; both at once: about ${c3dMem(2 * eE.bytes)} and ${c3dTime(tE)}); if both hold the set bead pressure, the width as ${L.subs.length} overlapping strips (the edge strips its end strips, open on their outer sides; ${L.sub} elements across the others), ${L.workers} at a time, sweep after sweep until they agree; stations every ${Math.min(...dz).toFixed(1)} to ${Math.max(...dz).toFixed(1)} mm. About ${c3dMem(Math.max(2 * eE.bytes, L.workers * e.bytes))} and ${c3dTime(secs)} in all.`;
-    return `Solved as ${L.subs.length} overlapping strips (${L.sub} elements across each), ${L.workers} at a time, sweep after sweep until they agree; stations every ${Math.min(...dz) === Math.max(...dz) ? (ACROSS_W / (NL - 1)).toFixed(1) : `${Math.min(...dz).toFixed(1)} to ${Math.max(...dz).toFixed(1)}`} mm (variation across the web on a shorter scale is sampled there, not resolved); ${P.skew ? 'the web\'s edges open (each held at its own station\'s flow: the slurry carried along the skewed blade leaves and enters there freely)' : 'the web\'s edges are symmetry planes'}. About ${c3dMem(L.workers * e.bytes)} and ${c3dTime(secs)}.`;
+    return `Solved as ${L.subs.length} overlapping strips (${L.sub} elements across each), ${L.workers} at a time, sweep after sweep until they agree; stations every ${Math.min(...dz) === Math.max(...dz) ? (webWidth() / (NL - 1)).toFixed(1) : `${Math.min(...dz).toFixed(1)} to ${Math.max(...dz).toFixed(1)}`} mm (variation across the web on a shorter scale is sampled there, not resolved); ${P.skew ? 'the web\'s edges open (each held at its own station\'s flow: the slurry carried along the skewed blade leaves and enters there freely)' : 'the web\'s edges are symmetry planes'}. About ${c3dMem(L.workers * e.bytes)} and ${c3dTime(secs)}.`;
   }
   const e = c3dEstimate();
   // (an edge: a 3D solve for each step of the bead pressure; the first, from the stations' 2D, the longest)
@@ -500,7 +500,7 @@ function c3dStripSamples(i, W) {
   return { gap, th, gOff };
 }
 /** The shared inputs (no location's own) at zc (mm; default the web's middle): the full width's reference, an edge strip's. */
-function c3dSharedGeometry(zc = ACROSS_W / 2) {
+function c3dSharedGeometry(zc = webWidth() / 2) {
   const geo = cfdGeometry(0), uses = RHEO_MODELS[CFDG.model].uses;
   const U = P.U / 60 * Math.cos(skewRad()), H = cfdLocalGapMm(zc) / 1000, ty = uses.includes('ty') ? P.ty : 0, n = uses.includes('n') ? P.n : 1;
   return { ...geo, z: zc, U, H, contactDeg: cfdLocalContactDeg(zc), Pup: P.Pup * 1000, muRef: P.mu, ty, n, muRep: muLaw(U / H, P.mu, ty, n), gamma: P.g };
@@ -534,7 +534,7 @@ function c3dSolveMessage(withFile = true) {
     const { side: _l, ...lo } = c3dEdgeOpen('left', zc), { side: _r, ...hi } = c3dEdgeOpen('right', zc);
     msg.open = { nE: C3D.edgeNz, lo, hi };
   } else if (full) {
-    W = ACROSS_W / 1000; zc = W / 2;
+    W = webWidth() / 1000; zc = W / 2;
     const zs = c3dStations(), g0 = cfdLocalGapMm(zc * 1000);
     // (sampled at the stations themselves: the variation between them is not resolved)
     strip = { width: W, nEz: (zs.length - 1) / 2, zs, gap: zs.map(z => [z, (cfdLocalGapMm((zc + z) * 1000) - g0) / 1000]), th: zs.map(z => [z, cfdLocalContactDeg((zc + z) * 1000)]) };
@@ -787,7 +787,7 @@ async function c3dRunWide(m, key) {
         // (an end that does not hold the set bead pressure: the width is not solved, each end shown at the most it holds)
         for (const r of out) delete r.state;
         const ms = performance.now() - C3D_RUN.t0;
-        C3D_RES = { key, region: 'full', loc: null, width: ACROSS_W, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(),
+        C3D_RES = { key, region: 'full', loc: null, width: webWidth(), source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(),
           result: { region: 'full', openEdges: true, held: false, edges: edgeRes, Pset: msg.Pup, zOff: rg.zc } };
         C3D_RES.mesh = c3dMeshDone(C3D_RUN.meshRec, null);
         V3.key = null;
@@ -869,7 +869,7 @@ async function c3dRunWide(m, key) {
     R.top = { x: [], y: [], p3: [], p2: [] };
     for (let c = 0; c < NC; c++) { const n2 = c * NR + NR - 1; R.top.x.push(T.x[n2]); R.top.y.push(T.y[n2]); R.top.p3.push(T.p[n2]); R.top.p2.push(top2 ? top2[c] : NaN); }
     const ms = performance.now() - C3D_RUN.t0;
-    C3D_RES = { key, region: 'full', loc: null, width: ACROSS_W, source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: R };
+    C3D_RES = { key, region: 'full', loc: null, width: webWidth(), source: C3D.source, fileName: C3D_FILE && C3D.source === 'file' ? C3D_FILE.name : null, ms, when: Date.now(), result: R };
     C3D_RES.mesh = c3dMeshDone(C3D_RUN.meshRec, C3D_RES.result);
     V3.key = null;
     C3D_RUN.status = 'done';
@@ -1030,7 +1030,7 @@ function view3D() {
   c3dBusy();
   const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}${a[2] ? ` (${a[2]})` : ''}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong>${a[2] ? `<small class="stat-tag">${a[2]}</small>` : ''}</div>`;
   const geoTiles = G.mesh ? [
-    [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(ACROSS_W)],
+    [C3D.region === 'strip' ? `Strip at L${C3D.loc + 1}, mm` : 'Full width, mm', C3D.region === 'strip' ? String(C3D.stripW) : String(webWidth())],
     ['Gap at the edge, mm', Number.isFinite(G.gMin) ? `${(G.gMin * 1000).toFixed(3)}–${(G.gMax * 1000).toFixed(3)}` : 'no blade'],
     ['Blade + film, mm', `${(G.xe * 1000).toFixed(1)} + ${(G.Ld * 1000).toFixed(1)}`],
     ['Underside', G.open ? `${G.open} open` : G.multi ? `${G.multi} overhang` : 'single layer'],

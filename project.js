@@ -20,7 +20,6 @@ const doeSnapOut = q => q ? { factors: q.factors, out: q.out, x: q.x, mx: q.mx, 
   runs: (q.runs || []).map(r => ({ n: r.n, idx: r.idx, vals: r.vals, status: r.status === 'running' || r.status === 'pending' ? 'stopped' : r.status, out: r.out, error: r.error, ms: r.ms })) } : null;
 const doeSnapIn = q => q ? { factors: q.factors || null, out: q.out, x: q.x || 0, mx: q.mx || 0, my: q.my ?? 1, design: q.design ? q.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null,
   runs: q.runs || [], status: q.runs && q.runs.length ? (q.status || 'done') : 'idle', key: q.key || null, t0: q.t0 || 0, t1: q.t1 || 0 } : null;
-const LOC_Z_DEFAULTS = CFD_LOCS.map(l => l.z);
 const projUseFS = () => typeof window.showSaveFilePicker === 'function' && typeof window.showOpenFilePicker === 'function' && !window.PROJ_NO_FS;
 const PROJ_TYPES = [{ description: 'Blade Coat Defect Lab project', accept: { 'application/json': ['.bcdl', '.json'] } }];
 
@@ -55,7 +54,7 @@ function projectData() {
     feed: { z: FEED_POS.z ? FEED_POS.z.slice() : null, entry: feedEntry() },   // (the pool's outlets across the web: as placed, or null: equidistant; how the paste enters)
     cfdSetup: { ...CFDG }, solver: { ...CFDS }, across: JSON.parse(JSON.stringify(ACR)),
     materials: JSON.parse(JSON.stringify(MAT)), oven: JSON.parse(JSON.stringify(OVEN)),
-    locations: CFD_LOCS.map(l => ({ z: l.z, over: { ...l.over }, solver: { ...l.solver } })),
+    locations: CFD_LOCS.map(l => ({ z: l.zSet, over: { ...l.over }, solver: { ...l.solver } })),   // (z null: spread evenly over the web)
     probes: cfdProbes, cuts: cfdCuts, cases: readCases() || [],
     view: { module: tab, page: navNow(), FV },   // (page, WF-2: the tab's page -- on the Process view, its stage and part)
     doe: {
@@ -299,14 +298,16 @@ function applyProject(p) {
   if (p.format > PROJ_FORMAT) throw new Error('the project was saved by a newer version of the app');
   projStopAll();
   // (the inputs as saved, consistent as they are: the slurry's law not re-derived while they come in)
-  rheoHold(() => { for (const c of CFG) setInput(c.k, p.inputs && c.k in p.inputs ? p.inputs[c.k] : c.v); });   // (an input the project predates: its default)
+  // (an input the project predates: its default; the web's width, the 300 mm it was made at)
+  const pIn = p.inputs && !('webW' in p.inputs) ? { ...p.inputs, webW: 300 } : p.inputs;
+  rheoHold(() => { for (const c of CFG) setInput(c.k, pIn && c.k in pIn ? pIn[c.k] : c.v); });
   Object.assign(CFDG, CFDG_DEFAULTS); for (const k of Object.keys(CFDG)) if (p.cfdSetup && k in p.cfdSetup) CFDG[k] = p.cfdSetup[k];
   Object.assign(CFDS, SOLVER_DEFAULTS, p.solver || {});
   FEED_POS.z = p.feed && Array.isArray(p.feed.z) ? p.feed.z.map(Number) : null;   // (a project from before: equidistant)
   FEED_POS.entry = p.feed && FEED_ENTRY.some(e => e[0] === p.feed.entry) ? p.feed.entry : 'fall';   // (from before: falling)
   applyMaterials(p.materials); applyOven(p.oven, p.cfdSetup);
   applyAcross(p.across);   // (a project from before: the blade across the web as it was, no new part)
-  CFD_LOCS.forEach((l, i) => { const s = (p.locations || [])[i] || {}; l.z = s.z ?? LOC_Z_DEFAULTS[i]; l.over = { ...(s.over || {}) }; l.solver = { ...(s.solver || {}) }; });
+  CFD_LOCS.forEach((l, i) => { const s = (p.locations || [])[i] || {}; l.zSet = locZTyped(s.z, i, P.webW); l.over = { ...(s.over || {}) }; l.solver = { ...(s.solver || {}) }; });
   // (a project from before MH-3: the law's own parameters from its viscosity at 2.7 1/s -- every solver gets the law it was solved with)
   rheoMigrate(p.inputs);
   cfdProbes = Array.isArray(p.probes) ? p.probes.map(q => ({ ...q })) : []; saveProbes();
@@ -356,7 +357,7 @@ async function newProject() {
   Object.assign(CFDS, SOLVER_DEFAULTS);
   applyMaterials(null); applyOven(null);
   applyAcross(null);
-  CFD_LOCS.forEach((l, i) => { l.z = LOC_Z_DEFAULTS[i]; l.over = {}; l.solver = {}; });
+  CFD_LOCS.forEach(l => { l.zSet = null; l.over = {}; l.solver = {}; });
   cfdProbes = []; saveProbes(); cfdCuts = []; saveCuts();
   Object.assign(FV, JSON.parse(JSON.stringify(FV_DEFAULTS)));
   cfdRuns.forEach(r => { for (const k of Object.keys(r)) delete r[k]; r.status = 'idle'; });
@@ -580,7 +581,7 @@ function sessionRestore(s) {
   try { p = s && JSON.parse(s.text, projReviver); } catch (e) { p = null; }
   const defaults = JSON.stringify(Object.fromEntries(CFG.map(c => [c.k, c.v])));
   const worth = p && (p.results && p.results.some(Boolean) || (p.doe && p.doe.runs && p.doe.runs.length) || (s.name && s.name !== 'Untitled')
-    || JSON.stringify(p.inputs) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length) || (p.c3d && (p.c3d.file || p.c3d.result)));
+    || JSON.stringify({ ...JSON.parse(defaults), ...(p.inputs || {}) }) !== defaults || (p.probes && p.probes.length) || (p.cuts && p.cuts.length) || (p.c3d && (p.c3d.file || p.c3d.result)));
   if (!worth) { sessionStart(); return; }
   const bar = document.createElement('div');
   bar.className = 'session-bar'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Last session');

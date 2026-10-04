@@ -116,7 +116,7 @@ function processStep(k = procStepKey()) {
 /** The slurry's shear rate in the gap: the web's speed over the gap at the metering edge, mid-web (1/s), and its viscosity there. */
 function procSlurryGap() {
   const uses = RHEO_MODELS[CFDG.model].uses, ty = uses.includes('ty') ? P.ty : 0, n = uses.includes('n') ? P.n : 1, x = cfdRheoX();
-  const gd = P.U / 60 * Math.cos(skewRad()) / (localGap(ACROSS_W / 2) / 1000);
+  const gd = P.U / 60 * Math.cos(skewRad()) / (localGap(webWidth() / 2) / 1000);
   return { gd, mu: muLaw(gd, P.mu, ty, n, x), ty, n, x };
 }
 function procSlurryHTML() {
@@ -308,7 +308,7 @@ function processPageBody() {
       else { tab = +go; render(); }
     });
   }
-  const web = processWeb(), U = lineSpeed(), W = ACROSS_W / 1000, o = ovenTime(U), c = MAT.slurry;
+  const web = processWeb(), U = lineSpeed(), W = webWidth() / 1000, o = ovenTime(U), c = MAT.slurry;
   const st = document.getElementById('st'), ss = document.getElementById('ss');
   // (the web: across it (answers.js); until the 1D across it is solved, the four locations' mean)
   const locs = CFD_LOCS.map((_, i) => processFilmAt(i));
@@ -316,7 +316,7 @@ function processPageBody() {
   if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') + solveCtl('1d') : solvePending('1d') ? pill('Solving the 1D…', '') : solveCtl('1d'); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); filmRender(); furnRender(); return; }
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
   let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film${web ? ` (${web.tag})` : ''}`, '');
-  pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${ACROSS_W} mm web at ${P.U} m/min`, '');
+  pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${webWidth()} mm web at ${P.U} m/min`, '');
   if (wetTooLoose) pills += pill(`Dry film packing ${c.phiDry.v} is below the slurry's solids fraction (${matPhiTxt()} vol%): the film would not shrink as it dries`, 'bad');
   const fib = FIBRES[CFDG.fibre], hot = OVEN.zones.filter(z => z.airT > fib.tUse);
   if (hot.length) pills += pill(`Oven air above the fibre's ${fib.tUse} °C continuous limit in ${hot.length} zone${hot.length === 1 ? '' : 's'}`, 'warn');
@@ -336,7 +336,7 @@ function processPageBody() {
   const cv = document.getElementById('pr1'), cv2 = document.getElementById('pr2');
   if (web) {
     const z = web.A.map(r => r.z), wet = web.A.map(r => r.film * 1000), dry = web.A.map(r => massBalance(r.film, U, W).dry * 1e6);
-    const xs = { x0: Math.min(0, z[0]), x1: Math.max(ACROSS_W, z[z.length - 1]), xl: 'position across the web (mm)' };
+    const xs = { x0: Math.min(0, z[0]), x1: Math.max(webWidth(), z[z.length - 1]), xl: 'position across the web (mm)' };
     plotChart(cv, fitAspect(cv, 0.3), { ...xs, y0: 0, y1: Math.max(...wet) * 1.12, yl: 'wet film (mm)', yd: 2, s: [{ p: z.map((x, k) => [x, wet[k]]), c: mut, w: 1.6, dash: [6, 4] }] });
     if (cv2) plotChart(cv2, fitAspect(cv2, 0.3), { ...xs, y0: 0, y1: Math.max(...dry) * 1.12, yl: 'dry film (µm)', yd: 1, s: [{ p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }] });
   } else { const why = solvePending('1d') ? 'Solving the 1D across the web…' : 'The 1D across the web is not solved: press Solve'; for (const c of [cv, cv2]) if (c) { const cx = setupCanvas(c, fitAspect(c, 0.3)); cx.c.clearRect(0, 0, cx.w, cx.h); paneEmpty(c, why); } }
@@ -349,7 +349,7 @@ function processPageBody() {
 function drawProcessTable(locs, web) {
   const host = document.getElementById('procTable');
   if (!host) return;
-  const U = lineSpeed(), W = ACROSS_W / 1000;
+  const U = lineSpeed(), W = webWidth() / 1000;
   // (the columns alike: a location's z and the model its film is from; the web's mean, its source on hover)
   const cols = [...locs.map((q, i) => ({ h: q && q.h, head: `L${i + 1}<small>z ${CFD_LOCS[i].z} mm${q ? ` · ${q.src}` : ''}</small>` })), { h: web && web.mean, head: `The web<small>its mean</small>`, tip: web ? web.tag : '' }];
   const rows = [
@@ -363,7 +363,7 @@ function drawProcessTable(locs, web) {
     <thead><tr><th scope="col">Quantity</th>${cols.map(c => `<th scope="col"${c.tip ? ` title="${c.tip}"` : ''}>${c.head}</th>`).join('')}</tr></thead>
     ${rows.map(([t, u, f]) => `<tr><th scope="row">${t} <small>${u}</small></th>${cols.map(c => c.h != null ? `<td>${f(c.h)}</td>` : '<td class="na" title="solving">—</td>').join('')}</tr>`).join('')}
   </table></div>
-  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D${ans3DTag() ? '; the structure model is on and the 3D has the plain flow curve, so the 3D is not used (models are not mixed)' : ''}. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${matPhiTxt()} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${ACROSS_W} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
+  <details class="fv-more"><summary>How it is worked out</summary><p class="fv-note">Each location's wet film is the most detailed one solved for the inputs as they are: 3D (a strip there or the full width), else 2D, else the 1D${ans3DTag() ? '; the structure model is on and the 3D has the plain flow curve, so the 3D is not used (models are not mixed)' : ''}. What the oven must take out is the water; the solids stay, packed at the dry film's packing (Materials): dry film = wet film × ${matPhiTxt()} vol% / ${MAT.slurry.phiDry.v}. Coat weight dry = wet film × solids fraction × GO density; wet = wet film × the slurry's density (${slurryRho().toFixed(0)} kg/m³). The web's water per second: its wet film over the ${webWidth()} mm width (where the blade is) × the water fraction × the line speed (${P.U} m/min). Time in the oven: its length (${+ovenTime(U).len.toFixed(2)} m, ${OVEN.zones.length} zones) / the line speed. The drying itself is on 3 Drying; the film after it on 4 Peel and wind.</p></details>`;
 }
 
 // ---- Materials ----
