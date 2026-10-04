@@ -659,23 +659,24 @@ function ffCoarseSolve(C, b) {
   for (let i = n - 1; i >= 0; i--) { let s = x[i]; for (let j = i + 1; j < n; j++) s -= LU[i * n + j] * x[j]; x[i] = s / (LU[i * n + i] || 1e-300); }
   return x;
 }
-/** Symmetric Gauss–Seidel sweep on A x = b. */
-function ffSGS(A, diag, b, x) {
-  for (let pass = 0; pass < 2; pass++) for (let t = 0; t < A.n; t++) {
-    const i = pass ? A.n - 1 - t : t; let s = b[i];
+/** One Gauss–Seidel sweep on A x = b, forward or (back) backward. */
+function ffGS(A, diag, b, x, back) {
+  for (let t = 0; t < A.n; t++) {
+    const i = back ? A.n - 1 - t : t; let s = b[i];
     for (let p = A.ptr[i]; p < A.ptr[i + 1]; p++) { const j = A.col[p]; if (j !== i) s -= A.val[p] * x[j]; }
     x[i] = s / diag[i];
   }
 }
-/** One V-cycle for A x = b from x = 0. */
+/** One V-cycle for A x = b from x = 0: a forward Gauss–Seidel sweep down, a backward one up (the cycle symmetric, as CG
+ *  needs; each sweep's two passes before took a quarter longer for the same iterations). */
 function ffVcycle(H, b, lev = 0) {
   if (lev === H.levels.length) return ffCoarseSolve(H.coarse, b);
   const L = H.levels[lev], x = new Float64Array(L.A.n);
-  ffSGS(L.A, L.diag, b, x);
+  ffGS(L.A, L.diag, b, x, false);
   const r = ffMatVec(L.A, x); for (let i = 0; i < r.length; i++) r[i] = b[i] - r[i];
   const ec = ffVcycle(H, ffMatVec(L.R, r), lev + 1), e = ffMatVec(L.P, ec);
   for (let i = 0; i < x.length; i++) x[i] += e[i];
-  ffSGS(L.A, L.diag, b, x);
+  ffGS(L.A, L.diag, b, x, true);
   return x;
 }
 
