@@ -48,10 +48,12 @@ const HUB_PHYS = [
   { k: 'film', l: 'Peel and wind', s: 'plane-strain FEM of the film on the web: stress, cracks, peel, curl', nav: ['peel', 'results'] },
   { k: 'stack', l: 'Pre heat: pressed stack', s: 'in-plane drying of the pieces, creep held flat, release buckling', nav: ['stack', 'results'] },
   { k: 'mp4', l: 'Peel and wind: multiphysics 2D', s: 'the peel front: the film\'s layers on the web, the hold giving way, the arm turning', nav: ['peel2d'] },
-  { k: 'mp6', l: 'Peel and wind: the roll 1D', s: 'the roll wound turn by turn on its core: the turns\' pressure and pull, their water and heat at rest', nav: ['peel1d'] },
+  { k: 'mp6', l: 'Peel and wind: the roll 1D · 3D', s: 'the roll wound turn by turn on its core: the turns\' pressure and pull, their water and heat at rest; in 3D its ends too', nav: ['peel1d', 'peel3d'] },
+  { k: 'mp7', l: 'Cutting: the cut edge 1D · 2D · 3D', s: 'the film\'s layers at the cut: their stress, the energy to part them, the edge\'s peel and shear, the cut piece\'s curl', nav: ['cut2d'] },
   { k: 'mp1', l: 'Pre heat: multiphysics 1D · 2D · 3D', s: 'heat, water and stress in the stack under the aluminium plate', nav: ['stack2d'] },
   { k: 'furn', l: 'Furnace', s: 'conversion kinetics, gas and puffing, graphitization, the piece on its papers', nav: ['furn', 'results'] },
   { k: 'mp2', l: 'Furnace: multiphysics 1D · 2D · 3D', s: 'heat with the reaction heat in the holder, the papers and the pieces', nav: ['furn2d'] },
+  { k: 'mp8', l: 'Graphene film: heat spreading 1D · 2D · 3D', s: 'a piece on a heater: its heat along it and through it, to the room\'s air from its faces', nav: ['gfilm2d'] },
 ];
 const hubPhys = k => HUB_PHYS.find(p => p.k === k);
 function hubGoPhys(k) {
@@ -287,6 +289,7 @@ const HUB_RECORDS = [
         { id: 'Kv', sym: 'K_v', l: 'Water vapour permeability', b: { t: 'tensor', axial: 'skinK', trans: 'stackK', u: 'kg/(m·s·Pa)', what: 'water', scale: { skinK: 1e-12, stackK: 1e-7 } }, phys: ['dry', 'film', 'stack', 'mp1'] },
         { id: 'stackK', sym: 'K_v,11', l: 'in the plane (along the pieces in the stack)', b: hC('film', 'stackK'), phys: ['stack', 'mp1'], sub: true },
         { id: 'skinK', sym: 'K_v,33', l: 'through the thickness (the skin)', b: hC('dry', 'skinK'), phys: ['dry', 'film', 'mp1'], sub: true },
+        { id: 'rollK', sym: 'K_v,roll', l: 'Water along the turns in the roll (their faces, to its ends)', b: hC('film', 'rollK'), phys: ['mp6'] },
         { id: 'beta', sym: 'β', l: 'Hygroscopic swelling in the plane', b: hC('film', 'beta'), phys: ['film', 'stack', 'furn', 'mp2'] },
         { id: 'betaT', sym: 'β₃', l: 'Hygroscopic swelling through the thickness', b: hC('film', 'betaT'), phys: [] },
         { id: 'swell', sym: 'β X_cap', l: 'Swelling from dry to its pores full of water', b: hCalc(() => MAT.film.beta.v * hubXcap() * 100, '%', 2, 'β × the most water its pores hold (in the plane): along the film, its water from none to the most the dry film\'s pores hold'), phys: ['film'] },
@@ -311,6 +314,7 @@ const HUB_RECORDS = [
       ] },
       { l: 'Strength and fracture', props: [
         { id: 'sigF', sym: 'σ_f', l: 'Tensile strength', b: hC('film', 'sigF'), phys: ['film', 'furn', 'mp1', 'mp2'] },
+        { id: 'Gl', sym: 'G_l', l: 'Its layers\' hold on each other (interlayer toughness)', b: hC('film', 'Gl'), phys: ['mp7'] },
         { id: 'epsF', sym: 'ε_f', l: 'Failure strain', b: hCalc(() => MAT.film.sigF.v / (MAT.film.Ep.v * 1000) * 100, '%', 2, 'σ_f / E₁ (strength / stiffness): bent round a core of diameter D, its surface strains by its thickness / D'), phys: ['film'] },
         { id: 'GcF', sym: 'G_c', l: 'Fracture energy, through the film', b: hC('film', 'GcF'), phys: ['film'] },
         { id: 'Gil', sym: 'G_c,il', l: 'Fracture energy, between its layers', b: hC('film', 'Gil'), phys: ['film'] },
@@ -348,11 +352,19 @@ const HUB_RECORDS = [
     desc: 'The film after the furnace: graphitized, its crystallites grown.', domains: ['Furnace: the product (its heat conduction)', 'Furnace multiphysics: its heat capacity as it converts'], cards: ['furn'], models: ['gcp'],
     groups: [
       { l: 'Structure and heat conduction', props: [
-        { id: 'La1', sym: 'L_a', l: 'Crystallite size, graphitized', b: hC('furn', 'La1'), phys: ['furn'] },
-        { id: 'kG', sym: 'k_G', l: 'Graphite\'s conductivity along its layers', b: hC('furn', 'kG'), phys: ['furn'] },
-        { id: 'ell', sym: 'ℓ', l: 'Crystallite size that halves it', b: hC('furn', 'ell'), phys: ['furn'] },
-        { id: 'k', sym: 'k₁₁', l: 'In-plane conductivity, dense and graphitized', b: hCalc(() => MAT.furn.kG.v * 0.93 * MAT.furn.La1.v / (MAT.furn.La1.v + MAT.furn.ell.v), 'W/(m·K)', 0, 'k_G × 0.93 × L_a/(L_a + ℓ), at 2.1 g/cm³'), phys: ['furn'] },
-        { id: 'cp', sym: 'c_p(T)', l: 'Specific heat capacity (graphite)', b: { t: 'law', id: 'gCp' }, phys: ['mp2'] },
+        { id: 'La1', sym: 'L_a', l: 'Crystallite size, graphitized', b: hC('furn', 'La1'), phys: ['furn', 'mp8'] },
+        { id: 'kG', sym: 'k_G', l: 'Graphite\'s conductivity along its layers', b: hC('furn', 'kG'), phys: ['furn', 'mp8'] },
+        { id: 'ell', sym: 'ℓ', l: 'Crystallite size that halves it', b: hC('furn', 'ell'), phys: ['furn', 'mp8'] },
+        { id: 'k', sym: 'k₁₁', l: 'In-plane conductivity, dense and graphitized', b: hCalc(() => MAT.furn.kG.v * 0.93 * MAT.furn.La1.v / (MAT.furn.La1.v + MAT.furn.ell.v), 'W/(m·K)', 0, 'k_G × 0.93 × L_a/(L_a + ℓ), at 2.1 g/cm³'), phys: ['furn', 'mp8'] },
+        { id: 'cp', sym: 'c_p(T)', l: 'Specific heat capacity (graphite)', b: { t: 'law', id: 'gCp' }, phys: ['mp2', 'mp8'] },
+      ] },
+      { l: 'In use: spreading a heater\'s heat', props: [
+        { id: 'kt', sym: 'k₃₃', l: 'Heat conduction through it', b: hC('furn', 'kt'), phys: ['mp8'] },
+        { id: 'epsG', sym: 'ε', l: 'Emissivity of its faces', b: hC('furn', 'epsG'), phys: ['mp8'] },
+        { id: 'EG', sym: 'E₁₁', l: 'Stiffness in its plane', b: hC('furn', 'EG'), phys: ['mp8'] },
+        { id: 'nuG', sym: 'ν₁₂', l: 'Poisson\'s ratio in its plane', b: hC('furn', 'nuG'), phys: ['mp8'] },
+        { id: 'aG', sym: 'α₁₁', l: 'Heat expansion in its plane', b: hC('furn', 'aG'), phys: ['mp8'] },
+        { id: 'sigG', sym: 'σ_f', l: 'Strength in its plane', b: hC('furn', 'sigG'), phys: ['mp8'] },
       ] },
     ] },
   { id: 'web', name: 'Fibre web', cls: 'Porous solid', sub: 'Woven fabric · transversely isotropic', icon: 'fibre',
@@ -483,10 +495,17 @@ const HUB_RECORDS = [
 }
 // (MP-PEEL 1D: the roll reads the film's stiffness along it and its softening with water, its strength, how it swells along
 //  and through it with water and heat, the roll's stiffness through its turns, the GO's isotherm, its vapour permeability
-//  through it, its heat conduction through it and heat capacity)
+//  through it, its heat conduction through it and heat capacity; the 3D, its heat conduction along it and the water along
+//  the turns)
 {
-  const mp6 = { gofilm: ['Xh', 'Ep', 'nup', 'sigF', 'beta', 'betaT', 'alphaF', 'alphaT', 'Er', 'nuR', 'gabXm', 'gabC', 'gabK', 'Kv', 'skinK', 'k', 'kS', 'cS', 'rho', 'phiDry'] };
+  const mp6 = { gofilm: ['Xh', 'Ep', 'nup', 'sigF', 'beta', 'betaT', 'alphaF', 'alphaT', 'Er', 'nuR', 'gabXm', 'gabC', 'gabK', 'Kv', 'skinK', 'k', 'kS', 'kIn', 'cS', 'rho', 'phiDry'] };
   for (const r of HUB_RECORDS) for (const g of r.groups || []) for (const q of g.props) if (q.phys && !q.phys.includes('mp6') && (mp6[r.id] || []).includes(q.id)) q.phys.push('mp6');
+}
+// (MP-CUT: the cut edge reads the film's layers (their stiffness and its softening with water, Poisson's ratio, the
+//  drying's stress in each), its strength, its layers' hold on each other, its weight and the roll's set (the 3D piece))
+{
+  const mp7 = { gofilm: ['Xh', 'Ep', 'nup', 'sigF', 'Gl', 'rho', 'phiDry'] };
+  for (const r of HUB_RECORDS) for (const g of r.groups || []) for (const q of g.props) if (q.phys && !q.phys.includes('mp7') && (mp7[r.id] || []).includes(q.id)) q.phys.push('mp7');
 }
 const HUB_IFACES = [
   { id: 'i-slurry-air', name: 'Slurry | air', a: 'slurry', bb: 'air', sub: 'Free surface', icon: 'flow', domains: ['Coating: the meniscus and the free film (1D, 2D, 3D)'],
@@ -531,7 +550,7 @@ const hubProps = r => r.groups.flatMap(g => g.props);
 const HUB_DOMAIN_PHYS = {
   slurry: [['coat', 'align'], ['mix'], ['dry', 'film', 'mp5']], flakes: [['mix', 'coat', 'align'], ['dry', 'film', 'stack', 'mp1', 'furn', 'mp2', 'mp5']],
   water: [['mix', 'coat'], ['dry', 'film', 'stack', 'mp1', 'mp2', 'mp5']], air: [['dry', 'film', 'mp5'], ['mp1'], ['coat']], argon: [['mp2']], gel: [['film', 'mp5']],
-  gofilm: [['dry', 'align', 'mp5'], ['film'], ['stack', 'mp1'], ['furn', 'mp2']], gfilm: [['furn'], ['mp2']], web: [['coat'], ['dry', 'mp5'], ['film']],
+  gofilm: [['dry', 'align', 'mp5'], ['film'], ['stack', 'mp1'], ['furn', 'mp2']], gfilm: [['furn', 'mp8'], ['mp2']], web: [['coat'], ['dry', 'mp5'], ['film']],
   paper: [['furn'], ['mp2']], plate: [['furn'], ['mp2']], al: [['mp1']], paste: [[]], cfilm: [[]], blade: [[]], 'i-slurry-air': [['coat']], 'i-slurry-blade': [['coat']], 'i-slurry-web': [['coat']],
   'i-film-web': [['film']], 'i-film-paper': [['furn'], ['mp2']], 'i-film-plate': [['furn']],
 };

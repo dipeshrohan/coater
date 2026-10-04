@@ -89,7 +89,7 @@ function projStopAll() {
   if (typeof SOLVE_ASK !== 'undefined') SOLVE_ASK.clear();   // (Phase 0: nothing asked for goes on)
   cancelAllLocations(); stopAccuracy(); orStopAll(); meshPvStop(); stopDOE(); measStopCfd(); measStopFit();
   m3StudyStop(true); acc3Stop(); c3dStop();
-  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop();
+  oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop(); if (typeof gfmStop === 'function') gfmStop(); if (typeof cmStop === 'function') cmStop();
   if (typeof poolStop === 'function') poolStop();
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */

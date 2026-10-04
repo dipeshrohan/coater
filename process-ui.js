@@ -86,8 +86,8 @@ function procPageHead() {
 /** Pages without a solver of their own yet (the owner's choice: kept, clearly marked; nothing on them looks like a result
  *  of a model that does not exist): what is missing, and what the page shows instead. */
 const PROC_NOSOLVER = {
-  cut: ['No solver of its own yet for the cut', 'The cut itself (the knife along a ruler: the edge stress, cracks or tearing at the cut) is not modelled yet: a later phase.', 'Shown here: the piece after cutting, solved by the piece-in-3D model (its curl and corners).'],
-  gfilm: ['No solver of its own yet', 'The graphene film\'s own analysis (heat spreading, flatness after release, bending and folding) is not modelled yet: a later phase.', 'Shown here: the furnace\'s result for the film (its thickness, density, C/O, heat along it).'],
+  cut: ['Its own solvers: 1D, 2D, 3D', 'The cut edge (the layers\' stress the cut sheds, the energy to part them, the peel and shear between them) and the cut piece are solved on the 1D, 2D and 3D tabs. The knife\'s force and a tear running off the ruler are not modelled.', 'Shown here: the piece after cutting, solved by the piece-in-3D model (its curl and corners).'],
+  gfilm: ['Its own solvers: 1D, 2D, 3D', 'The graphene film on a heater (its heat spreading and the stress it gives) is solved on the 1D, 2D and 3D tabs. Its flatness after release, bending and folding are not modelled yet.', 'Shown here: the furnace\'s result for the film (its thickness, density, C/O, heat along it).'],
 };
 const procNoSolverHTML = pg => { const q = PROC_NOSOLVER[pg]; return q ? `<div class="no-solver" role="note"><b>${uiBadge('warn')}${q[0]}</b><p>${q[1]}</p><p class="ns-shown">${q[2]}</p></div>` : ''; };
 /** The page's model (Phase 0: solved only when asked -- its Solve beside its state). */
@@ -223,7 +223,8 @@ function processShowStage() {
  * follows the oven; Furnace and Graphene film, the furnace.
  */
 const PROC_BAR = { mix: ['mixer'], wetdry: ['matro', 'oven'], flakes: ['matro'], dry: ['oven'], peel: ['peel'], cut: ['peel'], stack: ['peel'], furn: ['furn'], gfilm: ['furn'],
-  peel1d: ['peel'], peel2d: ['peel'], stack1d: ['peel'], stack2d: ['peel'], stack3d: ['peel'], furn1d: ['furn'], furn2d: ['furn'], furn3d: ['furn'], dry1d: ['oven'], dry2d: ['oven'], dry3d: ['oven'] };
+  peel1d: ['peel'], peel2d: ['peel'], peel3d: ['peel'], stack1d: ['peel'], stack2d: ['peel'], stack3d: ['peel'], furn1d: ['furn'], furn2d: ['furn'], furn3d: ['furn'], dry1d: ['oven'], dry2d: ['oven'], dry3d: ['oven'],
+  gfilm1d: ['gfuse'], gfilm2d: ['gfuse'], gfilm3d: ['gfuse'], cut1d: ['peel'], cut2d: ['peel'], cut3d: ['peel'] };
 function processSidebar() {
   const open = k => FV.tree[k] !== false ? ' open' : '', pg = navNow(), part = NAV[pg].fv;
   const c = MAT.slurry, row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
@@ -232,6 +233,7 @@ function processSidebar() {
     oven: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>Drying air (oven)</summary>${ovenZonesTree()}</details>`,
     peel: () => `<details class="grp cfd-grp" data-tree="oven"${open('oven')}><summary>${{ film: 'After the oven', piece: 'The pieces cut', stack: 'The pre heat treatment' }[part]}</summary>${ovenZonesTree({ zones: false, peel: part })}</details>`,
     furn: () => `<details class="grp cfd-grp" data-tree="furn"${FV.tree.furn !== false ? ' open' : ''}><summary>The furnace</summary>${furnTreeHTML()}</details>`,
+    gfuse: () => `<details class="grp cfd-grp" data-tree="gfuse"${open('gfuse')}><summary>On a heater (its test)</summary>${gfTreeHTML()}</details>`,
     matro: () => `<details class="grp cfd-grp" data-tree="matro"${open('matro')}><summary>From the materials</summary>
       ${row('Solids (GO)', `${matPhiTxt()} vol%`)}${row('GO density', `${c.rhoS.v} g/cm³`)}${row('Liquid (water)', `${c.rhoL.v} kg/m³`)}${row('Dry film packing', `${c.phiDry.v}`)}${row('Slurry density', `${slurryRho().toFixed(0)} kg/m³`)}
       <p class="prop-note">The slurry's card, on Materials. Its density follows from the solids, and the flow models use it.</p>
@@ -245,7 +247,7 @@ function processSidebar() {
   const toMat = document.getElementById('procToMat'); if (toMat) toMat.onclick = () => { tab = 13; render(); };
   wireOvenZones(() => processPage(true), render);
   wireMixTree();
-  if (document.querySelector('#setupExtra [data-tree="furn"]')) wireFurnTree(() => processPage(true));
+  if (document.querySelector('#setupExtra [data-tree="furn"], #setupExtra [data-tree="gfuse"]')) wireFurnTree(() => processPage(true));
 }
 /** Open a stage (from a link or another tab's "See it"), at the page's top: the film's and the furnace's on the part shown last. */
 function processGo(k, step) {

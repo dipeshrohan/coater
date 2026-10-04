@@ -32,6 +32,8 @@ function pmpRunNow() {
 function pmpInputs(dim) {
   // (the 1D: the roll, peel-roll-ui.js)
   if (dim === 1) return typeof prlInputs === 'function' ? prlInputs() : null;
+  // (the 3D: the roll with its ends, peel-roll3-ui.js)
+  if (dim === 3) return typeof pr3Inputs === 'function' ? pr3Inputs() : null;
   if (dim !== 2) return null;
   const run = pmpRunNow();
   if (!run || !run.profile || !run.profile.cells.length) return null;
@@ -74,7 +76,7 @@ function pmpRequest(dim) {
     done();
   };
   PMS.worker.onerror = ev => { PMS.key[dim] = key; PMS.res[dim] = null; PMS.error[dim] = ev.message || 'the multiphysics worker failed'; PMS.worker = null; done(); };
-  PMS.worker.postMessage({ id, kind: dim === 1 ? 'peel1' : 'peel2', o });
+  PMS.worker.postMessage({ id, kind: dim === 1 ? 'peel1' : dim === 3 ? 'peel3' : 'peel2', o });
 }
 /** Stop the solve (New, Open): its worker ended, what was asked next dropped. */
 function pmpStop() {
