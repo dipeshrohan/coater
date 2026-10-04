@@ -65,7 +65,7 @@ const FEM_EDGE = FEM_G.map((x, g) => ({ w: FEM_GW[g], N: q2(x), dN: dq2(x) }));
  *   spineFoot(c, st)  x of spine c's foot on the web (c = 0 .. 2 nEx)
  *   spineTop(c, st)   [x, y] of spine c's top for geometry state st
  *   spineSlope(c, st) optional: dx/dy of the spine where it arrives at the top
- *   eta(k)            fraction of the way up the spine for node row k (0 .. 2 nEy), default k/(2nEy)
+ *   eta(k, st)        fraction of the way up the spine for node row k (0 .. 2 nEy), default k/(2nEy)
  * Node (c, k) at y = e yt and x on the cubic (Hermite) from the foot, leaving
  * the web vertically, to the top with the given slope; without spineSlope
  * that is the parabola x = xb + (xt - xb) e^2.
@@ -77,7 +77,7 @@ function femNodes(m, st, out) {
     const xb = m.spineFoot(c, st), [xt, yt] = m.spineTop(c, st), D = xt - xb;
     const T = m.spineSlope ? m.spineSlope(c, st) * yt : 2 * D;      // dx/de at the top
     for (let k = 0; k < NR; k++) {
-      const e = m.eta ? m.eta(k) : k / (NR - 1), e2 = e * e;
+      const e = m.eta ? m.eta(k, st) : k / (NR - 1), e2 = e * e;
       X[c * NR + k] = xb + D * e2 * (3 - 2 * e) + T * e2 * (e - 1); Y[c * NR + k] = e * yt;
     }
   }
@@ -110,8 +110,8 @@ function femQuality(m, st) {
  *   geometry unknowns: freeSpines (list of c with kind 'free'), contactLine: { spine, faceFrom (first spine whose top moves with s), alphaDeg
  *     (the surface's direction there, deg: a number, or a function of s, m) } or null
  *   U (web speed), rho, g (gravity, m/s^2), gamma (surface tension), mu(gd), gdMin
- *   inlet: { type: 'traction', p: (y) => Pa }
- *   outlet: { type: 'plug' } | { type: 'traction', p: (y) => Pa }
+ *   inlet: { type: 'traction', p: (y) => Pa } | { type: 'wall' } | { type: 'symmetry' } (u = 0, v free)
+ *   outlet: { type: 'plug' } | { type: 'traction', p: (y) => Pa } | { type: 'wall' } | { type: 'symmetry' }
  *   topSpeed: speed of a moving top wall (cavity check), fixPressure: true to pin p at one vertex (closed domains)
  *   init: previous result's state { sol, h, s } (same mesh layout) to start from
  *   initNodal: { u, v, p } at this mesh's nodes (from another mesh, femInterpolate) to start from
@@ -119,7 +119,19 @@ function femQuality(m, st) {
  *   homotopy: if Newton stalls, follow R(x) = (1 - lambda) R(x_start), lambda 0 -> 1
  *   flatEnd: no flow -- the outlet end of the surface is set flat instead of its kinematic row
  *   webSlip: alpha / sqrt(k) (1/m) -- Beavers-Joseph slip over the porous web instead of no slip
+ *   faceSlip: slip length lambda (m) -- Navier slip on the exit face between the corner and the contact line,
+ *     instead of no slip: the face's nodes slide along it (no flow through it) against the wall stress
+ *     mu u_t / lambda, so the liquid next to the contact line can follow it (time marching; with no slip it moves
+ *     only as far as the elements next to it give). The contact line itself is a point of the liquid: in a time
+ *     step it moves with the liquid there (its velocity the line's own), steady it stays (velocity 0).
+ *     slipSpan: [c0, c1] -- the slip on the top wall's nodes strictly between spines c0 and c1 instead (a check)
  *   tol, maxIter, onIteration
+ *   time: one implicit time step (cfd-fem-time.js marches with it) { t, dt, dtPrev, prev: [r_n, r_n-1] }:
+ *     the state at t from the earlier results r_n (at t - dt) and r_n-1 (at t - dt - dtPrev; leave it out
+ *     for a first, backward-Euler step), each with the node arrays x, y, u, v of this mesh. Arbitrary
+ *     Lagrangian-Eulerian: d/dt is taken at the moving nodes (BDF2 of the nodal values), the convection
+ *     is relative to the nodes' velocity (BDF2 of their positions), and the kinematic condition is
+ *     (u - w) . n = 0. Hr and Ur must be the same in every step. mesh.eta gets st.t.
  *   label: what this solve is (for the convergence record); onSolveStart(label) -> an id, kept as the
  *     result's solveId; onSolveEnd({ converged, residual, iterations }) when it returns
  */
@@ -148,6 +160,18 @@ function solveFEM(o) {
   const invCa = gamma ? 1 / Ca : 0;
   const Us = U / Ur, Uts = Utop / Ur;
 
+  // ---- time step (o.time): BDF coefficients (nondimensional time t Ur / Hr) and the earlier states' part
+  // of d/dt at each node, a1 f_n + a2 f_n-1, for u, v and the node positions ----
+  let TM = null;
+  if (o.time) {
+    const T = o.time, P = T.prev, dts = T.dt * Ur / Hr, two = P.length > 1 && T.dtPrev > 0, w = two ? T.dt / T.dtPrev : 0;
+    if (!(dts > 0)) throw new Error('time step must be positive');
+    for (const r of P.slice(0, two ? 2 : 1)) if (!r || r.x.length !== NN) throw new Error('earlier state is not on this mesh');
+    const a0 = two ? (1 + 2 * w) / ((1 + w) * dts) : 1 / dts, a1 = two ? -(1 + w) / dts : -1 / dts, a2 = two ? w * w / ((1 + w) * dts) : 0;
+    const part = (f, sc) => { const o2 = new Float64Array(NN); for (let n = 0; n < NN; n++) o2[n] = (a1 * P[0][f][n] + (two ? a2 * P[1][f][n] : 0)) / sc; return o2; };
+    TM = { a0, uP: part('u', Ur), vP: part('v', Ur), xP: part('x', Hr), yP: part('y', Hr) };
+  }
+
   // ---- degrees of freedom: spine by spine (u, v at each node; p at vertices; the spine's height if free) ----
   const dU = new Int32Array(NN), dV = new Int32Array(NN), dP = new Int32Array(NN).fill(-1), dH = new Int32Array(NC).fill(-1);
   let nd = 0;
@@ -168,13 +192,23 @@ function solveFEM(o) {
   // web: no flow through it; tangentially either moving with the web (no slip) or, with webSlip =
   // alpha / sqrt(k) (1/m), the Beavers-Joseph condition du/dy = (alpha / sqrt k)(u - U) (boundary term below)
   const lamS = o.webSlip ? o.webSlip * Hr : 0;
+  // exit face with Navier slip (o.faceSlip): the top nodes of the face spines above the corner, to the contact line
+  // (slipSpan [c0, c1]: instead, the top wall's nodes strictly between spines c0 and c1)
+  const lamF = o.faceSlip && (CL || o.slipSpan) && !o.freeze ? o.faceSlip / Hr : 0, slipTop = new Uint8Array(NC);
+  if (lamF) { const [c0, c1] = o.slipSpan || [CL.faceFrom ?? 0, CL.spine]; for (let c = Math.max(0, c0 + 1); c < Math.min(NC, c1); c++) slipTop[c] = 1; }
+  // (a time step: the contact line moves with the liquid there -- its velocity that of its node, from s)
+  const clMoves = !!TM && !!CL && !o.freeze, nCL = CL ? nid(CL.spine, NR - 1) : -1;
   for (let c = 0; c < NC; c++) {
     if (!lamS) setDir(dU[nid(c, 0)], Us);
     setDir(dV[nid(c, 0)], 0);                                            // web
-    if (kind(c) !== 'free') { setDir(dU[nid(c, NR - 1)], Uts); setDir(dV[nid(c, NR - 1)], 0); } // blade / face / contact line
+    if (kind(c) !== 'free' && !slipTop[c] && !(clMoves && c === CL.spine)) { setDir(dU[nid(c, NR - 1)], Uts); setDir(dV[nid(c, NR - 1)], 0); } // blade / face / contact line
   }
-  for (let k = 0; k < NR; k++) setDir(dV[nid(0, k)], 0);                 // inlet: no cross-flow
+  // a symmetry plane (a crest or trough of a wave, the middle of a channel): no flow across it, no shear along it
+  const symK0 = lamS ? 0 : 1;
+  if (o.inlet.type === 'symmetry') for (let k = symK0; k < NR; k++) setDir(dU[nid(0, k)], 0);
+  else for (let k = 0; k < NR; k++) setDir(dV[nid(0, k)], 0);                 // inlet: no cross-flow
   if (o.outlet.type === 'plug') for (let k = 0; k < NR; k++) { setDir(dU[nid(NC - 1, k)], Us); setDir(dV[nid(NC - 1, k)], 0); }
+  else if (o.outlet.type === 'symmetry') for (let k = symK0; k < NR; k++) setDir(dU[nid(NC - 1, k)], 0);
   else for (let k = 0; k < NR; k++) setDir(dV[nid(NC - 1, k)], 0);
   if (o.inlet.type === 'wall') for (let k = 0; k < NR; k++) setDir(dU[nid(0, k)], 0);
   if (o.outlet.type === 'wall') for (let k = 0; k < NR; k++) { setDir(dU[nid(NC - 1, k)], 0); setDir(dV[nid(NC - 1, k)], 0); }
@@ -203,7 +237,7 @@ function solveFEM(o) {
   const stNow = () => {
     const h = new Float64Array(NC);
     for (const c of freeSp) h[c] = sol[dH[c]] * Hr;
-    return { h, s: sStar * Hr };
+    return TM ? { h, s: sStar * Hr, t: o.time.t } : { h, s: sStar * Hr };
   };
   const placeNodes = () => {
     femNodes(mesh, stNow(), { X, Y });
@@ -244,14 +278,21 @@ function solveFEM(o) {
         u += ue[a] * q.N[a]; v += ve[a] * q.N[a]; ux += ue[a] * Nx[a]; uy += ue[a] * Ny[a]; vx += ve[a] * Nx[a]; vy += ve[a] * Ny[a];
       }
       for (let a = 0; a < 4; a++) p += pe[a] * q.P[a];
+      // time step: du/dt at the moving nodes (ut, vt) and the nodes' velocity (wx, wy); the convection is relative to it
+      let ut = 0, vt = 0, wx = 0, wy = 0;
+      if (TM) {
+        for (let a = 0; a < 9; a++) { const n = nodes[a]; ut += TM.uP[n] * q.N[a]; vt += TM.vP[n] * q.N[a]; wx += (TM.a0 * xe[a] + TM.xP[n]) * q.N[a]; wy += (TM.a0 * ye[a] + TM.yP[n]) * q.N[a]; }
+        ut += TM.a0 * u; vt += TM.a0 * v;
+      }
+      const cu = u - wx, cv = v - wy;
       let lq = 0;
       if (lamN) for (let a = 0; a < 9; a++) lq += lamN[nodes[a]] * q.N[a];
       const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx));
       const mu = muStar(gd, lq), wd = q.w * J;
       const txx = 2 * mu * ux, tyy = 2 * mu * vy, txy = mu * (uy + vx), div = ux + vy;
       for (let a = 0; a < 9; a++) {
-        RL[a] += wd * (Re * (u * ux + v * uy) * q.N[a] + txx * Nx[a] + txy * Ny[a] - p * Nx[a]);
-        RL[9 + a] += wd * (Re * (u * vx + v * vy) * q.N[a] + txy * Nx[a] + tyy * Ny[a] - p * Ny[a] + Gr * q.N[a]);
+        RL[a] += wd * (Re * (ut + cu * ux + cv * uy) * q.N[a] + txx * Nx[a] + txy * Ny[a] - p * Nx[a]);
+        RL[9 + a] += wd * (Re * (vt + cu * vx + cv * vy) * q.N[a] + txy * Nx[a] + tyy * Ny[a] - p * Ny[a] + Gr * q.N[a]);
       }
       for (let i = 0; i < 4; i++) RL[18 + i] -= wd * q.P[i] * div;
       if (!withK) continue;
@@ -270,7 +311,7 @@ function solveFEM(o) {
           let Kuv = mu * (Nx[b] * Ny[a]) + c4 * DdDv * DdW_u * 2;
           let Kvv = mu * (Nx[b] * Nx[a] + 2 * Ny[b] * Ny[a]) + c4 * DdDv * DdW_v * 2;
           // convection (Newton): (du.grad)u + (u.grad)du
-          const conv = Re * (u * Nx[b] + v * Ny[b]) * q.N[a];
+          const conv = Re * (cu * Nx[b] + cv * Ny[b]) * q.N[a] + (TM ? Re * TM.a0 * q.N[b] * q.N[a] : 0);
           Kuu += conv + Re * q.N[b] * ux * q.N[a]; Kuv += Re * q.N[b] * uy * q.N[a];
           Kvu += Re * q.N[b] * vx * q.N[a]; Kvv += conv + Re * q.N[b] * vy * q.N[a];
           KL[a * 22 + b] += wd * Kuu; KL[a * 22 + 9 + b] += wd * Kuv;
@@ -314,10 +355,77 @@ function solveFEM(o) {
     }
   }
   const slipTmp = new Float64Array(3);
+  /**
+   * Navier slip along the exit face (the top edge of element (ex, nEy - 1), on the face): the wall stress
+   * mu u_t / lambda against the slip u_t, as the boundary term + int (mu / lambda) u_t (w . t) ds, the force on
+   * the edge's 3 top nodes as out = [x0, x1, x2, y0, y1, y2]. mu: the local viscosity at the face.
+   */
+  const B1 = q2(1), dB1 = dq2(1);
+  function faceSlipEdge(ex, out) {
+    out.fill(0);
+    const nodes = elemNodes(ex, nEy - 1);
+    for (const e of FEM_EDGE) {
+      let xs = 0, xt = 0, ys = 0, yt = 0, us = 0, ut = 0, vs = 0, vt = 0, u = 0, v = 0, lq = 0;
+      for (let b = 0; b < 3; b++) for (let a = 0; a < 3; a++) {
+        const n = nodes[b * 3 + a], Ns = e.dN[a] * B1[b], Nt = e.N[a] * dB1[b], uu = sol[dU[n]], vv = sol[dV[n]];
+        xs += X[n] * Ns; xt += X[n] * Nt; ys += Y[n] * Ns; yt += Y[n] * Nt;
+        us += uu * Ns; ut += uu * Nt; vs += vv * Ns; vt += vv * Nt; u += uu * e.N[a] * B1[b]; v += vv * e.N[a] * B1[b];
+        if (lamN) lq += lamN[n] * e.N[a] * B1[b];
+      }
+      const J = xs * yt - xt * ys;
+      const ux = (yt * us - ys * ut) / J, uy = (xs * ut - xt * us) / J, vx = (yt * vs - ys * vt) / J, vy = (xs * vt - xt * vs) / J;
+      const gd = Math.sqrt(2 * ux * ux + 2 * vy * vy + (uy + vx) * (uy + vx)), ds = Math.hypot(xs, ys), tx = xs / ds, ty = ys / ds;
+      const tau = muStar(gd, lq) * ((u - Uts) * tx + v * ty) / lamF;
+      for (let a = 0; a < 3; a++) { out[a] += e.w * tau * tx * e.N[a] * ds; out[3 + a] += e.w * tau * ty * e.N[a] * ds; }
+    }
+  }
+  /** The face's direction (unit, up the face) at slip node c, from the top nodes' places. */
+  function slipDir(c) {
+    let tx, ty;
+    const a = nid(Math.max(0, c - 1), NR - 1), b = nid(Math.min(NC - 1, c + 1), NR - 1);
+    tx = X[b] - X[a]; ty = Y[b] - Y[a];
+    const L = Math.hypot(tx, ty);
+    return [tx / L, ty / L];
+  }
+  /**
+   * A slip node's two momentum rows, as assembled (x and y), become its momentum along the face and u . n = 0 (the
+   * face does not move): the row whose direction is closer to the face's takes the momentum. R: a residual; or, with
+   * the band matrix and the contact line's column, the Jacobian's rows the same way.
+   */
+  function slipRows(R, J, cS) {
+    for (let c = 0; c < NC; c++) {
+      if (!slipTop[c]) continue;
+      const n = nid(c, NR - 1), [tx, ty] = slipDir(c), r = dU[n], rv = dV[n], tFirst = Math.abs(tx) >= Math.abs(ty);
+      const rT = tFirst ? r : rv, rN = tFirst ? rv : r;
+      if (R) {
+        const rt = tx * R[r] + ty * R[rv], rn = (sol[r] - Uts) * -ty + sol[rv] * tx;
+        R[rT] = rt; R[rN] = rn;
+      }
+      if (J) {
+        // (rows r and r + 1 = rv: the band holds both rows' columns in row r's storage)
+        const j0 = Math.max(0, r - kl), j1 = Math.min(ND - 1, rv + ku), row = new Float64Array(j1 - j0 + 1);
+        for (let j = j0; j <= j1; j++) {
+          const a = j - r + kl >= 0 && j - r <= kl + ku ? J[r * W + j - r + kl] : 0, b = j - rv + kl >= 0 && j - rv <= kl + ku ? J[rv * W + j - rv + kl] : 0;
+          row[j - j0] = tx * a + ty * b;
+        }
+        for (let j = j0; j <= j1; j++) {
+          if (j - rT + kl >= 0 && j - rT <= kl + ku) J[rT * W + j - rT + kl] = row[j - j0];
+          if (j - rN + kl >= 0 && j - rN <= kl + ku) J[rN * W + j - rN + kl] = j === r ? -ty : j === rv ? tx : 0;
+        }
+        if (cS) { const t = tx * cS[r] + ty * cS[rv]; cS[rT] = t; cS[rN] = 0; }
+      }
+    }
+  }
+  const slipTmpF = new Float64Array(6);
   function boundary(R, addK, exFrom = 0, exTo = nEx - 1) {
     if (lamS) for (let ex = exFrom; ex <= exTo; ex++) {
       slipEdge(ex, slipTmp);
       for (let a = 0; a < 3; a++) R[dU[nid(2 * ex + a, 0)]] += slipTmp[a];
+    }
+    if (lamF) for (let ex = exFrom; ex <= exTo; ex++) {
+      if (!slipTop[2 * ex + 1]) continue;
+      faceSlipEdge(ex, slipTmpF);
+      for (let a = 0; a < 3; a++) { const n = nid(2 * ex + a, NR - 1); R[dU[n]] += slipTmpF[a]; R[dV[n]] += slipTmpF[3 + a]; }
     }
     // inlet (c = 0) and outlet traction: -int t . w ds, t = -p_b(y) n
     const edgeX = (c, side) => {
@@ -344,6 +452,8 @@ function solveFEM(o) {
       for (const e of FEM_EDGE) {
         let xt = 0, yt = 0, u = 0, v = 0;
         for (let a = 0; a < 3; a++) { xt += X[ns[a]] * e.dN[a]; yt += Y[ns[a]] * e.dN[a]; u += sol[dU[ns[a]]] * e.N[a]; v += sol[dV[ns[a]]] * e.N[a]; }
+        // (a time step: the surface moves, and the kinematic condition is on the velocity relative to it)
+        if (TM) for (let a = 0; a < 3; a++) { const n = ns[a]; u -= (TM.a0 * X[n] + TM.xP[n]) * e.N[a]; v -= (TM.a0 * Y[n] + TM.yP[n]) * e.N[a]; }
         const L = Math.hypot(xt, yt);
         // surface tension: + int (1/Ca) t . dw/ds ds = (1/Ca) int (X_xi . w_xi)/|X_xi| dxi
         for (let a = 0; a < 3; a++) { R[dU[ns[a]]] += e.w * invCa * xt * e.dN[a] / L; R[dV[ns[a]]] += e.w * invCa * yt * e.dN[a] / L; }
@@ -401,6 +511,8 @@ function solveFEM(o) {
     }
     boundary(R, null);
     flatEndRow(R);
+    if (lamF) slipRows(R, null, null);
+    if (clMoves) { R[dU[nCL]] = sol[dU[nCL]] - (TM.a0 * X[nCL] + TM.xP[nCL]); R[dV[nCL]] = sol[dV[nCL]] - (TM.a0 * Y[nCL] + TM.yP[nCL]); }
     for (let d = 0; d < ND; d++) if (isDir[d]) R[d] = sol[d] - dirVal[d];
     let rs = contactResidual();
     if (shift) {
@@ -443,6 +555,24 @@ function solveFEM(o) {
         }
       }
     }
+    if (lamF) {
+      // the face's wall stress, by finite differences per element
+      const b0 = new Float64Array(6), b1 = new Float64Array(6);
+      for (let ex = 0; ex < nEx; ex++) {
+        if (!slipTop[2 * ex + 1]) continue;
+        faceSlipEdge(ex, b0);
+        for (const n of elemNodes(ex, nEy - 1)) for (const d of [dU[n], dV[n]]) {
+          if (isDir[d]) continue;
+          const keep = sol[d], h = 1e-7 * Math.max(1, Math.abs(keep));
+          sol[d] = keep + h; faceSlipEdge(ex, b1); sol[d] = keep;
+          for (let a = 0; a < 3; a++) {
+            const nn = nid(2 * ex + a, NR - 1);
+            if (!isDir[dU[nn]]) LU[dU[nn] * W + d - dU[nn] + kl] += (b1[a] - b0[a]) / h;
+            if (!isDir[dV[nn]]) LU[dV[nn] * W + d - dV[nn] + kl] += (b1[3 + a] - b0[3 + a]) / h;
+          }
+        }
+      }
+    }
     for (let d = 0; d < ND; d++) if (isDir[d]) LU[d * W + kl] = 1;
     // geometry columns by finite differences, from the elements that hold the
     // perturbed spine(s) only (a free spine's height moves that spine's nodes
@@ -469,15 +599,19 @@ function solveFEM(o) {
       const skeep = sStar, ds = 1e-7 * Math.max(1, Math.abs(skeep));
       const ex0 = Math.max(0, Math.ceil((CL.faceFrom ?? 0) / 2) - 1), ex1 = Math.min(nEx - 1, Math.floor(CL.spine / 2));
       placeNodes(); partialResidual(ex0, ex1, Rb);
+      const xCL0 = X[nCL], yCL0 = Y[nCL];
       sStar = skeep + ds;
       placeNodes(); partialResidual(ex0, ex1, Rp);
-      const rs = contactResidual();
+      const rs = contactResidual(), dxCL = (X[nCL] - xCL0) / ds, dyCL = (Y[nCL] - yCL0) / ds;
       sStar = skeep;
       colS = new Float64Array(ND);
       for (let r = 0; r < ND; r++) if (!isDir[r]) colS[r] = (Rp[r] - Rb[r]) / ds;
       dss = (rs - rs0Raw) / ds;
+      if (clMoves) { colS[dU[nCL]] = -TM.a0 * dxCL; colS[dV[nCL]] = -TM.a0 * dyCL; }
     }
     placeNodes();
+    if (lamF) slipRows(null, LU, colS);
+    if (clMoves) for (const r of [dU[nCL], dV[nCL]]) { for (let j = 0; j < W; j++) LU[r * W + j] = 0; LU[r * W + kl] = 1; }
   }
 
   // ---- Newton with line search; continuation from a Newtonian fluid ----
@@ -1358,8 +1492,36 @@ function solveCoaterFEM(opts) {
     if (opts.keepMesh && o.m) r.meshDef = o.m;     // (the mesh layout with its functions: the 3D solver extends it across the web; not for postMessage)
     // (sMesh: the contact line's height the mesh was laid out for)
     r.meniscus = { mode, alphaMaxDeg: alphaDeg, s: r.surface ? r.surface.s : null, sMesh: o.s ?? null, leaveDeg: o.leave, static: o.stat, ...extra };
+    // (time marching, cfd-fem-time.js: a new mesh along the surface a later state has, the state carried over onto it)
+    if (o.m && r.x) {
+      const f = (rNow, callNow, layoutNow, toMode) => relayoutFor(o, mode, rNow, callNow, layoutNow, toMode);
+      f.gibbs = o.ctx ? null : [contactDeg - 180, alphaDeg];
+      Object.defineProperty(r, 'relayout', { value: f, enumerable: false });
+    }
     return r;
   };
+  /**
+   * A state rNow (a solveFEM result of the march, on the mesh laid out as layoutNow, solved with callNow) on a new
+   * mesh laid out along its surface: mode toMode ('climbed' / 'pinned'; default the mode it had). Pinned to
+   * climbed starts the contact line unpinAt (default 0.05) gap heights up the face. The flow is interpolated
+   * (femInterpolate), not solved. Returns { r, call, layout, mode } or { error }.
+   */
+  function relayoutFor(o, mode0, rNow, callNow, layoutNow, toMode) {
+    const mode = toMode || mode0, ctx = o.ctx ? { ...o.ctx, mode } : null;
+    if (ctx && mode !== o.ctx.mode) return { error: 'a shaped blade\'s contact line moving between pinned and climbed in time is not modelled yet' };
+    const sB = ctx ? fCorners[ctx.k].s : 0, sNow = rNow.surface.s;
+    const s = mode === 'pinned' ? sB : callNow.contactLine ? sNow : sB + (opts.unpinAt ?? 0.05) * H;
+    const aUse = callNow.contactLine ? callNow.contactLine.alphaDeg : (o.alpha ?? alphaDeg);
+    const from = { r: rNow, m: layoutNow || o.m, s: sNow, ...(o.ctx ? { ctx: o.ctx } : {}) };
+    const { s0, m } = layoutAt(mode, s, mode === 'climbed', fInf, from, aUse, ctx);
+    if (!(m.quality > 0)) return { error: 'no valid mesh along the surface it has now' };
+    const { X, Y } = femNodes(m.mesh, { h: m.h0, s: s0 });
+    const call = { ...callNow, mesh: m.mesh, s0, h0: c => m.h0[c], init: undefined, initNodal: undefined, freeze: undefined,
+      contactLine: mode === 'climbed' ? { spine: m.cCL, faceFrom: ctx ? m.cBase : m.cCorner, alphaDeg: aUse } : null };
+    const r = solveFEM({ ...call, maxIter: 0, initNodal: femInterpolate(rNow, X, Y) });
+    r.meshInfo = { mode, cCL: m.cCL, cCorner: m.cCorner, nEy: m.mesh.nEy, quality: m.quality, frac: m.frac, ...(ctx ? { k: ctx.k, cBase: m.cBase, nFixK: m.nFixK } : {}) };
+    return { r, call, layout: m, mode };
+  }
   /** A shaped blade's layout for a solve (as layoutAt): the contact line pinned at face corner ctx.k, or on the face above it at s. */
   function layoutAtP(ctx, s, free, fInfNow, from, aUse) {
     const sB = fCorners[ctx.k].s, sTop = sTopOf(ctx.k), climbed = ctx.mode === 'climbed';
