@@ -211,10 +211,12 @@ function mpFactor(B) {
   const { n, bw, w, a } = B;
   if (!B.sym) {
     // (row r's entry in column j sits at r w + bw − r + j: each row's base precomputed)
+    // (the pivot row's entries past its last nonzero, and a row's before its first, only ever subtract zeros: skipped)
     for (let k = 0; k < n; k++) {
-      const bk = k * w + bw - k, pk = a[bk + k], jEnd = Math.min(n - 1, k + bw);
+      const bk = k * w + bw - k, pk = a[bk + k], iEnd = Math.min(n - 1, k + bw);
       if (!(Math.abs(pk) > 0) || !isFinite(pk)) throw new Error(`mp-core: a zero pivot (row ${k})`);
-      for (let i = k + 1; i <= jEnd; i++) {
+      let jEnd = iEnd; while (jEnd > k && a[bk + jEnd] === 0) jEnd--;
+      for (let i = k + 1; i <= iEnd; i++) {
         const bi = i * w + bw - i, l = a[bi + k] / pk;
         if (!l) continue;
         a[bi + k] = l;
@@ -223,10 +225,14 @@ function mpFactor(B) {
     }
     B.L = true; return B;
   }
+  // (each row's first nonzero: L keeps the matrix's envelope, so the entries before it stay zero and the products
+  //  with them are skipped)
+  const first = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const ri = i * w; let j = Math.max(0, i - bw); while (j < i && a[ri + (i - j)] === 0) j++; first[i] = j; }
   for (let i = 0; i < n; i++) {
-    const j0 = Math.max(0, i - bw), ri = i * w;
-    for (let j = j0; j <= i; j++) {
-      const rj = j * w, k0 = Math.max(j0, j - bw);
+    const j0 = Math.max(0, i - bw), ri = i * w, fi = first[i];
+    for (let j = fi; j <= i; j++) {
+      const rj = j * w, k0 = Math.max(j0, j - bw, fi, first[j]);
       let s = a[ri + (i - j)];
       for (let k = k0; k < j; k++) s -= a[ri + (i - k)] * a[rj + (j - k)];
       if (j === i) {
@@ -594,7 +600,18 @@ function mpHeatMoisture(M, o) {
   if (o.nodal && M.p !== 1) throw new Error('mp-core: nodal integration is for linear elements');
   const frule = o.nodal ? mpRule(1, dim, 'nodes') : rule;   // (the conduction's and the vapour's)
   const bw = 2 * mpBandwidth(M, 1) + 1, nd = 2 * N;
-  const xNode = n => Array.from(M.X.subarray(n * dim, n * dim + dim));
+  // (the mesh does not move: the nodes' coordinates, the elements' Jacobians at the conduction's points and the faces'
+  //  points are worked out once and kept, as in mpTransport)
+  const XN = new Array(N), xNode = n => XN[n] || (XN[n] = Array.from(M.X.subarray(n * dim, n * dim + dim)));
+  const nf = frule.length, JC = M.E * nf * npe * dim < 2e7 ? new Array(M.E * nf) : null;
+  const jac = (e, q, qi) => {
+    if (!JC) return mpJac(M, e, q, dNdx);
+    let c = JC[e * nf + qi];
+    if (!c) { const r = mpJac(M, e, q, dNdx); c = JC[e * nf + qi] = { det: r.det, x: r.x, d: Float64Array.from(dNdx) }; }
+    else dNdx.set(c.d);
+    return c;
+  };
+  const facePts = (bc, e) => { const c = bc.pts || (bc.pts = new Map()); let v = c.get(e); if (!v) { v = mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq); c.set(e, v); } return v; };
   const init = (v, d) => { const a = new Float64Array(N); for (let k = 0; k < N; k++) a[k] = typeof v === 'function' ? v(xNode(k)) : v && v.length === N ? v[k] : (v === undefined ? d : v); return a; };
   const T = init(o.T0, 20), P = init(o.p0, 1000);
   const wet = o.wet || (() => true), Lof = typeof o.L === 'function' ? o.L : () => o.L;
@@ -635,6 +652,35 @@ function mpHeatMoisture(M, o) {
     const h = eps * MP_SIGMA * (Tk * Tk + Ti * Ti) * (Tk + Ti);
     return [h, h * (Ti - A)];
   }
+  // the coefficients at the conduction's points (KT, KV: each a list of 3 or 6; QV) and the last assembly's part of the
+  // system from them (cond); two band matrices taken in turn (the chord method keeps the step's factored one) and the
+  // last system before the values were imposed (rawA)
+  const npt = M.E * nf, KT = new Array(npt), KV = new Array(npt), QV = new Float64Array(npt);
+  let cond = null, rawA = null;
+  const pool = [];
+  function band(F) {
+    if (pool.length < 2) { const B = mpBand(nd, bw, false); pool.push(B); if (B !== F) return B; }
+    const B = pool[0] === F ? pool[1] : pool[0];
+    B.a.fill(0); B.L = null;
+    return B;
+  }
+  const eqK = (a, b) => { if (!a || !b || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false; return true; };
+  /** Fill KT, KV, QV at the iterate; true when every one is the last assembly's (cond kept), else cond refreshed. */
+  function coefs(Tk, t) {
+    let same = !!cond;
+    for (let e = 0, pi = 0; e < M.E; e++) {
+      const m = M.mat[e], base = e * npe, isWet = wet(m);
+      for (let qi = 0; qi < nf; qi++, pi++) {
+        const q = frule[qi], { x } = jac(e, q, qi);
+        let tq = 0; for (let a = 0; a < npe; a++) tq += q.N[a] * Tk[M.conn[base + a]];
+        const kt = Array.from(vec(mpVal(o.kT, m, tq, x))), kv = isWet ? Array.from(vec(mpVal(o.Kv, m, tq, x))) : null, Qv = o.Q ? mpVal(o.Q, m, tq, x, t) : 0;
+        if (same && !(eqK(kt, KT[pi]) && (kv ? eqK(kv, KV[pi]) : !KV[pi]) && Object.is(Qv, QV[pi]))) same = false;
+        KT[pi] = kt; KV[pi] = kv; QV[pi] = Qv;
+      }
+    }
+    if (!cond) cond = { a: new Float64Array(nd * (2 * bw + 1)), rhs: new Float64Array(nd) };
+    return same;
+  }
   R.step = (t, dt) => {
     const cur = levels();
     // the time derivative (a0 X^{n+1} − a1 X^n + a2 X^{n−1}) / dt: BDF2 with ω = dt / dt_prev, else implicit Euler
@@ -645,14 +691,16 @@ function mpHeatMoisture(M, o) {
     const Tk = Float64Array.from(T), Pk = Float64Array.from(P), iters = o.iters || 30, tol = o.tol || 1e-9;
     let F = null, slow = false, lastSize = null;
     for (let it = 0; it < iters; it++) {
-      const B = mpBand(nd, bw, false), rhs = new Float64Array(nd);
-      // conduction and vapour flow (consistent; or at the nodes: nodal)
-      for (let e = 0; e < M.E; e++) {
+      const B = band(F), rhs = new Float64Array(nd);
+      // conduction and vapour flow (consistent; or at the nodes: nodal): the coefficients at every point first; when
+      // they are those of the last assembly (the same bits), its part of the system is copied, else assembled again
+      const same = coefs(Tk, t);
+      if (same) { B.a.set(cond.a); rhs.set(cond.rhs); }
+      else for (let e = 0, pi = 0; e < M.E; e++) {
         const m = M.mat[e], base = e * npe, isWet = wet(m);
-        for (const q of frule) {
-          const { det, x } = mpJac(M, e, q, dNdx), W = q.w * det;
-          let tq = 0; for (let a = 0; a < npe; a++) tq += q.N[a] * Tk[M.conn[base + a]];
-          const kt = vec(mpVal(o.kT, m, tq, x)), kv = isWet ? vec(mpVal(o.Kv, m, tq, x)) : null, Qv = o.Q ? mpVal(o.Q, m, tq, x, t) : 0;
+        for (let qi = 0; qi < nf; qi++, pi++) {
+          const q = frule[qi], { det } = jac(e, q, qi), W = q.w * det;
+          const kt = KT[pi], kv = isWet ? KV[pi] : null, Qv = QV[pi];
           for (let a = 0; a < npe; a++) {
             const ia = M.conn[base + a];
             rhs[2 * ia] += q.N[a] * Qv * W;
@@ -669,6 +717,7 @@ function mpHeatMoisture(M, o) {
           }
         }
       }
+      if (!same) { cond.a.set(B.a); cond.rhs.set(rhs); }
       // storage at the nodes, linearized (Newton): S ≈ S_k + S_p (p − p_k) + S_T (T − T_k)
       for (let n = 0; n < N; n++) {
         const w = a0 * nodeShare[n] / dt, L = Lof(Tk[n]);
@@ -690,7 +739,7 @@ function mpHeatMoisture(M, o) {
       // the faces: heat (air, radiation, flux), vapour (a transfer coefficient)
       for (const [list, off] of [[bcT, 0], [bcV, 1]]) for (const bc of list) {
         if (bc.type === 'value') continue;
-        for (const e of bc.fe.elems) for (const fp of mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq)) {
+        for (const e of bc.fe.elems) for (const fp of facePts(bc, e)) {
           if (bc.where && !bc.where(fp.x)) continue;
           let uq = 0, tq = 0; for (let a = 0; a < npe; a++) { const n = M.conn[e * npe + a]; uq += fp.N[a] * (off ? Pk[n] : Tk[n]); tq += fp.N[a] * Tk[n]; }
           const [h, g] = faceHG(bc, fp, t, off ? tq : uq);
@@ -700,7 +749,8 @@ function mpHeatMoisture(M, o) {
           }
         }
       }
-      R.raw = { B: { ...B, a: Float64Array.from(B.a) }, rhs: Float64Array.from(rhs) };
+      if (!rawA) rawA = new Float64Array(B.a.length);
+      rawA.set(B.a); R.raw = { B: { ...B, a: rawA, L: null }, rhs: Float64Array.from(rhs) };
       for (const bc of bcT) if (bc.type === 'value') for (const n of bc.nodes) mpFix(B, rhs, 2 * n, mpVal(bc.u, xNode(n), t));
       for (const bc of bcV) if (bc.type === 'value') for (const n of bc.nodes) if (wetNode[n]) mpFix(B, rhs, 2 * n + 1, mpVal(bc.u, xNode(n), t));
       for (let n = 0; n < N; n++) if (!wetNode[n]) mpFix(B, rhs, 2 * n + 1, Pk[n]);
@@ -737,7 +787,7 @@ function mpHeatMoisture(M, o) {
     let s = 0;
     for (const bc of bcT) {
       if (bc.face !== face || bc.type === 'value') continue;
-      for (const e of bc.fe.elems) for (const fp of mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq)) {
+      for (const e of bc.fe.elems) for (const fp of facePts(bc, e)) {
         let u = 0; for (let a = 0; a < npe; a++) u += fp.N[a] * T[M.conn[e * npe + a]];
         const [h, g] = faceHG(bc, fp, R.t, u); s += (g - h * u) * fp.w;
       }
@@ -762,7 +812,7 @@ function mpHeatMoisture(M, o) {
     for (const bc of bcV) {
       if (!list.includes(bc.face)) continue;
       if (bc.type === 'value') { for (const n of bc.nodes) if (wetNode[n]) held.add(n); continue; }
-      for (const e of bc.fe.elems) for (const fp of mpFacePoints(M, e, bc.fe.axis, bc.fe.side, nq)) {
+      for (const e of bc.fe.elems) for (const fp of facePts(bc, e)) {
         if (bc.where && !bc.where(fp.x)) continue;
         let u = 0, tq = 0; for (let a = 0; a < npe; a++) { u += fp.N[a] * P[M.conn[e * npe + a]]; tq += fp.N[a] * T[M.conn[e * npe + a]]; }
         const [h, g] = faceHG(bc, fp, R.t, tq); s += (g - h * u) * fp.w;
