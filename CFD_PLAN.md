@@ -76,6 +76,29 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
 - Steps: T-1 2D engine (ALE, BDF2, step control; checks) -> T-2 2D UI (Solve: Time Steady | Transient, scenario, end time,
   dt; Results: time bar, charts, pathlines; project, undo, help, report) -> T-3 1D -> T-4 3D engine on a strip -> T-5 3D
   UI -> T-6 pathlines and streaklines -> T-7 Cox-Voinov in time -> T-8 census, regression, PR.
+- T-1 built (4 Oct): solveFEM's `time` option (one implicit ALE step: d/dt at the moving nodes, convection relative to
+  them, kinematic (u - x_mesh_dot) . n = 0) and cfd-fem-time.js femMarch (BDF2, variable step, first step backward Euler;
+  local error by Milne's device against a quadratic extrapolation of the last three states -- more accurate than the
+  linear predictor first planned -- dt (tol/err)^(1/3), 0.9, x0.2..x2; steps land on output times). Steady solves are
+  bit-identical (checked on the coater, a yield-stress paste, the static meniscus, the cavity, the slip web).
+  Remeshing in time: a coating flow's march lays a new mesh along the surface it has (solveCoaterFEM's own layout, kept
+  on the result as relayout) when the mesh has lost half its shape quality or the contact line has moved a quarter of
+  the way, and carries the state over; Gibbs in time as steady: a contact line coming down to the edge pins, a pinned
+  surface flatter than the contact angle allows unpins and climbs.
+  Contact line in time: no-slip on the exit face leaves a moving contact line only the slip its elements give (the
+  classic singularity), so solveFEM has Navier slip on the face (faceSlip, slip length lambda; off unless asked, steady
+  results unchanged) and, in a time step, the contact line moves with the liquid at it.
+  Checks (cfd-fem-time.validate.js, all pass): Stokes' first problem (series; order 2.25, 2.11) and the same on a mesh
+  sliding up and down its spines (ALE); Womersley alpha 3 (amplitude 0.21 % at 80 steps a cycle, x4.0 per halving;
+  phase 0.03 deg); a capillary wave on a film (exact linear Stokes decay rate to 0.06 %; area kept to 1e-13); a coating
+  flow, bead pressure stepped 0 -> 150 Pa (settles on the steady solve on its mesh to 1e-8; area change = in - out to
+  0.006 %); Gibbs (-400 Pa: pins at 0.028 s, the steady pinned film; back to 0 Pa: unpins, climbs to the steady place);
+  Navier slip exact in Couette-Poiseuille (1e-15), tending to no slip on the face as lambda -> 0.
+  Found (start-up from rest, the app's default paste, 10.5 Pa s, contact angle 17 deg): at rest the paste stands 3.15 mm
+  up the exit face; with the web running the bead drains far faster than a contact line of that paste can recede
+  (0.03 mm in 2.5 s with slip 0.03 gap), so the surface under it steepens into a film running down the face, which the
+  spine mesh cannot follow: the march stops there with that message. Following it needs a mesh along the face (T-2
+  question to the owner, with the app's own output). Steps and ramps of pressure and web speed from a running state work.
 
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),
