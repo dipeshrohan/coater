@@ -57,7 +57,7 @@ function dryBase() {
     phi0: c.phi.v / 100, phiM: c.phiDry.v, rhoS: c.rhoS.v * 1000, rhoL: c.rhoL.v, R: c.dMean.v * 1e-6 / 2,
     mul: v('mul'), skinK: v('skinK') * 1e-12, kS: v('kS'), cS: v('cS'), emis: v('emis'), irAbs: v('irAbs'),
     gab: { Xm: v('gabXm'), C: v('gabC'), K: v('gabK') }, web: { mass: CFDG.gsm / 1000, cp: v('cpWeb') }, airFrac: CFDG.airFrac,
-    U: lineSpeed(), Lnat: webWidth() / 1000 / 2, P: 101325, Tin: v('Troom'), room: { len: P.oven, T: v('Troom'), rh: v('rhRoom') / 100 },
+    U: lineSpeed(), Lnat: webWidth() / 1000 / 2, P: (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325), Tin: v('Troom'), room: { len: P.oven, T: v('Troom'), rh: v('rhRoom') / 100 },
     zones: OVEN.zones.map(z => ({ len: z.len, airU: z.airU, airT: z.airT, rh: z.rh / 100, top: z.top || 'none', jetU: z.jetU, jetT: z.jetT, jetB: z.jetB / 1000, jetH: z.jetH / 1000, jetS: z.jetS / 1000, ir: z.ir * 1000 })),
     N: 80, M: 40,
     // (the built-in laws and the fluids' constants, the material hub's, where they differ from the solver's own: MC-1b)

@@ -66,6 +66,7 @@ const MAT_DRY = [
   ['kFib', 'Fibre web\'s fibres: heat conductivity', 'W/(m·K)', 0.02, 5, 0.01, 2, 0.2, 'assumed', 'PET 0.15–0.24, polypropylene 0.1–0.22 W/(m·K); the web\'s own (its fibres in the air) follows by Maxwell–Eucken (the drying\'s multiphysics)'],
   ['Troom', 'Room temperature', '°C', 0, 60, 1, 0, 25, 'assumed', 'between the blade and the oven: the film enters the oven at it'],
   ['rhRoom', 'Room humidity', '%', 0, 100, 1, 0, 50, 'assumed', 'between the blade and the oven'],
+  ['pRoom', 'Room air pressure', 'kPa', 50, 120, 0.01, 3, 101.325, 'assumed', 'the room\'s and the oven\'s air, absolute (1 atm at sea level)'],
 ];
 /**
  * The dry film on the fibre web (GO-4; film.js), the same shape: the GO film's stiffness, strength and toughness,
@@ -278,6 +279,7 @@ const OVEN_ZONE_DEFAULT = { len: 2, airU: 1, airT: 100, plenum: 100, rh: 20, top
 // plate's emissivity (bare aluminium 0.04–0.1); shelf -- what the stack stands on in the oven: 'wire' (the air and the walls
 // below it) or 'solid' (a shelf at the oven's temperature); all assumed until you say)
 const OVEN_PEEL_DEFAULT = { len: 2, core: 76, lenSet: false, coreSet: false, pieceL: 300, pieceW: 300, pieceSet: true, dryT: 100, drySet: true, tOven: 1.5, tRest: 1.5, stackSet: true,
+  stackN: 20, peelDeg: 180, windLo: 30, windHi: 150, peelSet: true,
   plateT: 37.8, plateSet: false, stackAirU: 0, stackAirSet: false, epsPl: 0.09, epsPlSet: false, shelf: 'wire', shelfSet: false };
 const OVEN_SHELVES = { wire: 'A wire shelf', solid: 'A solid shelf' };
 const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 2, 'lenSet'], ['core', 'Winder\'s core diameter', 'mm', 10, 1000, 1, 0, 'coreSet'],
@@ -285,7 +287,11 @@ const OVEN_PEEL_FIELDS = [['len', 'Oven\'s exit to the peel', 'm', 0, 100, 0.1, 
   ['dryT', 'Pre heat treatment oven', '°C', 20, 300, 1, 0, 'drySet'], ['tOven', 'Time in the pre heat treatment', 'h', 0.05, 48, 0.1, 2, 'stackSet'],
   ['tRest', 'Under the plate after, until taken out', 'h', 0, 72, 0.1, 2, 'stackSet'],
   ['plateT', 'Aluminium plate\'s thickness', 'mm', 1, 200, 0.5, 1, 'plateSet'], ['stackAirU', 'Oven\'s air along the stack (0: still)', 'm/s', 0, 20, 0.1, 1, 'stackAirSet'],
-  ['epsPl', 'Plate\'s emissivity', '', 0.02, 1, 0.01, 2, 'epsPlSet']];
+  ['epsPl', 'Plate\'s emissivity', '', 0.02, 1, 0.01, 2, 'epsPlSet'],
+  // (CFG-AUDIT: the pieces in a pre heat stack -- Q77: 20; the peel by hand -- Q59: pulled back, about 180°; the winder's
+  //  angle not known -- every angle is computed, these two summed up)
+  ['stackN', 'Pieces in the stack', '', 2, 1000, 1, 0, 'stackSet'], ['peelDeg', 'Peeled by hand at', '°', 0, 180, 5, 0, 'peelSet'],
+  ['windLo', 'Winder\'s angle, lowest shown', '°', 0, 180, 5, 0, 'peelSet'], ['windHi', 'Winder\'s angle, highest shown', '°', 0, 180, 5, 0, 'peelSet']];
 // (furn: the furnace, GO-5 -- Q87: two runs, to about 1000 °C then to 2800 °C, in argon (Q91); each a program of steps
 // (heat at a rate to a temperature, hold) and its cooling, or a cycle from your file (Q97: yours to come; these assumed,
 // 12–48 h a run, Q88); Q89: one piece between two graphite papers, bigger than it (Q104: by how much not known), 0.3–1 mm
@@ -296,14 +302,16 @@ const FURN_RUNS_DEFAULT = [
   { steps: [{ rate: 10, to: 1000, hold: 0 }, { rate: 5, to: 2000, hold: 0 }, { rate: 2, to: 2800, hold: 60 }], cool: 10, file: null },
 ];
 // (GO-7e: the top and bottom pieces touch the holder's plates directly (the user), their thickness assumed)
-const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, plateT: 30, sdMax: 30, dTload: null, ends: 'plates', runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, plateTSet: false, sdSet: true, dTSet: false, endsSet: true };
+const FURN_DEFAULT = { N: 200, paperT: 0.5, margin: 20, room: 'gap', gap: 50, plateW: 7, plateT: 30, sdMax: 30, dTload: null, pGas: 101.325, pGasSet: false, ends: 'plates', runsSet: false, nSet: false, paperSet: true, marginSet: false, roomSet: false, plateSet: false, plateTSet: false, sdSet: true, dTSet: false, endsSet: true };
 const FURN_FIELDS = [['N', 'Pieces in a stack', '', 1, 1000, 1, 0, 'nSet'], ['paperT', 'Graphite paper\'s thickness', 'mm', 0.01, 10, 0.05, 2, 'paperSet'],
   ['margin', 'Paper bigger than the piece, each side', 'mm', 0, 500, 1, 0, 'marginSet'], ['gap', 'Gap above the stack', 'mm', 0, 1000, 1, 0, 'roomSet'],
   ['plateW', 'A plate resting on the stack', 'kg', 0, 1000, 0.5, 1, 'plateSet'], ['sdMax', 'Its thickness may spread (standard deviation)', 'µm', 0.1, 1000, 1, 1, 'sdSet'],
   // (GO-7e: the holder's plates' thickness, the gas's way through them)
   ['plateT', 'The holder\'s plates\' thickness', 'mm', 1, 500, 1, 0, 'plateTSet'],
   // (GO-7: the load's temperature spread, its hottest stack less its coldest: not known until you give it -- empty, not assumed)
-  ['dTload', 'The load\'s temperature spread (its hottest stack less its coldest)', '°C', 0, 1000, 5, 0, 'dTSet']];
+  ['dTload', 'The load\'s temperature spread (its hottest stack less its coldest)', '°C', 0, 1000, 5, 0, 'dTSet'],
+  // (CFG-AUDIT: the argon's pressure in the furnace, absolute)
+  ['pGas', 'The furnace\'s gas pressure', 'kPa abs', 1, 1000, 0.1, 3, 'pGasSet']];
 const FURN_STEP_LIMITS = { rate: [0.01, 100], to: [0, 3300], hold: [0, 100000], cool: [0.01, 100] };
 const furnDefaults = () => ({ ...FURN_DEFAULT, runs: JSON.parse(JSON.stringify(FURN_RUNS_DEFAULT)) });
 // (mp: the stages' multiphysics mesh and time settings as set on their Mesh steps, MP-W -- { stage: { dim: { k: v } } };

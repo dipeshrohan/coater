@@ -132,7 +132,7 @@ function furnHolderHTML() {
   const fu = OVEN.furn;
   const field = (k, id) => { const f = FURN_FIELDS.find(q => q[0] === k), unk = k === 'dTload'; return `<label class="furn-f"><span>${f[1]}</span><span class="prop-v"><input type="number" id="${id}" min="${f[3]}" max="${f[4]}" step="${f[5]}" value="${fu[k] ?? ''}"${unk ? ' placeholder="not known"' : ''} data-furnf="${k}"><span class="prop-u">${f[2]}</span></span></label>`; };
   return `<div class="furn-holder"><div class="furn-holder-pic">${furnPicHolder(1)}</div><div class="furn-fields">
-    ${field('N', 'furnSN')}${field('paperT', 'furnSPaperT')}${field('margin', 'furnSMargin')}${field('plateW', 'furnSPlate')}
+    ${field('N', 'furnSN')}${field('paperT', 'furnSPaperT')}${field('margin', 'furnSMargin')}${field('plateW', 'furnSPlate')}${field('pGas', 'furnSPGas')}
     <div class="furn-f"><span>Above the stack</span><div class="seg seg-sm" role="tablist" aria-label="Above the stack in the holder" id="furnSRoom">${Object.entries(FURN_ROOM).map(([k, t]) => `<button type="button" role="tab" data-furnroom="${k}" aria-selected="${k === fu.room}">${t}</button>`).join('')}</div></div>
     ${fu.room === 'gap' ? field('gap', 'furnSGap') : ''}
     <div class="furn-f"><span>The top and bottom pieces touch</span><div class="seg seg-sm" role="tablist" aria-label="What the top and bottom pieces touch" id="furnSEnds">${Object.entries(FURN_ENDS).map(([k, t]) => `<button type="button" role="tab" data-furnends="${k}" aria-selected="${k === fu.ends}">${t}</button>`).join('')}</div></div>

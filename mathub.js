@@ -237,6 +237,7 @@ const HUB_RECORDS = [
       { l: 'The room (between the blade and the oven)', props: [
         { id: 'Troom', sym: 'T_room', l: 'Temperature', b: hC('dry', 'Troom'), phys: ['dry', 'film', 'furn'], note: 'a process condition' },
         { id: 'rhRoom', sym: 'RH', l: 'Relative humidity', b: hC('dry', 'rhRoom'), phys: ['dry', 'film'], note: 'a process condition' },
+        { id: 'pRoom', sym: 'p_room', l: 'Air pressure', b: hC('dry', 'pRoom'), phys: ['dry', 'film', 'mp1'], note: 'a process condition' },
       ] },
     ] },
   { id: 'argon', name: 'Argon', cls: 'Gas', sub: 'Monatomic ideal gas', icon: 'flow',

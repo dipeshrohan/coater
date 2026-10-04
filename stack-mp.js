@@ -48,7 +48,7 @@ const SMP_G = 9.80665, SMP_R = 8.314462618, SMP_MW = 0.018015268;
  */
 function smpAir(kind, Ts, Ta, L, air) {
   if (Math.abs(Ts - Ta) < 1e-6) Ts = Ta + 1e-6;
-  const Tf = (Ts + Ta) / 2, a = SMP_DR.drAir(Tf, 101325), beta = km => km * SMP_MW / (SMP_R * (Tf + 273.15));
+  const pa = air.p || 101325, Tf = (Ts + Ta) / 2, a = SMP_DR.drAir(Tf, pa), beta = km => km * SMP_MW / (SMP_R * (Tf + 273.15));
   if (air.fan > 0) {
     const Lf = air.Lfan, Re = air.fan * Lf / a.nu;
     const Nu = Re < 5e5 ? 0.664 * Math.sqrt(Re) * Math.cbrt(a.Pr) : 0.037 * Math.pow(Re, 0.8) * Math.cbrt(a.Pr);
@@ -59,7 +59,7 @@ function smpAir(kind, Ts, Ta, L, air) {
     const Nu = Math.pow(0.825 + 0.387 * Math.pow(Ra, 1 / 6) / Math.pow(1 + Math.pow(0.492 / a.Pr, 9 / 16), 8 / 27), 2);
     return { h: Nu * a.k / L, beta: beta(Nu * Math.cbrt(a.Sc / a.Pr) * a.Dv / L) };
   }
-  const n = SMP_DR.drNat(Ts, Ta, air.pv, air.pv, L, 101325, kind);
+  const n = SMP_DR.drNat(Ts, Ta, air.pv, air.pv, L, pa, kind);
   return { h: n.h, beta: beta(n.km) };
 }
 

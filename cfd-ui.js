@@ -205,17 +205,17 @@ function fibreSlip() {
  * number there (well above 1: inertial losses add to Darcy's, so the pressure is a least value).
  */
 function ovenAir(z = OVEN.zones[0]) {
-  const st = fibreStructure(), k = fibrePermeability(), air = airProps(z.airT), ua = z.airU, Lp = z.plenum / 1000, p0 = 101325;
+  const st = fibreStructure(), k = fibrePermeability(), air = airProps(z.airT), ua = z.airU, Lp = z.plenum / 1000, p0 = (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325);
   const dpInc = air.mu * ua * Lp * Lp / (8 * k * st.t), pc = Math.sqrt(p0 * p0 + 2 * p0 * dpInc);
   const uEdge = ua * Lp / (2 * st.t);
   return { air, dpInc, dp: pc - p0, uEdge, ReEdge: air.rho * (uEdge / st.eps) * st.d / air.mu };
 }
-/** Air viscosity (Sutherland's law) and density (ideal gas at 1 atm) at T degC. */
+/** Air viscosity (Sutherland's law) and density (ideal gas at the room's pressure) at T degC. */
 function airProps(Tc) {
   const T = Tc + 273.15, m = typeof hubLawParams === 'function' ? hubLawParams('airMu') : { y0: 1.716e-5, T0: 273.15, S: 110.4 };
   // (its viscosity the material hub's law; its density 1 atm / (R_air T), or the hub's molar mass once edited: MC-1b)
   const M = typeof MAT !== 'undefined' && MAT.law && MAT.law.airRho && MAT.law.airRho.M;
-  return { mu: m.y0 * Math.pow(T / m.T0, 1.5) * (m.T0 + m.S) / (T + m.S), rho: M ? 101325 * M / (8.314462618 * T) : 101325 / (287.05 * T) };
+  return { mu: m.y0 * Math.pow(T / m.T0, 1.5) * (m.T0 + m.S) / (T + m.S), rho: M ? (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325) * M / (8.314462618 * T) : (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325) / (287.05 * T) };
 }
 /** An oven zone's input id (zone 1's drying air keeps the ids the single oven setting had). */
 const ovenZoneId = (i, k) => i === 0 && OVEN_ZONE_LEGACY_ID[k] ? OVEN_ZONE_LEGACY_ID[k] : `ovz${i + 1}_${k}`;
@@ -248,7 +248,7 @@ function ovenTopHTML(z, i, prop) {
 }
 /** The jets' heat transfer (Martin's correlation) as set, and whether it is within its ranges. */
 function ovenJetNote(z) {
-  const j = drJets({ U: z.jetU, T: z.jetT, B: z.jetB / 1000, H: z.jetH / 1000, S: z.jetS / 1000 }, 101325);
+  const j = drJets({ U: z.jetU, T: z.jetT, B: z.jetB / 1000, H: z.jetH / 1000, S: z.jetS / 1000 }, (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325));
   return `The jets give ${j.h.toFixed(0)} W/(m²·K) on the film (slot nozzles, Martin; Re ${j.Re.toFixed(0)})${j.valid ? '' : ' <span class="warn-text">— outside the correlation\'s tested ranges (Re 1500–40000, slot width / pitch 0.008 to 2.5 × its optimum, height 1–40 × twice the slot width)</span>'}. They use the zone's air humidity.`;
 }
 /** Wire the zones' inputs: after a value, `changed` (the page's own redraw); after a zone added or removed, `redraw` (the page and the bar). A new zone starts as the last one. */
