@@ -212,6 +212,7 @@ const UNDO_UNITS = (() => {
     label: (a, b) => { const na = ((a || {}).out || []).length, nb = ((b || {}).out || []).length; return nb > na ? 'Add a measured graphene film' : nb < na ? 'Remove a measured graphene film' : 'Graphene film measured'; } });
   u.push({ id: 'oven.furn', get: () => OVEN.furn || furnDefaults(), set: v => { OVEN.furn = v ? JSON.parse(JSON.stringify(v)) : furnDefaults(); }, label: furnUndoLabel });
   // (the mixer's inputs and program, MIX-1: one unit)
+  u.push({ id: 'oven.mixRec', get: () => OVEN.mixRec || [], set: v => { OVEN.mixRec = JSON.parse(JSON.stringify(v || [])); }, label: (a, b) => ((b || []).length > (a || []).length ? 'Mixing: add a mix to the batch record' : (b || []).length < (a || []).length ? 'Mixing: remove a mix from the batch record' : 'Mixing: the batch record') });
   u.push({ id: 'oven.mix', get: () => OVEN.mix || mixInDefaults(), set: v => { OVEN.mix = v ? JSON.parse(JSON.stringify(v)) : mixInDefaults(); }, label: (a, b) => mixUndoLabel(a, b) });
   // (the stages' multiphysics mesh and time settings, MP-W: one unit)
   u.push({ id: 'oven.mp', get: () => OVEN.mp || {}, set: v => { OVEN.mp = v ? JSON.parse(JSON.stringify(v)) : {}; }, label: (a, b) => (typeof swbUndoLabel === 'function' ? swbUndoLabel(a || {}, b || {}) : 'A multiphysics mesh') });

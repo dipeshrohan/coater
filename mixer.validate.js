@@ -25,6 +25,10 @@
  * 11. The grind gauge: hard pieces alone, nothing turning -- the reading against the size where Ns pieces of their
  *     log-normal touch the sample, its integral computed apart (each piece's GO at the paste's solids, touching when its
  *     centre lies within the sample's radius and its own); the whole paste at the start: off the gauge.
+ * 12. The recipe's spread: the paste spec's dry GO and carbon per mix against the recipe sheet's own (41–47 % solids,
+ *     48–54 % carbon: 1,272.6–1,458.9 g of dry GO, 610.9–787.8 g of carbon); the GO's share of the batch within the
+ *     weighing tolerances against every corner of them tried (16, and 64 with the spec's solids); the solve takes none of
+ *     these inputs.
  */
 const MX = require('./mixer.js');
 let fails = 0;
@@ -207,6 +211,25 @@ const integrate = (pbe, N0, rates, T, n) => { const N = Float64Array.from(N0), K
   const o = { ...MX.mixDefaults(), ...slurry, steps: [{ name: 'a', min: 0.1, No: 0, Nd: 0, p: 101.325, dose: null }] }, g0 = MX.mixRun(o).hist.grind[0];
   check('the grind gauge: hard pieces alone against their log-normal\'s count touching the sample (within 2 %); the whole paste at the start off the gauge',
     Math.max(...errs) < 0.02 && g0 > o.gR, `${rows.join(', ')}; the paste at the start ${(g0 * 1e3).toFixed(1)} mm (the gauge ${(o.gR * 1e6).toFixed(0)} µm)`);
+}
+
+// 12. the recipe's spread: the paste spec against the sheet, the tolerances against every corner
+{
+  const o = { ...MX.mixDefaults(), ...slurry }, cC = 0.5094, S = MX.mixRecipeRange(o, cC), g = x => x * 1000;
+  const sheet = [['dry GO, lowest', g(S.dry[0]), 1272.6], ['dry GO, as made', g(S.dry[1]), 1396.8], ['dry GO, highest', g(S.dry[2]), 1458.9],
+    ['carbon, lowest', g(S.carbon[0]), 610.9], ['carbon, highest', g(S.carbon[2]), 787.8]];
+  const ws = sheet.map(([, a, b]) => Math.abs(a - b));
+  // (every corner: each of the four amounts at its own −, + tolerance; the solids at the paste's, or across the spec)
+  const corners = ws_ => { const out = []; for (let m = 0; m < 16; m++) for (const w of ws_) out.push(MX.mixRecipe({ ...o, wPaste: w, mPaste: o.mPaste + (m & 1 ? 1 : -1) * o.tPaste,
+    mSoak: o.mSoak + (m & 2 ? 1 : -1) * o.tSoak, mWat: o.mWat + (m & 4 ? 1 : -1) * o.tWat, mN: o.mN + (m & 8 ? 1 : -1) * o.tN })); return out; };
+  const c1 = corners([o.wPaste]), c2 = corners([o.wMin, o.wPaste, o.wMax, (o.wMin + o.wMax) / 2]);
+  const mm = (cs, k) => [Math.min(...cs.map(R => R[k])), Math.max(...cs.map(R => R[k]))];
+  const t1 = mm(c1, 'wGO'), p1 = mm(c1, 'phiEnd'), t2 = mm(c2, 'wGO');
+  const e = Math.max(Math.abs(t1[0] - S.tol.w[0]), Math.abs(t1[1] - S.tol.w[1]), Math.abs(p1[0] - S.tol.phi[0]), Math.abs(p1[1] - S.tol.phi[1]), Math.abs(t2[0] - S.both.w[0]), Math.abs(t2[1] - S.both.w[1]));
+  const src = MX.mixRun.toString(), uses = [...MX.MIX_NOSOLVE].filter(k => new RegExp(`o\\.${k}\\b`).test(src));
+  check('the recipe\'s spread: the paste spec\'s dry GO and carbon per mix as the sheet\'s; the GO\'s share within the tolerances their corners\' extremes; the solve takes none of them',
+    Math.max(...ws) < 0.05 && e < 1e-15 && S.tol.w[0] < S.wGO && S.wGO < S.tol.w[1] && !uses.length && Math.abs(S.carbon[1] - S.dry[1] * cC) < 1e-15,
+    `${sheet.map(([n, a, b]) => `${n} ${a.toFixed(2)} g (sheet ${b})`).join(', ')}; GO ${(t1[0] * 100).toFixed(4)}–${(t1[1] * 100).toFixed(4)} wt% within the tolerances, ${(t2[0] * 100).toFixed(3)}–${(t2[1] * 100).toFixed(3)} wt% with the spec's solids too (corners ${Number(e).toExponential(1)})`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

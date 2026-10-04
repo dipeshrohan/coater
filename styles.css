@@ -2107,9 +2107,27 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .mx-recipe { display: grid; gap: 12px; }
 .hub-mixgo { margin-left: 8px; font-size: 12px; font-weight: 400; }
 .mx-rec tbody th { width: auto; white-space: nowrap; }
-.mx-rec td:nth-child(2), .mx-rec thead th:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mx-rec td:nth-child(3) { color: var(--muted); }
-.mx-rec .mx-total td:nth-child(3) { font-weight: 400; }
+.mx-rec td:nth-child(2), .mx-rec thead th:nth-child(2), .mx-rec td:nth-child(3), .mx-rec thead th:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mx-rec td:nth-child(3), .mx-rec td:nth-child(4) { color: var(--muted); }
+.mx-rec .mx-total td:nth-child(3), .mx-rec .mx-total td:nth-child(4) { font-weight: 400; }
+/* (MIX-R: the paste spec's lowest, as made, highest; the batch record, one row per mix) */
+.mx-spec caption { caption-side: top; text-align: left; font-size: 12.5px; font-weight: 600; color: var(--ink); padding: 0 0 6px; }
+.mx-spec tbody th { width: auto; white-space: nowrap; }
+.mx-spec td, .mx-spec thead th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mx-spec td:nth-child(3) { font-weight: 600; }
+.mx-spec td.mx-out { color: var(--bad); }
+.mx-rec-tab th, .mx-rec-tab td { white-space: nowrap; }
+.mx-rec-tab thead th[scope="colgroup"] { text-align: center; }
+.mx-rec-tab td { text-align: right; font-variant-numeric: tabular-nums; }
+.mx-rec-tab input { font: inherit; font-family: var(--mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.mx-rec-tab input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mx-rec-tab input[type=number] { width: 86px; text-align: right; }
+.mx-rec-tab input[type=text] { width: 120px; font-family: inherit; }
+.mx-rec-tab input.mx-low { border-color: var(--bad); color: var(--bad); }
+.mx-rec-tab tfoot th, .mx-rec-tab tfoot td { font-weight: 600; border-top: 1px solid var(--line); }
+.mx-rec-tab tfoot tr + tr th, .mx-rec-tab tfoot tr + tr td { font-weight: 400; color: var(--muted); border-top: 0; }
+.mx-rec-empty { text-align: left !important; color: var(--muted); }
+.mx-stat-bad strong { color: var(--bad); }
 .mx-warn { color: var(--warn); }
 .mx-dose .mx-ro { margin-left: 6px; font-family: var(--mono); color: var(--muted); }
 .fl-card { max-width: 760px; }
