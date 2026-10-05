@@ -13,8 +13,8 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
-| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Waiting for your picture | The same piece's picture after the pre heat (the one after cutting is in) |
-| 4 | Faster tetrahedral mesher | Small to medium | Next | Nothing |
+| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Next | Your answers on the pictures |
+| 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
@@ -56,8 +56,8 @@ keeps it up to date in each pull request. The order and the tasks change only af
   water (0.18 g), and the piece takes it back under the plate (2.51 g). 0.4 g is more than all the piece's water
   (0.19 g).
 - **You said**: its colour changes. You will send a picture.
-- **Got**: the picture of a piece after cutting (before the pre heat; kept out of the repository and the app).
-- **Waiting for**: the same piece after the pre heat, on the same mat in the same light (you will send it).
+- **Got**: the pictures of the same piece after cutting and after the pre heat (a close-up); both kept out of the
+  repository and the app.
 - **Left**:
   - from the pictures, find what the GO does at 100 °C;
   - ask you about the change, with screenshots;
