@@ -155,12 +155,13 @@ function lineStreams() {
   const fr = typeof filmCurrent === 'function' && filmCurrent() ? linePick(filmRuns(sel)) : null;
   if (fr) {
     const pl = fr.plate, part = fr.wetAtPeel ? 'its dry part only' : '';
-    S[3].cells = { h: cell(um(fr.peel.h), part), x: cell(pct(pl.Xcut)), m: cell((pl.h * pl.rhoG * 1000).toFixed(0), part) };
+    // (and as a gauge reads it: its weight in the room over the dry film's density as a gauge reads it, Materials)
+    S[3].cells = { h: cell(um(fr.peel.h), part || `${um(matGaugeThickness(pl.h * pl.rhoG * (1 + pl.Xcut)))} as a gauge reads it`), x: cell(pct(pl.Xcut)), m: cell((pl.h * pl.rhoG * 1000).toFixed(0), part) };
   } else S[3].cells = { h: busy };
   const sOk = typeof sheetCurrent === 'function' && sheetCurrent();
   if (sOk && fr) {
     const q = SHEET.res.q, pl = q.pieces.find(x => x.where === way).plate, run = SHEET.res.runs.find(r => r.where === way);
-    S[4].cells = { h: cell(um(pl.h)), x: cell(pct(pl.Xcut)), m: cell((pl.h * pl.rhoG * 1000).toFixed(0)), size: cell(`${(q.Lx * 1000).toFixed(1)} × ${(q.Ly * 1000).toFixed(1)}`),
+    S[4].cells = { h: cell(um(pl.h), `${um(matGaugeThickness(pl.h * pl.rhoG * (1 + pl.Xcut)))} as a gauge reads it`), x: cell(pct(pl.Xcut)), m: cell((pl.h * pl.rhoG * 1000).toFixed(0)), size: cell(`${(q.Lx * 1000).toFixed(1)} × ${(q.Ly * 1000).toFixed(1)}`),
       flat: cell((run.table.corner * 1000).toFixed(1)), rho: cell((pl.rhoG / 1000).toFixed(2)) };
   } else S[4].cells = { h: busy };
   const kOk = typeof stackCurrent === 'function' && stackCurrent();

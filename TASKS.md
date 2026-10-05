@@ -12,8 +12,7 @@ keeps it up to date in each pull request. The order and the tasks change only af
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
-| 2a | Dry film: show its thickness as a gauge reads it | Small | Next | Nothing |
-| 2b | Furnace: fit the weight kept to your 1.03 g | Small to medium | To do | Nothing |
+| 2b | Furnace: fit the weight kept to your 1.03 g | Small to medium | Next | Nothing |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Waiting for your picture | The picture of the piece before and after the pre heat |
 | 3 | Paths of paste parcels in the 2D coating flow in time | Small to medium | To do | Nothing |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
@@ -38,23 +37,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 23 | The heap under each stream (free-surface solve) | Large | To do | Whether you want it |
 | 24 | A full viewer on every geometry, mesh and result display | Large | To do | Answers on the list of displays |
 | 25 | Structured block meshing (ANSA level) | Very large | To do | Nothing to start |
-
-## 2a. Dry film: show its thickness as a gauge reads it
-- **Your weights** (300 × 300 mm piece, 0.09 m²):
-
-  | Step | Weight | Per m² |
-  |---|---|---|
-  | After cutting | 2.4 g | 26.7 g/m² |
-  | After the pre heat treatment, cooled | 2.0 g | 22.2 g/m² |
-  | After the furnace (unstacked) | 1.03 g | 11.4 g/m² |
-
-- **Found**: the app's dry coat weight is 26 g/m², so the amount of GO is right. Your 60 ± 15 µm is read with a gauge,
-  which reads the film's outside. The app's 15.9 µm is the GO layer packed solid.
-- **Left**:
-  - an editable value: the dry film's density as a gauge reads it (default 0.44 g/cm³, from your 2.4 g over 0.09 m² at
-    60 µm);
-  - the app shows the thickness a gauge reads next to the solid layer's, on Wet and dry film and wherever the dry film's
-    thickness is shown. No other result changes.
 
 ## 2b. Furnace: fit the weight kept to your 1.03 g
 - **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the
@@ -264,3 +246,6 @@ Your rule: every process has thermal, stress and flow solvers.
 
 ## Done
 - Coating start-up in 1D (was task 1): Coating › 1D › Pool and feed, "From the first pulse".
+- Dry film as a gauge reads it (was task 2a): Coating › Results › Wet and dry film and the Line page show it next to the
+  packed layer (63 µm against 16 µm at the defaults), from the dry film's density as a gauge reads it (Materials › Dried GO
+  film, 0.44 g/cm³ from your 2.4 g piece at 60 µm). The Pulse cycle charts on Pool and feed keep their own height.

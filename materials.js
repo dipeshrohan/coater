@@ -21,6 +21,7 @@ const MAT_SLURRY = [
   ['tFlake', 'Flake thickness', 'nm', 0.5, 1000, 0.5, 1, 1, 'assumed', 'a single GO sheet is about 1 nm'],
   ['co', 'C/O ratio', '', 1, 20, 0.01, 2, 1.42, 'given', 'the paste spec: carbon 48–54 % of the dry GO; 1.42 gives 51 % with H/C 0.3'],
   ['phiDry', 'Dry film packing', 'fraction', 0.3, 1, 0.01, 2, 0.85, 'assumed', 'solids fraction of the dry film (stacked flakes)'],
+  ['rhoGauge', 'Dry film density as a gauge reads it', 'g/cm³', 0.05, 3, 0.01, 2, 0.44, 'given', 'you: a 300 × 300 mm piece of the dry film weighed 2.4 g as cut; a gauge reads 60 ± 15 µm'],
 ];
 /**
  * How the slurry flows beyond the sidebar's inputs (GO-1), the same shape: the Carreau–Yasuda and Cross laws'
@@ -265,15 +266,27 @@ function slurryRho(m = MAT) {
 /** The solids' mass fraction (0..1). */
 const slurrySolidsMass = (m = MAT) => m.slurry.phi.v / 100 * m.slurry.rhoS.v * 1000 / slurryRho(m);
 
+/** The dry film's water in the room (kg per kg of GO): its sorption law at the room's humidity (the Drying card's GAB
+ *  values), no more than its pores hold (as film.js: 0.9 of the packing's pores full). */
+function matRoomWater(m = MAT) {
+  const d = m.dry, pm = m.slurry.phiDry.v, Xcap = 0.9 * (1 - pm) / pm * m.slurry.rhoL.v / (m.slurry.rhoS.v * 1000);
+  const Ka = d.gabK.v * Math.min(Math.max(d.rhRoom.v / 100, 0), 1), C = d.gabC.v;
+  return Math.min(d.gabXm.v * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)), Xcap);
+}
+/** The dry film as a gauge reads it (m): its weight per area in the room (GO and its water there, kg/m²) over the dry
+ *  film's density as a gauge reads it (the slurry card's: a weighed piece over its gauge thickness). */
+const matGaugeThickness = (massRoom, m = MAT) => massRoom / (m.slurry.rhoGauge.v * 1000);
+
 /**
  * The mass balance of a wet film h (m) on the web: what is left when its water is gone (the solids packed at the dry
  * film's packing) and what must leave. At the line speed U (m/s) over a width W (m): the water per second.
- * Returns { dry (m), coatDry, coatWet (g/m²), water (kg/m²), waterRate (kg/s), rhoDry (kg/m³) }.
+ * Returns { dry (m), coatDry, coatWet (g/m²), water (kg/m²), waterRate (kg/s), rhoDry (kg/m³), coatRoom (g/m²: the dry
+ * film in the room, its GO and the water it takes back), gauge (m: the dry film as a gauge reads it) }.
  */
 function massBalance(h, U, W, m = MAT) {
   const f = m.slurry.phi.v / 100, rS = m.slurry.rhoS.v * 1000, rL = m.slurry.rhoL.v, pd = m.slurry.phiDry.v;
-  const water = h * (1 - f) * rL;
-  return { dry: h * f / pd, coatDry: h * f * rS * 1000, coatWet: h * slurryRho(m) * 1000, water, waterRate: water * U * W, rhoDry: pd * rS };
+  const water = h * (1 - f) * rL, coatDry = h * f * rS * 1000, coatRoom = coatDry * (1 + matRoomWater(m));
+  return { dry: h * f / pd, coatDry, coatWet: h * slurryRho(m) * 1000, water, waterRate: water * U * W, rhoDry: pd * rS, coatRoom, gauge: matGaugeThickness(coatRoom / 1000, m) };
 }
 
 // ---- the oven: zones in a row along the line, each with its own drying air ----
@@ -357,4 +370,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matPhiTxt, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matPhiTxt, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, matRoomWater, matGaugeThickness, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

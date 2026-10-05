@@ -283,8 +283,8 @@ function processPageBody() {
       legend: oneDLegend([['wet film', mut, 'dash']]),
       note: 'The wet film is the 1D gap flow at every position across the web (Coating › 1D › Across the web).' },
     { id: 'pr2', icon: 'film', title: 'Dry film across the web', aria: 'Dry film against position across the web',
-      legend: oneDLegend([['dry film (mass balance)', acc]]),
-      note: 'The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials), at every position across the web.' }],
+      legend: oneDLegend([['dry film (mass balance)', acc], ['as a gauge reads it', acc, 'dash']]),
+      note: 'The dry film is what is left when its water is gone: wet film × solids fraction / the dry film\'s packing (Materials), at every position across the web. Dashed: the same film as a gauge reads it, its weight in the room (with the water it takes back) over the dry film\'s density as a gauge reads it (Materials).' }],
     extra: `<div class="proc-table" id="procTable"></div><div class="prop-actions proc-go"><button type="button" class="btn btn-secondary btn-sm" data-chain="8">${uiIco(8)}Coating › 1D: the gap flow</button><button type="button" class="btn btn-secondary btn-sm" data-chain="11">${uiIco(11)}Across the web</button><button type="button" class="btn btn-secondary btn-sm" data-chain="4">${uiIco(4)}Coating › 2D</button></div>`,
   });
   processShowStage();
@@ -317,16 +317,16 @@ function processPageBody() {
   const known = locs.filter(Boolean), hWeb = web ? web.mean : known.length ? known.reduce((a, q) => a + q.h, 0) / known.length : null;
   if (hWeb == null) { st.innerHTML = ONE_D.error ? pill('The 1D could not be solved: ' + ONE_D.error, 'bad') + solveCtl('1d') : solvePending('1d') ? pill('Solving the 1D…', '') : solveCtl('1d'); ss.innerHTML = ''; drawProcessTable(locs, web); dryRender(); filmRender(); furnRender(); return; }
   const mb = massBalance(hWeb, U, W), wetTooLoose = c.phiDry.v * 100 < c.phi.v;
-  let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, from a ${(hWeb * 1000).toFixed(3)} mm wet film${web ? ` (${web.tag})` : ''}`, '');
+  let pills = pill(`Dry film ${um0(mb.dry)} µm${web ? ` across the web (${um0(massBalance(web.min, U, W).dry)}–${um0(massBalance(web.max, U, W).dry)} µm)` : ''}, ${um0(mb.gauge)} µm as a gauge reads it, from a ${(hWeb * 1000).toFixed(3)} mm wet film${web ? ` (${web.tag})` : ''}`, '');
   pills += pill(`The oven takes out ${(mb.water * 1000).toFixed(0)} g of water per m²: ${(mb.waterRate * 1000).toFixed(2)} g/s over the ${webWidth()} mm web at ${P.U} m/min`, '');
   if (wetTooLoose) pills += pill(`Dry film packing ${c.phiDry.v} is below the slurry's solids fraction (${matPhiTxt()} vol%): the film would not shrink as it dries`, 'bad');
   const fib = FIBRES[CFDG.fibre], hot = OVEN.zones.filter(z => z.airT > fib.tUse);
   if (hot.length) pills += pill(`Oven air above the fibre's ${fib.tUse} °C continuous limit in ${hot.length} zone${hot.length === 1 ? '' : 's'}`, 'warn');
   if (!web) pills += solvePending('1d') ? pill('Solving the 1D across the web…', '') : solveCtl('1d', 'Coating 1D across the web');
   st.innerHTML = pills;
-  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${uiBadge(a[2])}${a[0]}</span><strong>${a[1]}</strong></div>`;
+  const stat = a => `<div class="stat" title="${a[0]}: ${a[1]}${a[3] ? ' (' + a[3] + ')' : ''}"><span>${uiBadge(a[2])}${a[0]}</span><strong>${a[1]}</strong>${a[3] ? `<small>${a[3]}</small>` : ''}</div>`;
   ss.innerHTML = [
-    ['Dry film', `${um0(mb.dry)} µm`, 'film'],
+    ['Dry film', `${um0(mb.dry)} µm`, 'film', `${um0(mb.gauge)} µm as a gauge reads it`],
     ['Coat weight, dry', `${gm2(mb.coatDry)} g/m²`, 'weight'],
     ['Coat weight, wet', `${gm2(mb.coatWet)} g/m²`, 'weight'],
     ['Water to take out', `${(mb.water * 1000).toFixed(0)} g/m²`, 'drop'],
@@ -337,10 +337,10 @@ function processPageBody() {
   // (the wet film in mm, the dry film in µm, each on its own scale: a dilute slurry's dry film is a hundredth of its wet)
   const cv = document.getElementById('pr1'), cv2 = document.getElementById('pr2');
   if (web) {
-    const z = web.A.map(r => r.z), wet = web.A.map(r => r.film * 1000), dry = web.A.map(r => massBalance(r.film, U, W).dry * 1e6);
+    const z = web.A.map(r => r.z), wet = web.A.map(r => r.film * 1000), dry = web.A.map(r => massBalance(r.film, U, W).dry * 1e6), gauge = web.A.map(r => massBalance(r.film, U, W).gauge * 1e6);
     const xs = { x0: Math.min(0, z[0]), x1: Math.max(webWidth(), z[z.length - 1]), xl: 'position across the web (mm)' };
     plotChart(cv, fitAspect(cv, 0.3), { ...xs, y0: 0, y1: Math.max(...wet) * 1.12, yl: 'wet film (mm)', yd: 2, s: [{ p: z.map((x, k) => [x, wet[k]]), c: mut, w: 1.6, dash: [6, 4] }] });
-    if (cv2) plotChart(cv2, fitAspect(cv2, 0.3), { ...xs, y0: 0, y1: Math.max(...dry) * 1.12, yl: 'dry film (µm)', yd: 1, s: [{ p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }] });
+    if (cv2) plotChart(cv2, fitAspect(cv2, 0.3), { ...xs, y0: 0, y1: Math.max(...dry, ...gauge) * 1.12, yl: 'dry film (µm)', yd: 1, s: [{ p: z.map((x, k) => [x, dry[k]]), c: acc, w: 2.2 }, { p: z.map((x, k) => [x, gauge[k]]), c: acc, w: 1.6, dash: [6, 4] }] });
   } else { const why = solvePending('1d') ? 'Solving the 1D across the web…' : 'The 1D across the web is not solved: press Solve'; for (const c of [cv, cv2]) if (c) { const cx = setupCanvas(c, fitAspect(c, 0.3)); cx.c.clearRect(0, 0, cx.w, cx.h); paneEmpty(c, why); } }
   drawProcessTable(locs, web);
   dryRender();
@@ -357,7 +357,9 @@ function drawProcessTable(locs, web) {
   const rows = [
     ['Wet film', 'mm', h => (h * 1000).toFixed(3)],
     ['Dry film', 'µm', h => um0(massBalance(h, U, W).dry)],
+    ['Dry film, as a gauge reads it', 'µm', h => um0(massBalance(h, U, W).gauge)],
     ['Coat weight, dry', 'g/m²', h => gm2(massBalance(h, U, W).coatDry)],
+    ['Coat weight in the room', 'g/m²', h => gm2(massBalance(h, U, W).coatRoom)],
     ['Coat weight, wet', 'g/m²', h => gm2(massBalance(h, U, W).coatWet)],
     ['Water to take out', 'g/m²', h => (massBalance(h, U, W).water * 1000).toFixed(0)],
   ];

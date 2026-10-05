@@ -272,6 +272,7 @@ const HUB_RECORDS = [
       { l: 'Basic', props: [
         { id: 'phiDry', sym: 'φ_dry', l: 'Packing (solids volume fraction)', b: hC('slurry', 'phiDry'), phys: ['dry', 'film', 'align'] },
         { id: 'rho', sym: 'ρ', l: 'Density (pores empty)', b: hCalc(() => MAT.slurry.phiDry.v * MAT.slurry.rhoS.v * 1000, 'kg/m³', 0, 'φ_dry ρ_GO: the dry film\'s packing × the GO density, its pores empty'), phys: ['dry', 'film'] },
+        { id: 'rhoGauge', sym: 'ρ_gauge', l: 'Density as a gauge reads it', b: hC('slurry', 'rhoGauge'), phys: [], note: 'a weighed piece (its water in the room) over the thickness a gauge reads: its pores, its waviness and roughness under the gauge; shown as the dry film\'s gauge thickness' },
         { id: 'cS', sym: 'c_p', l: 'Specific heat capacity', b: hC('dry', 'cS'), phys: ['dry', 'film', 'mp1', 'mp2'], note: 'the furnace\'s multiphysics scales graphite\'s c_p(T) by c_p / c_p,graphite(20 °C)' },
         { id: 'emis', sym: 'ε', l: 'Emissivity', b: hC('dry', 'emis'), phys: ['dry', 'film', 'mp1'] },
         { id: 'irAbs', sym: 'α_IR', l: 'IR absorptance', b: hC('dry', 'irAbs'), phys: ['dry', 'film'] },

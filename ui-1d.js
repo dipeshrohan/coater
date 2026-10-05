@@ -495,6 +495,8 @@ function feedDrawTop(F) {
   const w = Math.max(420, host.clientWidth), wide = w >= 620, wS = wide ? Math.round(w * 0.56) : w, wP = wide ? w - wS - 12 : w;
   host.innerHTML = `<div class="fd-two">${feedSideSVG(F, wS, 250)}${feedPlanSVG(F, wP, wide ? 250 : 200)}</div><p class="fd-cap">Dashed: the level just after a pulse (${(c.hHigh * 1e3).toFixed(1)} mm) and when the camera fires (${(c.hLow * 1e3).toFixed(1)} mm); the paste drawn at the mean level, ${(c.hBar * 1e3).toFixed(1)} mm, the bead pressure input's. The blade's ${F.round ? `round entry (R ${(F.o.R * 1e3).toFixed(0)} mm) continued up to the pool's level` : 'pool edge as in the 2D'}. True scale.</p>`;
 }
+/** A chart's aspect on Pool and feed: the drawing above takes the window's height, so the charts keep their own (the page scrolls). */
+const feedAspect = cv => Math.max(0.42, fitAspect(cv, 0.5));
 /** What the page shows: the pulse cycle in its steady repeat, or the start-up (the web running and the paste fed from the first pulse). */
 const FEED_MODE = { v: 'cycle' };
 const feedModeTools = () => `<div class="seg" role="tablist" aria-label="What is shown" id="feedMode">${[['cycle', 'Pulse cycle', 'The pool through a pulse cycle, once it repeats'], ['startup', 'From the first pulse', 'The start-up: from the web running and the first pulse, the pool filling, the paste drawn under the blade, the film starting']].map(([k, l, t]) =>
@@ -530,7 +532,7 @@ function view1DFeed() {
   for (const k of [0, 1]) c.t.forEach((t, j) => { two.push([t + k * T, c.h[j] * 1e3]); qin.push([t + k * T, c.Qin[j] * 1e6]); qout.push([t + k * T, c.Qout[j] * 1e6]); });
   const hLo = c.hLow * 1e3, hHi = c.hHigh * 1e3, padH = Math.max(0.2, (hHi - hLo) * 0.25);
   const c1 = document.getElementById('p1');
-  plotChart(c1, fitAspect(c1, 0.5), { x0: 0, x1: 2 * T, y0: hLo - padH, y1: hHi + padH, yticks: niceTicks(hLo - padH, hHi + padH, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 2 * T, 6), xf: v => String(+v.toPrecision(6)), yl: 'pool level (mm)', xl: 'time from a pulse (s)', yd: 2, s: [{ p: two, c: acc, w: 2.2 }], hl: [{ y: c.hBar * 1e3, c: mut, t: 'mean' }] });
+  plotChart(c1, feedAspect(c1), { x0: 0, x1: 2 * T, y0: hLo - padH, y1: hHi + padH, yticks: niceTicks(hLo - padH, hHi + padH, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 2 * T, 6), xf: v => String(+v.toPrecision(6)), yl: 'pool level (mm)', xl: 'time from a pulse (s)', yd: 2, s: [{ p: two, c: acc, w: 2.2 }], hl: [{ y: c.hBar * 1e3, c: mut, t: 'mean' }] });
   const nA = 600, band = c.band, along = [];
   for (let k = 0; k <= nA; k++) {
     const sPos = 3 * band * k / nA, tb = ((-sPos / F.o.U) % T + T) % T;
@@ -540,10 +542,10 @@ function view1DFeed() {
   }
   const fLo = Math.min(...along.map(q => q[1])), fHi = Math.max(...along.map(q => q[1])), padF = Math.max(2, (fHi - fLo) * 0.3);
   const c2 = document.getElementById('p2');
-  plotChart(c2, fitAspect(c2, 0.5), { x0: 0, x1: 3 * band * 1e3, y0: fLo - padF, y1: fHi + padF, yticks: niceTicks(fLo - padF, fHi + padF, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 3 * band * 1e3, 6), xf: v => String(+v.toPrecision(6)), yl: 'wet film (µm)', xl: 'distance along the web, from the edge (mm)', yd: 0, s: [{ p: along, c: acc, w: 2.2 }],
+  plotChart(c2, feedAspect(c2), { x0: 0, x1: 3 * band * 1e3, y0: fLo - padF, y1: fHi + padF, yticks: niceTicks(fLo - padF, fHi + padF, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 3 * band * 1e3, 6), xf: v => String(+v.toPrecision(6)), yl: 'wet film (µm)', xl: 'distance along the web, from the edge (mm)', yd: 0, s: [{ p: along, c: acc, w: 2.2 }],
     vl: [1, 2].map(k => ({ x: k * band * 1e3, c: mut, t: `${k} × ${(band * 1e3).toFixed(0)} mm` })) });
   const c3 = document.getElementById('p3');
-  plotChart(c3, fitAspect(c3, 0.5), { x0: 0, x1: 2 * T, y0: 0, y1: Math.max(...qin.map(q => q[1])) * 1.1, yticks: niceTicks(0, Math.max(...qin.map(q => q[1])) * 1.1, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 2 * T, 6), xf: v => String(+v.toPrecision(6)), yl: 'flow (ml/s)', xl: 'time from a pulse (s)', yd: 1, s: [{ p: qin, c: warn, w: 2 }, { p: qout, c: ok, w: 2 }] });
+  plotChart(c3, feedAspect(c3), { x0: 0, x1: 2 * T, y0: 0, y1: Math.max(...qin.map(q => q[1])) * 1.1, yticks: niceTicks(0, Math.max(...qin.map(q => q[1])) * 1.1, 5), yf: v => String(+v.toPrecision(6)), xticks: niceTicks(0, 2 * T, 6), xf: v => String(+v.toPrecision(6)), yl: 'flow (ml/s)', xl: 'time from a pulse (s)', yd: 1, s: [{ p: qin, c: warn, w: 2 }, { p: qout, c: ok, w: 2 }] });
   // the answer, the numbers
   const fMin = filmAt(c.hLow) * 1e6, fMax = filmAt(c.hHigh) * 1e6, fMid = (fMin + fMax) / 2, bad = out.checks.filter(k => !k.ok);
   let st = pill(`A pulse every ${T.toFixed(1)} s: the pool's level swings ${(c.swing * 1e3).toFixed(2)} mm, the wet film at L${i + 1} ±${((fMax - fMin) / 2).toFixed(1)} µm (±${((fMax - fMin) / 2 / fMid * 100).toFixed(2)} %)`, '');
@@ -653,8 +655,7 @@ function view1DStartup() {
     return;
   }
   const N = su1Numbers(R, i), Lc = ONE_D.res.locs[i], tEnd = N.tEnd, xt = niceTicks(0, tEnd, 6), f6 = v => String(+v.toPrecision(6));
-  // (the charts keep their own height below the pool's drawing: the page scrolls)
-  const asp = cv => Math.max(0.42, fitAspect(cv, 0.5));
+  const asp = feedAspect;
   // the pool's level
   const lev = R.t.map((t, j) => [t, R.h[j] * 1e3]), hMax = Math.max(...R.h) * 1e3 * 1.22;   // (room above the curve for the marks' labels)
   const marks = [...(N.tEdge != null ? [{ x: N.tEdge, c: mut, t: 'paste at the edge' }] : []), ...(N.tCam != null ? [{ x: N.tCam, c: mut, t: 'level up' }] : [])];
