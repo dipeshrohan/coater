@@ -1,5 +1,8 @@
 # Working rules for this repository (from the owner)
 
+## Task list (the fundamental rule)
+- Always work from the task list (TASKS.md) in its order, keep it up to date, and ask before changing it. Tasks are written in plain words, quick deliveries first.
+
 ## Asking
 - Do not assume. Any assumption is wrong by default: ask good questions (not obvious ones) before changing anything that already works.
 - Take snapshots while asking such questions, otherwise it is not a question: every question about the app shows real screenshots of what is there now (and of the change, when it exists).
