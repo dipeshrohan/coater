@@ -131,18 +131,21 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
   with their age. A step's flow is solved with lambda as the steady solve has it (the law at lambda_e(gd) + the
   deviation), the deviation predicted along the flow before the step, then traced along the step's own flow and the
   step solved again where it moved more than 0.01. Where the eddy's dividing streamline crosses a node, the node holds
-  slurry from one side or the other as the flow breathes; the deviation the solve is handed is held within 0.02 of its
+  slurry from one side or the other as the flow breathes; the deviation the solve is handed is held within 0.01 of its
   neighbourhood's binomial mean (a smooth field passes; applied afresh each step to lambda traced exactly).
   Found on the way: following paths with half-cell steps and the midpoint shear rate (memory 12) gave lambda 0.007 rms
   (0.19 at one node by the eddy) away from the steady solve's along the same steady flow, and the march's step fell to
   2e-4 s by 1.6 s with nothing changed; following them as structField does: 0.0024 rms (the flow on the steady solve's
-  mesh with that lambda: film +0.008 %). Without the 0.02 hold the step still falls to 1e-3 s by 5 s (the dividing
-  streamline crossing nodes); a full binomial smoothing holds it too but moves lambda 0.022 rms off the steady solve's
-  (film +0.10 %).
-  Measured (Node, the app's default paste and blade, bead pressure 720 Pa): nothing changed for 10 s: 90 steps, 74 s; film
-  (Q/U) 1.59765 -> 1.59960 mm (at most +0.14 % on the way), contact line 1.1596 -> 1.1616 mm. Bead pressure
-  720 -> 900 Pa: 71 steps, 67 s; film 1.7111 mm after 6 s (the steady structure solve at 900 Pa: 1.7147 mm, the plain
-  flow curve 1.8350 mm); lambda keeps rebuilding after the flow has settled (rebuild time 30 s).
+  mesh with that lambda: film +0.008 %). Without a hold the step still falls to 1e-3 s by 5 s (the dividing streamline
+  crossing nodes); a full binomial smoothing holds it too but moves lambda 0.022 rms off the steady solve's (film
+  +0.10 %). The hold at 0.02 still let lambda swing by about 0.01 a step at the eddy's nodes at the app's location 1
+  (contact angle 32 deg): 374 steps for 2 s; at 0.01: 91 steps, the film the same to 0.0005 %.
+  Measured (Node, the app's default paste and blade, bead pressure 720 Pa): nothing changed for 10 s: 54 steps, 39 s;
+  film (Q/U) 1.59765 -> 1.60051 mm (within -0.05 % .. +0.19 % on the way), contact line 1.1596 -> 1.1620 mm. Bead
+  pressure 720 -> 900 Pa (hold 0.02): 71 steps, 67 s; film 1.7111 mm after 6 s (the steady structure solve at 900 Pa:
+  1.7147 mm, the plain flow curve 1.8350 mm); lambda keeps rebuilding after the flow has settled (rebuild time 30 s).
+  The app's location 1 (0.490 -> 0.613 kPa, 5.8 s, its own inputs replayed through the worker): 247 steps, 192 s; film
+  at the end of the 2D 1.405 -> 1.479 mm.
   Page: Transient no longer blocked with the structure on; the card says lambda goes with the slurry; each kept time has
   its lambda (the lambda plot at any time on the slider); the Time tab has the structure lambda leaving the edge against
   time; help updated.

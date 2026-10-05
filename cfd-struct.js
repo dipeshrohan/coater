@@ -260,7 +260,7 @@ function structGrid(r) {
  * then lambda along the step's own flow and, where it differs from what the solve was handed by more than tolLam
  * (default 0.01), the step solved once more with it. Where a dividing streamline passes -- an eddy under the meniscus
  * and the film leaving it -- a node holds slurry from one side or the other as the flow breathes, and its lambda jumps
- * from step to step below what the mesh resolves: the deviation the solve is handed is held within clip (default 0.02)
+ * from step to step below what the mesh resolves: the deviation the solve is handed is held within clip (default 0.01)
  * of the mean over the node's element-wide neighbourhood (binomial weights; opts.filter false: not at all). A smooth
  * field passes unchanged; it is applied afresh each step to lambda traced exactly, so nothing builds up in time; r.lam
  * is lambda as the flow had it.
@@ -322,7 +322,7 @@ function structMarch(S, law, opts = {}) {
   }
   const nodeHint = r => m => [Math.floor(m / r.NR), m % r.NR];
   // each node held within clip of the binomial (1 2 1) x (1 2 1) mean over its neighbours on the node grid
-  const clip = opts.clip ?? 0.02;
+  const clip = opts.clip ?? 0.01;
   const smooth = (f, NC, NR) => {
     if (opts.filter === false) return f;
     const out = new Float64Array(f.length), w = [1, 2, 1];
