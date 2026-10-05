@@ -11,6 +11,12 @@
  *  6. How the paste enters: the pipes standing in the paste, or the heaps up to the tips, take their footprints off the top
  *     (the exact saw-tooth on the smaller top); tips above the paste with the paste falling: the cycle unchanged.
  *  7. The outlets for each entry: where the paste meets the pool (down a heap, out of a tip in the paste) and the checks.
+ *  8. The start-up (web running, paste fed in from the first pulse): the gap's table of flows against the 1D's direct solve
+ *     (the app's paste and blade); in a parallel gap with a Newtonian paste, the flow through a part of it exact; the front
+ *     drawn into the gap by the web and its meniscus, alone and with a pool's head, against the exact time to reach the
+ *     edge; a front taking what an empty pool's pulse brings, exact; the pool filling with the gap full, exact (an
+ *     exponential); the paste conserved through a start-up on the app's blade and paste; the cycle the start-up runs into
+ *     = feedCycle's.
  */
 const F = require('./feed-pulse.js');
 let fails = 0;
@@ -106,6 +112,64 @@ const rho = 1360, g = 9.81, R = 0.1, H = 1.725e-3, W = 0.3, U = 0.28 / 60, film0
     && Math.abs(heap.fall - 0.005) < 1e-15 && Math.abs(dip.depth - 0.005) < 1e-15,
     `heap ${(heap.vLand * 1e3).toFixed(2)} mm/s over ${(heap.dLand * 1e3).toFixed(1)} mm; in the paste ${(dip.vLand * 1e3).toFixed(2)} mm/s over ${(dip.dLand * 1e3).toFixed(1)} mm; "${heap.checks[0].text}" "${dip.checks[0].text}"`);
   check('  and fails when it should: a heap whose tip is in the paste at the highest level; tips in the paste that come out at the lowest', !heapLow.checks[0].ok && !dipHigh.checks[0].ok);
+}
+
+// 8. the start-up
+{
+  const S = require('./cfd-solver.js');
+  Object.assign(globalThis, { muEffLocal: S.muEffLocal, shearRateFromStress: S.shearRateFromStress, solveDownstreamFilm: S.solveDownstreamFilm });
+  const D = require('./cfd-1d.js');
+  // the app's paste and blade (location 1): the table's flows against the 1D's own
+  const app = { shape: 'round', H: 0.0016805949351871234, L: 0.01, R: 0.1, Xup: 0.04, U: 0.28 / 60, Pup: 490, muRef: 10.5, ty: 5, n: 1, webSlip: 337632.2135311958, rho: 1008, g: 9.81, gamma: 0.07 };
+  const r0 = D.gapFlow1D(app), Ta = D.gapTable1D(app, { qLo: 0.2 * app.U * app.H, qMid: 1.6 * r0.q, qHi: 12 * r0.q });
+  let e = 0; for (const P of [0, 245, 490, 600]) e = Math.max(e, Math.abs(D.gapTableQ(Ta, Ta.Lx, P) / D.gapFlow1D({ ...app, Pup: P }).q - 1));
+  check('start-up: the gap\'s table of flows (the app\'s paste, yield stress and slip, round blade) = the 1D\'s direct solve at bead pressures 0 to 600 Pa', e < 2e-4, `largest ${e.toExponential(1)}`);
+  // a parallel gap, Newtonian, no slip
+  const mu = 10, Hg = 1e-3, Lg = 0.01, Ug = 5e-3, gam = 0.07, th = 30, rhoN = 1000;
+  const flat = { shape: 'flat', H: Hg, L: Lg, U: Ug, muRef: mu, ty: 0, n: 1, webSlip: 0 };
+  const Tf = D.gapTable1D(flat, { qLo: 0.1 * Ug * Hg, qMid: 4 * Ug * Hg, qHi: 40 * Ug * Hg });
+  e = 0; for (const [xf, dp] of [[0.001, 50], [0.005, 121], [0.01, 0], [0.0073, 300]]) e = Math.max(e, Math.abs(D.gapTableQ(Tf, xf, dp) / (Ug * Hg / 2 + Hg ** 3 * dp / (12 * mu * xf)) - 1));
+  check('  a parallel gap, Newtonian paste: the flow through the part filled to xf between any two pressures = U H / 2 + H³ Δp / (12 μ xf)', e < 1e-8, `largest ${e.toExponential(1)}`);
+  const locF = { T: Tf, gamma: gam, thWeb: th, thBlade: th }, suck = 2 * gam * Math.cos(th * Math.PI / 180) / Hg;
+  // the front alone: dx/dt = a + b / x, a = U / 2, b = H² Δp / (12 μ): t(x) = x / a − b / a² ln(1 + a x / b), from x0
+  const tTo = (x, b) => { const a = Ug / 2; return x / a - b / (a * a) * Math.log(1 + a * x / b); };
+  for (const [h0, what] of [[0, 'by the web and its meniscus'], [0.004, 'and a pool\'s head of 4 mm']]) {
+    const b = Hg * Hg * (rhoN * g * h0 + suck) / (12 * mu), x0 = 1e-6 * Lg;
+    const run = F.feedStartup({ W, U: Ug, rho: rhoN, g, area: () => 1e9, V: 1e3, tau: 1e4, hCam: 1, h0, locs: [locF], tEnd: 2 * tTo(Lg, b) });
+    const exact = tTo(Lg, b) - tTo(x0, b), got = run.locs[0].tEdge;
+    check(`  a front drawn into a parallel gap ${what}: it reaches the edge at the exact time`, Math.abs(got / exact - 1) < 1e-6, `${got.toFixed(6)} s vs ${exact.toFixed(6)} s (${(Math.abs(got / exact - 1)).toExponential(1)}); ${run.t.length} steps`);
+  }
+  // the gap taking what an empty pool's pulse brings: x = x0 + (Q / W) t / H while the gap could draw more
+  {
+    const Qs = 2e-6, run = F.feedStartup({ W, U: Ug, rho: rhoN, g, area: () => 0.05, V: Qs * 1e4, tau: 1e4, hCam: 1, locs: [{ ...locF, gamma: 5 }], tEnd: 0.5 });
+    const xe = 1e-6 * Lg + Qs / W * 0.5 / Hg, got = run.locs[0].xf[run.locs[0].xf.length - 1];
+    check('  a front taking what the pulse brings while the pool is empty: x = Q t / (W H), the pool staying empty', Math.abs(got / xe - 1) < 1e-9 && run.h[run.h.length - 1] === 0, `${(got * 1e3).toFixed(6)} mm vs ${(xe * 1e3).toFixed(6)} mm`);
+  }
+  // the pool filling, the gap full: A dh/dt = Q − W (c0 + c1 h): h = h∞ (1 − e^(−t W c1 / A)) (a thinner paste, 1 Pa s)
+  {
+    const mu1 = 1, T1 = D.gapTable1D({ ...flat, muRef: mu1 }, { qLo: 0.1 * Ug * Hg, qMid: 4 * Ug * Hg, qHi: 40 * Ug * Hg }), loc1 = { ...locF, T: T1 };
+    const A = 0.03, Qc = 1.5e-6, c0 = Ug * Hg / 2, c1 = Hg ** 3 * rhoN * g / (12 * mu1 * Lg), hInf = (Qc / W - c0) / c1, k = W * c1 / A;
+    const run = F.feedStartup({ W, U: Ug, rho: rhoN, g, area: () => A, V: Qc * 1e5, tau: 1e5, dt: 0.02 / k, hCam: 1, xf0: Lg, locs: [loc1], tEnd: 3 / k });
+    let worst = 0; run.t.forEach((t, j) => { worst = Math.max(worst, Math.abs(run.h[j] - hInf * (1 - Math.exp(-k * t))) / hInf); });
+    check('  the pool filling with the gap full (Newtonian, parallel gap): the level = the exact exponential', worst < 1e-9, `largest ${worst.toExponential(1)} of h∞ = ${(hInf * 1e3).toFixed(3)} mm over 3 time constants (${(1 / k).toFixed(1)} s)`);
+    // and the cycle it runs into once the level is up = feedCycle's (the same linear outflow)
+    const hBar = 0.6 * hInf, base = { W, U: Ug, film0: (c0 + c1 * hBar) / Ug, dfdP: c1 / (Ug * rhoN * g), rho: rhoN, g, Pup: rhoN * g * hBar, R, H, xBack: 0.1, V: 60e-6, tau: 3, meets: () => 0.1 - A / W };
+    const cyc = F.feedCycle(base), su = F.feedStartup({ W, U: Ug, rho: rhoN, g, area: () => A, V: 60e-6, tau: 3, hCam: cyc.hLow, xf0: Lg, locs: [loc1], cyclesAfter: 4 });
+    const p = su.pulses, T = p[p.length - 1] - p[p.length - 2];
+    let hi = 0; su.t.forEach((t, j) => { if (t >= p[p.length - 2]) hi = Math.max(hi, su.h[j]); });
+    check('  the cycle the start-up runs into (pulse after pulse, then the camera) = feedCycle\'s', Math.abs(T / cyc.T - 1) < 1e-6 && Math.abs(hi - cyc.hHigh) < 1e-6 * cyc.hHigh,
+      `a pulse every ${T.toFixed(5)} s vs ${cyc.T.toFixed(5)} s; highest level ${(hi * 1e3).toFixed(5)} vs ${(cyc.hHigh * 1e3).toFixed(5)} mm; the camera's level first reached at ${su.tCam.toFixed(1)} s`);
+  }
+  // the paste conserved through a start-up on the app's blade and paste
+  {
+    const base = { W: 0.62, U: app.U, film0: r0.film, dfdP: 0.66e-6, rho: app.rho, g: app.g, Pup: app.Pup, R: app.R, H: app.H, xBack: 0.13, V: 60e-6, tau: 3, pipes: { n: 4, Do: 0.014, tip: 0.06, entry: 'fall' } };
+    const cyc = F.feedCycle(base), area = F.feedArea({ ...base, meets: h => Math.max(F.feedMeetsBlade(h, app.R, app.H), Ta.Lx) });
+    const su = F.feedStartup({ W: 0.62, U: app.U, rho: app.rho, g: app.g, area, V: 60e-6, tau: 3, hCam: cyc.hLow, locs: [{ T: Ta, gamma: 0.07, thWeb: 35, thBlade: 32 }] });
+    const hEnd = su.h[su.h.length - 1]; let vp = 0; const m = 20000; for (let j = 0; j < m; j++) vp += area((j + 0.5) * hEnd / m) * hEnd / m;
+    const err = Math.abs(su.volIn - su.volOut - vp - su.volGaps) / su.volIn;
+    check('  a start-up on the app\'s blade and paste conserves the paste: in = out under the blade + the pool + the gap', err < 1e-6,
+      `${(su.volIn * 1e6).toFixed(1)} ml in, ${(su.volOut * 1e6).toFixed(1)} out, ${(vp * 1e6).toFixed(1)} in the pool, ${(su.volGaps * 1e6).toFixed(1)} in the gap (${err.toExponential(1)}); the front at the edge at ${su.locs[0].tEdge.toFixed(1)} s, the level up at ${su.tCam.toFixed(1)} s`);
+  }
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

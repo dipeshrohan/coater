@@ -166,6 +166,93 @@ function gapFlow1D(geo, { nx = 120, ny = 160 } = {}) {
   };
 }
 
+/**
+ * The gap's stations, and at each the pressure gradient G = -dp/dx a range of flow rates needs (the start-up from the first
+ * pulse, feed-pulse.js's feedStartup): the flow through the gap filled from its inlet to any point, between any two pressures,
+ * without solving the stations again. Stations as gapFlow1D's (nx, graded toward the edge, a shaped blade's corners); the
+ * flow rates qs from qLo to qHi (nq; three quarters of them even up to qMid, the rest geometric), each station's G(q) by its own Newton (solveStation1D,
+ * started from the next lower flow's), increasing with q. Returns { x, h, qs, G (one Float64Array per station), dG (their
+ * slopes in q, monotone cubic), Lx, U }.
+ */
+function gapTable1D(geo, { nx = 120, ny = 160, nq = 96, qLo, qMid, qHi } = {}) {
+  const o = { geometry: geo.shape, H: geo.H, L: geo.L, R: geo.R, Xup: geo.Xup, blade: geo.blade };
+  const shape = bladeShape(o), Lx = shape.Lx;
+  const law = { muRef: geo.muRef, ty: geo.ty || 0, n: geo.n ?? 1, x: geo.rheoX };
+  const U = geo.U, lam = geo.webSlip || 0;
+  const xs = Array.from({ length: nx + 1 }, (_, i) => Lx * (1 - Math.pow(1 - i / nx, 1.6)));
+  if (shape.profile) {
+    for (const c of shape.profile.underCorners) { const x = shape.profile.under.P(c.s)[0]; xs.push(x * (1 - 1e-9), x * (1 + 1e-9)); }
+    xs.sort((a, b) => a - b);
+  }
+  const hs = xs.map(shape.h);
+  // (flow rates: even from qLo to qMid, where the flow is through most of the start-up, three quarters of them; then
+  // geometric on to qHi)
+  const qs = new Float64Array(nq), m = Math.round(0.75 * nq), q1 = qMid ?? Math.sqrt(qLo * qHi);
+  for (let k = 0; k < m; k++) qs[k] = qLo + (q1 - qLo) * k / (m - 1);
+  for (let k = m; k < nq; k++) qs[k] = q1 * Math.pow(qHi / q1, (k - m + 1) / (nq - m));
+  const G = [], dG = [];
+  for (let i = 0; i < xs.length; i++) {
+    const g = new Float64Array(nq);
+    let guess = null;
+    for (let k = 0; k < nq; k++) { const s = solveStation1D(hs[i], U, lam, law, qs[k], guess, ny); g[k] = s.G; guess = s; }
+    G.push(g); dG.push(pchipSlopes(qs, g));
+  }
+  return { x: xs, h: hs, qs, G, dG, Lx, U, h0: shape.h };
+}
+/** Fritsch–Carlson slopes for a monotone cubic through (x, y). */
+function pchipSlopes(x, y) {
+  const n = x.length, d = new Float64Array(n), s = new Float64Array(n - 1);
+  for (let k = 0; k < n - 1; k++) s[k] = (y[k + 1] - y[k]) / (x[k + 1] - x[k]);
+  d[0] = s[0]; d[n - 1] = s[n - 2];
+  for (let k = 1; k < n - 1; k++) {
+    if (s[k - 1] * s[k] <= 0) { d[k] = 0; continue; }
+    const w1 = 2 * (x[k + 1] - x[k]) + (x[k] - x[k - 1]), w2 = (x[k + 1] - x[k]) + 2 * (x[k] - x[k - 1]);
+    d[k] = (w1 + w2) / (w1 / s[k - 1] + w2 / s[k]);
+  }
+  return d;
+}
+/** Station i's G at flow rate q: its monotone cubic between the table's flow rates, straight on beyond them. */
+function gapTableG(T, i, q) {
+  const qs = T.qs, n = qs.length, g = T.G[i], d = T.dG[i];
+  if (q <= qs[0]) return g[0] + d[0] * (q - qs[0]);
+  if (q >= qs[n - 1]) return g[n - 1] + d[n - 1] * (q - qs[n - 1]);
+  let a = 0, b = n - 1;
+  while (b - a > 1) { const m = (a + b) >> 1; if (qs[m] <= q) a = m; else b = m; }
+  const hq = qs[b] - qs[a], t = (q - qs[a]) / hq, t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * g[a] + (t3 - 2 * t2 + t) * hq * d[a] + (-2 * t3 + 3 * t2) * g[b] + (t3 - t2) * hq * d[b];
+}
+/** The pressure drop the flow rate q needs over the gap from its inlet to xf (the stations' G, trapezoids; the last piece cut at xf). */
+function gapTableDrop(T, xf, q) {
+  const x = T.x;
+  let dp = 0, gPrev = gapTableG(T, 0, q);
+  for (let i = 1; i < x.length; i++) {
+    const g = gapTableG(T, i, q);
+    if (x[i] >= xf) { const w = (xf - x[i - 1]) / (x[i] - x[i - 1]); dp += (xf - x[i - 1]) * (gPrev + (gPrev + w * (g - gPrev))) / 2; return dp; }
+    dp += (x[i] - x[i - 1]) * (g + gPrev) / 2; gPrev = g;
+  }
+  return dp;
+}
+/**
+ * The flow rate through the gap filled from its inlet to xf with the pressure drop dp from the inlet to xf: the root of
+ * gapTableDrop (it grows with q), bracketed then Illinois. xf at the inlet: no length, any flow (Infinity).
+ */
+function gapTableQ(T, xf, dp) {
+  if (!(xf > 1e-12 * T.Lx)) return Infinity;
+  const f = q => gapTableDrop(T, xf, q) - dp, qs = T.qs;
+  let a = qs[0], fa = f(a), b = qs[qs.length - 1], fb = f(b);
+  for (let k = 0; k < 60 && fa > 0; k++) { b = a; fb = fa; a = a > 0 ? a / 2 : a * 2 - 1e-12; fa = f(a); }
+  for (let k = 0; k < 60 && fb < 0; k++) { a = b; fa = fb; b *= 2; fb = f(b); }
+  let side = 0, q = b;
+  for (let it = 0; it < 100; it++) {
+    q = (a * fb - b * fa) / (fb - fa);
+    const fq = f(q);
+    if (Math.abs(fq) <= 1e-12 * (Math.abs(dp) + 1) || Math.abs(b - a) <= 1e-13 * Math.abs(q)) break;
+    if (fq * fb > 0) { b = q; fb = fq; if (side === -1) fa /= 2; side = -1; }
+    else { a = q; fa = fq; if (side === 1) fb /= 2; side = 1; }
+  }
+  return q;
+}
+
 /** The film from the metering edge to the oven: the 1D thin-film equation (cfd-solver.js) with this flow rate. */
 function film1D(geo, q) {
   const mu = muEffLocal(geo.U * geo.U / q, geo.muRef, geo.ty || 0, geo.n ?? 1, geo.rheoX);   // at the film's own shear scale U / h_inf, as the 2D's film
@@ -282,4 +369,4 @@ function meniscus1DPath(h, prof, contactDeg, gamma, rho, g) {
   return { pinned: true, k: 0, s: 0, hc: hcAt(0), lcap };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { bladeShape, station1D, solveStation1D, gapFlow1D, film1D, struct1D, ripple1D, meniscus1D, meniscus1DPath };
+if (typeof module !== 'undefined' && module.exports) module.exports = { bladeShape, station1D, solveStation1D, gapFlow1D, gapTable1D, gapTableG, gapTableDrop, gapTableQ, pchipSlopes, film1D, struct1D, ripple1D, meniscus1D, meniscus1DPath };
