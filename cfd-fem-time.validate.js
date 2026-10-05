@@ -25,6 +25,12 @@
  *     the exit face of the coating flow it tends to no slip as the slip
  *     length goes to 0; in a time step the contact line moves with the
  *     liquid at it; the march with slip settles on the steady solve with it.
+ *  8. The structure (thixotropy) in time (cfd-struct.js's structMarch): lambda as the slurry's memory along its path
+ *     traced (filter off) -- a front coming in through the inlet of a plug flow and lambda relaxing in a uniform
+ *     shear, exact at any step; a shear rate oscillating in time against the law's ODE; along a steady coating flow
+ *     with a long-memory structure the march finds the steady structure solve's lambda and, marched with nothing
+ *     changed, stays put; a fast-rebuilding structure the same, and after a bead-pressure step settles on the steady
+ *     structure solve.
  */
 const gap = require('./cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -247,6 +253,85 @@ section('7. Slip on the exit face (Navier) and the contact line moving with the 
   const ss = solveFEM({ ...ms.call, init: ms.last.state, inlet: inlet(150) });
   check(ms.completed && ss.converged && Math.abs(ms.last.Q / ss.Q - 1) < 1e-6 && Math.abs(ms.last.surface.s - ss.surface.s) < 1e-5 * Hc,
     `slip 0.03 gap: the march settles on film ${(ms.last.Q / Uc * 1e6).toFixed(3)} µm, contact line ${(ms.last.surface.s * 1e3).toFixed(5)} mm = the steady solve with that slip ${(ss.Q / Uc * 1e6).toFixed(3)} µm, ${(ss.surface.s * 1e3).toFixed(5)} mm`);
+}
+
+section('8. The structure (thixotropy) in time: lambda as the slurry\'s memory along its path');
+{
+  const FEM = require('./cfd-fem.js');
+  Object.assign(globalThis, { femInterpolate: FEM.femInterpolate, solveCoaterFEM: FEM.solveCoaterFEM, refineCoaterFEM: FEM.refineCoaterFEM, solveFEM: FEM.solveFEM });
+  const RH = require('./rheo.js'), { solveCoaterStruct, structMarch, structColumn } = require('./cfd-struct.js');
+  // a given flow on a rectangle (slanted inlet by skew), nothing solved
+  const flow = (NC, NR, L, Hh, uf, gdf, skew = 0, t = 0) => {
+    const N = NC * NR, x = new Float64Array(N), y = new Float64Array(N), u = new Float64Array(N), v = new Float64Array(N), gd = new Float64Array(N);
+    for (let c = 0; c < NC; c++) for (let k = 0; k < NR; k++) { const n = c * NR + k, X = c / (NC - 1) * L, Y = k / (NR - 1) * Hh; x[n] = X + skew * Y; y[n] = Y; u[n] = uf(X, Y, t); gd[n] = gdf(X, Y, t); }
+    return { NC, NR, x, y, u, v, gd };
+  };
+  const walk = (cm, rAt, T, dt) => { let t = 0, r = rAt(0), lam; while (t < T - 1e-12) { const r1 = rAt(t + dt); lam = cm.correct(r, t, r1, dt, null).lam; cm.accept(r1, t + dt); t += dt; r = r1; } return lam; };
+  const S = { tb: 2, gdc: 1, cy: 1, ce: 1 }, lawN = RH.rheoCompile(1, 0, 1);
+  // A: plug flow, a structure front (0.5) coming in at a slanted inlet into 0.2
+  {
+    const U = 1e-3, L = 0.02, NC = 81, NR = 5, T = 10, rr = flow(NC, NR, L, 1e-3, () => U, () => 0, 0.2);
+    let worst = 0;
+    for (const dt of [0.5, 0.1]) {
+      const cm = structMarch(S, lawN, { lamIn: 0.5, filter: false }); cm.start({ ...rr, lam: new Float64Array(NC * NR).fill(0.2) }, 0);
+      const lam = walk(cm, () => rr, T, dt);
+      for (let m = 0; m < lam.length; m++) { const X = rr.x[m] - 0.2 * rr.y[m], ex = X > U * T ? 1 - 0.8 * Math.exp(-T / S.tb) : 1 - 0.5 * Math.exp(-X / (U * S.tb)); if (Math.abs(X - U * T) > 1e-6) worst = Math.max(worst, Math.abs(lam[m] - ex)); }
+    }
+    check(worst < 1e-12, `a front coming in through the inlet of a plug flow: lambda exact ahead of it and behind it, steps of 0.5 and 0.1 s (${worst.toExponential(1)}; nothing re-interpolated from step to step)`);
+  }
+  // B: a uniform shear rate switched on: lambda(t) exact
+  {
+    const gd0 = 3, Hh = 1e-3, L = 0.05, NC = 41, NR = 9, T = 4, rr = flow(NC, NR, L, Hh, (X, Y) => gd0 * Y, () => gd0);
+    const cm = structMarch(S, lawN, { filter: false }); cm.start({ ...rr, lam: new Float64Array(NC * NR).fill(0.9) }, 0);
+    const lam = walk(cm, () => rr, T, 0.1);
+    const le = RH.rheoLamEq(gd0, S), ex = le + (0.9 - le) * Math.exp(-(1 + gd0 / S.gdc) * T / S.tb);
+    let e = 0; for (let m = 0; m < lam.length; m++) if (rr.x[m] > gd0 * Hh * T * 1.05) e = Math.max(e, Math.abs(lam[m] - ex));
+    check(e < 1e-12, `shear ${gd0} 1/s from lambda 0.9: ${ex.toFixed(6)} after ${T} s, exact to ${e.toExponential(1)}`);
+  }
+  // C: the shear rate oscillating in time: lambda against the law's ODE (RK4)
+  {
+    const Hh = 1e-3, L = 0.05, NC = 41, NR = 9, T = 3, gdt = t => 2 * (1 + Math.sin(2 * Math.PI * t / 1.3)), errs = [];
+    let l = 0.9, tt = 0; const h = 1e-4, f = (q, ll) => ((1 - ll) - ll * gdt(q) / S.gdc) / S.tb;
+    while (tt < T - 1e-12) { const k1 = f(tt, l), k2 = f(tt + h / 2, l + h / 2 * k1), k3 = f(tt + h / 2, l + h / 2 * k2), k4 = f(tt + h, l + h * k3); l += h / 6 * (k1 + 2 * k2 + 2 * k3 + k4); tt += h; }
+    for (const dt of [0.1, 0.025]) {
+      const rAt = t => flow(NC, NR, L, Hh, (X, Y) => gdt(t) * Y, () => gdt(t), 0, t);
+      const cm = structMarch(S, lawN, { filter: false }); cm.start({ ...rAt(0), lam: new Float64Array(NC * NR).fill(0.9) }, 0);
+      const lam = walk(cm, rAt, T, dt);
+      let e = 0; for (let m = 0; m < lam.length; m++) if (m % NR === 0 && Math.floor(m / NR) > NC / 2) e = Math.max(e, Math.abs(lam[m] - l));
+      errs.push(e);
+    }
+    check(errs[0] < 2e-3 && errs[1] < 3e-4, `shear rate 2 (1 + sin 2 pi t / 1.3 s) 1/s: lambda ${l.toFixed(5)} after ${T} s (ODE), within ${errs[0].toExponential(1)} / ${errs[1].toExponential(1)} at steps of 0.1 / 0.025 s`);
+  }
+  // F: a structure with a long memory (30 s) on the coating flow of 5 at a slow web: along the steady flow the march
+  // follows each path as the steady structure solve does, so it finds the steady solve's own lambda, and with nothing
+  // changed the flow stays put
+  {
+    const { base, inlet } = coat, Uf = 0.005, Sl = { tb: 30, gdc: 1, cy: 2, ce: 2 };
+    const rf = solveCoaterStruct({ ...base, U: Uf, mu: lawN.mu, Pup: 0 }, Sl, lawN);
+    const cm = structMarch(Sl, lawN, { filter: false }); cm.start(rf, -1000); cm.accept(rf, 0);
+    const lam = cm.correct(rf, -1e-9, rf, 1e-9, null).lam;
+    let mx = 0, s2 = 0; for (let n = 0; n < lam.length; n++) { const d = Math.abs(lam[n] - rf.lam[n]); s2 += d * d; mx = Math.max(mx, d); }
+    const rms = Math.sqrt(s2 / lam.length), lo = Math.min(...rf.lam), hi = Math.max(...rf.lam);
+    check(rf.converged && rms < 2e-3 && mx < 0.04, `lambda ${lo.toFixed(3)} to ${hi.toFixed(3)} along the steady flow (web ${Uf * 1e3} mm/s, rebuild 30 s): traced back 1000 s through the march's kept flows = the steady structure solve's to ${rms.toExponential(1)} rms (${mx.toExponential(1)} at most, where paths pass stagnation points)`);
+    const m0 = femMarch(rf, { at: () => ({ inlet: inlet(0) }), tEnd: 2, dt0: 1e-3, tol: 1e-3, carry: structMarch(Sl, lawN) });
+    const dQ = Math.abs(m0.last.Q / rf.Q - 1), dS = Math.abs(m0.last.surface.s - rf.surface.s);
+    check(m0.completed && dQ < 2e-4 && dS < 1e-3 * coat.H, `and marched with nothing changed for 2 s: film ${(rf.Q / Uf * 1e6).toFixed(3)} -> ${(m0.last.Q / Uf * 1e6).toFixed(3)} µm (${(dQ * 100).toFixed(4)}%), contact line moved ${(dS * 1e6).toFixed(2)} µm; ${m0.steps} steps`);
+  }
+  // D, E: the coating flow of 5 with a structure that rebuilds in 0.05 s
+  {
+    const { H, U, base, inlet } = coat, Ss = { tb: 0.05, gdc: 50, cy: 0, ce: 2 }, P1 = 150;
+    const bs = { ...base, mu: lawN.mu }, edge = (r, c) => structColumn(r, r.lam, c);
+    const r0 = solveCoaterStruct({ ...bs, Pup: 0 }, Ss, lawN), r1 = solveCoaterStruct({ ...bs, Pup: P1 }, Ss, lawN);
+    const track = (r, info) => edge(r, (info.meshInfo || r0.meshInfo).cCorner);
+    const m0 = femMarch(r0, { at: () => ({ inlet: inlet(0) }), tEnd: 0.3, dt0: 1e-3, tol: 1e-3, carry: structMarch(Ss, lawN), track });
+    const dQ0 = Math.abs(m0.last.Q / r0.Q - 1), dL0 = Math.abs(m0.track[m0.track.length - 1] - edge(r0, r0.meshInfo.cCorner));
+    check(r0.converged && m0.completed && dQ0 < 1e-4 && dL0 < 2e-3, `nothing changed for 0.3 s (6 rebuild times): film ${(r0.Q / U * 1e6).toFixed(3)} -> ${(m0.last.Q / U * 1e6).toFixed(3)} µm (${(dQ0 * 100).toFixed(4)}%), lambda leaving the edge ${edge(r0, r0.meshInfo.cCorner).toFixed(5)} -> ${m0.track[m0.track.length - 1].toFixed(5)}`);
+    const m = femMarch(r0, { at: () => ({ inlet: inlet(P1) }), tEnd: 1, dt0: 1e-4, tol: 1e-3, carry: structMarch(Ss, lawN), track });
+    const L = m.last, l0 = edge(r0, r0.meshInfo.cCorner), l1 = edge(r1, r1.meshInfo.cCorner), lE = m.track[m.track.length - 1];
+    const dQ = Math.abs(L.Q / r1.Q - 1), dL = Math.abs(lE - l1) / Math.abs(l1 - l0), dS = Math.abs(L.surface.s - r1.surface.s);
+    check(r1.converged && m.completed && dQ < 5e-4 && dL < 0.03 && dS < 0.02 * H,
+      `bead pressure 0 -> ${P1} Pa: after 1 s film ${(L.Q / U * 1e6).toFixed(3)} µm vs the steady structure solve ${(r1.Q / U * 1e6).toFixed(3)} µm (${(dQ * 100).toFixed(4)}%), lambda leaving the edge ${l0.toFixed(5)} -> ${lE.toFixed(5)} vs ${l1.toFixed(5)} (${(dL * 100).toFixed(1)}% of its change), contact line within ${(dS / H * 100).toFixed(2)}% of the gap (each on its own mesh); ${m.steps} steps, ${m.corrected} solved again with the structure they carried`);
+  }
 }
 
 console.log('\n' + (allPass ? 'ALL PASS' : 'SOME CHECKS FAILED'));

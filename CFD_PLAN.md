@@ -121,6 +121,30 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
   Open: with the structure (thixotropy) model on -- the app's default paste -- Transient is not run (the card and the
   button say why; never mixed with the plain flow curve): the structure in time (lambda carried by the moving flow)
   is not built yet. Question to the owner, with the app's screenshots.
+- T-2b built (5 Oct): the structure in time, so Transient runs at the app's default paste (the structure on).
+  cfd-struct.js structMarch, femMarch's `carry`: lambda at a point at time T is the slurry's memory along its own path,
+  traced back through the march's kept flows (between two kept flows their node-by-node mean) to the start (the
+  starting field), the inlet (steady at the inlet's shear rate) or until its memory has faded, then carried forward
+  exactly piece by piece (rheoLamStep); never re-interpolated from step to step. Each path is followed as structField
+  follows a steady streamline (midpoint steps of a quarter cell, each piece at the shear rate of its end nearer the
+  point, memory 15), so along a steady flow the march finds the steady solve's own lambda. The kept flows thin out
+  with their age. A step's flow is solved with lambda as the steady solve has it (the law at lambda_e(gd) + the
+  deviation), the deviation predicted along the flow before the step, then traced along the step's own flow and the
+  step solved again where it moved more than 0.01. Where the eddy's dividing streamline crosses a node, the node holds
+  slurry from one side or the other as the flow breathes; the deviation the solve is handed is held within 0.02 of its
+  neighbourhood's binomial mean (a smooth field passes; applied afresh each step to lambda traced exactly).
+  Found on the way: following paths with half-cell steps and the midpoint shear rate (memory 12) gave lambda 0.007 rms
+  (0.19 at one node by the eddy) away from the steady solve's along the same steady flow, and the march's step fell to
+  2e-4 s by 1.6 s with nothing changed; following them as structField does: 0.0024 rms. Without the 0.02 hold the step
+  still falls to 1e-3 s by 5 s (the dividing streamline crossing nodes); a full binomial smoothing holds it too but
+  moves lambda 0.022 rms off the steady solve's.
+  Measured (Node, the app's default paste and coater, 720 Pa): nothing changed for 10 s: 90 steps, 74 s; film
+  (Q/U) 1.59765 -> 1.59960 mm (at most +0.14 % on the way), contact line 1.1596 -> 1.1616 mm. Bead pressure
+  720 -> 900 Pa: 71 steps, 67 s; film 1.7111 mm after 6 s (the steady structure solve at 900 Pa: 1.7147 mm, the plain
+  flow curve 1.8350 mm); lambda keeps rebuilding after the flow has settled (rebuild time 30 s).
+  Page: Transient no longer blocked with the structure on; the card says lambda goes with the slurry; each kept time has
+  its lambda (the lambda plot at any time on the slider); the Time tab has the structure lambda leaving the edge against
+  time; help updated.
 
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),

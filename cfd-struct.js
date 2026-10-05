@@ -248,18 +248,26 @@ function structGrid(r) {
  * the march (each step's flow; between two kept flows the mean of the two, node by node) to where it was at the start
  * (lambda there: the starting field, interpolated), or to where it came in through the inlet (lambda steady at the
  * inlet's shear rate there, as the steady structure's inflow), or until its memory has faded ((1 + gd / gdc) t / tb
- * above `memory`, default 12: then steady at the shear rate there); lambda is then carried forward along the path
- * exactly, piece by piece at each piece's shear rate (rheoLamStep) -- as structField does along a steady flow, so a
- * steady start stays as it is, and lambda is never re-interpolated from step to step (no numerical diffusion).
+ * above `memory`, default 15: then steady at the shear rate there); lambda is then carried forward along the path
+ * exactly, piece by piece at each piece's shear rate (rheoLamStep). The path is followed as structField follows a
+ * steady flow's streamline (midpoint steps of `h`, default a quarter of a cell, and at most a tenth of the structure's
+ * own time there; each piece at the shear rate of its end nearer the point), so along a steady flow the march finds
+ * the steady solve's own lambda and a steady start stays as it is; lambda is never re-interpolated from step to step
+ * (no numerical diffusion).
  * The flows kept for this thin out with their age (two kept flows at most keepRel, default 0.1, of their age apart).
  * The flow of a step is solved with lambda as the steady solve has it (the law at lambda_e(gd) + the deviation, at the
  * nodes: solveCoaterStruct's representation): the deviation predicted with the flow before the step continued over it,
  * then lambda along the step's own flow and, where it differs from what the solve was handed by more than tolLam
- * (default 0.01), the step solved once more with it.
+ * (default 0.01), the step solved once more with it. Where a dividing streamline passes -- an eddy under the meniscus
+ * and the film leaving it -- a node holds slurry from one side or the other as the flow breathes, and its lambda jumps
+ * from step to step below what the mesh resolves: the deviation the solve is handed is held within clip (default 0.02)
+ * of the mean over the node's element-wide neighbourhood (binomial weights; opts.filter false: not at all). A smooth
+ * field passes unchanged; it is applied afresh each step to lambda traced exactly, so nothing builds up in time; r.lam
+ * is lambda as the flow had it.
  * S: the structure's values; law: rheo.js's compiled law.
  */
 function structMarch(S, law, opts = {}) {
-  const clamp = l => l < 0 ? 0 : l > 1 ? 1 : l, tolLam = opts.tolLam ?? 0.01, memory = opts.memory ?? 12, keepRel = opts.keepRel ?? 0.1, hCell = opts.h ?? 0.5;
+  const clamp = l => l < 0 ? 0 : l > 1 ? 1 : l, tolLam = opts.tolLam ?? 0.01, memory = opts.memory ?? 15, keepRel = opts.keepRel ?? 0.1, hCell = opts.h ?? 0.25;
   const muL = (gd, d) => CS_R.rheoMuStruct(gd, clamp(CS_R.rheoLamEq(gd, S) + d), law, S);
   const avg = (a, b) => { const o = new Float64Array(a.length); for (let i = 0; i < a.length; i++) o[i] = 0.5 * (a[i] + b[i]); return o; };
   const entry = (r, t) => ({ t, NC: r.NC, NR: r.NR, x: r.x, y: r.y, u: r.u, v: r.v, gd: r.gd, g: null, gPair: null });
@@ -287,18 +295,18 @@ function structMarch(S, law, opts = {}) {
           const v = p1.ok ? Math.max(Math.abs(p1.xi), Math.abs(p1.eta)) : 0, rate = (1 + Math.abs(p1.gd) / S.gdc) / S.tb;
           let d = Math.min(rem, v > 0 ? hCell / v : rem, 0.1 / rate);
           g.at(xi - 0.5 * d * p1.xi, Math.min(g.NR - 1, Math.max(0, eta - 0.5 * d * p1.eta)), p2);
-          if (!p2.ok) { p2.xi = p1.xi; p2.eta = p1.eta; p2.gd = p1.gd; }
+          if (!p2.ok) { p2.xi = p1.xi; p2.eta = p1.eta; }
           let nxi = xi - d * p2.xi, neta = eta - d * p2.eta;
           if (nseg >= segD.length) grow();
           if (nxi < 0) {
             const f = xi / (xi - nxi); d *= f; neta = eta + f * (neta - eta);
-            segD[nseg] = d; segG[nseg] = p2.gd; nseg++;
+            segD[nseg] = d; segG[nseg] = p1.gd; nseg++;
             g.at(0, Math.min(g.NR - 1, Math.max(0, neta)), p1);
             start = opts.lamIn ?? CS_R.rheoLamEq(p1.gd, S);
             break;
           }
-          segD[nseg] = d; segG[nseg] = p2.gd; nseg++;
-          mem += (1 + Math.abs(p2.gd) / S.gdc) * d / S.tb;
+          segD[nseg] = d; segG[nseg] = p1.gd; nseg++;
+          mem += (1 + Math.abs(p1.gd) / S.gdc) * d / S.tb;
           xi = Math.min(g.NC - 1, nxi); eta = Math.min(g.NR - 1, Math.max(0, neta)); rem -= d;
           if (mem > memory) { g.at(xi, eta, p1); start = CS_R.rheoLamEq(p1.gd, S); break; }
         }
@@ -313,6 +321,21 @@ function structMarch(S, law, opts = {}) {
     return out;
   }
   const nodeHint = r => m => [Math.floor(m / r.NR), m % r.NR];
+  // each node held within clip of the binomial (1 2 1) x (1 2 1) mean over its neighbours on the node grid
+  const clip = opts.clip ?? 0.02;
+  const smooth = (f, NC, NR) => {
+    if (opts.filter === false) return f;
+    const out = new Float64Array(f.length), w = [1, 2, 1];
+    for (let c = 0; c < NC; c++) for (let k = 0; k < NR; k++) {
+      let s = 0, ws = 0;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const cc = c + a, kk = k + b; if (cc < 0 || cc >= NC || kk < 0 || kk >= NR) continue; const q = w[a + 1] * w[b + 1]; s += q * f[cc * NR + kk]; ws += q; }
+      const mean = s / ws, d = f[c * NR + k] - mean;
+      out[c * NR + k] = mean + (d > clip ? clip : d < -clip ? -clip : d);
+    }
+    return out;
+  };
+  // lambda as the flow has it: the steady structure at each node's shear rate + the averaged deviation
+  const asFlowHas = (r, lam) => { const dev = smooth(Float64Array.from(lam, (l, n) => l - CS_R.rheoLamEq(r.gd[n], S)), r.NC, r.NR); return Float64Array.from(dev, (d, n) => clamp(CS_R.rheoLamEq(r.gd[n], S) + d)); };
   const devAt = (r, lam) => {
     // (the deviation at r's nodes, interpolated to where the solve's nodes start)
     const dev = Float64Array.from(lam, (l, n) => l - CS_R.rheoLamEq(r.gd[n], S));
@@ -331,22 +354,22 @@ function structMarch(S, law, opts = {}) {
       const e = hist[hist.length - 1], first = { g: gridOf(e), len: h };
       const lamAt = (X, Y) => {
         const lp = trace(X, Y, first, nodeHint(rPrev));
-        // (the deviation from the steady structure at the shear rate the flow before had there)
+        // (the deviation from the steady structure at the shear rate the flow before had there, averaged)
         const g = gridOf(e);
-        return (lamAt.last = lp.map((l, m) => { const q = g.locate(X[m], Y[m], Math.floor(m / rPrev.NR), m % rPrev.NR); return l - CS_R.rheoLamEq(g.value(rPrev.gd, q.xi, q.eta), S); }));
+        return (lamAt.last = smooth(lp.map((l, m) => { const q = g.locate(X[m], Y[m], Math.floor(m / rPrev.NR), m % rPrev.NR); return l - CS_R.rheoLamEq(g.value(rPrev.gd, q.xi, q.eta), S); }), rPrev.NC, rPrev.NR));
       };
       return { muL, lamAt };
     },
     correct: (rPrev, tPrev, r, h, devUsed) => {
       const e = hist[hist.length - 1], b = entry(r, tPrev + h);
-      const lam = trace(r.x, r.y, { g: pairGrid(e, b), len: h }, nodeHint(r));
+      const lam = asFlowHas(r, trace(r.x, r.y, { g: pairGrid(e, b), len: h }, nodeHint(r)));
       let diff = 0;
       if (devUsed) for (let n = 0; n < lam.length; n++) diff = Math.max(diff, Math.abs(lam[n] - clamp(CS_R.rheoLamEq(r.gd[n], S) + devUsed[n])));
       return { lam, diff, again: devUsed && diff > tolLam ? { muL, lamAt: devAt(r, lam) } : null };
     },
     accept: (r, t) => { hist.push(entry(r, t)); thin(t); },
     /** A new mesh at time t (the march's newest state carried onto it): lambda at its nodes, and it kept from then on. */
-    remap: (rFrom, rTo, t) => { const lam = trace(rTo.x, rTo.y, null, null); hist.push(entry(rTo, t)); return lam; },
+    remap: (rFrom, rTo, t) => { const lam = asFlowHas(rTo, trace(rTo.x, rTo.y, null, null)); hist.push(entry(rTo, t)); return lam; },
     kept: () => hist.length,
   };
 }
