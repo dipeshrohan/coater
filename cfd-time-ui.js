@@ -110,27 +110,49 @@ const timePathsOn = () => FV.tk != null && (FV.pathlines || FV.streaklines) && t
 /**
  * Location i's paths over its whole march, traced once per seeding: from the streamlines' seeds (automatic, on the flow
  * at t = 0, or yours inside it), each parcel let out at t = 0 and followed to the end (pathlines), and the paste let
- * out there without a break (streaklines). Kept with the march.
+ * out there without a break (streaklines). Kept with the march. Traced in a worker (cfd-paths-worker.js): until it
+ * answers, c.busy; then the plots are drawn again.
  */
 function timePaths(i) {
-  const run = cfdRuns[i], T = run.transient;
-  const frames = T.frames.map((q, k) => ({ t: q.t, f: timeCacheAt(run, k).field })), f0 = frames[0].f;
+  const run = cfdRuns[i], T = run.transient, f0 = timeCacheAt(run, 0).field;
   const manual = FV.seedMode === 'manual' ? FV.manualSeeds.filter(([x, y]) => fieldInside(f0, x, y)) : null;
   const key = manual ? `m|${JSON.stringify(manual)}` : `a|${seedCount()}|${FV.direction}`;
   if (!(T.paths instanceof Map)) T.paths = new Map();
   let c = T.paths.get(key);
-  if (!c) T.paths.set(key, c = { seeds: manual || autoSeeds(f0, seedCount(), FV.direction) });
-  if (FV.pathlines && !c.path) c.path = c.seeds.map(s => tracePathline(frames, s));
-  if (FV.streaklines && !c.streak) c.streak = c.seeds.map(s => traceStreakline(frames, s));
+  if (!c) T.paths.set(key, c = { seeds: manual || autoSeeds(f0, seedCount(), FV.direction), path: null, streak: null, busy: null, error: null });
+  const path = FV.pathlines && !c.path, streak = FV.streaklines && !c.streak;
+  if ((path || streak) && !c.busy && !c.error) {
+    const w = makeWorker('cfd-paths-worker.js');
+    c.busy = { path, streak, w };
+    const done = () => { w.terminate(); c.busy = null; timePathsBusy(); if (T === cfdRuns[i].transient) { renderLegend(); renderFlowPlots(); } };
+    w.onmessage = e => {
+      const m = e.data;
+      if (m.ok) { if (m.path) c.path = m.path; if (m.streak) c.streak = m.streak; }
+      else { c.error = m.error; logCFD(i, `paths in time: ${m.error}`, 'warn'); }
+      done();
+    };
+    w.onerror = e => { e.preventDefault(); c.error = e.message || 'the worker stopped'; logCFD(i, `paths in time: ${c.error}`, 'warn'); done(); };
+    // (each kept time's grid and velocity: what the parcels are moved by)
+    const g = q => ({ grid: q.grid, nx: q.nx, ny: q.ny, gx: q.gx, gy: q.gy, u: q.u, v: q.v, gd: q.gd });
+    w.postMessage({ id: i, frames: T.frames.map(q => ({ t: q.t, g: g(q.g) })), seeds: c.seeds, path, streak });
+    timePathsBusy();
+  }
   return c;
 }
-/** What location i's plot draws of the paths at the time shown (run: the run as shown), or nothing. */
+/** The time bar's note while paths are being traced. */
+function timePathsBusy() {
+  const el = document.getElementById('tPathBusy');
+  if (!el) return;
+  const busy = timeLocs().some(i => { const T = cfdRuns[i].transient; return T.paths instanceof Map && [...T.paths.values()].some(c => c.busy); });
+  el.hidden = !busy;
+}
+/** What location i's plot draws of the paths at the time shown (run: the run as shown), or nothing (yet). */
 function timePathsShown(i, run) {
   if (run.frame == null || !(FV.pathlines || FV.streaklines) || !cfdRuns[i].transient) return {};
   const c = timePaths(i), t = run.t;
   return {
-    pathlines: FV.pathlines ? c.path.filter(p => p.t[0] <= t).map(p => pathTo(p, t)) : null,
-    streaklines: FV.streaklines ? c.streak.flatMap(s => streakAt(s, t)) : null,
+    pathlines: FV.pathlines && c.path ? c.path.filter(p => p.t[0] <= t).map(p => pathTo(p, t)) : null,
+    streaklines: FV.streaklines && c.streak ? c.streak.flatMap(s => streakAt(s, t)) : null,
   };
 }
 
@@ -221,9 +243,11 @@ function renderTimeBar() {
     <span class="t-now">${k == null ? '<b>steady</b>' : `<b>t = ${fmtT(fr[k].t)}</b> of ${fmtT(fr[n - 1].t)}`}</span>
     ${pathChk('tPath', 'Pathlines', FV.pathlines, 'Each parcel of paste from the streamlines\' seeds, let out at t = 0, followed to the time shown; the dot: where it is then')}
     ${pathChk('tStreak', 'Streaklines', FV.streaklines, 'The paste let out at the streamlines\' seeds without a break since t = 0, where it is at the time shown; a bead per parcel')}
+    <span class="fv-why" id="tPathBusy" hidden><i class="spin" aria-hidden="true"></i>tracing the paths…</span>
     <span class="t-what" title="${escAttr(timeWhat(tr))}">${timeWhat(tr)}${stale ? ' · <span class="warn-text">out of date</span>' : ''}${err.length ? ` · <span class="warn-text" title="${escAttr(err.join(' '))}">stopped early</span>` : ''}</span>
   </div>`;
   for (const [id, key] of [['tPath', 'pathlines'], ['tStreak', 'streaklines']]) document.getElementById(id).onchange = e => { FV[key] = e.target.checked; renderLegend(); renderFlowPlots(); };
+  timePathsBusy();
   host.querySelectorAll('[data-tview]').forEach(b => { b.onclick = () => { timeStop(); FV.tk = b.dataset.tview === 'time' ? (FV.tkLast ?? n - 1) : null; timeRedraw(); }; });
   const sl = document.getElementById('tSlider');
   syncSliderFill(sl);

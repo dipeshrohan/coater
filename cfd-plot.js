@@ -470,12 +470,27 @@ function drawFlowPlot(cv, s) {
     c.restore();
   }
 
-  // paths in time (T-6): each parcel's path to the time shown in its own colour over a halo, a dot where it is then;
-  // the streaklines as a bead per parcel on a thin line. Clipped to the plot, not to the fluid's outline at the time
-  // shown: a path went through the outlines of the times before.
+  // paths in time (T-6): the streaklines as beads on a thin line (a bead per parcel, those closer than a few pixels to
+  // the last one drawn left out), then each parcel's path to the time shown in its own colour over a halo, a dot where
+  // it is then. Clipped to the plot, not to the fluid's outline at the time shown: a path went through the outlines of
+  // the times before.
   if (s.pathlines || s.streaklines) {
     const pc = cssVar('--path');
     c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
+    const rb = compact ? 1.3 : 1.8, gap = compact ? 5 : 7;
+    for (const pts of s.streaklines || []) {
+      c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])));
+      c.strokeStyle = surface; c.globalAlpha = 0.6; c.lineWidth = 2.6; c.stroke(); c.globalAlpha = 1;
+      c.strokeStyle = ink; c.lineWidth = 0.9; c.stroke();
+      c.beginPath();
+      let lx = -1e9, ly = -1e9;
+      for (const p of pts) {
+        const px = X(p[0]), py = Y(p[1]);
+        if (Math.hypot(px - lx, py - ly) < gap) continue;
+        lx = px; ly = py; c.moveTo(px + rb, py); c.arc(px, py, rb, 0, 7);
+      }
+      c.fillStyle = surface; c.fill(); c.lineWidth = 0.9; c.strokeStyle = ink; c.stroke();
+    }
     for (const ln of s.pathlines || []) {
       const pts = ln.points;
       if (pts.length > 1) {
@@ -483,16 +498,8 @@ function drawFlowPlot(cv, s) {
         c.strokeStyle = surface; c.globalAlpha = 0.75; c.lineWidth = lw + 2.2; c.stroke(); c.globalAlpha = 1;
         c.strokeStyle = pc; c.lineWidth = lw + 0.4; c.stroke();
       }
-      if (ln.at) { c.beginPath(); c.arc(X(ln.at[0]), Y(ln.at[1]), compact ? 3 : 4, 0, 7); c.fillStyle = pc; c.fill(); c.lineWidth = 1.5; c.strokeStyle = surface; c.stroke(); }
     }
-    const rb = compact ? 1.6 : 2.2;
-    for (const pts of s.streaklines || []) {
-      c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])));
-      c.strokeStyle = surface; c.globalAlpha = 0.75; c.lineWidth = 3.2; c.stroke(); c.globalAlpha = 1;
-      c.strokeStyle = ink; c.lineWidth = 1; c.stroke();
-      c.beginPath(); for (const p of pts) { const px = X(p[0]), py = Y(p[1]); c.moveTo(px + rb, py); c.arc(px, py, rb, 0, 7); }
-      c.fillStyle = surface; c.fill(); c.lineWidth = 1.1; c.strokeStyle = ink; c.stroke();
-    }
+    for (const ln of s.pathlines || []) if (ln.at) { c.beginPath(); c.arc(X(ln.at[0]), Y(ln.at[1]), compact ? 3 : 4, 0, 7); c.fillStyle = pc; c.fill(); c.lineWidth = 1.5; c.strokeStyle = surface; c.stroke(); }
     c.restore();
   }
 

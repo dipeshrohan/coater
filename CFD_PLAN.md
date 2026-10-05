@@ -209,10 +209,14 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
       0.05 s (incompressible);
     - the steady coating flow: parcels keep to their streamlines (psi within 0.02 % of its range) and leave the 2D
       domain in the streamline's own time (0.003 %).
+    - the worker the page uses (cfd-paths-worker.js) gives the same paths, point for point.
   - Page: Coating › 2D › Results, the time bar's Pathlines and Streaklines switches (off while the steady flow is
     shown). From the streamlines' seeds (automatic on the flow at t = 0, or yours), let out at t = 0. Pathlines drawn
-    to the time shown, a dot where each parcel is then; streaklines a bead per parcel. Traced once per run and seeding
-    (kept with the march, not saved in projects); the switches are saved, undone and redone with the view.
+    to the time shown, a dot where each parcel is then; streaklines a bead per parcel, under the pathlines. Traced
+    once per run and seeding in a worker (kept with the march, not saved in projects), "tracing the paths…" on the
+    time bar meanwhile; the switches are saved, undone and redone with the view.
+  - In the app, at the defaults (bead pressure step, 41 kept times, 23 seeds a location): one location's pathlines in
+    about 0.4 s, its streaklines about 1 s; Compare (four locations at once) about 2.3 s, the page held 60 ms.
   - Limits: the velocity is linear in time between kept times (more Times kept: closer paths); parcels are let out at
     t = 0 only.
 

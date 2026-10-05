@@ -285,6 +285,19 @@ console.log('\n-- contour lines and mesh quality (display helpers) --');
     }
     check(out && dev < 1e-3 && dT < 1e-3, `steady coating flow: 12 parcels from under the edge keep to their streamlines (psi within ${(dev * 100).toFixed(4)}% of its range) and leave the 2D domain in the streamline's time (within ${(dT * 100).toFixed(4)}%)`);
   }
+  {
+    // the page traces in a worker (cfd-paths-worker.js) from the kept grids: the same paths, point for point
+    const fs = require('fs'), vm = require('vm'), got = [];
+    const ctx = vm.createContext({ Math, Date, Error, JSON, Array, Object, Number, Float64Array, Float32Array, Int32Array, Uint8Array, Map, Set, Infinity, NaN, console, postMessage: m => got.push(m) });
+    ctx.importScripts = (...fl) => { for (const f of fl) vm.runInContext(fs.readFileSync(__dirname + '/' + f, 'utf8'), ctx); };
+    vm.runInContext(fs.readFileSync(__dirname + '/cfd-paths-worker.js', 'utf8'), ctx);
+    const grids = [coaterGrid(r0, geo), ...m.frames.map(q => q.r)], seeds = autoSeeds(frames[0].f, 6, 'both');
+    ctx.onmessage({ data: { id: 7, frames: grids.map((g, k) => ({ t: frames[k].t, g: { grid: g.grid, nx: g.nx, ny: g.ny, gx: g.gx, gy: g.gy, u: g.u, v: g.v, gd: g.gd } })), seeds, path: true, streak: true } });
+    const a = got[0], same = (p, q) => p.points.length === q.points.length && p.points.every((pt, k) => pt[0] === q.points[k][0] && pt[1] === q.points[k][1]) && p.reason === q.reason;
+    const dp = seeds.map(s => tracePathline(frames, s)), ds = traceStreakline(frames, seeds[2]);
+    check(a && a.ok && a.id === 7 && a.path.every((p, k) => same(p, dp[k])) && a.streak[2].paths.every((p, k) => same(p, ds.paths[k])),
+      `the worker the page uses gives the same pathlines (${a && a.path ? a.path.length : 0}) and streaklines, point for point`);
+  }
 }
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nALL PASS');
 if (fails) process.exit(1);
