@@ -66,7 +66,8 @@ function compactGrid(g) {
  * the web's speed ('web') stepped or ramped from the inputs' value to `to`, or ('rest') the gap filled at rest -- no web
  * speed, the bead pressure the liquid's weight up to the gap -- with the web and the bead pressure ramped up to the
  * inputs'. Returns the record in time (film, contact line, flows in and out, the steps) and the flow at o.time.frames
- * even times (the start first), each as the post-processing grid, or { error }.
+ * even times (the start first), each as the post-processing grid, or { error }. With the structure (o.struct), lambda
+ * goes with the slurry in time (cfd-struct.js's structMarch): each kept time has its lambda and lambda leaving the edge.
  */
 function marchInTime(o, fo, r, geo, shapeProf, onStep) {
   const T = o.time, t0 = Date.now(), Hr = geo.H, rhoG = o.rho * o.g;
@@ -80,19 +81,22 @@ function marchInTime(o, fo, r, geo, shapeProf, onStep) {
   const ramp = t => (T.ramp > 0 ? Math.min(1, t / T.ramp) : 1);
   const at = t => { const k = ramp(t), P = P0 + (P1 - P0) * k; return { U: U0 + (U1 - U0) * k, inlet: { type: 'traction', p: y => P - rhoG * y } }; };
   const g0 = { xe: geo.xe, H: Hr, faceDeg: o.exitAngle, contactDeg: o.contactDeg, U: U1 };
+  const carry = o.struct ? structMarch(o.struct, rheoCompile(o.muRef, o.ty, o.n, o.rheoX)) : null;
+  const cornerOf = info => (info && info.meshInfo ? info.meshInfo : r0.meshInfo).cCorner;
   // (a time step's grid: its own mesh's layout and the contact line's mode, the surface's angle where it leaves it)
   const leave = (rr, cCL) => { const NR = rr.NR, d = [-1.5, 2, -0.5]; let tx = 0, ty = 0; for (let a = 0; a < 3; a++) { const n = (cCL + a) * NR + NR - 1; tx += rr.x[n] * d[a]; ty += rr.y[n] * d[a]; } return Math.atan2(ty, tx) * 180 / Math.PI; };
   const frame = (rr, info) => {
     const full = info ? { ...rr, meshInfo: info.meshInfo, meniscus: { ...r0.meniscus, mode: info.mode, s: rr.surface.s, leaveDeg: leave(rr, info.meshInfo.cCL) } } : rr;
-    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full) };
+    const st = rr.lam && carry ? { struct: { ...(r.struct || {}), S: o.struct, lamEdge: structColumn(rr, rr.lam, cornerOf(info)), lamEnd: structColumn(rr, rr.lam, rr.NC - 1) } } : {};
+    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full), ...st };
   };
   const n = Math.max(2, Math.round(T.frames)), times = Array.from({ length: n }, (_, k) => (k + 1) * T.end / n);
   const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0,
-    keep: (rr, t, info) => frame(rr, info), onStep });
+    keep: (rr, t, info) => frame(rr, info), onStep, ...(carry ? { carry, track: (rr, info) => structColumn(rr, rr.lam, cornerOf(info)) } : {}) });
   return {
     scen: T.scen, end: T.end, ramp: T.ramp, P0, P1, U0, U1, slip: T.slip || 0, auto: !!T.auto, tol: T.tol, dtSet: T.dt, ms: Date.now() - t0,
     t: m.t, dt: m.dt, s: m.s, Qin: m.Qin, Qout: m.Qout, area: m.area, err: m.err, iterations: m.iterations, mode: m.mode,
-    hOut: m.top.map(q => q.y[q.y.length - 1]),
+    hOut: m.top.map(q => q.y[q.y.length - 1]), ...(carry ? { lamEdge: m.track, corrected: m.corrected } : {}),
     remeshes: m.remeshes, steps: m.steps, rejected: m.rejected, failed: m.failed, completed: m.completed, error: m.error || null,
     frames: [{ t: 0, g: frame(r0, null) }, ...m.frames.map(q => ({ t: q.t, g: q.r })),
       // (a march stopped early: its last state too, the flow it stopped at)

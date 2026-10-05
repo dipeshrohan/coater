@@ -1875,6 +1875,7 @@ function refineCoaterFEM(r, extra) {
   const r2 = solveFEM({ ...r.call, init: r.state, initNodal: undefined, ...extra });
   if (!r2 || !r2.x) return r2;
   Object.defineProperty(r2, 'call', { value: { ...r.call, ...extra }, enumerable: false });
+  if (r.relayout) Object.defineProperty(r2, 'relayout', { value: r.relayout, enumerable: false });   // (the same mesh: its layout for a march in time)
   r2.meshInfo = r.meshInfo;
   if (r.meshDef) r2.meshDef = r.meshDef;
   const cCL = r.meshInfo.cCL, NR = r2.NR, d = dq2(-1);

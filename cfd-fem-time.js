@@ -58,6 +58,13 @@ const femFlows = r => ({ Qin: r.psi[r.NR - 1], Qout: r.psi[(r.NC - 1) * r.NR + r
  *   maxSteps  (default 20000); maxIter: Newton per step (default 12)
  *   faceSlip  slip length (m) on the exit face below the contact line (solveFEM's faceSlip), for the whole march
  *   onStep(rec)  after each accepted step; return false to stop
+ *   carry     a field the slurry carries with it, at the nodes as r.lam (the structure: cfd-struct.js's structMarch):
+ *             start(r0, t0) -> the field at the start; fixed(r) (the solve's options with r's own field); predict(rPrev,
+ *             tPrev, h) (the step's solve options; its lamAt keeps what it handed the solve as lamAt.last); correct(rPrev,
+ *             tPrev, r, h, used) -> { lam, again } (the field after the step; again: options to solve the step once more
+ *             with); accept(r, t) (a step taken); remap(rFrom, rTo, t) (onto a new mesh). (Not in the step's error: it
+ *             follows the flows the steps give.)
+ *   track(r, info)  a number recorded for each accepted step (out.track), from its result and its mesh's layout
  *   remesh    (a solveCoaterFEM start, which carries r0.relayout) default true: when the moving mesh has lost half
  *             its shape quality (femQuality), or the contact line has moved a quarter of the way from where its
  *             mesh was laid out, a new mesh is laid out along the surface as it is and the state carried over
@@ -85,6 +92,8 @@ function femMarch(r0, opts = {}) {
   const keep = opts.keep || (r => r);
   const freeOf = r => { const f = []; for (let c = 0; c < r.NC; c++) if (r.surface && r.surface.h[c] !== 0) f.push(c); return f; };
   let free = freeOf(r0);
+  const carry = opts.carry || null;
+  if (carry) { r0.lam = carry.start(r0, opts.t0 ?? 0); call = { ...call, ...carry.fixed(r0) }; }
 
   // the mesh as laid out (solveCoaterFEM's start): its mode, contact-line spine, quality and contact line then
   const relayout = opts.remesh !== false && typeof r0.relayout === 'function' ? r0.relayout : null;
@@ -95,12 +104,13 @@ function femMarch(r0, opts = {}) {
   // history, newest first: { t, r }
   let hist = [{ t: t0, r: r0 }];
   if (opts.earlier) hist.push({ t: t0 - opts.earlier.dt, r: opts.earlier.r });
-  const out = { t: [], dt: [], h: [], top: [], s: [], Qin: [], Qout: [], area: [], err: [], iterations: [], mode: [], frames: [], remeshes: [], steps: 0, rejected: 0, failed: 0, completed: false };
+  const out = { t: [], dt: [], h: [], top: [], s: [], Qin: [], Qout: [], area: [], err: [], iterations: [], mode: [], frames: [], remeshes: [], track: [], steps: 0, rejected: 0, failed: 0, corrected: 0, completed: false };
   const record = (t, r, dt, err) => {
     const f = femFlows(r), NR = r.NR, x = new Float64Array(r.NC), y = new Float64Array(r.NC);
     for (let c = 0; c < r.NC; c++) { x[c] = r.x[c * NR + NR - 1]; y[c] = r.y[c * NR + NR - 1]; }
     out.t.push(t); out.dt.push(dt); out.h.push(Float64Array.from(r.surface ? r.surface.h : [])); out.top.push({ x, y }); out.s.push(r.surface ? r.surface.s : 0);
     out.Qin.push(f.Qin); out.Qout.push(f.Qout); out.area.push(femArea(r)); out.err.push(err); out.iterations.push(r.iterations || 0); out.mode.push(mode);
+    if (opts.track) out.track.push(opts.track(r, { mode, meshInfo: mInfo }));
   };
   record(t0, r0, 0, 0);
 
@@ -136,12 +146,13 @@ function femMarch(r0, opts = {}) {
   };
   // a new mesh along the newest state's surface (toMode: switch pinned / climbed); false when none could be laid out
   const remeshNow = (t, why, toMode) => {
-    const res = relayout(hist[0].r, call, layout, toMode);
+    const res = relayout(hist[0].r, carry ? { ...call, ...carry.fixed(hist[0].r) } : call, layout, toMode);
     if (!res || res.error) { out.error = `at t = ${t.toPrecision(6)} s the mesh could not be laid out again (${res ? res.error : 'no layout'}; ${why})`; return false; }
     if (!(res.layout.quality >= (opts.minQuality ?? 0.1))) {
       out.error = `at t = ${t.toPrecision(6)} s no mesh along the surface keeps its shape (quality ${res.layout.quality.toFixed(3)}; ${why}): the surface by the contact line has turned too steep for the spines -- a film running down the exit face -- not followed further`;
       return false;
     }
+    if (carry && res.r) res.r.lam = carry.remap(hist[0].r, res.r, t);
     call = quiet(res.call); layout = res.layout; mode = res.mode; cCL = res.r.meshInfo.cCL; mInfo = res.r.meshInfo;
     qLay = res.layout.quality; sLay = res.r.surface.s; free = freeOf(res.r);
     hist = [{ t, r: res.r }];
@@ -160,12 +171,21 @@ function femMarch(r0, opts = {}) {
     let r = null, why = '';
     const o = { ...call, ...(opts.at ? opts.at(tn) : {}) };
     if (o.U) o.flatEnd = false;
-    const step = more => FT_.solveFEM({ ...o, maxIter: more ? Math.max(40, maxIter) : maxIter, ...(more ? { homotopy: true } : {}), init: guess(h),
+    const ext = carry ? carry.predict(hist[0].r, t, h) : null;
+    const step = (more, extra = ext) => FT_.solveFEM({ ...o, ...(extra || {}), maxIter: more ? Math.max(40, maxIter) : maxIter, ...(more ? { homotopy: true } : {}), init: guess(h),
       time: { t: tn, dt: h, dtPrev: two ? hist[0].t - hist[1].t : 0, prev: two ? [hist[0].r, hist[1].r] : [hist[0].r] } });
     try { r = step(false); } catch (e) { r = null; why = e.message; }
     // (a jump in what is imposed -- a step of the web's speed on a yield-stress paste -- is not made smaller by a shorter
     // step: Newton needs more of its own steps from the state before; the same step once more with them and the homotopy)
     if (!r || !r.converged) { try { const r2 = step(true); if (r2 && r2.converged) { r = r2; why = ''; } } catch (e) { why = why || e.message; } }
+    // (a carried field: along the step's own flow; once more with it where it moved more than the solve was handed)
+    if (r && r.converged && carry) {
+      let c = carry.correct(hist[0].r, t, r, h, ext.lamAt && ext.lamAt.last);
+      if (c.again) {
+        try { const r2 = step(false, c.again); if (r2 && r2.converged) { r = r2; c = carry.correct(hist[0].r, t, r2, h, null); out.corrected++; } } catch (e) { /* the first stands */ }
+      }
+      r.lam = c.lam;
+    }
     if (!r || !r.converged) {
       out.failed++;
       // (the mesh may be what fails: lay it out again once, then shorter steps)
@@ -181,6 +201,7 @@ function femMarch(r0, opts = {}) {
     }
     // accept
     t = tn; out.steps++; fresh = false;
+    if (carry) carry.accept(r, t);
     hist.unshift({ t, r }); if (hist.length > 3) hist.length = 3;
     record(t, r, h, lte ?? 0);
     if (iOut < times.length && Math.abs(t - times[iOut]) <= 1e-9 * span) { out.frames.push({ t, r: keep(r, t, { mode, meshInfo: mInfo }) }); iOut++; }
