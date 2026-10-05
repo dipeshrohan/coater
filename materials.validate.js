@@ -42,6 +42,18 @@ const at40 = () => withV({ phi: 40 });   // (the worked cases' slurry: 40 vol% s
   check('  twice the film: twice everything; twice the speed too: four times the water per second', close(b2.dry, 2 * b.dry) && close(b2.coatDry, 2 * b.coatDry) && close(b2.waterRate, 4 * b.waterRate));
   const tight = M.massBalance(h, U, W, withV({ phi: 40, phiDry: 1 }));
   check('  packed solid (1.0): the dry film is the solids\' own volume', close(tight.dry, 40e-6) && close(tight.rhoDry, 1900));
+  // (the dry film in the room and as a gauge reads it: its water by the GAB isotherm at the room's humidity, worked by hand)
+  const g = M.matDefaults(), cap = 0.9 * (1 - 0.85) / 0.85 * 1000 / 1900, gabAt = rh => { const Ka = rh * g.dry.gabK.v; return g.dry.gabXm.v * g.dry.gabC.v * Ka / ((1 - Ka) * (1 - Ka + g.dry.gabC.v * Ka)); };
+  g.dry.rhRoom.v = 20;
+  check('the dry film\'s water in a room at 20 %: the GAB isotherm (under its pores\' cap)', close(M.matRoomWater(g), gabAt(0.2)) && gabAt(0.2) < cap, `${(M.matRoomWater(g) * 100).toFixed(2)} % of the GO`);
+  g.dry.rhRoom.v = 50;
+  check('  at the room\'s 50 %: the isotherm gives more than the pores hold (0.9 of them full), so the cap: as the cut pieces\' (8.36 %)',
+    gabAt(0.5) > cap && close(M.matRoomWater(g), cap), `isotherm ${(gabAt(0.5) * 100).toFixed(2)} %, cap ${(cap * 100).toFixed(2)} %`);
+  const b3 = M.massBalance(h, U, W, d);
+  check('  in the room the film weighs its GO and that water', close(b3.coatRoom, b3.coatDry * (1 + M.matRoomWater(d))));
+  const yours = withV({ rhoGauge: 2.4 / 0.09 / 60e-6 / 1e6 });
+  check('your piece: 2.4 g on 300 × 300 mm, at the density it gives, reads 60 µm', close(M.matGaugeThickness(2.4e-3 / 0.09, yours), 60e-6), `${(M.matGaugeThickness(2.4e-3 / 0.09, yours) * 1e6).toFixed(3)} µm`);
+  check('  the gauge thickness = the weight in the room over the gauge density (0.44 g/cm³ by default)', close(b3.gauge, b3.coatRoom / 1000 / 440) && d.slurry.rhoGauge.v === 0.44);
 }
 
 // 3. the oven
