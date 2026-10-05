@@ -12,9 +12,8 @@ keeps it up to date in each pull request. The order and the tasks change only af
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
-| 2b | Furnace: fit the weight kept to your 1.03 g | Small to medium | Next | Nothing |
-| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Waiting for your picture | The picture of the piece before and after the pre heat |
-| 3 | Paths of paste parcels in the 2D coating flow in time | Small to medium | To do | Nothing |
+| 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
+| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Next | Your answers on the pictures |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
@@ -38,32 +37,31 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 24 | A full viewer on every geometry, mesh and result display | Large | To do | Answers on the list of displays |
 | 25 | Structured block meshing (ANSA level) | Very large | To do | Nothing to start |
 
-## 2b. Furnace: fit the weight kept to your 1.03 g
+## 2b. Furnace: the weight your piece keeps (1.03 g)
 - **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the
-  GO's carbon as gas. Yours comes out at 1.03 g, keeping nearly all its carbon.
-- **Your choice**: fit the app to your weight.
-- **Left**:
-  - set the Furnace card's mass shares (editable) so that 2.4 g comes out at 1.03 g;
-  - show the graphene film's thickness, density and puffing before and after, with screenshots.
+  GO's carbon as gas. Yours comes out at 1.03 g.
+- **You said**: the physics should give your value, not a fit to it; the GO's spec (51 % carbon) is right; check the
+  weights.
+- **Found**: at 2800 °C only carbon stays. The oxygen leaves as water (as far as the hydrogen goes), CO or CO₂, and takes
+  carbon with it.
+  - With 51 % carbon, the most the piece can keep is 36.8 % of its dry GO (0.82 g), and only if all that oxygen left
+    as CO₂.
+  - Above 700 °C it leaves as CO, which leaves about 31 % (0.69 g).
+  - 1.03 g needs about 61 % carbon in the GO.
+- **Waiting for**: one piece weighed before and after the furnace (the same piece), and whether paper sticks to it.
+- **Left**: compare the app with the weights; change the furnace's chemistry only where the weights show a gap.
 
 ## 2c. Pre heat: your piece loses 0.4 g, the app only water
 - **Now**: your piece goes from 2.4 g to 2.0 g in the pre heat and stays there after cooling. The app removes only
   water (0.18 g), and the piece takes it back under the plate (2.51 g). 0.4 g is more than all the piece's water
   (0.19 g).
 - **You said**: its colour changes. You will send a picture.
+- **Got**: the pictures of the same piece after cutting and after the pre heat (a close-up); both kept out of the
+  repository and the app.
 - **Left**:
-  - from the picture, find what the GO does at 100 °C;
+  - from the pictures, find what the GO does at 100 °C;
   - ask you about the change, with screenshots;
   - build it, with checks.
-
-## 3. Paths of paste parcels in the 2D coating flow in time
-- **Built**: the 2D coating flow in time (Transient) keeps the flow at every step.
-- **Left**:
-  - trace parcels of paste through the changing flow (pathlines);
-  - trace the line of paste let out from one point (streaklines);
-  - draw both on Results with the time bar, checked against exact paths.
-- **Also**: the Pathlines switch now says "steady solver: not available", even after a Transient run. It changes with
-  this task.
 
 ## 4. Faster tetrahedral mesher
 - **Now**: the mesher's smoothing rounds rebuild the whole mesh after each round. That is about 40 % of its time (35 s
@@ -245,6 +243,9 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- Paths of paste parcels in the 2D coating flow in time (was task 3): Coating › 2D › Results, the time bar's Pathlines
+  and Streaklines switches, with a run in time (Solve › Time: Transient). The parcels start at the streamlines' seeds at
+  t = 0. Checked against exact paths, and on a coating flow in time (rings of parcels keep their area).
 - Coating start-up in 1D (was task 1): Coating › 1D › Pool and feed, "From the first pulse".
 - Dry film as a gauge reads it (was task 2a): Coating › Results › Wet and dry film and the Line page show it next to the
   packed layer (63 µm against 16 µm at the defaults), from the dry film's density as a gauge reads it (Materials › Dried GO

@@ -724,6 +724,154 @@ function streamlinePsiDeviation(f, line) {
   return dev / (range || 1);
 }
 
+// ---------------------------------------------------------------- paths in time (T-6)
+/*
+ * Paths of paste parcels through a flow that changes in time. The flow is kept at even times: frames, [{ t, f }], each f
+ * a makeFlowField of that time's grid, the times rising. Between two kept times the velocity is linear in time, each
+ * read on its own grid (the free surface moves, so the grids differ); where a point is inside the fluid at only one of
+ * the two, that one's. Before the first kept time the flow is the first's (steady before the change), after the last
+ * the last's.
+ */
+
+/** Grid-index coordinates of (x, y) in field f, or null outside its fluid. */
+const idxInside = (f, x, y) => { if (f.curv) return f.locate(x, y); return fieldInside(f, x, y) ? toIndex(f, x, y) : null; };
+
+/** The velocity at grid index (a, b) mapped into index space (cells per second). */
+function idxVelocity(f, a, b, u, v) {
+  if (f.curv) return f.idxVel(a, b, u, v);
+  const H = colInterp(f.h, a), Hp = colInterp(f.hx, a);
+  return [u / f.dx, (f.ny - 1) * (v - (b / (f.ny - 1)) * Hp * u) / H];
+}
+
+/** The kept times around t: [k0, k1, w], the velocity (1 - w) of frame k0's and w of frame k1's. */
+function frameBracket(frames, t) {
+  const n = frames.length;
+  if (n === 1 || t <= frames[0].t) return [0, Math.min(1, n - 1), 0];
+  if (t >= frames[n - 1].t) return [n - 1, n - 1, 0];
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (frames[m].t <= t) lo = m; else hi = m; }
+  return [lo, hi, (t - frames[lo].t) / (frames[hi].t - frames[lo].t)];
+}
+
+/**
+ * The velocity at (x, y) at time t: { u, v, f, at } (f the kept time's field nearer t that has the point, at its grid
+ * index there), or null where the point is outside the fluid at both kept times around t.
+ */
+function frameVelocity(frames, x, y, t) {
+  const [k0, k1, w] = frameBracket(frames, t);
+  const f0 = frames[k0].f, f1 = frames[k1].f;
+  const a = w < 1 ? idxInside(f0, x, y) : null, b = k1 !== k0 && w > 0 ? idxInside(f1, x, y) : null;
+  if (!a && !b) {
+    // (exactly at a kept time: the next one's grid, if the point is in it)
+    const c = k1 !== k0 && w === 0 ? idxInside(f1, x, y) : null;
+    return c ? { u: sampleIdx(f1, f1.u, c[0], c[1]), v: sampleIdx(f1, f1.v, c[0], c[1]), f: f1, at: c } : null;
+  }
+  if (!b) return { u: sampleIdx(f0, f0.u, a[0], a[1]), v: sampleIdx(f0, f0.v, a[0], a[1]), f: f0, at: a };
+  if (!a) return { u: sampleIdx(f1, f1.u, b[0], b[1]), v: sampleIdx(f1, f1.v, b[0], b[1]), f: f1, at: b };
+  const u = (1 - w) * sampleIdx(f0, f0.u, a[0], a[1]) + w * sampleIdx(f1, f1.u, b[0], b[1]);
+  const v = (1 - w) * sampleIdx(f0, f0.v, a[0], a[1]) + w * sampleIdx(f1, f1.v, b[0], b[1]);
+  return w < 0.5 ? { u, v, f: f0, at: a } : { u, v, f: f1, at: b };
+}
+
+/**
+ * A parcel's path (pathline) from seed at time opts.t0 (default the first kept time) to opts.t1 (default the last),
+ * integrated in time by Dormand-Prince 5(4) (cfd-ode.js) on (x, y, t): each step's error within opts.tol (1e-4) of a
+ * cell of the grid it starts in, at most opts.stepCells (0.5) cells long, and ending on every kept time it reaches (the
+ * velocity has a kink in time there). A step that would take the parcel out of the fluid is cut back until it is
+ * shorter than opts.hMin (1e-6) of a kept interval: the parcel then leaves there.
+ * Returns { seed, t0, points: [[x, y], ...], t: [s, ...] (each point's time), reason: 'time' (in the fluid at t1) |
+ * 'left' | 'outside' (the seed is not in the fluid), out: where it left -- 'inlet' (back to the pool), 'outlet' (on with
+ * the film) or 'wall' -- tEnd }.
+ */
+function tracePathline(frames, seed, opts = {}) {
+  const O = FV_ODE, n = frames.length;
+  const t0 = opts.t0 ?? frames[0].t, t1 = opts.t1 ?? frames[n - 1].t;
+  const tol = opts.tol ?? 1e-4, stepCells = opts.stepCells ?? 0.5, maxSteps = opts.maxSteps ?? 50000;
+  const span = n > 1 ? (frames[n - 1].t - frames[0].t) / (n - 1) : Math.max(1e-12, t1 - t0);
+  const hMin = (opts.hMin ?? 1e-6) * span;
+  const pts = [[seed[0], seed[1]]], ts = [t0];
+  const done = (reason, out = null) => ({ seed, t0, points: pts, t: ts, reason, out, tEnd: ts[ts.length - 1] });
+  let q = frameVelocity(frames, seed[0], seed[1], t0);
+  if (!q) return done('outside');
+  const fn = (s, o) => { const r = frameVelocity(frames, s[0], s[1], s[2]); if (!r) return false; o[0] = r.u; o[1] = r.v; o[2] = 1; return true; };
+  let x = seed[0], y = seed[1], t = t0, h = Infinity;
+  for (let step = 0; step < maxSteps && t < t1; step++) {
+    // the cells here: the step's longest (stepCells at this speed) and the error's unit (the finer direction's size)
+    const iv = idxVelocity(q.f, q.at[0], q.at[1], q.u, q.v), rate = Math.max(Math.abs(iv[0]), Math.abs(iv[1]));
+    const ex = idxVelocity(q.f, q.at[0], q.at[1], 1, 0), ey = idxVelocity(q.f, q.at[0], q.at[1], 0, 1);
+    const cell = 1 / Math.max(Math.hypot(ex[0], ex[1]), Math.hypot(ey[0], ey[1])), errMax = tol * cell;
+    // (the next kept time after t: the step ends there at the latest)
+    const [k0, k1] = frameBracket(frames, t);
+    let tNext = t1;
+    for (const k of [k0, k1, k1 + 1]) if (k < n && frames[k].t > t) { tNext = Math.min(t1, frames[k].t); break; }
+    let hh = Math.min(h, rate > 0 ? stepCells / rate : Infinity, tNext - t), st = null;
+    for (;;) {
+      st = O.odeDP45(fn, [x, y, t], hh, 3);
+      if ((st && st.err <= errMax) || hh < hMin) break;
+      hh = st ? Math.min(0.9 * hh, O.odeNextH(hh, st.err, errMax)) : 0.5 * hh;
+    }
+    if (!st) {
+      const f = q.f, at = idxInside(f, x, y) || q.at;
+      return done('left', at[0] < 1 ? 'inlet' : at[0] > f.nx - 2 ? 'outlet' : 'wall');
+    }
+    x = st.y[0]; y = st.y[1]; t = hh === tNext - t ? tNext : t + hh;
+    pts.push([x, y]); ts.push(t);
+    h = Math.min(O.odeNextH(hh, st.err, errMax), 5 * hh);
+    q = frameVelocity(frames, x, y, t);
+    if (!q) { const f = frames[frameBracket(frames, t)[0]].f, at = f.nearest(x, y); return done('left', at[0] < 1 ? 'inlet' : at[0] > f.nx - 2 ? 'outlet' : 'wall'); }
+  }
+  return done(t >= t1 ? 'time' : 'steps');
+}
+
+/** A parcel's position at time t on its path (linear between the path's points), or null: not yet let out, or gone. */
+function pathAt(p, t) {
+  const ts = p.t, n = ts.length;
+  if (!(t >= ts[0]) || t > ts[n - 1]) return null;
+  let lo = 0, hi = n - 1;
+  if (t === ts[hi]) return p.points[hi];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ts[m] <= t) lo = m; else hi = m; }
+  const a = ts[hi] > ts[lo] ? (t - ts[lo]) / (ts[hi] - ts[lo]) : 0, P = p.points[lo], Q = p.points[hi];
+  return [P[0] + a * (Q[0] - P[0]), P[1] + a * (Q[1] - P[1])];
+}
+
+/** A path up to time t: its points so far and the parcel's place at t (null if it has left by then). */
+function pathTo(p, t) {
+  const pts = [];
+  for (let k = 0; k < p.t.length && p.t[k] <= t; k++) pts.push(p.points[k]);
+  const at = pathAt(p, t);
+  if (at && pts.length && (at[0] !== pts[pts.length - 1][0] || at[1] !== pts[pts.length - 1][1])) pts.push(at);
+  return { points: pts, at };
+}
+
+/**
+ * A streakline: the paste let out at seed without a break from opts.t0 (default the first kept time), as parcels let
+ * out every opts.every (default half a kept interval), each followed to opts.t1 (default the last kept time) by
+ * tracePathline (its opts too). streakAt gives the line at any time between.
+ */
+function traceStreakline(frames, seed, opts = {}) {
+  const n = frames.length, t0 = opts.t0 ?? frames[0].t, t1 = opts.t1 ?? frames[n - 1].t;
+  const span = n > 1 ? (frames[n - 1].t - frames[0].t) / (n - 1) : t1 - t0;
+  const m = Math.max(1, Math.round((t1 - t0) / (opts.every ?? 0.5 * span)));
+  const releases = [], paths = [];
+  for (let r = 0; r <= m; r++) { const tr = r === m ? t1 : t0 + (t1 - t0) * r / m; releases.push(tr); paths.push(tracePathline(frames, seed, { ...opts, t0: tr, t1 })); }
+  return { seed, t0, t1, releases, paths };
+}
+
+/** A streakline at time t: the parcels let out by t still in the fluid, from the seed out, as polylines (split where parcels have gone). */
+function streakAt(s, t) {
+  const lines = [];
+  let cur = [];
+  for (let r = s.releases.length - 1; r >= 0; r--) {
+    if (s.releases[r] > t) continue;
+    const q = pathAt(s.paths[r], t);
+    if (!q) { if (cur.length > 1) lines.push(cur); cur = []; continue; }
+    cur.push(q);
+  }
+  if (cur.length > 1) lines.push(cur);
+  return lines;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation, streamlineTimes, residenceTimes, contourLines, meshQuality };
+  module.exports = { makeFlowField, sampleField, bladeHeightAt, fieldInside, fieldOutline, traceStreamline, autoSeeds, sampleVectors, flowMetrics, findEddyCentres, streamlinePsiDeviation, streamlineTimes, residenceTimes, contourLines, meshQuality,
+    frameVelocity, tracePathline, pathAt, pathTo, traceStreakline, streakAt };
 }

@@ -187,6 +187,38 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
     - each gap is filled from its inlet to its front;
     - the film leaves on the web at the web's speed (no levelling in it here).
   - Next: the same start in 2D with a moving front.
+- T-6 built (5 Oct): pathlines and streaklines through the 2D flow in time (task 3 of TASKS.md).
+  - The engine (cfd-flowviz.js, pure, no DOM):
+    - frameVelocity: the velocity at (x, y, t) from the kept times around t, linear in time, each read on its own grid
+      (the free surface moves, so the grids differ). Where the point is in only one of the two, that one's; in neither,
+      none (the parcel has left).
+    - tracePathline: Dormand-Prince 5(4) (cfd-ode.js) on (x, y, t). Each step's error within 1e-4 of the local cell, at
+      most half a cell long, and ending on every kept time (the velocity's kink in time). A step that would leave the
+      fluid is cut back to a millionth of a kept interval; the parcel then leaves (through the inlet, the outflow or a
+      wall).
+    - traceStreakline: a parcel let out at the seed every half kept interval, each followed as a pathline; streakAt
+      gives the line at any time. pathAt / pathTo: a parcel's place at a time, a path drawn to a time.
+  - Checks (cfd-flowviz.validate.js), on curved Q2 grids that differ at each kept time:
+    - a uniform flow speeding up linearly in time, 4.6e-16 m (exact: the blend in time is exact);
+    - a rotation turning faster in time, on the exact circle and angle to 1.3e-8 of the radius;
+    - a shear changing as a sine in time: second order in the kept interval (2.00, 2.00);
+    - the top coming down through a parcel: on its path to 2e-16 m, leaves within one kept interval of the top passing;
+    - the swinging flow u = U, v = V0 sin(w t): the streakline on the exact wave, the pathline on its own curve, both
+      second order (2.00);
+    - a coating flow marched in time (cfd-fem-time.js 5's): rings of 400 parcels keep their area within 0.1 % over
+      0.05 s (incompressible);
+    - the steady coating flow: parcels keep to their streamlines (psi within 0.02 % of its range) and leave the 2D
+      domain in the streamline's own time (0.003 %).
+    - the worker the page uses (cfd-paths-worker.js) gives the same paths, point for point.
+  - Page: Coating › 2D › Results, the time bar's Pathlines and Streaklines switches (off while the steady flow is
+    shown). From the streamlines' seeds (automatic on the flow at t = 0, or yours), let out at t = 0. Pathlines drawn
+    to the time shown, a dot where each parcel is then; streaklines a bead per parcel, under the pathlines. Traced
+    once per run and seeding in a worker (kept with the march, not saved in projects), "tracing the paths…" on the
+    time bar meanwhile; the switches are saved, undone and redone with the view.
+  - In the app, at the defaults (bead pressure step, 41 kept times, 23 seeds a location): one location's pathlines in
+    about 0.4 s, its streaklines about 1 s; Compare (four locations at once) about 2.3 s, the page held 60 ms.
+  - Limits: the velocity is linear in time between kept times (more Times kept: closer paths); parcels are let out at
+    t = 0 only.
 
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),

@@ -2894,6 +2894,18 @@ canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
   border: 1px dashed var(--line); border-radius: 8px; background: var(--soft); color: var(--muted); font-size: 13px; text-align: center; }
 
 /* Coating › 2D in time (cfd-time-ui.js): the time bar over the plots, the Time card on Solve, the Time tab */
+/* (the parcels' paths drawn over the flow, T-6: a colour none of the colour maps has) */
+:root { --path: #c026d3; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --path: #e879f9; } }
+:root[data-theme="dark"] { --path: #e879f9; }
+.lg-line.lg-path { background: var(--path); height: 2.4px; position: relative; margin-right: 3px; }
+.lg-line.lg-path::after { content: ''; position: absolute; right: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--path); box-shadow: 0 0 0 1.5px var(--surface); }
+.lg i.lg-streak { width: 24px; height: 6px; display: inline-flex; justify-content: space-between; align-items: center; background: linear-gradient(var(--ink), var(--ink)) center / 100% 1px no-repeat; }
+.lg-streak b { width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1.1px solid var(--ink); background: var(--surface); }
+.time-bar .fv-chk { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.time-bar .fv-chk.is-off { color: var(--muted); }
+.time-bar #tPathBusy { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.time-bar #tPathBusy[hidden] { display: none; }
 #cfdTimeBar[hidden] { display: none !important; }
 #cfdWb:not([data-step="results"]) #cfdTimeBar { display: none !important; }
 .viewport #cfdTimeBar { flex: 0 0 auto; }
