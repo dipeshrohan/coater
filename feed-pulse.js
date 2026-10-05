@@ -133,7 +133,129 @@ function feedOutlets(o, cycle) {
   return { entry, q, v0, fall, depth, vLand, dLand, pLand: o.rho * vLand * vLand / 2, checks };
 }
 
+/**
+ * The start-up (the owner: time starts when the web is running and the paste is fed in): the web runs, the gap and the
+ * pool are empty, the pump's pulses start. The pool fills as in the cycle (feedCycle's volume balance, A(h) dh/dt = in −
+ * out); at each location the paste is drawn into the gap from its inlet, its front moving along under the blade at the
+ * flow over the gap's height there, the flow the 1D's (the stations' exact profiles, cfd-1d.js's gapTable1D) between the
+ * pool's head ρ g h at the inlet (the 1D's bead pressure) and, at the front, its meniscus across the gap (p = −γ (cos θweb +
+ * cos θblade) / gap: suction); when the front reaches the edge the film starts on the web, the flow then the 1D's between
+ * the pool's head and the edge (p = 0, as the steady 1D). While the pool is empty the gaps take what the pulse brings, no
+ * more, shared as they would draw it. The camera fires a pulse when the level is at or below its own, the pump waiting
+ * `pause` after a pulse before the next: at start-up, pulse after pulse until the level is up; then the cycle as
+ * feedCycle's. RK4, the step at most dt and a tenth of each front's own run so far; a pulse's end, the camera's level and a
+ * front reaching the edge landed on (secant).
+ * o: { W, U, rho, g, area (h -> m²: the pool's top outside the gaps the fronts fill, upstream of the 1D's inlet), V (m³ a
+ *   pulse), tau (s), pause (s, default 0), hCam (m, the camera's level: feedCycle's hLow), locs: [{ T (gapTable1D), gamma,
+ *   thWeb, thBlade (deg) }], dt (s; default tau / 100), cyclesAfter (the camera's pulses followed once the level is first
+ *   up, default 3), tEnd (s, instead), tMax (s, default 3600), h0, xf0 (m, a start other than empty: the checks) }
+ * Returns { t, h, Qin, Qout (arrays), locs: [{ xf, q, film (null until the front is at the edge), tEdge }], pulses (their
+ *   start times), tCam (the level first at the camera's), volIn, volOut, volGaps (m³), Lx, completed } or { error }.
+ */
+function feedStartup(o) {
+  const gapTableQ = typeof globalThis.gapTableQ === 'function' ? globalThis.gapTableQ : require('./cfd-1d.js').gapTableQ;
+  const { W, U, rho, g, area, V, tau } = o, pause = o.pause || 0, hCam = o.hCam, locs = o.locs, n = locs.length;
+  if (!(V > 0 && tau > 0 && U > 0 && W > 0 && n > 0)) return { error: 'the pulse, the web\'s speed, the width and the locations must be given' };
+  const Qp = V / tau, dt0 = o.dt || tau / 100, tMax = o.tMax || 3600, cyclesAfter = o.cyclesAfter ?? 3, Lx = locs.map(L => L.T.Lx);
+  const suction = locs.map(L => L.gamma * (Math.cos(L.thWeb * Math.PI / 180) + Math.cos(L.thBlade * Math.PI / 180)));
+  // the flows and the rates of change at y = [h, xf_1..xf_n] with Qin coming in; front[i]: location i's paste still a front
+  // in the gap (fixed over a step, so the step that brings a front to the edge is smooth to it)
+  const rates = (y, Qin, front) => {
+    const h = Math.max(y[0], 0), qs = new Float64Array(n);
+    let demand = 0;
+    for (let i = 0; i < n; i++) {
+      const T = locs[i].T, xf = front[i] ? y[1 + i] : Lx[i];
+      qs[i] = gapTableQ(T, Math.min(xf, Lx[i]), rho * g * h + (front[i] ? suction[i] / T.h0(xf) : 0));
+      demand += W * qs[i] / n;
+    }
+    // (an empty pool: the gaps take what the pulse brings, shared as they would draw it)
+    if (y[0] <= 0 && demand > Qin) { const s = Qin / demand; for (let i = 0; i < n; i++) qs[i] *= s; demand = Qin; }
+    const d = new Float64Array(n + 1);
+    d[0] = y[0] <= 0 && Qin <= demand ? 0 : (Qin - demand) / area(h);
+    for (let i = 0; i < n; i++) d[1 + i] = front[i] ? qs[i] / locs[i].T.h0(y[1 + i]) : 0;
+    let outflow = 0; for (let i = 0; i < n; i++) if (!front[i]) outflow += W * qs[i] / n;
+    return { d, qs, outflow };
+  };
+  const add = (a, b, s) => { const c = new Float64Array(n + 1); for (let i = 0; i <= n; i++) c[i] = a[i] + s * b[i]; return c; };
+  // one RK4 step; its volume out under the blade (Simpson on the stages)
+  const frontNow = y => Array.from({ length: n }, (_, i) => y[1 + i] < Lx[i]);
+  const step = (y, dt, Qin) => {
+    const f = frontNow(y), k1 = rates(y, Qin, f), k2 = rates(add(y, k1.d, dt / 2), Qin, f), k3 = rates(add(y, k2.d, dt / 2), Qin, f), k4 = rates(add(y, k3.d, dt), Qin, f);
+    const y1 = new Float64Array(n + 1);
+    for (let i = 0; i <= n; i++) y1[i] = y[i] + dt / 6 * (k1.d[i] + 2 * k2.d[i] + 2 * k3.d[i] + k4.d[i]);
+    y1[0] = Math.max(0, y1[0]);
+    return { y1, k1, volOut: dt / 6 * (k1.outflow + 2 * k2.outflow + 2 * k3.outflow + k4.outflow) };
+  };
+  // the step's length landing on f(y) = 0 (f of the state; secant from the full step's two ends)
+  const landOn = (y, dt, Qin, f) => {
+    let a = 0, fa = f(y), b = dt, fb = f(step(y, dt, Qin).y1);
+    for (let it = 0; it < 30 && Math.abs(b - a) > 1e-13 * dt; it++) {
+      const c = b - fb * (b - a) / (fb - fa), fc = f(step(y, c, Qin).y1);
+      a = b; fa = fb; b = c; fb = fc;
+      if (Math.abs(fc) < 1e-14) break;
+    }
+    return Math.min(dt, Math.max(1e-12 * dt, b));
+  };
+  const out = { t: [0], h: [], Qin: [], Qout: [], locs: locs.map(() => ({ xf: [], q: [], film: [], tEdge: null })), pulses: [0], tCam: null, volIn: 0, volOut: 0, Lx };
+  // (each front starts a hair inside its gap's inlet unless given: there the gap takes whatever reaches it)
+  let y = new Float64Array(n + 1);
+  y[0] = o.h0 || 0;
+  for (let i = 0; i < n; i++) y[1 + i] = o.xf0 != null ? Math.min(o.xf0, Lx[i]) : 1e-6 * Lx[i];
+  for (let i = 0; i < n; i++) if (y[1 + i] >= Lx[i]) out.locs[i].tEdge = 0;
+  const record = (yy, on) => {
+    const r = rates(yy, on ? Qp : 0, frontNow(yy));
+    out.h.push(yy[0]); out.Qin.push(on ? Qp : 0); out.Qout.push(r.outflow);
+    for (let i = 0; i < n; i++) { const L = out.locs[i]; L.xf.push(yy[1 + i]); L.q.push(r.qs[i]); L.film.push(yy[1 + i] >= Lx[i] ? r.qs[i] / U : null); }
+  };
+  let t = 0, on = true, pulseEnd = tau, nextAt = null, fired = 0, done = false;
+  if (out.tCam == null && y[0] >= hCam) out.tCam = 0;
+  record(y, on);
+  for (let k = 0; k < 2e6 && !done && t < tMax; k++) {
+    const Qin = on ? Qp : 0;
+    // the step: dt, a tenth of each moving front's run so far, never past a pulse's end, the next pulse or the end
+    let dt = dt0;
+    const r0 = rates(y, Qin, frontNow(y));
+    for (let i = 0; i < n; i++) if (y[1 + i] < Lx[i] && r0.d[1 + i] > 0) dt = Math.min(dt, 0.1 * y[1 + i] / r0.d[1 + i]);
+    if (on) dt = Math.min(dt, pulseEnd - t); else if (nextAt != null) dt = Math.min(dt, nextAt - t);
+    if (o.tEnd) dt = Math.min(dt, o.tEnd - t);
+    dt = Math.max(dt, 1e-12);
+    let st = step(y, dt, Qin);
+    // events inside the step: a front reaching its edge, the level falling to the camera's (the step cut there)
+    let ev = null;
+    for (let i = 0; i < n; i++) if (y[1 + i] < Lx[i] && st.y1[1 + i] >= Lx[i]) { const d = landOn(y, dt, Qin, yy => yy[1 + i] - Lx[i]); if (!ev || d < ev.dt) ev = { dt: d, front: i }; }
+    if (!on && nextAt == null && y[0] > hCam && st.y1[0] <= hCam) { const d = landOn(y, dt, Qin, yy => yy[0] - hCam); if (!ev || d < ev.dt) ev = { dt: d, cam: true }; }
+    if (ev) { dt = ev.dt; st = step(y, dt, Qin); }
+    out.volIn += Qin * dt; out.volOut += st.volOut;
+    y = st.y1; t += dt;
+    if (ev && ev.front != null) { y[1 + ev.front] = Lx[ev.front]; out.locs[ev.front].tEdge = t; }
+    for (let i = 0; i < n; i++) if (out.locs[i].tEdge == null && y[1 + i] >= Lx[i]) { y[1 + i] = Lx[i]; out.locs[i].tEdge = t; }
+    if (out.tCam == null && y[0] >= hCam) out.tCam = t;
+    // the pump and the camera
+    if (on && t >= pulseEnd - 1e-9 * tau) { on = false; nextAt = y[0] <= hCam ? t + pause : null; }
+    else if (!on && nextAt == null && ev && ev.cam) nextAt = t;
+    if (!on && nextAt != null && t >= nextAt - 1e-9 * tau) {
+      if (out.tCam != null) fired++;
+      if (fired > cyclesAfter && !o.tEnd) done = true;
+      else { on = true; pulseEnd = t + tau; nextAt = null; out.pulses.push(t); }
+    }
+    out.t.push(t); record(y, on);
+    if (o.tEnd && t >= o.tEnd - 1e-12 * o.tEnd) done = true;
+  }
+  // (the paste in the gaps: each filled from its inlet to its front, Simpson on the blade's own height)
+  let volGaps = 0;
+  for (let i = 0; i < n; i++) { const h0 = locs[i].T.h0, xf = y[1 + i], m = 2000; let v = h0(0) + h0(xf); for (let j = 1; j < m; j++) v += (j % 2 ? 4 : 2) * h0(xf * j / m); volGaps += v * xf / (3 * m) * W / n; }
+  out.volGaps = volGaps; out.completed = done;
+  return out;
+}
+
+/** The pool's top area at level h (m²): between its back edge and where it meets the blade, W wide, less the outlets' pipes
+ *  where they stand in the paste or heaps stand up to them (feedCycle's; o as feedCycle's). */
+function feedArea(o) {
+  const { W, R, H, xBack } = o, meets = o.meets || (h => feedMeetsBlade(h, R, H)), pp = o.pipes, foot = pp ? pp.n * Math.PI * pp.Do * pp.Do / 4 : 0;
+  return h => W * (xBack - meets(h)) - (pp && (pp.entry === 'heap' || h > pp.tip) ? foot : 0);
+}
+
 /** n outlets equidistant across the width W: each in the middle of its share (m). */
 const feedEquidistant = (n, W) => Array.from({ length: n }, (_, i) => W * (i + 0.5) / n);
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { feedMeetsBlade, feedCycle, feedOutlets, feedEquidistant };
+if (typeof module !== 'undefined' && module.exports) module.exports = { feedMeetsBlade, feedCycle, feedOutlets, feedEquidistant, feedStartup, feedArea };
