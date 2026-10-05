@@ -149,6 +149,44 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
   Page: Transient no longer blocked with the structure on; the card says lambda goes with the slurry; each kept time has
   its lambda (the lambda plot at any time on the slider); the Time tab has the structure lambda leaving the edge against
   time; help updated.
+- T-3 built (5 Oct), start-up in 1D. Owner: "time starts when the web is running and the slurry is fed in".
+  - The model (feed-pulse.js feedStartup, cfd-1d.js gapTable1D; the 1D's worker):
+    - The pool is the pulse cycle's box: A(h) dh/dt = Qin - W mean(q_i). Its top stops where the gaps begin.
+    - At each location, the paste fills the gap from its inlet to its front. The front moves at q / h(xf).
+    - The flow q is the 1D's, from a table of each station's flows. It runs between the pool's head rho g h at the
+      inlet and, at the front, the meniscus across the gap: p = -gamma (cos theta_web + cos theta_blade) / gap
+      (suction, the 'thw' and the location's 'th' angles).
+    - At the edge, p = 0 as in the steady 1D; the film is q over the location's web speed.
+    - An empty pool takes only what the pulse brings.
+    - The camera asks for pulse after pulse while the level is at or below its own. The pump waits its pause between
+      them (input 'fPause', default 0).
+    - RK4. The pulses' ends, the fronts reaching the edge and the level falling to the camera's are landed on. The
+      level rising past the camera's is placed in its step linearly.
+  - Checks (feed-pulse.validate.js, all against exact solutions):
+    - the table against the direct 1D, 2.3e-5;
+    - Newtonian parallel gap, 8.9e-16;
+    - a front's time to the edge (suction only, and with a 4 mm head), 7.9e-8 and 9.6e-8;
+    - the supply-limited front, exact;
+    - the pool filling (exponential), 5e-10;
+    - the cycle after the start-up, the same as feedCycle's;
+    - paste conserved on the app's case, 8.7e-8.
+  - In the app (the browser's worker), the same inputs run in Node give the same steps; times and films agree to 1e-9.
+  - At the app's defaults:
+    - the paste reaches the edge after 10.6 s at L1;
+    - the level is up after 132 s, which takes 44 pulses;
+    - 0.57 m of web is coated thinner before then;
+    - the first film is 1.128 mm, against 1.493 to 1.506 mm once the level is up (L1).
+  - With a 10 s pause the level is up only after 2811 s (217 pulses): a pulse every 13 s is barely more than the web
+    takes at the working level (the cycle: a pulse every 13.6 s).
+  - Page: Coating › 1D › Pool and feed, "Pulse cycle | From the first pulse", with Solve ('su1', after the 1D):
+    - the pool level, the film at the edge in time, and the film along the web at the end;
+    - the times, the pulses and the web coated thinner;
+    - report, help, the stop on New/Open.
+  - Limits:
+    - the pool is one box;
+    - each gap is filled from its inlet to its front;
+    - the film leaves on the web at the web's speed (no levelling in it here).
+  - Next: the same start in 2D with a moving front.
 
 ## GUI features list (user: "Implement them one by one", asking where a choice is open):
 ## 1 zoom/pan (done), 2 mesh display (done), 3 colour map controls (done), 4 contour lines (done), 5 cut lines (done),

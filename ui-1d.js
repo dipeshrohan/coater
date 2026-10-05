@@ -474,18 +474,42 @@ function feedReportHTML() {
     ['Outlet tip above the web', u(P.fTip, 0, 'mm')], ['Outlets upstream of the blade edge', u(P.fX, 0, 'mm')], ['Outlet inner diameter', u(P.fD, 1, 'mm')], ['Outlet outer diameter', u(P.fDo, 1, 'mm')],
     ['Paste per pulse, all outlets', u(P.fV, 0, 'ml')], ['Pulse length', u(P.fTau, 1, 's')], ['Pool back edge upstream of the blade edge', u(P.fBack, 0, 'mm')]];
   if (F && !F.error) rows.push(['Each outlet during a pulse', `${(F.out.q * 1e6).toFixed(2)} ml/s, ${(F.out.v0 * 1e3).toFixed(1)} mm/s out of the tip, ` + (F.out.entry === 'heap' ? `${(F.out.vLand * 1e3).toFixed(1)} mm/s down a heap ${(F.out.fall * 1e3).toFixed(1)} mm high` : F.out.entry === 'dip' ? `the tip ${(F.out.depth * 1e3).toFixed(1)} mm below the lowest level` : `at most ${(F.out.vLand * 1e3).toFixed(0)} mm/s landing`)]);
-  return '<h3>The feed</h3>' + repRows(rows.map(([a, b]) => [repEsc(a), repEsc(b)]), ['Input', 'Value']);
+  let html = '<h3>The feed</h3>' + repRows(rows.map(([a, b]) => [repEsc(a), repEsc(b)]), ['Input', 'Value']);
+  // (the start-up, when solved for the inputs as they are: each location's times and films)
+  if (su1Current()) {
+    const R = SU1.res, s1 = v => (v == null ? '—' : (v < 100 ? v.toFixed(1) : v.toFixed(0)) + ' s'), mmF = v => (v == null ? '—' : (v * 1e3).toFixed(3) + ' mm');
+    const sr = CFD_LOCS.map((_, i) => { const N = su1Numbers(R, i);
+      return [`L${i + 1}`, s1(N.tEdge), s1(N.tCam), String(N.pulsesUp), N.thin == null ? '—' : N.thin.toFixed(2) + ' m', mmF(N.first), N.lo == null ? '—' : `${(N.lo * 1e3).toFixed(3)} to ${(N.hi * 1e3).toFixed(3)} mm`]; });
+    html += `<h3>The start-up</h3><p>From the web running and the first pulse, the pump's pause between pulses ${(+P.fPause).toFixed(0)} s.</p>`
+      + repRows(sr.map(r => r.map(repEsc)), ['Location', 'Paste at the edge after', 'Pool level up after', 'Pulses until then', 'Web coated until then', 'First film at the edge', 'Film once the level is up']);
+  }
+  return html;
 }
+/** The page's top: the pool and its outlets drawn, and the outlets' panel (the pulse cycle and the start-up alike). */
+const feedTopHTML = F => `<div class="acr-top fd-top"><section class="acr-view"><h3>${uiBadge(15)}The pool and its outlets <span class="acr-sub">from the side, and from above; the levels a pulse cycle moves between</span></h3><div class="fd-draw" id="feedDraw"></div></section>
+      <aside class="acr-panel" aria-label="The outlets">${feedPanelHTML(F && !F.error ? F : null)}</aside></div>`;
+/** The pool and its outlets drawn (from the side and from above) into the page's top. */
+function feedDrawTop(F) {
+  const host = document.getElementById('feedDraw'), c = F.c;
+  if (!host) return;
+  const w = Math.max(420, host.clientWidth), wide = w >= 620, wS = wide ? Math.round(w * 0.56) : w, wP = wide ? w - wS - 12 : w;
+  host.innerHTML = `<div class="fd-two">${feedSideSVG(F, wS, 250)}${feedPlanSVG(F, wP, wide ? 250 : 200)}</div><p class="fd-cap">Dashed: the level just after a pulse (${(c.hHigh * 1e3).toFixed(1)} mm) and when the camera fires (${(c.hLow * 1e3).toFixed(1)} mm); the paste drawn at the mean level, ${(c.hBar * 1e3).toFixed(1)} mm, the bead pressure input's. The blade's ${F.round ? `round entry (R ${(F.o.R * 1e3).toFixed(0)} mm) continued up to the pool's level` : 'pool edge as in the 2D'}. True scale.</p>`;
+}
+/** What the page shows: the pulse cycle in its steady repeat, or the start-up (the web running and the paste fed from the first pulse). */
+const FEED_MODE = { v: 'cycle' };
+const feedModeTools = () => `<div class="seg" role="tablist" aria-label="What is shown" id="feedMode">${[['cycle', 'Pulse cycle', 'The pool through a pulse cycle, once it repeats'], ['startup', 'From the first pulse', 'The start-up: from the web running and the first pulse, the pool filling, the paste drawn under the blade, the film starting']].map(([k, l, t]) =>
+  `<button type="button" role="tab" data-feedmode="${k}" aria-selected="${FEED_MODE.v === k}" title="${t}">${l}</button>`).join('')}</div>`;
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-feedmode]'); if (b && b.dataset.feedmode !== FEED_MODE.v) { FEED_MODE.v = b.dataset.feedmode; render(); } });
 function view1DFeed() {
+  if (FEED_MODE.v === 'startup') { view1DStartup(); return; }
   oneDSetupTree();
   oneDRequest(false);
   const acc = cssVar('--accent'), mut = cssVar('--muted'), warn = cssVar('--warn'), ok = cssVar('--ok');
   const F = ONE_D.res ? feedNow() : null;
   view.innerHTML = moduleFrame({
-    tools: oneDLocTools(),
+    tools: oneDLocTools() + feedModeTools(),
     cols: workbenchFits() ? 2 : 1,
-    top: `<div class="acr-top fd-top"><section class="acr-view"><h3>${uiBadge(15)}The pool and its outlets <span class="acr-sub">from the side, and from above; the levels a pulse cycle moves between</span></h3><div class="fd-draw" id="feedDraw"></div></section>
-      <aside class="acr-panel" aria-label="The outlets">${feedPanelHTML(F && !F.error ? F : null)}</aside></div>`,
+    top: feedTopHTML(F),
     panes: [
       { id: 'p1', icon: 'pool', title: 'Pool level through a pulse cycle', aria: 'Pool level against time over two pulse cycles', legend: oneDLegend([['level at the web', acc], ['its mean: the bead pressure input', mut, 'dash']]),
         note: 'The pool\'s volume balance: a pulse adds its paste over its length, the web carries paste away under the blade all the time (the 1D\'s flow, which grows with the level). Its mean is the level the bead pressure input gives (Pup = ρ g h).' },
@@ -500,8 +524,7 @@ function view1DFeed() {
   if (!F) { document.getElementById('st').innerHTML = pill('The 1D results predate the pool\'s sensitivity: solve the 1D again', 'warn') + solveCtl('1d'); return; }
   if (F.error) { document.getElementById('st').innerHTML = pill('The pulse cycle could not be found: ' + F.error, 'bad') + (oneDCurrent() ? '' : solveCtl('1d')); return; }
   const { c, out } = F, i = ONE_D.loc, Lc = ONE_D.res.locs[i], rhoG = F.o.rho * F.o.g, filmAt = hh => Lc.film + Lc.dfdP * rhoG * (hh - c.hBar);
-  if (host) { const w = Math.max(420, host.clientWidth), wide = w >= 620, wS = wide ? Math.round(w * 0.56) : w, wP = wide ? w - wS - 12 : w;
-    host.innerHTML = `<div class="fd-two">${feedSideSVG(F, wS, 250)}${feedPlanSVG(F, wP, wide ? 250 : 200)}</div><p class="fd-cap">Dashed: the level just after a pulse (${(c.hHigh * 1e3).toFixed(1)} mm) and when the camera fires (${(c.hLow * 1e3).toFixed(1)} mm); the paste drawn at the mean level, ${(c.hBar * 1e3).toFixed(1)} mm, the bead pressure input's. The blade's ${F.round ? `round entry (R ${(F.o.R * 1e3).toFixed(0)} mm) continued up to the pool's level` : 'pool edge as in the 2D'}. True scale.</p>`; }
+  feedDrawTop(F);
   // the level over two cycles, the flows, and the film along the web over three repeats
   const T = c.T, two = [], qin = [], qout = [];
   for (const k of [0, 1]) c.t.forEach((t, j) => { two.push([t + k * T, c.h[j] * 1e3]); qin.push([t + k * T, c.Qin[j] * 1e6]); qout.push([t + k * T, c.Qout[j] * 1e6]); });
@@ -538,4 +561,135 @@ function view1DFeed() {
     ['The film repeats along the web every', (band * 1e3).toFixed(0) + ' mm'],
     ['Pool top', `${(c.area(c.hLow) * 1e4).toFixed(0)} to ${(c.area(c.hHigh) * 1e4).toFixed(0)} cm²`],
   ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong></div>`).join('');
+}
+
+// ---------------------------------------------------------------------
+// Start-up: the web running and the paste fed from the first pulse (feed-pulse.js's feedStartup, in the 1D's worker)
+// ---------------------------------------------------------------------
+const SU1 = { res: null, key: null, pending: null, base: null, busy: false, again: false, error: null, worker: null, id: 0, prog: null, ms: 0 };
+/** Stop the start-up's solve (New, Open). */
+function su1Stop() { if (SU1.worker) { SU1.worker.terminate(); SU1.worker = null; } Object.assign(SU1, { busy: false, again: false, pending: null, prog: null }); }
+/** The start-up's inputs: each location's 1D inputs and its steady flow (where the gap's table of flows is dense), the pulse
+ *  cycle's (feedNow: the pool, the pulse, the outlets), the pump's pause and the paste's angle on the web; null until the 1D is
+ *  solved for the inputs as they are. */
+function su1Base() {
+  if (!ONE_D.res || !oneDCurrent()) return null;
+  const F = feedNow();
+  if (!F || F.error) return null;
+  const o = F.o;
+  return { locs: CFD_LOCS.map((_, i) => ({ geo: oneDGeo(i), q: ONE_D.res.locs[i].q })),
+    base: { W: o.W, U: o.U, film0: o.film0, dfdP: o.dfdP, rho: o.rho, g: o.g, Pup: o.Pup, R: o.R, H: o.H, xBack: o.xBack, V: o.V, tau: o.tau, pipes: o.pipes, round: F.round, Xup: oneDGeo(0).Xup },
+    pause: P.fPause, thWeb: P.thw };
+}
+const su1KeyNow = () => { const b = su1Base(); return b ? JSON.stringify(b) : null; };
+const su1Current = () => !!SU1.res && SU1.key === su1KeyNow();
+/** Solve the start-up for the inputs as they are (only when asked for: its Solve button, Re-solve). */
+function su1Request() {
+  const b = su1Base();
+  if (!b) return;
+  const key = JSON.stringify(b);
+  if (key === SU1.key || key === SU1.pending) { solveTake('su1'); return; }
+  if (!solveMay('su1')) return;
+  if (SU1.busy) { SU1.again = true; return; }
+  solveTake('su1');
+  Object.assign(SU1, { busy: true, again: false, pending: key, prog: null });
+  if (!SU1.worker) SU1.worker = makeWorker('cfd-1d-worker.js');
+  const id = ++SU1.id;
+  SU1.worker.onmessage = e => {
+    const m = e.data;
+    if (m.id !== id) return;
+    if (m.progress) { SU1.prog = m.progress.stage; const el = document.getElementById('su1Prog'); if (el) el.textContent = SU1.prog; return; }
+    Object.assign(SU1, { busy: false, pending: null, key, prog: null });
+    if (m.ok) Object.assign(SU1, { res: m.startup, base: b, error: null, ms: m.ms }); else Object.assign(SU1, { res: null, error: m.error });
+    if (SU1.again) su1Request();
+    if (tab === 15) render();
+  };
+  SU1.worker.onerror = e => { Object.assign(SU1, { busy: false, pending: null, key, res: null, prog: null, error: e.message || 'the start-up\'s worker failed' }); if (tab === 15) render(); };
+  SU1.worker.postMessage({ id, startup: b });
+}
+/** The start-up's numbers at location i: when the paste reaches the edge, when the level is up (the camera's), the pulses
+ *  until then, the web coated before then, the first film and the film once the level is up (m, s). */
+function su1Numbers(R, i) {
+  const L = R.locs[i], U = SU1.base ? SU1.base.locs[i].geo.U : ONE_D.res.locs[i].U, n = R.t.length, tEnd = R.t[n - 1];
+  const j0 = L.film.findIndex(f => f != null), first = j0 >= 0 ? L.film[j0] : null;
+  let lo = Infinity, hi = -Infinity;
+  if (R.tCam != null) for (let j = 0; j < n; j++) if (R.t[j] >= R.tCam && L.film[j] != null) { lo = Math.min(lo, L.film[j]); hi = Math.max(hi, L.film[j]); }
+  return { L, U, tEnd, tEdge: L.tEdge, tCam: R.tCam, first, lo: Number.isFinite(lo) ? lo : null, hi: Number.isFinite(hi) ? hi : null,
+    pulsesUp: R.tCam == null ? R.pulses.length : R.pulses.filter(t => t < R.tCam).length,
+    thin: L.tEdge != null && R.tCam != null ? U * Math.max(0, R.tCam - L.tEdge) : null };
+}
+function view1DStartup() {
+  oneDSetupTree();
+  oneDRequest(false);
+  su1Request();
+  const acc = cssVar('--accent'), mut = cssVar('--muted'), i = ONE_D.loc;
+  const F = ONE_D.res ? feedNow() : null;
+  view.innerHTML = moduleFrame({
+    tools: oneDLocTools() + feedModeTools(),
+    cols: workbenchFits() ? 2 : 1,
+    top: feedTopHTML(F),
+    panes: [
+      { id: 'p1', icon: 'pool', title: 'Pool level from the start', aria: 'Pool level against time from the web running and the first pulse', legend: oneDLegend([['level at the web', acc], ['the camera\'s level', mut, 'dash']]),
+        note: 'Time starts when the web runs and the first pulse begins, the pool and the gaps empty. The camera asks for pulses while the level is at or below its own; the pump waits its pause between them. While the pool is empty the gaps take what the pulse brings. Once the level is up, the pulse cycle runs as on Pulse cycle.' },
+      { id: 'p2', icon: 'film', title: 'Wet film at the edge from the start', aria: 'Wet film leaving the blade\'s edge against time', legend: oneDLegend([[`wet film at L${i + 1}`, acc], ['the steady 1D at the mean level', mut, 'dash']]),
+        note: 'The paste is first drawn under the blade by the web and its meniscus (the front), filling the gap from its inlet. When it reaches the edge the film starts: the gap\'s flow (the 1D\'s, between the pool\'s head and the edge) over the web\'s speed. It grows as the pool fills.' },
+      { id: 'p3', icon: 'film', title: 'Wet film along the web', aria: 'Wet film against distance along the web at the end of the run', legend: oneDLegend([[`wet film at L${i + 1}`, acc], ['the steady 1D at the mean level', mut, 'dash']]),
+        note: 'The web as it is at the end of the run, from the blade\'s edge: the first film is furthest along. Beyond the dashed mark the film was coated before the pool\'s level was up.' },
+    ],
+  });
+  const host = document.getElementById('feedDraw'), st = document.getElementById('st'), ss = document.getElementById('ss');
+  if (!ONE_D.res && !ONE_D.error) { if (host) host.innerHTML = ''; }
+  else if (!ONE_D.res) { if (host) host.innerHTML = ''; oneDWaiting(); return; }
+  else if (!F) { st.innerHTML = pill('The 1D results predate the pool\'s sensitivity: solve the 1D again', 'warn') + solveCtl('1d'); return; }
+  else if (F.error) { st.innerHTML = pill('The pulse cycle could not be found: ' + F.error, 'bad') + (oneDCurrent() ? '' : solveCtl('1d')); return; }
+  else feedDrawTop(F);
+  const R = ONE_D.res ? SU1.res : null;
+  if (!R) {
+    // (not solved: one clear panel in place of empty charts, its Solve the only one)
+    const busy = solvePending('su1'), vp = document.querySelector('.mod-vp');
+    st.innerHTML = SU1.error ? pill('The start-up could not be solved: ' + SU1.error, 'bad') + solveCtl('su1', null, !!vp) : busy ? pill(`Solving the start-up… <span id="su1Prog">${solveState('1d') === 'busy' ? 'the 1D at the four locations first' : SU1.prog || ''}</span>`, '') : solveCtl('su1', null, !!vp);
+    ss.innerHTML = '';
+    if (vp) vp.innerHTML = `<div class="mod-extra">${emptyHint(SU1.error ? 'The start-up could not be solved' : busy ? 'Solving the start-up…' : 'Not solved yet', SU1.error ? escAttr(SU1.error) : 'The start-up follows the pool, the paste under the blade and the film from the web running and the first pulse, at the four locations, until the pool\'s level is up and the pulse cycle runs. It needs the 1D at the four locations, solved first if it is not. Nothing is solved until you ask.', busy ? '' : `<button type="button" class="btn btn-primary btn-sm" data-solve="su1">${uiIco('play')}Solve the start-up</button>`)}</div>`;
+    return;
+  }
+  const N = su1Numbers(R, i), Lc = ONE_D.res.locs[i], tEnd = N.tEnd, xt = niceTicks(0, tEnd, 6), f6 = v => String(+v.toPrecision(6));
+  // (the charts keep their own height below the pool's drawing: the page scrolls)
+  const asp = cv => Math.max(0.42, fitAspect(cv, 0.5));
+  // the pool's level
+  const lev = R.t.map((t, j) => [t, R.h[j] * 1e3]), hMax = Math.max(...R.h) * 1e3 * 1.22;   // (room above the curve for the marks' labels)
+  const marks = [...(N.tEdge != null ? [{ x: N.tEdge, c: mut, t: 'paste at the edge' }] : []), ...(N.tCam != null ? [{ x: N.tCam, c: mut, t: 'level up' }] : [])];
+  const c1 = document.getElementById('p1');
+  plotChart(c1, asp(c1), { x0: 0, x1: tEnd, y0: 0, y1: hMax, yticks: niceTicks(0, hMax, 5), yf: f6, xticks: xt, xf: f6, yl: 'pool level (mm)', xl: 'time from the first pulse (s)', yd: 1,
+    s: [{ p: lev, c: acc, w: 2.2 }], hl: [{ y: R.hCam * 1e3, c: mut, t: 'camera', left: true, below: true }], vl: marks });
+  // the film at the edge in time
+  const fit = [], fAll = [];
+  R.t.forEach((t, j) => { const f = N.L.film[j]; if (f != null) { fit.push([t, f * 1e3]); fAll.push(f * 1e3); } });
+  const fHi = Math.max(Lc.film * 1e3, ...fAll), fLo = Math.min(Lc.film * 1e3, ...fAll), pad = Math.max(0.02, (fHi - fLo) * 0.25), fTop = fHi + 1.6 * pad, fBot = Math.max(0, fLo - pad);
+  const c2 = document.getElementById('p2');
+  plotChart(c2, asp(c2), { x0: 0, x1: tEnd, y0: fBot, y1: fTop, yticks: niceTicks(fBot, fTop, 5), yf: f6, xticks: xt, xf: f6, yl: 'wet film (mm)', xl: 'time from the first pulse (s)', yd: 2,
+    s: [{ p: fit, c: acc, w: 2.2 }], hl: [{ y: Lc.film * 1e3, c: mut, t: 'steady 1D', left: true, below: true }], vl: marks });
+  // the film along the web at the end (the first film furthest along)
+  const along = fit.map(([t, f]) => [N.U * (tEnd - t), f]).reverse(), sMax = along.length ? along[along.length - 1][0] : 1;
+  const c3 = document.getElementById('p3');
+  plotChart(c3, asp(c3), { x0: 0, x1: sMax, y0: fBot, y1: fTop, yticks: niceTicks(fBot, fTop, 5), yf: f6, xticks: niceTicks(0, sMax, 6), xf: f6, yl: 'wet film (mm)', xl: 'distance along the web from the edge (m)', yd: 2,
+    s: [{ p: along, c: acc, w: 2.2 }], hl: [{ y: Lc.film * 1e3, c: mut, t: 'steady 1D' }],
+    vl: N.tCam != null ? [{ x: N.U * (tEnd - N.tCam), c: mut, t: 'coated before the level was up' }] : [] });
+  // the answer, the numbers
+  const s1 = v => v == null ? '—' : v < 100 ? v.toFixed(1) : v.toFixed(0);
+  let pills = '';
+  if (N.tCam != null && N.tEdge != null) pills += pill(`From the web running and the first pulse: the paste reaches the edge at L${i + 1} after ${s1(N.tEdge)} s, the pool's level is up after ${s1(N.tCam)} s (${N.pulsesUp} pulse${N.pulsesUp === 1 ? '' : 's'}); until then ${N.thin.toFixed(2)} m of web is coated thinner`, '');
+  if (N.tCam == null) pills += pill(`The pool's level is not up after ${s1(tEnd)} s: the pulses bring less than the web carries away`, 'bad');
+  else if (N.tEdge == null) pills += pill(`The paste has not reached the edge at L${i + 1} after ${s1(tEnd)} s`, 'bad');
+  pills += pill('1D: the pool as one box, each location\'s gap filled from its inlet to its front; the film leaves on the web at its speed', '');
+  if (!su1Current()) pills += solvePending('su1') ? pill('Solving for the inputs as they are…', '') : solveCtl('su1');
+  st.innerHTML = pills;
+  const mmF = v => v == null ? '—' : (v * 1e3).toFixed(3) + ' mm';
+  ss.innerHTML = [
+    ['Paste at the edge after', N.tEdge == null ? '—' : s1(N.tEdge) + ' s'],
+    ['Pool level up after', N.tCam == null ? '—' : s1(N.tCam) + ' s'],
+    ['Pulses before the level is up', String(N.pulsesUp)],
+    ['Web coated before the level is up', N.thin == null ? '—' : N.thin.toFixed(2) + ' m'],
+    ['First film at the edge', mmF(N.first)],
+    ['Film once the level is up', N.lo == null ? '—' : `${((N.lo + N.hi) / 2 * 1e3).toFixed(3)} mm`, N.lo == null ? '' : `${(N.lo * 1e3).toFixed(3)} to ${(N.hi * 1e3).toFixed(3)} mm through a pulse cycle`],
+  ].map(a => `<div class="stat" title="${a[0]}: ${a[1]}${a[2] ? ' (' + a[2] + ')' : ''}"><span>${tileLabel(a[0])}</span><strong>${a[1]}</strong>${a[2] ? `<small>${a[2]}</small>` : ''}</div>`).join('');
 }

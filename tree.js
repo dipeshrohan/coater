@@ -96,13 +96,15 @@ const ALL_IN = CFG.map(c => c.k);
 const FEED_IN = ['fN', 'fV', 'fTau', 'fTip', 'fX', 'fD', 'fDo', 'fBack'];
 // (the pool's mesh: each on its own page, Coating › 2D and 3D › Pool and feed)
 const POOL2_IN = ['f2H', 'f2Hm', 'f2Ny'], POOL3_IN = ['f3H', 'f3Hm', 'f3Ny', 'f3Pm', 'f3PLo', 'f3PUp'];
+// (the start-up, Coating › 1D › Pool and feed: the pump's pause between pulses while the level is below the camera's)
+const START_IN = ['fPause'];
 const USES = [
-  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN, ...POOL2_IN, ...POOL3_IN].includes(k)),
-  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN, ...POOL2_IN, ...POOL3_IN].includes(k)),
+  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN, ...START_IN, ...POOL2_IN, ...POOL3_IN].includes(k)),
+  ALL_IN.filter(k => !['oven', 'a0e', 'lam', 'vib', 'thw', ...FEED_IN, ...START_IN, ...POOL2_IN, ...POOL3_IN].includes(k)),
   ['U', 'Hm', 'tf', 'oven', 'mu', 'n', 'ty', 'g', 'Pup', 'L', 'a0e'],
   ['U', 'Hm', 'tf', 'oven', 'mu', 'n', 'ty', 'g', 'Pup', 'L', 'dH', 'lam', 'vib'],
   null, null,     // (CFD, DOE: below, with the setup)
-  ALL_IN.filter(k => !FEED_IN.includes(k) && !POOL2_IN.includes(k) && !POOL3_IN.includes(k)),
+  ALL_IN.filter(k => !FEED_IN.includes(k) && !START_IN.includes(k) && !POOL2_IN.includes(k) && !POOL3_IN.includes(k)),
 ];
 const cfdUses = () => {
   const uses = RHEO_MODELS[CFDG.model].uses;
@@ -133,8 +135,9 @@ const NAV_USES = { line: () => [], mix: () => ['mu', 'n', 'ty', 'g'], dry: () =>
   peel1d: () => ['U'], peel2d: () => ['U'], peel3d: () => ['U'],
   // (MP-5: the drying's multiphysics pages: the Drying page's inputs)
   dry1d: () => ['U', 'webW', 'oven'], dry2d: () => ['U', 'webW', 'oven'], dry3d: () => ['U', 'webW', 'oven'],
-  // (the pool and its feed: the 1D's inputs, which give the film and its sensitivity to the pool, and the feed's own)
-  feed1d: () => [...cfdUses(), ...FEED_IN],
+  // (the pool and its feed: the 1D's inputs, which give the film and its sensitivity to the pool, and the feed's own; the
+  //  start-up also the paste's front under the blade, its contact angle on the web, and the pump's pause)
+  feed1d: () => [...cfdUses(), 'thw', ...FEED_IN, ...START_IN],
   // (the pool in 2D and 3D: the 1D's (its cycle), the feed's, and its own mesh)
   feed2d: () => [...cfdUses(), ...FEED_IN, ...POOL2_IN], feed3d: () => [...cfdUses(), ...FEED_IN, ...POOL3_IN.filter(k => !k.startsWith('f3P') || feedEntry() === 'dip')] };   // (the pipes' mesh: with the tips in the paste)
 // (the coating's results on the Process view: the wet film's inputs, as the 1D and 2D; Materials: the inputs its cards show)

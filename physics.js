@@ -39,7 +39,7 @@ const CFG = [
   { g: 'Blade and bead', k: 'Pup', l: 'Bead pressure over the land', min: 0, max: 3, step: 0.01, u: 'kPa', d: 2, v: 0.49, h: 'set so the 2D gives the design wet film, 1.45 mm, at L1' },
   { k: 'L', l: 'Land length', min: 3, max: 25, step: 0.5, u: 'mm', d: 1, v: 10 },
   { k: 'th', l: 'Contact angle on blade', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35 },
-  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'where the slurry\'s side meets the bare web (3D, open edges)' },
+  { k: 'thw', l: 'Contact angle on the web', min: 5, max: 120, step: 1, u: '°', d: 0, v: 35, h: 'where the slurry\'s side meets the bare web (3D, open edges), and the paste\'s front on the web at start-up (1D)' },
   { k: 'face', l: 'Notch face length to corner', min: 2, max: 12, step: 0.5, u: 'mm', d: 1, v: 8 },
 
   { g: 'Variation across the web', k: 'dH', l: 'Blade gap waviness (amplitude)', min: 0, max: 100, step: 1, u: 'µm', d: 0, v: 20 },
@@ -59,6 +59,7 @@ const CFG = [
   { k: 'fD', l: 'Outlet inner diameter', min: 1, max: 40, step: 0.5, u: 'mm', d: 1, v: 10, h: 'measure it on the line' },
   { k: 'fDo', l: 'Outlet outer diameter', min: 2, max: 60, step: 0.5, u: 'mm', d: 1, v: 14, h: 'measure it on the line' },
   { k: 'fBack', l: 'Pool back edge upstream of the blade edge', min: 10, max: 500, step: 1, u: 'mm', d: 0, v: 130, h: 'where the paste ends behind the blade' },
+  { k: 'fPause', l: 'Pump\'s pause between pulses', min: 0, max: 600, step: 1, u: 's', d: 0, v: 0, h: 'at start-up, while the level is below the camera\'s; 0: the next pulse as soon as one ends' },
   // (the pool's mesh, Coating › 2D and 3D › Pool and feed: each page its own)
   { g: 'Pool mesh', k: 'f2H', l: '2D pool: elements where the paste lands', min: 0.3, max: 10, step: 0.1, u: 'mm', d: 1, v: 1, h: 'smaller: finer and slower' },
   { k: 'f2Hm', l: '2D pool: elements elsewhere', min: 1, max: 40, step: 0.5, u: 'mm', d: 1, v: 5, h: 'the largest along the web' },

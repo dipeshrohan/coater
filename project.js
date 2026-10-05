@@ -93,6 +93,7 @@ function projStopAll() {
   m3StudyStop(true); acc3Stop(); c3dStop();
   oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop(); if (typeof gfmStop === 'function') gfmStop(); if (typeof cmStop === 'function') cmStop(); if (typeof xmStop === 'function') xmStop();
   if (typeof poolStop === 'function') poolStop();
+  if (typeof su1Stop === 'function') su1Stop();
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
 function projRunning() {
@@ -106,6 +107,7 @@ function projRunning() {
   for (const i of Object.keys(OR.redo)) add('Coating › 2D', `flake alignment at L${CFD_LOCS[i].id}`, `${Math.round((OR.redo[i].share || 0) * 100)} %`);
   if (C3D_RUN.status === 'running') add('Coating › 3D', M3S.status === 'running' ? 'mesh study' : ACC3.status === 'running' ? 'mesh to an accuracy' : 'the 3D flow', `${Math.round((performance.now() - C3D_RUN.t0) / 1000)} s`);
   if (ONE_D.busy) add('Coating › 1D', 'the 1D at the four locations');
+  if (typeof SU1 !== 'undefined' && SU1.busy) add('Coating › 1D', 'the start-up', SU1.prog || '');
   if (ACR_CROWN.busy) add('Coating › 1D', 'the crown across the web', ACR_CROWN.stage || '');
   if (typeof POOL !== 'undefined') for (const d of [2, 3]) if (POOL[d].busy) add(`Coating › ${d}D`, 'the pool and its feed', POOL[d].prog ? `${Math.round(POOL[d].prog.f * 100)} %` : '');
   if (DRY.busy) add('Drying', 'the film through the oven', kn(DRY.prog));

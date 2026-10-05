@@ -29,6 +29,9 @@ const SOLVE_M = {
     key: () => mixKeyNow(), go: () => mixRequest() },
   '1d': { l: 'Coating 1D', nav: 'gap', up: [], has: () => !!ONE_D.res, cur: () => fnOk(oneDCurrent) && oneDCurrent() && !!oneDAcrossNow(),
     busy: () => ONE_D.busy, err: () => !!ONE_D.error, key: () => JSON.stringify([CFD_LOCS.map((_, i) => oneDGeo(i)), oneDRipple(), acrossPositions().map(oneDGeoAt)]), go: () => oneDRequest(true) },
+  // (the start-up, Coating › 1D › Pool and feed: from the 1D at the four locations and its pulse cycle)
+  su1: { l: 'Start-up 1D', nav: 'feed1d', up: ['1d'], has: () => !!SU1.res, cur: () => su1Current(), busy: () => SU1.busy, err: () => !!(SU1.error && SU1.key === su1KeyNow()),
+    key: () => su1KeyNow(), ready: () => su1Base() != null, go: () => su1Request() },
   dry: { l: 'Drying', nav: 'dry', up: ['1d'], has: () => !!DRY.res, cur: () => dryCurrent(), busy: () => DRY.busy, err: () => !!(DRY.error && DRY.key === dryKeyNow()),
     key: () => dryKeyNow(), ready: () => dryFilms().length > 0, go: () => dryRequest() },
   film: { l: 'Peel and wind (the film)', nav: 'peel', up: ['dry'], has: () => !!FILM.res, cur: () => filmCurrent(), busy: () => FILM.busy, err: () => !!(FILM.error && FILM.key === filmKeyNow()),
@@ -56,7 +59,7 @@ const SOLVE_M = {
 for (const d of [2, 3]) SOLVE_M['pool' + d] = { l: `Pool and feed ${d}D`, nav: `feed${d}d`, up: ['1d'], dim: d, has: () => !!POOL[d].res, cur: () => poolCurrent(d), busy: () => POOL[d].busy,
   err: () => !!(POOL[d].error && POOL[d].key === poolKeyNow(d)), key: () => poolKeyNow(d), ready: () => poolBase(d) != null, go: () => poolRequest(d) };
 /** The order a pump starts them in (each after what it needs). */
-const SOLVE_ORDER = ['mix', 'xmp2', 'xmp3', '1d', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'pmp1', 'pmp2', 'pmp3', 'cmp1', 'cmp2', 'cmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'gmp1', 'gmp2', 'gmp3', 'pool2', 'pool3'];
+const SOLVE_ORDER = ['mix', 'xmp2', 'xmp3', '1d', 'su1', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'pmp1', 'pmp2', 'pmp3', 'cmp1', 'cmp2', 'cmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'gmp1', 'gmp2', 'gmp3', 'pool2', 'pool3'];
 /** The line's chain, for "Solve the line". */
 const SOLVE_LINE = ['mix', '1d', 'dry', 'film', 'sheet', 'stack', 'furn'];
 
