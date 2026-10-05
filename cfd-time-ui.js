@@ -6,8 +6,9 @@
  *    new value, or the start-up from the gap filled at rest; to an end time, the step set by its error or fixed;
  *    with the flow kept at even times. The settings live with the solver's (CFDS.time): saved in projects and cases,
  *    undone and redone like them.
- *  - Results: a time bar over the plots (Steady | In time; the slider over the kept times, Play) -- the plots, the
- *    metrics, probes, cut lines and profiles show the flow at the time chosen -- and the Time tab: the film at the
+ *  - Results: a time bar over the plots (Steady | In time; the slider over the kept times, Play; Pathlines and
+ *    Streaklines, T-6) -- the plots, the metrics, probes, cut lines and profiles show the flow at the time chosen, the
+ *    parcels' paths since t = 0 drawn to it -- and the Time tab: the film at the
  *    end of the 2D domain, the contact line and the flows in and out against time, for each location.
  * The steady result of each location stays what the rest of the app reads (Results, the report, the DOE).
  *
@@ -82,12 +83,8 @@ const timeShownK = () => (FV.tk == null ? null : FV.tk);
 function shownRun(i) {
   const run = cfdRuns[i], T = run && run.transient, k0 = timeShownK();
   if (k0 == null || !T || !T.frames || !T.frames.length || !run.field) return run;
-  const k = Math.min(k0, T.frames.length - 1);
-  let c = T.cache[k];
-  if (!c) {
-    const g = T.frames[k].g, field = makeFlowField(g, { rho: run.geo.rho, ty: run.geo.ty });
-    c = T.cache[k] = { field, streamCache: new Map(), metrics: flowMetrics(field), result: { ...run.result, ...g, orient: null } };
-  }
+  const k = Math.min(k0, T.frames.length - 1), c = timeCacheAt(run, k);
+  if (!c.metrics) c.metrics = flowMetrics(c.field);
   // (the web's speed and the bead pressure at that time: what the film Q/U and the plot's web arrow read)
   const t = T.frames[k].t, f = t > 0 ? (T.ramp > 0 ? Math.min(1, t / T.ramp) : 1) : 0;
   const p = { ...run, frame: k, t, field: c.field, streamCache: c.streamCache, metrics: c.metrics, result: c.result,
@@ -96,6 +93,47 @@ function shownRun(i) {
   Object.defineProperty(p, 'fieldNumbers', { get: () => c.fieldNumbers, set: v => { c.fieldNumbers = v; }, enumerable: false, configurable: true });
   return p;
 }
+/** Kept time k of a run's march: its flow field (and what the page reads from it), made once. */
+function timeCacheAt(run, k) {
+  const T = run.transient;
+  let c = T.cache[k];
+  if (!c) {
+    const g = T.frames[k].g;
+    c = T.cache[k] = { field: makeFlowField(g, { rho: run.geo.rho, ty: run.geo.ty }), streamCache: new Map(), result: { ...run.result, ...g, orient: null } };
+  }
+  return c;
+}
+
+// ---- Results: the paths of paste parcels in time (T-6; cfd-flowviz.js's tracePathline, traceStreakline) ----
+/** The paths are drawn: the flow in time is shown, and Pathlines or Streaklines is on. */
+const timePathsOn = () => FV.tk != null && (FV.pathlines || FV.streaklines) && timeLocs().length > 0;
+/**
+ * Location i's paths over its whole march, traced once per seeding: from the streamlines' seeds (automatic, on the flow
+ * at t = 0, or yours inside it), each parcel let out at t = 0 and followed to the end (pathlines), and the paste let
+ * out there without a break (streaklines). Kept with the march.
+ */
+function timePaths(i) {
+  const run = cfdRuns[i], T = run.transient;
+  const frames = T.frames.map((q, k) => ({ t: q.t, f: timeCacheAt(run, k).field })), f0 = frames[0].f;
+  const manual = FV.seedMode === 'manual' ? FV.manualSeeds.filter(([x, y]) => fieldInside(f0, x, y)) : null;
+  const key = manual ? `m|${JSON.stringify(manual)}` : `a|${seedCount()}|${FV.direction}`;
+  if (!(T.paths instanceof Map)) T.paths = new Map();
+  let c = T.paths.get(key);
+  if (!c) T.paths.set(key, c = { seeds: manual || autoSeeds(f0, seedCount(), FV.direction) });
+  if (FV.pathlines && !c.path) c.path = c.seeds.map(s => tracePathline(frames, s));
+  if (FV.streaklines && !c.streak) c.streak = c.seeds.map(s => traceStreakline(frames, s));
+  return c;
+}
+/** What location i's plot draws of the paths at the time shown (run: the run as shown), or nothing. */
+function timePathsShown(i, run) {
+  if (run.frame == null || !(FV.pathlines || FV.streaklines) || !cfdRuns[i].transient) return {};
+  const c = timePaths(i), t = run.t;
+  return {
+    pathlines: FV.pathlines ? c.path.filter(p => p.t[0] <= t).map(p => pathTo(p, t)) : null,
+    streaklines: FV.streaklines ? c.streak.flatMap(s => streakAt(s, t)) : null,
+  };
+}
+
 /** The locations in view with a march to show. */
 const timeLocs = () => viewLocs().filter(i => cfdRuns[i].field && cfdRuns[i].transient && cfdRuns[i].transient.frames.length);
 /** The kept times of the marches in view (the longest one's). */
@@ -174,13 +212,18 @@ function renderTimeBar() {
   host.hidden = false;
   const fr = timeFrames(), n = fr.length, k = FV.tk == null ? null : Math.min(FV.tk, n - 1), tr = cfdRuns[locs[0]].transient, stale = locs.some(timeStale);
   const err = locs.map(i => cfdRuns[i].transient.error ? `L${i + 1}: ${cfdRuns[i].transient.error}` : '').filter(Boolean);
+  // (the paths need the flow in time: off while the steady flow is shown)
+  const pathChk = (id, label, on, tip) => `<label class="fv-chk${k == null ? ' is-off' : ''}" title="${escAttr(k == null ? `${label}: choose In time` : tip)}"><input type="checkbox" id="${id}"${on ? ' checked' : ''}${k == null ? ' disabled' : ''}> ${label}</label>`;
   host.innerHTML = `<div class="time-bar" role="group" aria-label="Time">
     <div class="seg" role="tablist" aria-label="Flow shown"><button type="button" role="tab" data-tview="steady" aria-selected="${k == null}" title="Each location's steady flow at the inputs">Steady</button><button type="button" role="tab" data-tview="time" aria-selected="${k != null}" title="The flow in time, at the time set on the slider">In time</button></div>
     <button type="button" class="tool-btn" id="tPlay"${k == null ? ' disabled' : ''} aria-label="${timePlay ? 'Pause' : 'Play'}">${uiIco(timePlay ? 'pause' : 'play')}${timePlay ? 'Pause' : 'Play'}</button>
     <input type="range" id="tSlider" min="0" max="${n - 1}" step="1" value="${k ?? 0}"${k == null ? ' disabled' : ''} aria-label="Time shown" aria-valuetext="t = ${k == null ? '' : fmtT(fr[k].t)}">
     <span class="t-now">${k == null ? '<b>steady</b>' : `<b>t = ${fmtT(fr[k].t)}</b> of ${fmtT(fr[n - 1].t)}`}</span>
+    ${pathChk('tPath', 'Pathlines', FV.pathlines, 'Each parcel of paste from the streamlines\' seeds, let out at t = 0, followed to the time shown; the dot: where it is then')}
+    ${pathChk('tStreak', 'Streaklines', FV.streaklines, 'The paste let out at the streamlines\' seeds without a break since t = 0, where it is at the time shown; a bead per parcel')}
     <span class="t-what" title="${escAttr(timeWhat(tr))}">${timeWhat(tr)}${stale ? ' · <span class="warn-text">out of date</span>' : ''}${err.length ? ` · <span class="warn-text" title="${escAttr(err.join(' '))}">stopped early</span>` : ''}</span>
   </div>`;
+  for (const [id, key] of [['tPath', 'pathlines'], ['tStreak', 'streaklines']]) document.getElementById(id).onchange = e => { FV[key] = e.target.checked; renderLegend(); renderFlowPlots(); };
   host.querySelectorAll('[data-tview]').forEach(b => { b.onclick = () => { timeStop(); FV.tk = b.dataset.tview === 'time' ? (FV.tkLast ?? n - 1) : null; timeRedraw(); }; });
   const sl = document.getElementById('tSlider');
   syncSliderFill(sl);

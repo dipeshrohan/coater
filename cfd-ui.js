@@ -472,6 +472,8 @@ const FV = {
   stepAuto: false,        // a Run from Solve: open Results when it ends
   tk: null,               // the flow in time (cfd-time-ui.js): the kept time shown, null = the steady flow; tkLast the last one picked
   tkLast: null,
+  pathlines: false,       // ... with the parcels' paths from the seeds since t = 0 (T-6), and the streaklines (the paste let out there)
+  streaklines: false,
 };
 const DENSITY_N = { low: 8, medium: 16, high: 32 };
 const VEC_SPACING = { low: 64, medium: 44, high: 30 };
@@ -733,9 +735,11 @@ function timeRange(list) {
 }
 const scalarFor = (range, f) => range && (range.perLine ? range : { ...range, arr: SCALARS[range.key].arr(f) });
 
+/** How many seeds the Streamlines density gives (the paths in time take the same). */
+const seedCount = () => FV.density === 'custom' ? Math.max(2, Math.min(80, Math.round(FV.customN) || 16)) : DENSITY_N[FV.density];
 function streamlinesFor(run) {
   const f = run.field;
-  const n = FV.density === 'custom' ? Math.max(2, Math.min(80, Math.round(FV.customN) || 16)) : DENSITY_N[FV.density];
+  const n = seedCount();
   const manual = FV.seedMode === 'manual'
     ? FV.manualSeeds.filter(([x, y]) => fieldInside(f, x, y))
     : null;
@@ -866,7 +870,7 @@ function viewCFD() {
             <label class="fv-chk"><input type="checkbox" id="fvVecColor"${FV.vectorColor ? ' checked' : ''}> Colour by |V|</label>
           </fieldset>
         </div>
-            <label class="fv-chk is-off" title="Pathlines need transient CFD data. This solver is steady-state, so there is no particle history to trace."><input type="checkbox" disabled> Pathlines <span class="fv-why">(steady solver: not available)</span></label>
+            <p class="fv-note">Pathlines and streaklines: on the time bar over the plots, with a run in time (Solve › Time: Transient). They start at the streamlines' seeds.</p>
             <p class="fv-note">One colour scale per plot: colouring the streamlines or vectors switches the field colours off.</p>
           </div>
         </details>
@@ -2031,6 +2035,7 @@ function paintPlot(el, fast) {
     contours: mo ? null : ds ? diffContours(ds, ranges.base) : contourSpec(f, ranges, zoom, ctx.fields),
     cuts: ds || mo ? [] : cfdCuts.map(q => ({ ...q, color: cutColor(q) })),
     flakes: FV.flakes && !ds && !mo && run.frame == null ? orFlakeMarks(run) : null,
+    ...(!ds && !mo ? timePathsShown(i, run) : {}),
   });
   el._map = map;
   if (zoom) FV.zoom[zk] = map.view;           // (kept as clamped to the domain)
@@ -2421,6 +2426,10 @@ function renderLegend() {
     items.push(`<span class="lg"><i class="lg-seed${FV.seedMode === 'manual' ? ' man' : ''}"></i>${FV.seedMode === 'manual' ? 'your seed' : 'seed'}</span>`);
   }
   const diff = FV.view === 'diff';
+  if (!diff && timePathsOn()) {
+    if (FV.pathlines) items.push('<span class="lg"><i class="lg-line lg-path"></i>pathline: a parcel\'s path since t = 0, the dot where it is now</span>');
+    if (FV.streaklines) items.push('<span class="lg"><i class="lg-streak"><b></b><b></b><b></b></i>streakline: the paste let out at a seed since t = 0, a bead per parcel</span>');
+  }
   if (diff) items.push(`<span class="lg"><i class="lg-nodata"></i>no data: outside location B's fluid${FV.diff.pct ? ', or |A| under 2 % of its largest value' : ''}</span>`);
   if (FV.vectors && !diff) items.push(`<span class="lg"><i class="lg-vec"></i>velocity vector${FV.vectorNormalize ? ' (direction only)' : ' (length ∝ |V|)'}</span>`);
   if (FV.contours && diff && SCALARS[FV.base]) items.push(`<span class="lg"><i class="lg-line lg-contour${FV.diff.cmap === 'jet' ? ' by-value' : ''}"></i>contour line of Δ${SCALARS[FV.base].short}, including the zero line (no change)</span>`);

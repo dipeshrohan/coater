@@ -80,7 +80,7 @@ const FV_UNDO = {
   cutFields: ['Fields along the cut lines', 0], cutSel: ['Cut line charted', v => (cfdCuts[v] || {}).name || v + 1], zoom: ['Zoom', 0],
   cmap: ['Colour map', v => v === 'jet' ? 'Jet' : 'blue (colour-blind safe)'], levels: ['Colour levels', v => v ? `${v} bands` : 'smooth'],
   crange: ['Colour range', 0], clog: ['Log colour scale', 0], contours: ['Contour lines'], contourField: ['Contour field', v => v === 'same' ? 'the colour field' : scalarName(v)],
-  mesh: ['Mesh display'], meshQuality: ['Mesh quality colours'], diff: ['Difference settings', 0],
+  mesh: ['Mesh display'], meshQuality: ['Mesh quality colours'], diff: ['Difference settings', 0], pathlines: ['Pathlines'], streaklines: ['Streaklines'],
 };
 const DOE_UNDO = {
   loc: ['DOE location', v => `L${v + 1}`], workers: ['Runs at a time'], plot: ['DOE plot'], out: ['DOE output', v => (DOE_OUTPUTS.find(o => o.k === v) || {}).l || v],

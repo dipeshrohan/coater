@@ -47,9 +47,9 @@ const projMatKey = () => ({ ...MAT, sem: MAT.sem ? { tables: MAT.sem.tables, ima
 const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), FEED_POS.z, FEED_POS.entry, CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
-  // (a run's march in time, T-2: its record and kept times, not the fields drawn from them)
+  // (a run's march in time, T-2: its record and kept times, not the fields drawn from them nor the paths traced through them)
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, orientKey: r.orientKey || null,
-    ...(r.transient ? { transient: { ...r.transient, cache: undefined } } : {}) } : null;
+    ...(r.transient ? { transient: { ...r.transient, cache: undefined, paths: undefined } } : {}) } : null;
   return {
     app: PROJ_APP, format: PROJ_FORMAT, saved: new Date().toISOString(), name: PROJ.name,
     inputs: Object.fromEntries(CFG.map(c => [c.k, P[c.k]])),
@@ -339,7 +339,7 @@ function applyProject(p) {
     if (s && s.result) {
       const field = makeFlowField(s.result, { rho: s.geo.rho, ty: s.geo.ty });
       Object.assign(r, { status: 'done', result: s.result, geo: s.geo, key: s.key, orientKey: s.orientKey || null, elapsedMs: s.elapsedMs, field, streamCache: new Map(), metrics: flowMetrics(field),
-        transient: s.transient && s.transient.frames ? { ...s.transient, cache: [] } : null });
+        transient: s.transient && s.transient.frames ? { ...s.transient, cache: [], paths: null } : null });
     } else r.status = 'idle';
   });
   cfdAutoStarted = cfdRuns.some(r => r.field);

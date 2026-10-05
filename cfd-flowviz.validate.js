@@ -12,12 +12,19 @@
  *     traced lines around the vortex must close on themselves, and the
  *     detected eddy centre must match the published Ghia, Ghia & Shin
  *     (1982) primary vortex centre (0.6172, 0.7344), psi_min -0.10342.
+ *  3. Paths in time (T-6: pathlines and streaklines through the flow kept at even times): against exact paths in
+ *     flows given in closed form on curved Q2 grids that differ at each kept time -- a uniform flow and a rotation whose
+ *     speeds change linearly in time (exact), a shear and a swinging flow that change as a sine in time (second order in
+ *     the kept interval, the velocity being linear in time between kept times), the top coming down through a parcel --
+ *     and on a real coating flow marched in time (cfd-fem-time.js): a ring of parcels keeps its area (the paste cannot
+ *     be squeezed), and in a steady flow a parcel keeps to its streamline and takes the streamline's own time.
  *
  * Run: node cfd-flowviz.validate.js
  */
 const { solveCavityNS, muEffLocal } = require('./cfd-solver.js');
 const { solveGapFlow } = require('./cfd-gap-solver.js');
-const { makeFlowField, sampleField, bladeHeightAt, traceStreamline, autoSeeds, flowMetrics, streamlinePsiDeviation, findEddyCentres, contourLines, meshQuality } = require('./cfd-flowviz.js');
+const { makeFlowField, sampleField, bladeHeightAt, traceStreamline, autoSeeds, flowMetrics, streamlinePsiDeviation, findEddyCentres, contourLines, meshQuality,
+  streamlineTimes, tracePathline, pathAt, pathTo, traceStreakline, streakAt } = require('./cfd-flowviz.js');
 
 let fails = 0;
 const check = (ok, msg) => { console.log((ok ? 'PASS ' : 'FAIL ') + msg); if (!ok) fails++; };
@@ -169,6 +176,115 @@ console.log('\n-- contour lines and mesh quality (display helpers) --');
   check(tight.d9 < 1e-7 && tight.d9 < tight.d6 && tight.d6 < 1e-4, `RK45 on a tight curve (2 cells): the drift falls with the tolerance (1e-6: ${tight.d6.toExponential(2)}, 1e-9: ${tight.d9.toExponential(2)}; RK4 at its fixed step: ${tight.d4.toExponential(2)})`);
   const def = traceStreamline(f, seed, { direction: 'forward', maxCells: 200, integrator: 'rk4' });
   check(def.points.length === rk4.points.length && def.points.every((p, k) => p[0] === rk4.points[k][0] && p[1] === rk4.points[k][1]), 'Automatic is the fixed-step RK4, point for point');
+}
+// ---------------------------------------------------------------- T-6: paths in time
+{
+  console.log('\n-- paths in time: pathlines and streaklines against exact paths --');
+  // a curved Q2 grid over [0, Lx] x [0, top], its inner nodes moved (a wave, its phase different at each kept time), the
+  // velocity vel(x, y) at its nodes
+  const grid = (nx, ny, Lx, top, phase, vel) => {
+    const N = nx * ny, gx = new Float64Array(N), gy = new Float64Array(N), u = new Float64Array(N), v = new Float64Array(N);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const k = j * nx + i, s = i / (nx - 1), e = j / (ny - 1);
+      gx[k] = Lx * s + 0.4 * Lx / nx * Math.sin(Math.PI * s) * Math.sin(Math.PI * e + phase);
+      gy[k] = top * e + 0.4 * top / ny * Math.sin(Math.PI * e) * Math.sin(2 * Math.PI * s + phase);
+      [u[k], v[k]] = vel(gx[k], gy[k]);
+    }
+    return makeFlowField({ grid: 'curvilinear', nx, ny, gx, gy, u, v, gd: new Float64Array(N) }, {});
+  };
+  const framesOf = (n, T, mk) => Array.from({ length: n }, (_, k) => { const t = T * k / (n - 1); return { t, f: mk(t, k) }; });
+  const worst = (p, exact) => Math.max(...p.points.map(([x, y], m) => { const [ex, ey] = exact(p.t[m]); return Math.hypot(x - ex, y - ey); }));
+  {
+    // uniform, its speed linear in time: x = x0 + U0 t + a t^2 / 2 (the velocity's blend in time is then exact)
+    const T = 2, U0 = 0.3, a = 0.2, V0 = 0.05, b = -0.04, fr = framesOf(11, T, (t, k) => grid(41, 21, 2, 1, 0.7 * k, () => [U0 + a * t, V0 + b * t]));
+    const p = tracePathline(fr, [0.2, 0.3]), e = worst(p, t => [0.2 + U0 * t + a * t * t / 2, 0.3 + V0 * t + b * t * t / 2]);
+    check(p.reason === 'time' && Math.abs(p.tEnd - T) < 1e-15 && e < 1e-12, `uniform flow speeding up in time: on the exact path to ${e.toExponential(1)} m over ${p.points.length - 1} steps, to the last kept time`);
+  }
+  {
+    // rotation, the rate linear in time: on its circle, at the angle w0 t + a t^2 / 2
+    const T = 3, w0 = 1, a = 0.5, xc = 1, yc = 0.5, r0 = 0.3;
+    const fr = framesOf(7, T, (t, k) => grid(41, 21, 2, 1, 0.9 * k, (x, y) => { const w = w0 + a * t; return [-w * (y - yc), w * (x - xc)]; }));
+    const p = tracePathline(fr, [xc + r0, yc]), e = worst(p, t => { const th = w0 * t + a * t * t / 2; return [xc + r0 * Math.cos(th), yc + r0 * Math.sin(th)]; }) / r0;
+    check(p.reason === 'time' && e < 1e-6, `rotation turning faster in time (${((w0 * T + a * T * T / 2) / (2 * Math.PI)).toFixed(2)} turns): on the exact circle and angle to ${e.toExponential(1)} of the radius`);
+  }
+  {
+    // shear, a sine in time: x = x0 + y0 g0 T/pi (1 - cos(pi t / T)); between kept times the blend is linear: second order
+    const T = 1, g0 = 2, x0 = 0.2, y0 = 0.6;
+    const e = [11, 21, 41].map(n => worst(tracePathline(framesOf(n, T, (t, k) => grid(41, 21, 3, 1, 0.5 * k, (x, y) => [g0 * Math.sin(Math.PI * t / T) * y, 0])), [x0, y0], { tol: 1e-8 }),
+      t => [x0 + y0 * g0 * T / Math.PI * (1 - Math.cos(Math.PI * t / T)), y0]));
+    const o = [Math.log2(e[0] / e[1]), Math.log2(e[1] / e[2])];
+    check(o.every(q => Math.abs(q - 2) < 0.1) && e[2] < 5e-4, `shear changing as a sine in time: 10, 20, 40 kept intervals ${e.map(q => q.toExponential(2)).join(', ')} m (order ${o.map(q => q.toFixed(2)).join(', ')})`);
+  }
+  {
+    // the top coming down through a parcel (a free surface moving): the parcel goes on with the flow while either kept
+    // time around it has it, and leaves within one kept interval after the top passes it (t = 0.5)
+    const T = 1, U = 0.5, yp = 0.8, fr = framesOf(21, T, (t, k) => grid(41, 21, 2, 1 - 0.4 * t, 0.3 * k, () => [U, 0]));
+    const p = tracePathline(fr, [0.1, yp]), e = worst(p, t => [0.1 + U * t, yp]);
+    check(p.reason === 'left' && p.out === 'wall' && p.tEnd >= 0.5 && p.tEnd <= 0.55 + 1e-12 && e < 1e-12, `the top comes down through a parcel: on its path to ${e.toExponential(1)} m, leaves at t = ${p.tEnd.toFixed(3)} (the top passes it at 0.500, kept every 0.050)`);
+  }
+  {
+    // the textbook case: u = U, v = V0 sin(w t). The parcel let out at tau is at time t at (xs + U (t - tau),
+    // ys + V0/w (cos w tau - cos w t)): the streakline at t is a wave, the pathline from t = 0 another curve, the
+    // streamline at t a straight line
+    const T = 2, U = 0.5, V0 = 0.2, w = 2 * Math.PI / T, xs = 0.1, ys = 0.5;
+    const res = [11, 21, 41].map(n => {
+      const fr = framesOf(n, T, (t, k) => grid(41, 21, 2, 1, 0.4 * k, () => [U, V0 * Math.sin(w * t)]));
+      const s = traceStreakline(fr, [xs, ys], { tol: 1e-8, every: T / 40 }), at = t => streakAt(s, t);
+      let es = 0, count = 0;
+      for (const tt of [T / 2, T]) for (const l of at(tt)) for (const [x, y] of l) { const tau = tt - (x - xs) / U; es = Math.max(es, Math.abs(y - (ys + V0 / w * (Math.cos(w * tau) - Math.cos(w * tt))))); count++; }
+      const pl = tracePathline(fr, [xs, ys], { tol: 1e-8 }), ep = worst(pl, t => [xs + U * t, ys + V0 / w * (1 - Math.cos(w * t))]);
+      const half = pathTo(pl, T / 2), ex = [xs + U * T / 2, ys + V0 / w * (1 - Math.cos(w * T / 2))];
+      return { es, ep, count, lines: at(T).length, n: at(T)[0].length, half: Math.hypot(half.at[0] - ex[0], half.at[1] - ex[1]), last: half.points[half.points.length - 1][0] === half.at[0] && half.points[half.points.length - 1][1] === half.at[1] };
+    });
+    const os = Math.log2(res[1].es / res[2].es), op = Math.log2(res[1].ep / res[2].ep);
+    check(res.every(r => r.lines === 1 && r.n === 41) && Math.abs(os - 2) < 0.1 && res[2].es < 5e-4, `swinging flow, the streakline (41 parcels let out over the time) on the exact wave: ${res.map(r => r.es.toExponential(2)).join(', ')} m for 10, 20, 40 kept intervals (order ${os.toFixed(2)})`);
+    check(Math.abs(op - 2) < 0.1 && res[2].ep < 5e-4 && res.every(r => r.half < 2 * r.ep + 1e-12 && r.last), `and the pathline from t = 0 on its own exact curve: ${res.map(r => r.ep.toExponential(2)).join(', ')} m (order ${op.toFixed(2)}); the path drawn to half time ends where the parcel is then`);
+  }
+  {
+    // pathAt before the release and after the parcel has gone: none
+    const fr = framesOf(5, 1, (t, k) => grid(21, 11, 1, 1, k, () => [2, 0])), p = tracePathline(fr, [0.5, 0.5], { t0: 0.25 });
+    check(p.reason === 'left' && p.out === 'outlet' && pathAt(p, 0.1) === null && pathAt(p, 0.9) === null && Math.abs(pathAt(p, 0.4)[0] - 0.8) < 1e-12 && Math.abs(p.tEnd - 0.5) < 1e-6,
+      `a parcel let out at t = 0.25 leaves through the outflow at ${p.tEnd.toFixed(6)} (exact 0.5): no place before it is let out, nor after it has gone`);
+  }
+
+  // a real coating flow (cfd-fem-time.js 5's: web 0.1 m/s, 1 Pa s), its bead pressure stepped from 0 to 150 Pa, kept 20 times over 0.2 s
+  const gap = require('./cfd-gap-solver.js');
+  global.bandFactor = gap.bandFactor; global.bandSolve = gap.bandSolve;
+  const { solveCoaterFEM, coaterGrid } = require('./cfd-fem.js');
+  const { femMarch } = require('./cfd-fem-time.js');
+  const rho = 1020, g = 9.81, H = 1.7e-3, xe = 5e-3, U = 0.1, geo = { xe, H, faceDeg: 90, contactDeg: 35, U };
+  const base = { hFn: () => H, xe, faceDeg: 90, contactDeg: 35, U, rho, g, gamma: 0.07, mu: () => 1, Ld: 12e-3, nEb: 10, nEf: 6, nEs: 24, nEy: 6, fInfGuess: 0.5 * H };
+  const r0 = solveCoaterFEM({ ...base, Pup: 0 }), tEnd = 0.2, n = 20;
+  const m = femMarch(r0, { at: () => ({ inlet: { type: 'traction', p: y => 150 - rho * g * y } }), tEnd, dt0: 1e-4, tol: 1e-3, times: Array.from({ length: n }, (_, k) => (k + 1) * tEnd / n),
+    keep: (rr, t, info) => coaterGrid(info ? { ...rr, meshInfo: info.meshInfo, meniscus: { ...r0.meniscus, mode: info.mode, s: rr.surface.s } } : rr, geo) });
+  const frames = [{ t: 0, f: makeFlowField(coaterGrid(r0, geo), { rho, ty: 0 }) }, ...m.frames.map(q => ({ t: q.t, f: makeFlowField(q.r, { rho, ty: 0 }) }))];
+  {
+    // a ring of 400 parcels in the gap, under the edge and at the inlet: the area it holds stays (incompressible); at t = 0
+    // the polygon's own area, 1 - (2 pi^2 / 3) / 400^2 of the circle's
+    const K = 400, drift = [];
+    for (const [cx, cy, rr] of [[2.5e-3, 0.8e-3, 0.2e-3], [4.5e-3, 1.2e-3, 0.15e-3], [1.0e-3, 0.4e-3, 0.2e-3]]) {
+      const paths = Array.from({ length: K }, (_, k) => tracePathline(frames, [cx + rr * Math.cos(2 * Math.PI * k / K), cy + rr * Math.sin(2 * Math.PI * k / K)], { t1: 0.05 }));
+      const area = t => { const P = paths.map(p => pathAt(p, t)); let A = 0; for (let k = 0; k < K; k++) A += P[k][0] * P[(k + 1) % K][1] - P[(k + 1) % K][0] * P[k][1]; return A / 2; };
+      const A0 = area(0);
+      drift.push(Math.max(...[0.01, 0.02, 0.05].map(t => Math.abs(area(t) / A0 - 1))));
+    }
+    check(m.completed && Math.max(...drift) < 2e-3, `coating flow, bead pressure stepped (${m.frames.length} kept times, ${m.remeshes.length} new mesh): rings of 400 parcels keep their area to ${drift.map(d => (d * 100).toFixed(3) + '%').join(', ')} over 0.05 s`);
+  }
+  {
+    // the steady flow (the same kept field at both ends): each parcel stays on its streamline (psi) and reaches the end of
+    // the 2D domain in the streamline's own time (streamlineTimes)
+    const f = frames[0].f, st = [{ t: 0, f }, { t: 1, f }];
+    let range = 0; for (const q of f.psi) range = Math.max(range, Math.abs(q));
+    let dev = 0, dT = 0, out = true;
+    for (const s of autoSeeds(f, 12, 'both')) {
+      const p = tracePathline(st, s), p0 = sampleField(f, f.psi, s[0], s[1]);
+      for (const [x, y] of p.points) dev = Math.max(dev, Math.abs(sampleField(f, f.psi, x, y) - p0) / range);
+      const sl = traceStreamline(f, s, { direction: 'forward', integrator: 'rk45', tol: 1e-8 }), ts = streamlineTimes(f, sl);
+      dT = Math.max(dT, Math.abs(p.tEnd / ts[ts.length - 1] - 1));
+      out = out && p.reason === 'left' && p.out === 'outlet' && sl.endReason === 'boundary';
+    }
+    check(out && dev < 1e-3 && dT < 1e-3, `steady coating flow: 12 parcels from under the edge keep to their streamlines (psi within ${(dev * 100).toFixed(4)}% of its range) and leave the 2D domain in the streamline's time (within ${(dT * 100).toFixed(4)}%)`);
+  }
 }
 console.log(fails ? `\n${fails} check(s) FAILED` : '\nALL PASS');
 if (fails) process.exit(1);
