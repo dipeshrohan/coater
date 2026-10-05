@@ -149,7 +149,8 @@ function feedOutlets(o, cycle) {
  *   pulse), tau (s), pause (s, default 0), hCam (m, the camera's level: feedCycle's hLow), locs: [{ T (gapTable1D), gamma,
  *   thWeb, thBlade (deg) }], dt (s; default tau / 100), cyclesAfter (the camera's pulses followed once the level is first
  *   up, default 3), tEnd (s, instead), tMax (s, default 3600), h0, xf0 (m, a start other than empty: the checks) }
- * Returns { t, h, Qin, Qout (arrays), locs: [{ xf, q, film (null until the front is at the edge), tEdge }], pulses (their
+ * Returns { t, h, Qin, Qout (arrays), locs: [{ xf, q, film (q over the location's own web speed, its table's U; null until
+ *   the front is at the edge), tEdge }], pulses (their
  *   start times), tCam (the level first at the camera's), volIn, volOut, volGaps (m³), Lx, completed } or { error }.
  */
 function feedStartup(o) {
@@ -205,7 +206,7 @@ function feedStartup(o) {
   const record = (yy, on) => {
     const r = rates(yy, on ? Qp : 0, frontNow(yy));
     out.h.push(yy[0]); out.Qin.push(on ? Qp : 0); out.Qout.push(r.outflow);
-    for (let i = 0; i < n; i++) { const L = out.locs[i]; L.xf.push(yy[1 + i]); L.q.push(r.qs[i]); L.film.push(yy[1 + i] >= Lx[i] ? r.qs[i] / U : null); }
+    for (let i = 0; i < n; i++) { const L = out.locs[i]; L.xf.push(yy[1 + i]); L.q.push(r.qs[i]); L.film.push(yy[1 + i] >= Lx[i] ? r.qs[i] / (locs[i].T.U || U) : null); }
   };
   let t = 0, on = true, pulseEnd = tau, nextAt = null, fired = 0, done = false;
   if (out.tCam == null && y[0] >= hCam) out.tCam = 0;
@@ -226,10 +227,12 @@ function feedStartup(o) {
     if (!on && nextAt == null && y[0] > hCam && st.y1[0] <= hCam) { const d = landOn(y, dt, Qin, yy => yy[0] - hCam); if (!ev || d < ev.dt) ev = { dt: d, cam: true }; }
     if (ev) { dt = ev.dt; st = step(y, dt, Qin); }
     out.volIn += Qin * dt; out.volOut += st.volOut;
+    const hWas = y[0];
     y = st.y1; t += dt;
     if (ev && ev.front != null) { y[1 + ev.front] = Lx[ev.front]; out.locs[ev.front].tEdge = t; }
     for (let i = 0; i < n; i++) if (out.locs[i].tEdge == null && y[1 + i] >= Lx[i]) { y[1 + i] = Lx[i]; out.locs[i].tEdge = t; }
-    if (out.tCam == null && y[0] >= hCam) out.tCam = t;
+    // (the level first up at the camera's: within the step, linearly between its ends)
+    if (out.tCam == null && y[0] >= hCam) out.tCam = y[0] > hWas ? t - dt * (y[0] - hCam) / (y[0] - hWas) : t;
     // the pump and the camera
     if (on && t >= pulseEnd - 1e-9 * tau) { on = false; nextAt = y[0] <= hCam ? t + pause : null; }
     else if (!on && nextAt == null && ev && ev.cam) nextAt = t;

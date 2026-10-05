@@ -10,8 +10,9 @@
  * Or the crown (crownRun below): { id, crown: {...} } in, progress then { id, ok: true, crown } out.
  * Or points (measured data, its fit: onePoint below): { id, points: [geo], res ({ nx, ny }, or null for the page's),
  * ripple (also the film's sensitivity dh/dH and the structure leaving the edge) } in, { id, ok: true, points: [out] } out.
+ * Or the start-up (startupRun below): { id, startup: {...} } in, progress then { id, ok: true, startup } out.
  */
-importScripts('rheo.js', 'cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-across.js');
+importScripts('rheo.js', 'cfd-solver.js', 'cfd-blade.js', 'cfd-1d.js', 'cfd-across.js', 'feed-pulse.js');
 
 /** A location: its gap flow (arrays and three velocity profiles), film to the oven, ripple, meniscus. */
 function oneLocation(geo, ripple, full) {
@@ -75,7 +76,35 @@ function crownRun(id, c) {
     spread: { base: acrossSpread(base, c.counted), parab: acrossSpread(fa, c.counted), free: acrossSpread(fc, c.counted) } }, ms: performance.now() - t0 });
 }
 
+/**
+ * The start-up (Coating › 1D › Pool and feed; feed-pulse.js's feedStartup): { id, startup: { locs: [{ geo, q (the steady 1D's
+ * flow per width, m²/s: where the gap's table of flows is dense) }], base (feedCycle's o without its functions, with round and
+ * Xup: the pool meets the blade on its round entry, or at the 2D's pool edge), pause (s), thWeb (deg) } }. Each location's gap
+ * as a table of flows, the camera's level from the pulse cycle, then the pool, the fronts and the films from the web running
+ * and the first pulse. The pool's top stops where the gaps begin (the paste in a gap is the gap's).
+ */
+function startupRun(id, s) {
+  const t0 = performance.now(), b = s.base, Qp = b.V / b.tau;
+  const post = stage => postMessage({ id, progress: { stage } });
+  const meets0 = b.round ? (h => feedMeetsBlade(h, b.R, b.H)) : (() => b.Xup);
+  const c = feedCycle({ ...b, meets: meets0 });
+  if (c.error) throw new Error(c.error);
+  const locs = s.locs.map(({ geo, q }, i) => {
+    post(`the gap's flows at L${i + 1}`);
+    const T = gapTable1D(geo, { qLo: 0.2 * geo.U * geo.H, qMid: 1.6 * q, qHi: 2 * Math.max(6 * q, Qp / b.W) });
+    return { T, gamma: geo.gamma, thWeb: s.thWeb, thBlade: geo.contactDeg };
+  });
+  post('the pool, the fronts and the films in time');
+  const Lx = Math.max(...locs.map(L => L.T.Lx));
+  const r = feedStartup({ W: b.W, U: b.U, rho: b.rho, g: b.g, area: feedArea({ ...b, meets: h => Math.max(meets0(h), Lx) }), V: b.V, tau: b.tau,
+    pause: s.pause, hCam: c.hLow, locs });
+  if (r.error) throw new Error(r.error);
+  postMessage({ id, ok: true, startup: { t: r.t, h: r.h, Qin: r.Qin, Qout: r.Qout, locs: r.locs, pulses: r.pulses, tCam: r.tCam, volIn: r.volIn,
+    volOut: r.volOut, volGaps: r.volGaps, Lx: r.Lx, completed: r.completed, hCam: c.hLow, hHigh: c.hHigh, hBar: c.hBar, T: c.T }, ms: performance.now() - t0 });
+}
+
 onmessage = e => {
+  if (e.data.startup) { try { startupRun(e.data.id, e.data.startup); } catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); } return; }
   if (e.data.crown) { try { crownRun(e.data.id, e.data.crown); } catch (err) { postMessage({ id: e.data.id, ok: false, error: err.message }); } return; }
   if (e.data.points) {
     try { const t0 = performance.now(); postMessage({ id: e.data.id, ok: true, points: e.data.points.map((g, k) => onePoint(g, e.data.res, e.data.ripple && e.data.ripple[k])), ms: performance.now() - t0 }); }

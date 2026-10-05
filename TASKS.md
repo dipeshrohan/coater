@@ -12,8 +12,9 @@ keeps it up to date in each pull request. The order and the tasks change only af
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
-| 1 | Coating start-up in 1D: finish and ship | Small | In progress | Nothing |
-| 2 | Dry film: the app's 16 µm against your measured 60 µm | Small | In progress | How the 60 µm was measured; which step "after unstacking" is |
+| 2a | Dry film: show its thickness as a gauge reads it | Small | Next | Nothing |
+| 2b | Furnace: fit the weight kept to your 1.03 g | Small to medium | To do | Nothing |
+| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Waiting for your picture | The picture of the piece before and after the pre heat |
 | 3 | Paths of paste parcels in the 2D coating flow in time | Small to medium | To do | Nothing |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
@@ -38,36 +39,40 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 24 | A full viewer on every geometry, mesh and result display | Large | To do | Answers on the list of displays |
 | 25 | Structured block meshing (ANSA level) | Very large | To do | Nothing to start |
 
-## 1. Coating start-up in 1D: finish and ship
-Your choice: time starts when the web runs and the paste is fed.
-- **Built and checked against exact answers**:
-  - the pool filling from the first pulse;
-  - the paste drawn under the blade to the edge;
-  - the film starting on the web.
-- **Left**:
-  - the pump's pause between pulses as an input (default 0, no pause);
-  - a Solve button;
-  - the start-up charts on Coating › 1D › Pool and feed: the pool level, the film at the edge against time, the film
-    along the web;
-  - the times: paste at the edge, level up, film steady; and how much web is coated before then;
-  - help, report, tests, screenshots (light, dark, phone); pull request, merge.
-
-## 2. Dry film: the app's 16 µm against your measured 60 µm
-- **Your weights** (300 × 300 mm film, 0.09 m²):
+## 2a. Dry film: show its thickness as a gauge reads it
+- **Your weights** (300 × 300 mm piece, 0.09 m²):
 
   | Step | Weight | Per m² |
   |---|---|---|
   | After cutting | 2.4 g | 26.7 g/m² |
-  | After pre heat treatment | 2.0 g | 22.2 g/m² |
-  | After unstacking | 1.03 g | 11.4 g/m² |
+  | After the pre heat treatment, cooled | 2.0 g | 22.2 g/m² |
+  | After the furnace (unstacked) | 1.03 g | 11.4 g/m² |
 
-- **Found**: the app's dry coat weight is 26 g/m², so the amount of GO is right. At 60 µm, the cut film is about
-  0.44 g/cm³. That is far less dense than the app takes it, which is why the app shows 16 µm.
+- **Found**: the app's dry coat weight is 26 g/m², so the amount of GO is right. Your 60 ± 15 µm is read with a gauge,
+  which reads the film's outside. The app's 15.9 µm is the GO layer packed solid.
 - **Left**:
-  - compare the app's masses after the pre heat treatment and after the furnace with your 2.0 g and 1.03 g;
-  - ask you, with screenshots: how the 60 µm was measured, and which step "after unstacking" is;
-  - change what the answers show is wrong;
-  - re-check the peel and the furnace with the thicker film; tests, pull request, merge.
+  - an editable value: the dry film's density as a gauge reads it (default 0.44 g/cm³, from your 2.4 g over 0.09 m² at
+    60 µm);
+  - the app shows the thickness a gauge reads next to the solid layer's, on Wet and dry film and wherever the dry film's
+    thickness is shown. No other result changes.
+
+## 2b. Furnace: fit the weight kept to your 1.03 g
+- **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the
+  GO's carbon as gas. Yours comes out at 1.03 g, keeping nearly all its carbon.
+- **Your choice**: fit the app to your weight.
+- **Left**:
+  - set the Furnace card's mass shares (editable) so that 2.4 g comes out at 1.03 g;
+  - show the graphene film's thickness, density and puffing before and after, with screenshots.
+
+## 2c. Pre heat: your piece loses 0.4 g, the app only water
+- **Now**: your piece goes from 2.4 g to 2.0 g in the pre heat and stays there after cooling. The app removes only
+  water (0.18 g), and the piece takes it back under the plate (2.51 g). 0.4 g is more than all the piece's water
+  (0.19 g).
+- **You said**: its colour changes. You will send a picture.
+- **Left**:
+  - from the picture, find what the GO does at 100 °C;
+  - ask you about the change, with screenshots;
+  - build it, with checks.
 
 ## 3. Paths of paste parcels in the 2D coating flow in time
 - **Built**: the 2D coating flow in time (Transient) keeps the flow at every step.
@@ -256,3 +261,6 @@ Your rule: every process has thermal, stress and flow solvers.
   - size boxes, and layers per wall;
   - smoothing and quality limits, with fixes;
   - saved parameter sets, inspection, export.
+
+## Done
+- Coating start-up in 1D (was task 1): Coating › 1D › Pool and feed, "From the first pulse".
