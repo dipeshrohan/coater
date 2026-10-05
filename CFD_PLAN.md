@@ -135,10 +135,11 @@ NUM-T, time marching in 1D, 2D and 3D: plan approved by the owner (30 Sep), 2D f
   neighbourhood's binomial mean (a smooth field passes; applied afresh each step to lambda traced exactly).
   Found on the way: following paths with half-cell steps and the midpoint shear rate (memory 12) gave lambda 0.007 rms
   (0.19 at one node by the eddy) away from the steady solve's along the same steady flow, and the march's step fell to
-  2e-4 s by 1.6 s with nothing changed; following them as structField does: 0.0024 rms. Without the 0.02 hold the step
-  still falls to 1e-3 s by 5 s (the dividing streamline crossing nodes); a full binomial smoothing holds it too but
-  moves lambda 0.022 rms off the steady solve's.
-  Measured (Node, the app's default paste and coater, 720 Pa): nothing changed for 10 s: 90 steps, 74 s; film
+  2e-4 s by 1.6 s with nothing changed; following them as structField does: 0.0024 rms (the flow on the steady solve's
+  mesh with that lambda: film +0.008 %). Without the 0.02 hold the step still falls to 1e-3 s by 5 s (the dividing
+  streamline crossing nodes); a full binomial smoothing holds it too but moves lambda 0.022 rms off the steady solve's
+  (film +0.10 %).
+  Measured (Node, the app's default paste and blade, bead pressure 720 Pa): nothing changed for 10 s: 90 steps, 74 s; film
   (Q/U) 1.59765 -> 1.59960 mm (at most +0.14 % on the way), contact line 1.1596 -> 1.1616 mm. Bead pressure
   720 -> 900 Pa: 71 steps, 67 s; film 1.7111 mm after 6 s (the steady structure solve at 900 Pa: 1.7147 mm, the plain
   flow curve 1.8350 mm); lambda keeps rebuilding after the flow has settled (rebuild time 30 s).
