@@ -539,6 +539,8 @@ summary.tool-btn::after { content: ''; border-top: 4px solid var(--muted); borde
   .tree { border-bottom: 1px solid var(--line); }
   .work { overflow: visible; padding: 12px; }
   .work.fill { overflow: visible; padding: 0; }
+  .work.fill > #view > .sum-page { height: auto; overflow: visible; }
+  .work.fill > #view > .sum-page > .pg-bar { position: static; }
   .cfd-wb { display: block; height: auto; }
   .viewport { overflow: visible; }
   .viewport #cfdPlots { overflow: visible; }
@@ -1188,6 +1190,9 @@ body:has(#pgScope) #scope { display: none; }
 
 /* Summary */
 .sum-page { min-height: 100%; background: var(--bg); }
+/* (a summary page fills the work area, which does not scroll itself: the page scrolls in it, its bar kept on top) */
+.work.fill > #view > .sum-page { height: 100%; overflow-y: auto; }
+.work.fill > #view > .sum-page > .pg-bar { position: sticky; top: 0; z-index: 3; }
 .sum-body { padding: 14px 24px 32px; }
 .sum-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; margin-bottom: 18px; }
 .sum-top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.015em; color: var(--ink); }
