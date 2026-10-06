@@ -65,6 +65,11 @@ const at40 = () => withV({ phi: 40 });   // (the worked cases' slurry: 40 vol% s
   check('your 2.4 g piece: its dry GO 1.99 g; dried through at 100 °C it keeps the isotherm\'s water there (by hand) and weighs about 2.07 g, 0.33 g lost',
     close(Xpre, gabAt(aPre, 100)) && Math.abs(dryGO - 1.992) < 0.001 && after > 2.0 && after < 2.1 && 2.4 - after > 0.3,
     `a ${(aPre * 100).toFixed(2)} %, X ${(Xpre * 100).toFixed(2)} %: ${after.toFixed(3)} g, ${(2.4 - after).toFixed(3)} g lost`);
+  // (the film's swelling in its plane: GO paper shrinks 67e-6/K from 25 to 150 °C as its water leaves (Su et al. 2012);
+  //  over that its water goes from the room's to the isotherm's at 150 °C, the room's air heated -- β the ratio, by hand)
+  const a150 = 0.5 * ps(25) / ps(150), dX = gabAt(0.5) - gabAt(a150, 150), betaHand = 67e-6 * 125 / dX;
+  check('the film\'s swelling β from the published shrinkage over the water it loses, 25 to 150 °C (by hand)', Math.abs(g.film.beta.v - betaHand) / betaHand < 0.01,
+    `the water ${(gabAt(0.5) * 100).toFixed(1)} → ${(gabAt(a150, 150) * 100).toFixed(2)} %: β ${betaHand.toFixed(4)} per kg/kg, the default ${g.film.beta.v}`);
   const b3 = M.massBalance(h, U, W, d);
   check('  in the room the film weighs its GO and that water', close(b3.coatRoom, b3.coatDry * (1 + M.matRoomWater(d))));
   const yours = withV({ rhoGauge: 2.4 / 0.09 / 60e-6 / 1e6 });

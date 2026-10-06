@@ -13,7 +13,7 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
-| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your answers | When you weigh after the pre heat; cracks at the edges |
+| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
@@ -63,11 +63,12 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **Also changed**:
   - water left at the oven exit: 8.4 % (was 5.0 %);
   - peel, drying top and bottom: no cracks (was 1.2× its toughness); curl 60 mm (was 71 mm);
-  - pre heat: the drying edges pull 131 MPa, over the film's 100 MPa (was 89 MPa);
   - gauge thickness 70 µm (was 63 µm); size after the furnace −5.1 % (was −4.1 %).
+- **You said**: no cracks at the pieces' edges after the pre heat. The film's swelling β is now 0.042 per kg/kg (the same
+  published shrinkage, with GO's own water): the drying edges pull 69 MPa, under its 100 MPa strength.
 - **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
-  Yours stay at 2.0 g.
-- **Left**: your answers on when you weigh and on cracks at the pieces' edges; then match the app to them.
+  Yours stay at 2.0 g for hours; not yet weighed a day later.
+- **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
 
 ## 4. Faster tetrahedral mesher
 - **Now**: the mesher's smoothing rounds rebuild the whole mesh after each round. That is about 40 % of its time (35 s
