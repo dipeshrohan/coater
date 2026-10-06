@@ -12,6 +12,7 @@
 - Physics and simulation are the core. Every process has 1D, 2D and 3D multiphysics solvers (thermal, stress, strain, fluid flow, ...), checked against independent solutions.
 - Test everything; never break or delete a feature. Check every implementation: the application must not break.
 - Pages look like professional software and are easy to understand: no pages of plain text, no garbage layouts, no random boxes.
+- Do not fill too many things in one place with a lot of text: each place shows a few things clearly. This is a general rule for the entire application.
 - Holder photos never go into the app; defect photos stay out of the repository.
 
 ## Shipping

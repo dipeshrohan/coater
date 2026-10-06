@@ -12,8 +12,9 @@ keeps it up to date in each pull request. The order and the tasks change only af
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
+| 13 | Stage pages to one professional layout, Pre heat first | Medium per page | Next | A yes per page |
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
-| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your answers | When you weigh after the pre heat; cracks at the edges |
+| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
@@ -23,7 +24,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 10 | Results for the whole line | Medium | To do | Your answer on the layout |
 | 11 | Each input edited in one place only | Medium | To do | A yes on the list |
 | 12 | Measured data in one place | Medium | To do | Your answer |
-| 13 | Stage pages to one professional layout | Medium per page | To do | A yes per page |
 | 14 | Coating start-up in 2D with a moving front | Large | To do | Nothing |
 | 15 | Coating 3D in time | Large | To do | Nothing |
 | 16 | Paths of paste parcels in 3D in time | Medium | To do | Nothing |
@@ -36,6 +36,18 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 23 | The heap under each stream (free-surface solve) | Large | To do | Whether you want it |
 | 24 | A full viewer on every geometry, mesh and result display | Large | To do | Answers on the list of displays |
 | 25 | Structured block meshing (ANSA level) | Very large | To do | Nothing to start |
+
+## 13. Stage pages to one professional layout, Pre heat first
+- **You said**: the visualisation is clumsy; do not fill too many things in one place with a lot of text (a rule for
+  the whole application, now in CLAUDE.md); start now, with the Pre heat page.
+- **Pages**: Pre heat treatment first, then Drying, Peel and wind, Cutting, Furnace, Graphene film.
+- **Planned**:
+  - no blocks of text in the main area; explanations go behind the (i) help;
+  - results as aligned tables and figure tiles;
+  - warnings and checks as tables.
+- **Left**, per page:
+  - show you a screenshot of the page now and of the change, and ask;
+  - then build; one pull request per page.
 
 ## 2b. Furnace: the weight your piece keeps (1.03 g)
 - **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the
@@ -63,11 +75,12 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **Also changed**:
   - water left at the oven exit: 8.4 % (was 5.0 %);
   - peel, drying top and bottom: no cracks (was 1.2× its toughness); curl 60 mm (was 71 mm);
-  - pre heat: the drying edges pull 131 MPa, over the film's 100 MPa (was 89 MPa);
   - gauge thickness 70 µm (was 63 µm); size after the furnace −5.1 % (was −4.1 %).
+- **You said**: no cracks at the pieces' edges after the pre heat. The film's swelling β is now 0.042 per kg/kg (the same
+  published shrinkage, with GO's own water): the drying edges pull 69 MPa, under its 100 MPa strength.
 - **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
-  Yours stay at 2.0 g.
-- **Left**: your answers on when you weigh and on cracks at the pieces' edges; then match the app to them.
+  Yours stay at 2.0 g for hours; not yet weighed a day later.
+- **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
 
 ## 4. Faster tetrahedral mesher
 - **Now**: the mesher's smoothing rounds rebuild the whole mesh after each round. That is about 40 % of its time (35 s
@@ -147,16 +160,6 @@ You said bubbles are still seen sometimes.
   - furnace.
 - The old places keep a link.
 - **Left**: list where each kind is imported now, show you with screenshots, ask, then build.
-
-## 13. Stage pages to one professional layout
-- **Pages**: Drying, Peel and wind, Cutting, Pre heat treatment, Furnace, Graphene film.
-- **Planned**:
-  - no blocks of text in the main area; explanations go behind the (i) help;
-  - results as aligned tables and figure tiles;
-  - warnings and checks as tables.
-- **Left**, per page:
-  - show you a screenshot of the page now and of the change, and ask;
-  - then build; one pull request per page.
 
 ## 14. Coating start-up in 2D with a moving front
 After task 1.

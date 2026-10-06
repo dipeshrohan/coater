@@ -83,7 +83,7 @@ const MAT_FILM = [
   ['nup', 'Poisson\'s ratio along it, ν_p', '', 0, 0.49, 0.01, 2, 0.2, 'assumed', 'graphene 0.17; GO paper about 0.2'],
   ['nupt', 'Poisson\'s ratio through it, ν_pt', '', 0, 0.49, 0.01, 2, 0.1, 'assumed', 'its thickness change under an in-plane stress'],
   ['Xh', 'Softer with water: its stiffness halves at', 'kg/kg', 0.01, 10, 0.01, 2, 0.15, 'assumed', 'GO paper softens as it takes up water'],
-  ['beta', 'Swelling along it with its water, β', 'per kg/kg', 0, 1, 0.005, 3, 0.08, 'assumed', 'GO paper shrinks −67e-6/K from 25 to 150 °C as its water leaves (Su et al., Carbon 2012): about 0.08 per kg/kg with the isotherm on the Drying card'],
+  ['beta', 'Swelling along it with its water, β', 'per kg/kg', 0, 1, 0.001, 3, 0.042, 'assumed', 'GO paper shrinks −67e-6/K from 25 to 150 °C as its water leaves (Su et al., Carbon 2012): about 0.042 per kg/kg with the isotherm on the Drying card (its water 20.5 % at 25 °C, 0.6 % at 150 °C, the room\'s air)'],
   ['alphaF', 'Its own heat expansion along it', '×10⁻⁶/K', -50, 100, 0.5, 1, 0, 'assumed', 'GO\'s own in-plane expansion is near zero (Su et al. 2012; the shrinkage is its water leaving)'],
   ['sigF', 'Dry film\'s strength', 'MPa', 1, 2000, 1, 0, 100, 'assumed', 'GO paper 120 MPa (Dikin et al. 2007); 4–120 MPa reported'],
   ['GcF', 'Its fracture energy (a crack through it)', 'J/m²', 0.1, 10000, 1, 1, 40, 'assumed', 'multilayer GO about 39 J/m² (J-integral); thicker films may be tougher: the crack spacing measured gives it'],
