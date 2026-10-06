@@ -274,7 +274,7 @@ SWB_ADAPT.dry = {
   physics: (dim, o) => {
     const d = MAT.dry;
     return [['Heat', 'C ∂T/∂t + ρ_a c_a u·∇T = ∇·(k ∇T) − L ṁ', `film: GO k ${d.kS.v} through, ${d.kIn.v} along W/(m·K) with its water (flakes flat: in series through, side by side along); web: fibres k ${d.kFib.v} in the air (Maxwell–Eucken), c_p ${d.cpWeb.v} J/(kg·K)`],
-      ['Water', '∂e/∂t = ∂/∂ζ (D(φ) φ² ∂e/∂ζ);  skin: ṁ = K_v (p_f − p_i) / δ', `the flakes' collective diffusion (× ${d.mul.v}), the skin's vapour permeability ${d.skinK.v} × 10⁻¹² kg/(m·s·Pa), GAB (X_m ${d.gabXm.v}, C ${d.gabC.v}, K ${d.gabK.v})`],
+      ['Water', '∂e/∂t = ∂/∂ζ (D(φ) φ² ∂e/∂ζ);  skin: ṁ = K_v (p_f − p_i) / δ', `the flakes' collective diffusion (× ${d.mul.v}), the skin's vapour permeability ${d.skinK.v} × 10⁻¹² kg/(m·s·Pa), GAB (X_m ${d.gabXm.v}, C ${d.gabC.v} at ${d.gabT0 ? d.gabT0.v : 25} °C, its binding heat ${d.gabHc ? d.gabHc.v : 0} kJ/mol, K ${d.gabK.v})`],
       ['Air through the web', dim === 1 ? 'u = the zone\'s air speed, up through the web' : '∇·(k_D/μ ∇p) = 0,  u = −(k_D/μ) ∇p', `permeability k_D ${o.webK.toExponential(2)} m² (the fibre web); the air's viscosity at its temperature`],
       ['Stress', dim === 1 ? 'the laminate held flat: σ = Q(X) (ε₀ − ε_set − α ΔT − β ΔX)' : '∇·σ = 0,  σ = C(X) (ε − ε_set − α ΔT − β ΔX)', `the Film card: E ${MAT.film.Ep.v} GPa along (softer with water), β ${MAT.film.beta.v}, α ${MAT.film.alphaF.v} × 10⁻⁶/K; the wet film a gel, E ${MAT.film.Eg.v} kPa; the web E ${MAT.film.Ew.v} GPa, α ${MAT.film.alphaW.v} × 10⁻⁶/K`]];
   },

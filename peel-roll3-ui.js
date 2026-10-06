@@ -15,7 +15,7 @@ function pr3Inputs() {
   const m = pmpSet(3), W = webWidth() / 1000;
   return { R0: b.R0, n: b.n, h: b.h, W, film: b.film, where: b.where,
     heat: { T0: b.heat.T0, k: b.heat.k, kIn: MAT.dry.kIn.v, rhoc: b.heat.rhoc, hOut: b.heat.hOut, Troom: b.heat.Troom },
-    water: { X0: b.water.X0, gab: b.water.gab, Xcap: b.water.Xcap ?? null, rhoD: b.water.rhoD, Kv: b.water.Kv, KvIn: MAT.film.rollK.v * 1e-7, rhRoom: b.water.rhRoom },
+    water: { X0: b.water.X0, gab: b.water.gab, rhoD: b.water.rhoD, Kv: b.water.Kv, KvIn: MAT.film.rollK.v * 1e-7, rhRoom: b.water.rhRoom },
     tEnd: b.tEnd, steps: m.r3steps, snapAt: [0, 0.01, 0.1, 1].map(f => f * b.tEnd), latent: true,
     mesh: { nr: m.r3nr, gr: m.r3gr, nth: m.r3nth, nz: m.r3nz, gz: m.r3gz } };
 }

@@ -95,7 +95,10 @@ function drJets(jet, P) {
   return { h: Nu * air.k / D, km: Nu * Math.pow(air.Sc / air.Pr, 0.42) * air.Dv / D, Nu, Re, f, f0, valid, air };
 }
 /** The GAB sorption isotherm: water per dry mass (kg/kg) at water activity a. */
-const drGAB = (a, g) => { const Ka = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * Ka / ((1 - Ka) * (1 - Ka + g.C * Ka)); };
+// (at a temperature T (°C): its C as exp(Hc/RT) from its value at T0 -- warm GO holds less at the same humidity; no T,
+//  or no Hc (J/mol): the isotherm as it is)
+const drGabC = (g, T) => (g.Hc && Number.isFinite(T) ? g.C * Math.exp(g.Hc / 8.314462618 * (1 / (T + 273.15) - 1 / ((Number.isFinite(g.T0) ? g.T0 : 25) + 273.15))) : g.C);
+const drGAB = (a, g, T) => { const Ka = g.K * Math.min(Math.max(a, 0), 1), C = drGabC(g, T); return g.Xm * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)); };
 
 // ---- the flakes' collective diffusion ----
 /** d(φ Z)/dφ, Z Carnahan–Starling (hard spheres), up to the packing φm (finite there: the skin forms in a finite time). */
@@ -449,7 +452,7 @@ function drStrip(o) {
   if (!(o.h0 > 0) || !(o.U > 0)) throw new Error('no wet film, or the line not moving');
   const Zs = drStretches(o), xEnd = Zs[Zs.length - 1].x1, xStart = Zs[0].x0;
   // the skin's bound water: the dry GO's isotherm at the last zone's humidity (kept below the packing's pores)
-  const Zl = [...Zs].reverse().find(Z => Z.name !== 'after'), aExit = Math.min(1, Zl.pa / drPsat(Zl.Ta)), Xb = drGAB(aExit, o.gab);
+  const Zl = [...Zs].reverse().find(Z => Z.name !== 'after'), aExit = Math.min(1, Zl.pa / drPsat(Zl.Ta)), Xb = drGAB(aExit, o.gab, Zl.Ta);
   const xOven = Zs.filter(Z => Z.name !== 'after').pop().x1;   // (the oven's exit; the line's end when nothing follows it)
   const es = Math.min(Xb * rhoS / rhoL, 0.9 * em), swells = Xb * rhoS / rhoL > 0.9 * em;
   // each stretch's constant rate (the wet film's steady state were its surfaces to stay wet) and its drying Peclet
@@ -733,6 +736,6 @@ function drSample(series, key, xs) {
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
   drSample,
-  drPsat, drTsat, drLatent, drMuWater, drAir, drUse, DR_PROPS, drMoistRho, drNat, drJets, drGAB, drDphiZ, drD0, drDcoll, drFaces, drB, drSG, drTri,
+  drPsat, drTsat, drLatent, drMuWater, drAir, drUse, DR_PROPS, drMoistRho, drNat, drJets, drGAB, drGabC, drDphiZ, drD0, drDcoll, drFaces, drB, drSG, drTri,
   drEvap, drStretches, drTopSide, drBottomSide, drSideState, drConstantRate, drWaterStep, drStrip,
 };

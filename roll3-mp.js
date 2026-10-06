@@ -13,8 +13,11 @@
  */
 const R3 = typeof mpMesh === 'function' ? { mpMesh, mpHeatMoisture } : require('./mp-core.js');
 const R3_DR = typeof drPsat === 'function' ? { drPsat, drLatent } : (() => { try { return require('./drying.js'); } catch (e) { return {}; } })();
-const r3GAB = (a, g) => { const Ka = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * Ka / ((1 - Ka) * (1 - Ka + g.C * Ka)); };
-function r3GABinv(X, g) { let lo = 0, hi = 1; if (X >= r3GAB(1, g)) return 1; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (r3GAB(m, g) < X) lo = m; else hi = m; } return (lo + hi) / 2; }
+// (GO's own water at activity a; at a temperature T (°C) its C as exp(Hc/RT) from its value at T0; no T or no Hc:
+//  the isotherm as it is)
+const r3GabC = (g, T) => (g.Hc && Number.isFinite(T) ? g.C * Math.exp(g.Hc / 8.314462618 * (1 / (T + 273.15) - 1 / ((Number.isFinite(g.T0) ? g.T0 : 25) + 273.15))) : g.C);
+const r3GAB = (a, g, T) => { const Ka = g.K * Math.min(Math.max(a, 0), 1), C = r3GabC(g, T); return g.Xm * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)); };
+function r3GABinv(X, g, T) { let lo = 0, hi = 1; if (X >= r3GAB(1, g, T)) return 1; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (r3GAB(m, g, T) < X) lo = m; else hi = m; } return (lo + hi) / 2; }
 
 /** The roll's mesh: r from the core out (graded toward the outer turn), θ over a quarter, z from the middle of its width
  *  to its end (graded toward the end). o: { R0, R1, W, mesh: { nr, nth, nz, gr, gz } }. */
@@ -39,9 +42,9 @@ function r3Run(o) {
   const t0 = Date.now(), R1 = o.R0 + o.n * o.h, ax = r3Axes({ ...o, R1 }), M = R3.mpMesh({ dim: 3, p: 1, axes: ax.axes, x0: ax.x0, map: ax.map });
   const H = o.heat, Wt = o.water, chk = o.check || {}, psat = R3_DR.drPsat;
   const lin = o.linear || null;
-  const S = lin ? (m, p) => lin.c * p : (m, p, T) => Wt.rhoD * Math.min(r3GAB(p / psat(T), Wt.gab), Wt.Xcap ?? Infinity);
+  const S = lin ? (m, p) => lin.c * p : (m, p, T) => Wt.rhoD * Math.min(r3GAB(p / psat(T), Wt.gab, T), Wt.Xcap ?? Infinity);
   const pRoom = Wt.rhRoom * psat(H.Troom);
-  const a0 = lin ? null : r3GABinv(Wt.X0, Wt.gab), p0 = lin ? (o.p0 ?? 0) : a0 * psat(H.T0);
+  const a0 = lin ? null : r3GABinv(Wt.X0, Wt.gab, H.T0), p0 = lin ? (o.p0 ?? 0) : a0 * psat(H.T0);
   const bcT = [], bcV = [];
   if (chk.outer !== 'sealed') { bcT.push({ face: 'x1', type: 'robin', h: () => H.hOut, uInf: () => H.Troom }); bcV.push({ face: 'x1', type: 'value', u: () => (lin ? lin.pOut : pRoom) }); }
   if (chk.ends !== 'sealed') { bcT.push({ face: 'z1', type: 'robin', h: () => H.hOut, uInf: () => H.Troom }); bcV.push({ face: 'z1', type: 'value', u: () => (lin ? lin.pOut : pRoom) }); }

@@ -364,15 +364,16 @@ function hubDrawModels(r) {
       hubLine(cv, p, { xl: 'ordering strength U', yl: 'order at rest S₀', x0: 0, x1: 20, aspect: 0.36, marks: [{ x: MAT.orient.U.v, c: acc, t: `U ${MAT.orient.U.v}` }] });
       setLg([['S₀(U), Maier–Saupe', cssVar('--go-film')], [`this slurry: S₀ ${hubFmt(orRestS(MAT.orient.U.v), 3)}`, acc, 'dash']]);
     } else if (k === 'gab') {
-      const g = { Xm: MAT.dry.gabXm.v, C: MAT.dry.gabC.v, K: MAT.dry.gabK.v }, p = [];
-      for (let i = 0; i <= 95; i++) p.push([i, drGAB(i / 100, g) * 100]);
-      const zs = [...new Set(OVEN.zones.map(z => z.rh))];
-      hubLine(cv, p, { xl: 'relative humidity (%)', yl: 'water held X (% of its mass)', x0: 0, x1: 95, aspect: 0.36, marks: [{ x: MAT.dry.rhRoom.v, c: acc, t: 'room' }, ...zs.map(rh => ({ x: rh, c: mut, t: '' }))], hl: [{ y: hubXcap() * 100, c: cssVar('--warn'), t: 'its pores full', left: true }] });
-      setLg([['X(a), GAB', cssVar('--go-film')], [`the room: ${MAT.dry.rhRoom.v} %`, acc, 'dash'], [`the oven's zones: ${zs.join(', ')} %`, mut, 'dash'], ['the water its pores hold', cssVar('--warn'), 'dash']]);
+      // (GO's own water at the room's temperature, and at the pre heat's: warm GO holds less at the same humidity)
+      const g = matGab(), Tr = MAT.dry.Troom.v, Tp = OVEN.peel.dryT, p = [], pH = [];
+      for (let i = 0; i <= 95; i++) { p.push([i, drGAB(i / 100, g, Tr) * 100]); pH.push([i, drGAB(i / 100, g, Tp) * 100]); }
+      const zs = [...new Set(OVEN.zones.map(z => z.rh))], heat = cssVar('--heat') || '#e8590c';
+      hubLine(cv, p, { xl: 'relative humidity (%)', yl: 'water held X (% of its mass)', x0: 0, x1: 95, aspect: 0.36, extra: [{ p: pH, c: heat, w: 2 }], marks: [{ x: MAT.dry.rhRoom.v, c: acc, t: 'room' }, ...zs.map(rh => ({ x: rh, c: mut, t: '' }))], hl: [{ y: hubXcap() * 100, c: cssVar('--warn'), t: 'drying: its pores', left: true }] });
+      setLg([[`X(a) at ${Tr} °C, GAB`, cssVar('--go-film')], [`at ${Tp} °C (the pre heat)`, heat], [`the room: ${MAT.dry.rhRoom.v} %`, acc, 'dash'], [`the oven's zones: ${zs.join(', ')} %`, mut, 'dash'], ['the most the drying keeps on the web (its pores)', cssVar('--warn'), 'dash']]);
     } else if (k === 'soft') {
-      const Xc = hubXcap(), p = []; for (let i = 0; i <= 80; i++) { const X = Xc * 1.2 * i / 80; p.push([X, MAT.film.Ep.v / (1 + X / MAT.film.Xh.v)]); }
-      hubLine(cv, p, { xl: 'water X (kg/kg)', yl: 'E₁ (GPa)', x0: 0, x1: Xc * 1.2, aspect: 0.36, marks: [{ x: MAT.film.Xh.v, c: mut, t: 'X_h' }, { x: Xc, c: cssVar('--warn'), t: '' }] });
-      setLg([['E₁(X)', cssVar('--go-film')], [`X_h ${MAT.film.Xh.v}: half`, mut, 'dash'], [`its pores full: ${hubFmt(Xc, 3)}`, cssVar('--warn'), 'dash']]);
+      const Xc = matRoomWater(), Xt = Math.max(Xc, MAT.film.Xh.v) * 1.2, p = []; for (let i = 0; i <= 80; i++) { const X = Xt * i / 80; p.push([X, MAT.film.Ep.v / (1 + X / MAT.film.Xh.v)]); }
+      hubLine(cv, p, { xl: 'water X (kg/kg)', yl: 'E₁ (GPa)', x0: 0, x1: Xt, aspect: 0.36, marks: [{ x: MAT.film.Xh.v, c: mut, t: 'X_h' }, { x: Xc, c: acc, t: '' }] });
+      setLg([['E₁(X)', cssVar('--go-film')], [`X_h ${MAT.film.Xh.v}: half`, mut, 'dash'], [`in the room: ${hubFmt(Xc, 3)}`, acc, 'dash']]);
     } else if (k === 'gcp') {
       hubLine(cv, hubLawCurve('gCp'), { xl: 'temperature (°C)', yl: 'c_p (J/(kg·K))', x0: 20, x1: 3000, aspect: 0.36 });
       setLg([['c_p(T), Butland–Maddison', cssVar('--go-film')]]);

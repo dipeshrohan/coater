@@ -36,8 +36,11 @@ function fmTransIso(Ep, Et, nup, nupt, Gpt) {
 const fmIso = (E, nu) => fmTransIso(E, E, nu, nu, E / (2 * (1 + nu)));
 
 // ---- the isotherm ----
-const fmGAB = (a, g) => { const Ka = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * Ka / ((1 - Ka) * (1 - Ka + g.C * Ka)); };
-const fmGABda = (a, g) => { const d = 1e-6, lo = Math.max(0, a - d), hi = Math.min(1, a + d); return (fmGAB(hi, g) - fmGAB(lo, g)) / (hi - lo); };
+// (GO's own water at activity a; at a temperature T (°C) its C as exp(Hc/RT) from its value at T0 -- warm GO holds
+//  less at the same humidity; no T, or no Hc (J/mol): the isotherm as it is)
+const fmGabC = (g, T) => (g.Hc && Number.isFinite(T) ? g.C * Math.exp(g.Hc / 8.314462618 * (1 / (T + 273.15) - 1 / ((Number.isFinite(g.T0) ? g.T0 : 25) + 273.15))) : g.C);
+const fmGAB = (a, g, T) => { const Ka = g.K * Math.min(Math.max(a, 0), 1), C = fmGabC(g, T); return g.Xm * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)); };
+const fmGABda = (a, g, T) => { const d = 1e-6, lo = Math.max(0, a - d), hi = Math.min(1, a + d); return (fmGAB(hi, g, T) - fmGAB(lo, g, T)) / (hi - lo); };
 
 /** A tridiagonal solve (a: sub, b: diagonal, c: super, d: right side), n = b.length. */
 function fmTri(a, b, c, d) {
@@ -80,9 +83,11 @@ function fmHistory(dr, o) {
   const f = fmFaces(K, o.a0 || 2e-3).map(v => v * Phi), zc = new Float64Array(K), dz = new Float64Array(K);
   for (let k = 0; k < K; k++) { zc[k] = (f[k] + f[k + 1]) / 2; dz[k] = f[k + 1] - f[k]; }
   const scT = sT.slice(0, M).map((v, c) => (sT[c] + sT[c + 1]) / 2);
-  const Xcap = 0.9 * H.em * o.rhoL / o.rhoS;                    // the packing's pores (as drying.js caps the skin's water)
-  const Xof = a => Math.min(fmGAB(a, o.gab), Xcap);
-  const dXda = a => (fmGAB(a, o.gab) >= Xcap ? 0 : fmGABda(a, o.gab));
+  // (on the web, drying: the set film's water the isotherm's at its temperature, capped at the packing's pores as
+  //  drying.js caps the skin's water -- the drying's own water balance)
+  const Xcap = 0.9 * H.em * o.rhoL / o.rhoS;
+  const Xof = (a, T) => Math.min(fmGAB(a, o.gab, T), Xcap);
+  const dXda = (a, T) => (fmGAB(a, o.gab, T) >= Xcap ? 0 : fmGABda(a, o.gab, T));
   const psat = typeof drPsat === 'function' ? drPsat : (typeof require === 'function' ? require('./drying.js').drPsat : null);
   // the temperature at ζ at step i (drying.js's Tat)
   const Tat = (i, z) => {
@@ -111,7 +116,7 @@ function fmHistory(dr, o) {
     for (let k = 0; k < K; k++) T[k] = Tat(i, zc[k]);
     const born = [];
     // (born at a wet front: saturated, its water the isotherm's at saturation, capped at the pores)
-    for (let k = 0; k < K; k++) if (!set[k] && isSet(k)) { set[k] = 1; a[k] = 1; X[k] = Xof(1); born.push(k); }
+    for (let k = 0; k < K; k++) if (!set[k] && isSet(k)) { set[k] = 1; a[k] = 1; X[k] = Xof(1, T[k]); born.push(k); }
     // the water: regions of contiguous set cells, each with its ends' conditions
     if (i > 0) {
       const dt = H.t[i] - H.t[i - 1];
@@ -149,7 +154,7 @@ function fmHistory(dr, o) {
     }
     const eB = bQe / bQ, eF = fQ > 0 ? fQe / fQ : eB;
     eps0 = eB;
-    for (const k of born) { const e = floating(k) ? eF : eB; bornE[k] = e; bornT[k] = T[k]; bornX[k] = Xof(1); bornAt[k] = H.x[i]; en[k] = e; Q[k] = Qf(X[k]); }
+    for (const k of born) { const e = floating(k) ? eF : eB; bornE[k] = e; bornT[k] = T[k]; bornX[k] = X[k]; bornAt[k] = H.x[i]; en[k] = e; Q[k] = Qf(X[k]); }
     const sig = new Float64Array(K).fill(NaN);
     for (let k = 0; k < K; k++) if (set[k]) sig[k] = Q[k] * ((floating(k) ? eF : eB) - en[k]);
     for (let k = 0; k < K; k++) wasFloat[k] = floating(k) ? 1 : 0;
@@ -169,7 +174,7 @@ function fmHistory(dr, o) {
       for (let j = 0; j < n; j++) {
         const k = k1 + j, aj = a[k], pj = aj * ps[j];
         // storage
-        R[j] = o.rhoS * (Xof(aj) - Xold[j]) * dz[k] / dt; B[j] = o.rhoS * dXda(aj) * dz[k] / dt; A[j] = 0; C[j] = 0;
+        R[j] = o.rhoS * (Xof(aj, T[k]) - Xold[j]) * dz[k] / dt; B[j] = o.rhoS * dXda(aj, T[k]) * dz[k] / dt; A[j] = 0; C[j] = 0;
         // the face below
         if (j > 0) { const G = g(zc[k - 1], zc[k]); R[j] += G * (pj - a[k - 1] * ps[j - 1]); B[j] += G * ps[j]; A[j] = -G * ps[j - 1]; }
         else if (lo.kind === 'p') { const G = g(lo.z, zc[k]); R[j] += G * (pj - lo.p); B[j] += G * ps[j]; }
@@ -183,7 +188,7 @@ function fmHistory(dr, o) {
       for (let j = 0; j < n; j++) { const k = k1 + j, an = Math.min(1, Math.max(0, a[k] + d[j])); step = Math.max(step, Math.abs(an - a[k])); a[k] = an; }
       if (step < 1e-10) break;
     }
-    for (let j = 0; j < n; j++) X[k1 + j] = Xof(a[k1 + j]);
+    for (let j = 0; j < n; j++) X[k1 + j] = Xof(a[k1 + j], T[k1 + j]);
   }
 }
 
@@ -545,8 +550,9 @@ function fmRun(dr, o) {
     for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + Xv[k] / F.Xh), Ek = F.Ep * f; out.push({ k, t: LP.tSet(k), z0: LP.z0[k], E: Ek, Q: Ek / (1 - F.nup), en: en[k] }); }
     return out;
   };
-  // (the natural strains: as at the peel; settled in the room -- its humidity's water, its temperature)
-  const Xroom = Math.min(fmGAB(o.rhRoom, o.gab), hh.Xcap);
+  // (the natural strains: as at the peel; settled in the room -- its humidity's water, its temperature: off the web,
+  //  GO's own water between its layers, no pore cap -- the layers part to take it)
+  const Xroom = fmGAB(o.rhRoom, o.gab, o.Troom);
   const enAt = (Xv, Tv) => { const e = new Float64Array(hh.K).fill(NaN); for (let k = 0; k < hh.K; k++) if (SP.set[k]) e[k] = hh.bornE[k] + F.alphaF * (Tv[k] - hh.bornT[k]) + F.beta * (Xv[k] - hh.bornX[k]); return e; };
   const XroomA = new Float64Array(hh.K).fill(Xroom), TroomA = new Float64Array(hh.K).fill(o.Troom);
   const Lp = layers(enAt(SP.X, SP.T)), Ls = layers(enAt(XroomA, TroomA), XroomA);
@@ -586,10 +592,12 @@ function fmRun(dr, o) {
     const zn = Sz / S2; let D2 = 0, An2 = 0, Bn2 = 0, EX2 = 0;
     for (const Lr of Ls2) { const zm = Lr.z0 + Lr.t / 2 - zn; D2 += Lr.E * (Lr.t * zm * zm + Lr.t * Lr.t * Lr.t / 12); An2 += Lr.E * Lr.t * Lr.en; Bn2 += Lr.E * Lr.t * zm * Lr.en; EX2 += Lr.E * Lr.t * (Xv[Lr.k] - hh.bornX[Lr.k]); }
     return { A: S2, D: D2, eFlat: An2 / S2, eX: EX2 / S2, kappa: Bn2 / D2 }; };
+  // (as cut: the film's water at the peel stays in on the roll; a piece cut from it lies loose in the room -- you weigh
+  //  it there -- and takes GO's own water at the room's humidity in minutes before it is stacked)
   let tX = 0, xX = 0; for (const Lr of Lp) { tX += Lr.t; xX += Lr.t * SP.X[Lr.k]; }
-  const Xcut = tX > 0 ? xX / tX : Xroom, XcutA = new Float64Array(hh.K).fill(Xcut);
+  const Xpeel = tX > 0 ? xX / tX : Xroom, Xcut = Xroom, XcutA = new Float64Array(hh.K).fill(Xcut);
   const Tdry = Number.isFinite(o.Tdry) ? o.Tdry : 100, rhDry = Math.min(1, o.rhRoom * psat(o.Troom) / psat(Tdry));
-  const Xdry = Math.min(fmGAB(rhDry, o.gab), hh.Xcap), XdryA = new Float64Array(hh.K).fill(Xdry);
+  const Xdry = fmGAB(rhDry, o.gab, Tdry), XdryA = new Float64Array(hh.K).fill(Xdry);
   const pC = plateOf(layers(enAt(XcutA, TroomA), XcutA), XcutA), pD = plateOf(layers(enAt(XdryA, TroomA), XdryA), XdryA), phiM = 1 / (1 + dr.history.em);
   // (GO-4f, the pieces in the pressed stack: the plate at a uniform water from the oven's dry to the room's, as rows
   //  [X, A, D, eFlat, κ, eX] (press.js goes linearly between them; tabErr the worst of that halfway between rows); the
@@ -600,7 +608,7 @@ function fmRun(dr, o) {
   let tabErr = 0;
   for (let i = 0; i < 20; i++) { const mid = plateAt((tab[i][0] + tab[i + 1][0]) / 2); for (const c of [1, 2, 3, 4, 5]) tabErr = Math.max(tabErr, Math.abs((tab[i][c] + tab[i + 1][c]) / 2 - mid[c]) / Math.max(1e-30, Math.abs(c === 3 || c === 5 ? tab[20][c] - tab[0][c] : mid[c]) || 1e-30)); }
   const plate = { A: pC.A, D: pC.D, nu: F.nup, h: hF, kS: pC.kappa, kSet: roll.set, p: o.rhoS * phiM * (1 + Xcut) * 9.81 * hF,
-    eFlatCut: pC.eFlat, eFlatDry: pD.eFlat, eXCut: pC.eX, eXDry: pD.eX, kDry: pD.kappa, Xcut, Xdry, Tdry, rhDry,
+    eFlatCut: pC.eFlat, eFlatDry: pD.eFlat, eXCut: pC.eX, eXDry: pD.eX, kDry: pD.kappa, Xcut, Xpeel, Xdry, Tdry, rhDry,
     tab, tabErr, Xroom, rhoG: o.rhoS * phiM, gab: o.gab, Xcap: hh.Xcap, Troom: o.Troom, rhRoom: o.rhRoom };
   // blisters: the bonded film compressed on the web buckles off it (buckle-delamination: the most a straight blister
   // releases, (1 − ν²) σ² h / (2E), against the interface's toughness; the narrowest that can buckle), and steam under a skin
@@ -626,7 +634,7 @@ function fmRun(dr, o) {
  */
 function fmCurlOnly(dr, o) {
   const hh = fmHistory(dr, o), F = o.film, n = hh.steps.length, SP = hh.steps[n - 1], LP = fmLayout(hh, n - 1, dr.series[n - 1].h, o);
-  const Xroom = Math.min(fmGAB(o.rhRoom, o.gab), hh.Xcap);
+  const Xroom = fmGAB(o.rhRoom, o.gab, o.Troom);
   const lay = (Xv, Tv) => { const out = []; for (let k = 0; k < hh.K; k++) if (SP.set[k]) { const f = 1 / (1 + Xv[k] / F.Xh), Ek = F.Ep * f;
     out.push({ t: LP.tSet(k), z0: LP.z0[k], Q: Ek / (1 - F.nup), en: hh.bornE[k] + F.alphaF * (Tv[k] - hh.bornT[k]) + F.beta * (Xv[k] - hh.bornX[k]) }); } return out; };
   return { atPeel: fmFree(lay(SP.X, SP.T)).kappa, settled: fmFree(lay(new Float64Array(hh.K).fill(Xroom), new Float64Array(hh.K).fill(o.Troom))).kappa };

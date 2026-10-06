@@ -286,14 +286,18 @@ const HUB_RECORDS = [
         { id: 'gabXm', sym: 'X_m', l: 'Sorption isotherm (GAB): monolayer', b: hC('dry', 'gabXm'), phys: ['dry', 'film'] },
         { id: 'gabC', sym: 'C', l: 'Sorption isotherm (GAB): C', b: hC('dry', 'gabC'), phys: ['dry', 'film'] },
         { id: 'gabK', sym: 'K', l: 'Sorption isotherm (GAB): K', b: hC('dry', 'gabK'), phys: ['dry', 'film'] },
-        { id: 'Xlast', sym: 'X', l: 'Water held at the last oven zone\'s humidity', b: hCalc(() => { const z = OVEN.zones[OVEN.zones.length - 1]; return drGAB(z.rh / 100, { Xm: MAT.dry.gabXm.v, C: MAT.dry.gabC.v, K: MAT.dry.gabK.v }) * 100; }, '% of its mass', 1, 'the isotherm at the last zone\'s relative humidity: the water left in a dry film at the exit'), phys: ['dry'] },
+        { id: 'gabT0', sym: 'T₀', l: 'Sorption isotherm (GAB): its temperature', b: hC('dry', 'gabT0'), phys: ['dry', 'film'] },
+        { id: 'gabHc', sym: 'H_c', l: 'Sorption isotherm (GAB): first layer\'s binding heat', b: hC('dry', 'gabHc'), phys: ['dry', 'film'] },
+        { id: 'Xroom', sym: 'X_room', l: 'Water held in the room', b: hCalc(() => matRoomWater() * 100, '% of its mass', 1, 'GO\'s own water between its layers at the room\'s humidity and temperature: the piece as cut and weighed'), phys: ['dry', 'film', 'stack', 'furn'] },
+        { id: 'Xpre', sym: 'X_pre', l: 'Water held in the pre heat treatment', b: hCalc(() => { const T = OVEN.peel.dryT, a = Math.min(1, MAT.dry.rhRoom.v / 100 * drPsat(MAT.dry.Troom.v) / drPsat(T)); return matGabX(a, matGab(), T) * 100; }, '% of its mass', 1, 'the isotherm at the pre heat\'s temperature, its air the room\'s heated: what the pieces keep when dried through'), phys: ['stack', 'mp1'] },
+        { id: 'Xlast', sym: 'X', l: 'Water held at the last oven zone\'s humidity', b: hCalc(() => { const z = OVEN.zones[OVEN.zones.length - 1]; return drGAB(z.rh / 100, matGab(), z.airT) * 100; }, '% of its mass', 1, 'the isotherm at the last zone\'s relative humidity: the water left in a dry film at the exit'), phys: ['dry'] },
         { id: 'Kv', sym: 'K_v', l: 'Water vapour permeability', b: { t: 'tensor', axial: 'skinK', trans: 'stackK', u: 'kg/(m·s·Pa)', what: 'water', scale: { skinK: 1e-12, stackK: 1e-7 } }, phys: ['dry', 'film', 'stack', 'mp1'] },
         { id: 'stackK', sym: 'K_v,11', l: 'in the plane (along the pieces in the stack)', b: hC('film', 'stackK'), phys: ['stack', 'mp1'], sub: true },
         { id: 'skinK', sym: 'K_v,33', l: 'through the thickness (the skin)', b: hC('dry', 'skinK'), phys: ['dry', 'film', 'mp1'], sub: true },
         { id: 'rollK', sym: 'K_v,roll', l: 'Water along the turns in the roll (their faces, to its ends)', b: hC('film', 'rollK'), phys: ['mp6'] },
         { id: 'beta', sym: 'β', l: 'Hygroscopic swelling in the plane', b: hC('film', 'beta'), phys: ['film', 'stack', 'furn', 'mp2'] },
         { id: 'betaT', sym: 'β₃', l: 'Hygroscopic swelling through the thickness', b: hC('film', 'betaT'), phys: [] },
-        { id: 'swell', sym: 'β X_cap', l: 'Swelling from dry to its pores full of water', b: hCalc(() => MAT.film.beta.v * hubXcap() * 100, '%', 2, 'β × the most water its pores hold (in the plane): along the film, its water from none to the most the dry film\'s pores hold'), phys: ['film'] },
+        { id: 'swell', sym: 'β X_room', l: 'Swelling from dry to the room\'s water', b: hCalc(() => MAT.film.beta.v * matRoomWater() * 100, '%', 2, 'β × the water it holds in the room (in the plane): along the film, its water from none to the room\'s'), phys: ['film'] },
         { id: 'Xh', sym: 'X_h', l: 'Softening: water content that halves its stiffness', b: hC('film', 'Xh'), phys: ['film'] },
       ] },
       { l: 'Mechanical', props: [
@@ -307,7 +311,7 @@ const HUB_RECORDS = [
         { id: 'alphaT', sym: 'α₃', l: 'Thermal expansion through the thickness', b: hC('film', 'alphaT'), phys: [] },
         { id: 'creepTau', sym: 'τ_c', l: 'Creep time, wet', b: hC('film', 'creepTau'), phys: ['stack', 'mp1'] },
         { id: 'setFrac', sym: 's', l: 'Set: share of the roll\'s curl kept', b: hC('film', 'setFrac'), phys: ['film'] },
-        { id: 'Ewet', sym: 'E₁(X_cap)', l: 'Young\'s modulus in the plane, wet', b: hCalc(() => MAT.film.Ep.v / (1 + hubXcap() / MAT.film.Xh.v), 'GPa', 1, 'E₁ / (1 + X/X_h) at the most water its pores hold: softer with water, as its X_h sets'), phys: ['film'] },
+        { id: 'Ewet', sym: 'E₁(X_room)', l: 'Young\'s modulus in the plane, in the room', b: hCalc(() => MAT.film.Ep.v / (1 + matRoomWater() / MAT.film.Xh.v), 'GPa', 1, 'E₁ / (1 + X/X_h) at the water it holds in the room: softer with water, as its X_h sets'), phys: ['film'] },
       ] },
       { l: 'Wound on a roll', props: [
         { id: 'Er', sym: 'E_r', l: 'The turns\' stiffness through the roll', b: hC('film', 'Er'), phys: [] },
@@ -499,7 +503,7 @@ const HUB_RECORDS = [
 //  through it, its heat conduction through it and heat capacity; the 3D, its heat conduction along it and the water along
 //  the turns)
 {
-  const mp6 = { gofilm: ['Xh', 'Ep', 'nup', 'sigF', 'beta', 'betaT', 'alphaF', 'alphaT', 'Er', 'nuR', 'gabXm', 'gabC', 'gabK', 'Kv', 'skinK', 'k', 'kS', 'kIn', 'cS', 'rho', 'phiDry'] };
+  const mp6 = { gofilm: ['Xh', 'Ep', 'nup', 'sigF', 'beta', 'betaT', 'alphaF', 'alphaT', 'Er', 'nuR', 'gabXm', 'gabC', 'gabK', 'gabT0', 'gabHc', 'Kv', 'skinK', 'k', 'kS', 'kIn', 'cS', 'rho', 'phiDry'] };
   for (const r of HUB_RECORDS) for (const g of r.groups || []) for (const q of g.props) if (q.phys && !q.phys.includes('mp6') && (mp6[r.id] || []).includes(q.id)) q.phys.push('mp6');
 }
 // (MP-CUT: the cut edge reads the film's layers (their stiffness and its softening with water, Poisson's ratio, the
@@ -792,8 +796,8 @@ function hubChecks(r) {
   }
   if (r.id === 'flakes' && !(c.dMin.v <= c.dMean.v && c.dMean.v <= c.dMax.v)) add('error', 'The flake sizes are out of order: smallest ≤ mean ≤ largest.', 'dMean');
   if (r.id === 'gofilm') {
-    const z = OVEN.zones[OVEN.zones.length - 1], X = drGAB(z.rh / 100, { Xm: MAT.dry.gabXm.v, C: MAT.dry.gabC.v, K: MAT.dry.gabK.v }), em = (1 - c.phiDry.v) / c.phiDry.v;
-    if (X * c.rhoS.v * 1000 / c.rhoL.v > 0.9 * em) add('warn', `At ${z.rh} % humidity the isotherm puts more water in the dry GO than its packing's pores hold: it swells; the water left will be at least what is shown.`, 'gabXm');
+    const z = OVEN.zones[OVEN.zones.length - 1], X = drGAB(z.rh / 100, matGab(), z.airT), em = (1 - c.phiDry.v) / c.phiDry.v;
+    if (X * c.rhoS.v * 1000 / c.rhoL.v > 0.9 * em) add('warn', `At the last zone's ${z.rh} % humidity and ${z.airT} °C, GO holds more water than the dry film's pores: the drying keeps its film at the pores' water, so the water it leaves is at least what is shown (off the web the film takes GO's own).`, 'gabXm');
     for (const m of mlT2Check(hubT2(hubProps(r).find(p => p.id === 'k')), 'its thermal conductivity')) add(m.level, m.msg, 'k');
     for (const m of mlCCheck(hubStiff('go'), 'its stiffness')) add(m.level, m.msg, 'C');
     if (hubChem().short) add('warn', 'Its hydrogen runs short of the water set for the labile oxygen: the rest leaves as CO.', 'c1CO2');

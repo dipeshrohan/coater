@@ -42,13 +42,29 @@ const at40 = () => withV({ phi: 40 });   // (the worked cases' slurry: 40 vol% s
   check('  twice the film: twice everything; twice the speed too: four times the water per second', close(b2.dry, 2 * b.dry) && close(b2.coatDry, 2 * b.coatDry) && close(b2.waterRate, 4 * b.waterRate));
   const tight = M.massBalance(h, U, W, withV({ phi: 40, phiDry: 1 }));
   check('  packed solid (1.0): the dry film is the solids\' own volume', close(tight.dry, 40e-6) && close(tight.rhoDry, 1900));
-  // (the dry film in the room and as a gauge reads it: its water by the GAB isotherm at the room's humidity, worked by hand)
-  const g = M.matDefaults(), cap = 0.9 * (1 - 0.85) / 0.85 * 1000 / 1900, gabAt = rh => { const Ka = rh * g.dry.gabK.v; return g.dry.gabXm.v * g.dry.gabC.v * Ka / ((1 - Ka) * (1 - Ka + g.dry.gabC.v * Ka)); };
+  // (the dry film in the room and as a gauge reads it: GO's own water by the GAB isotherm at the room's humidity and
+  //  temperature, worked by hand -- no pore cap: the layers part to take it)
+  const g = M.matDefaults(), cap = 0.9 * (1 - 0.85) / 0.85 * 1000 / 1900, R = 8.314462618;
+  const gabAt = (rh, T = 25) => { const C = g.dry.gabC.v * Math.exp(g.dry.gabHc.v * 1000 / R * (1 / (T + 273.15) - 1 / (g.dry.gabT0.v + 273.15))), Ka = rh * g.dry.gabK.v; return g.dry.gabXm.v * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)); };
+  check('GO\'s own water, the isotherm\'s defaults (published GO papers at 25 °C): about 12 % at 10 % humidity, 20 % at 50 %, 56 % at 90 %',
+    Math.abs(gabAt(0.1) - 0.12) < 0.005 && Math.abs(gabAt(0.5) - 0.205) < 0.005 && Math.abs(gabAt(0.9) - 0.564) < 0.005 && g.dry.gabT0.v === 25 && g.dry.gabHc.v === 20,
+    [0.1, 0.5, 0.9].map(a => `${(gabAt(a) * 100).toFixed(1)} %`).join(', '));
   g.dry.rhRoom.v = 20;
-  check('the dry film\'s water in a room at 20 %: the GAB isotherm (under its pores\' cap)', close(M.matRoomWater(g), gabAt(0.2)) && gabAt(0.2) < cap, `${(M.matRoomWater(g) * 100).toFixed(2)} % of the GO`);
+  check('the dry film\'s water in a room at 20 %: the GAB isotherm', close(M.matRoomWater(g), gabAt(0.2)), `${(M.matRoomWater(g) * 100).toFixed(2)} % of the GO`);
   g.dry.rhRoom.v = 50;
-  check('  at the room\'s 50 %: the isotherm gives more than the pores hold (0.9 of them full), so the cap: as the cut pieces\' (8.36 %)',
-    gabAt(0.5) > cap && close(M.matRoomWater(g), cap), `isotherm ${(gabAt(0.5) * 100).toFixed(2)} %, cap ${(cap * 100).toFixed(2)} %`);
+  check('  at the room\'s 50 %: GO\'s own water, more than the drying\'s pores hold (0.9 of them full) and not capped at them',
+    gabAt(0.5) > cap && close(M.matRoomWater(g), gabAt(0.5)), `${(M.matRoomWater(g) * 100).toFixed(2)} %, the pores ${(cap * 100).toFixed(2)} %`);
+  g.dry.Troom.v = 40;
+  const w40 = M.matRoomWater(g); g.dry.gabHc.v = 0; const w40flat = M.matRoomWater(g); g.dry.gabHc.v = 20; g.dry.Troom.v = 25;
+  check('  a warmer room (40 °C): C × exp(H_c/R (1/T − 1/T₀)), less water at the same humidity; H_c 0: the isotherm as at 25 °C',
+    close(w40, gabAt(0.5, 40)) && w40 < gabAt(0.5) && close(w40flat, gabAt(0.5)), `${(w40 * 100).toFixed(2)} % (at 25 °C ${(gabAt(0.5) * 100).toFixed(2)} %)`);
+  // (your piece: 2.4 g weighed in the room at 50 % and 25 °C; in the pre heat treatment at 100 °C its air the room's
+  //  heated -- the same vapour pressure, so a = 0.5 psat(25 °C)/psat(100 °C) -- it keeps the isotherm's water there)
+  const ps = require('./drying.js').drPsat, aPre = 0.5 * ps(25) / ps(100), Xpre = M.matGabX(aPre, M.matGab(g), 100);
+  const dryGO = 2.4 / (1 + gabAt(0.5)), after = dryGO * (1 + Xpre);
+  check('your 2.4 g piece: its dry GO 1.99 g; dried through at 100 °C it keeps the isotherm\'s water there (by hand) and weighs about 2.07 g, 0.33 g lost',
+    close(Xpre, gabAt(aPre, 100)) && Math.abs(dryGO - 1.992) < 0.001 && after > 2.0 && after < 2.1 && 2.4 - after > 0.3,
+    `a ${(aPre * 100).toFixed(2)} %, X ${(Xpre * 100).toFixed(2)} %: ${after.toFixed(3)} g, ${(2.4 - after).toFixed(3)} g lost`);
   const b3 = M.massBalance(h, U, W, d);
   check('  in the room the film weighs its GO and that water', close(b3.coatRoom, b3.coatDry * (1 + M.matRoomWater(d))));
   const yours = withV({ rhoGauge: 2.4 / 0.09 / 60e-6 / 1e6 });
