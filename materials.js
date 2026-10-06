@@ -60,9 +60,11 @@ const MAT_DRY = [
   ['cS', 'GO\'s specific heat', 'J/(kg·K)', 100, 3000, 10, 0, 850, 'assumed', 'graphite 710; GO with its oxygen groups higher'],
   ['emis', 'Film emissivity', '', 0.01, 1, 0.01, 2, 0.95, 'assumed', 'water and GO: nearly black in the infrared; the oven\'s walls radiate at its air\'s temperature'],
   ['irAbs', 'IR absorbed by the film', 'fraction', 0, 1, 0.01, 2, 0.9, 'assumed', 'of the IR heaters\' power reaching the film'],
-  ['gabXm', 'Water the dry GO keeps: GAB X_m', 'kg/kg', 0.001, 1, 0.005, 3, 0.07, 'assumed', 'its sorption isotherm; these give about 5 % water at 20 % humidity, 10 % at 50 %, 24 % at 90 % (typical of GO films)'],
-  ['gabC', 'Water the dry GO keeps: GAB C', '', 0.1, 1000, 0.5, 1, 8, 'assumed', 'the same isotherm'],
-  ['gabK', 'Water the dry GO keeps: GAB K', '', 0.1, 0.99, 0.01, 2, 0.8, 'assumed', 'the same isotherm'],
+  ['gabXm', 'Water the dry GO keeps: GAB X_m', 'kg/kg', 0.001, 1, 0.005, 3, 0.115, 'assumed', 'GO\'s own water between its layers (GO papers, published): about 0.12 kg/kg at 10 % humidity, 0.2 at 50 %, 0.56 at 90 % (25 °C)'],
+  ['gabC', 'Water the dry GO keeps: GAB C', '', 0.1, 1000, 0.5, 1, 200, 'assumed', 'the same isotherm: its first layer, bound to the oxygen groups, fills at low humidity'],
+  ['gabK', 'Water the dry GO keeps: GAB K', '', 0.1, 0.99, 0.005, 3, 0.885, 'assumed', 'the same isotherm'],
+  ['gabT0', 'Water the dry GO keeps: the isotherm\'s temperature', '°C', -20, 200, 1, 0, 25, 'assumed', 'the temperature the isotherm above was measured at'],
+  ['gabHc', 'Water the dry GO keeps: its first layer\'s binding heat', 'kJ/mol', 0, 100, 1, 0, 20, 'assumed', 'above water\'s own heat of condensing: GAB\'s C as exp(H/RT), so warm GO holds less at the same humidity (GO\'s heat of taking up water is about 30 % above silica gel\'s, published); 0: the isotherm at every temperature'],
   ['cpWeb', 'Fibre web\'s specific heat', 'J/(kg·K)', 500, 3000, 10, 0, 1300, 'assumed', 'PET'],
   ['kFib', 'Fibre web\'s fibres: heat conductivity', 'W/(m·K)', 0.02, 5, 0.01, 2, 0.2, 'assumed', 'PET 0.15–0.24, polypropylene 0.1–0.22 W/(m·K); the web\'s own (its fibres in the air) follows by Maxwell–Eucken (the drying\'s multiphysics)'],
   ['Troom', 'Room temperature', '°C', 0, 60, 1, 0, 25, 'assumed', 'between the blade and the oven: the film enters the oven at it'],
@@ -266,12 +268,19 @@ function slurryRho(m = MAT) {
 /** The solids' mass fraction (0..1). */
 const slurrySolidsMass = (m = MAT) => m.slurry.phi.v / 100 * m.slurry.rhoS.v * 1000 / slurryRho(m);
 
-/** The dry film's water in the room (kg per kg of GO): its sorption law at the room's humidity (the Drying card's GAB
- *  values), no more than its pores hold (as film.js: 0.9 of the packing's pores full). */
+/** The isotherm's values on the Drying card as the solvers take them: { Xm, C, K, T0 (°C), Hc (J/mol) }. */
+const matGab = (m = MAT) => ({ Xm: m.dry.gabXm.v, C: m.dry.gabC.v, K: m.dry.gabK.v, T0: m.dry.gabT0 ? m.dry.gabT0.v : 25, Hc: m.dry.gabHc ? m.dry.gabHc.v * 1000 : 0 });
+/** GO's own water (kg per kg of GO) at an activity a and a temperature T (°C): the GAB isotherm, its C at T,
+ *  C(T) = C exp(Hc/R (1/T − 1/T0)) (no T, or Hc 0: the isotherm as it is). */
+function matGabX(a, g, T) {
+  const C = g.Hc && Number.isFinite(T) ? g.C * Math.exp(g.Hc / 8.314462618 * (1 / (T + 273.15) - 1 / ((Number.isFinite(g.T0) ? g.T0 : 25) + 273.15))) : g.C;
+  const Ka = g.K * Math.min(Math.max(a, 0), 1);
+  return g.Xm * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka));
+}
+/** The dry film's water in the room (kg per kg of GO): GO's own water between its layers at the room's humidity and
+ *  temperature (the Drying card's isotherm; no pore cap -- the layers part to take it). */
 function matRoomWater(m = MAT) {
-  const d = m.dry, pm = m.slurry.phiDry.v, Xcap = 0.9 * (1 - pm) / pm * m.slurry.rhoL.v / (m.slurry.rhoS.v * 1000);
-  const Ka = d.gabK.v * Math.min(Math.max(d.rhRoom.v / 100, 0), 1), C = d.gabC.v;
-  return Math.min(d.gabXm.v * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)), Xcap);
+  return matGabX(m.dry.rhRoom.v / 100, matGab(m), m.dry.Troom.v);
 }
 /** The dry film as a gauge reads it (m): its weight per area in the room (GO and its water there, kg/m²) over the dry
  *  film's density as a gauge reads it (the slurry card's: a weighed piece over its gauge thickness). */
@@ -370,4 +379,4 @@ function ovenTime(U, oven = OVEN) {
   return { len, t: U > 0 ? len / U : Infinity };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matPhiTxt, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, matRoomWater, matGaugeThickness, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };
+if (typeof module !== 'undefined' && module.exports) module.exports = { MAT_XREC, MAT_FURN, MAT_FURN_GROUPS, FURN_RUNS_DEFAULT, FURN_DEFAULT, FURN_FIELDS, FURN_STEP_LIMITS, furnDefaults, MAT_FILM, OVEN_PEEL_DEFAULT, OVEN_PEEL_FIELDS, OVEN_SHELVES, MAT_DRY, OVEN_TOPS, OVEN_TOP_FIELDS, MAT_SLURRY, MAT_RHEO, MAT_ORIENT, MAT_FLAGS, matDefaults, matPhiTxt, matStruct, matOrient, matFlakeRatio, slurryRho, slurrySolidsMass, massBalance, matGab, matGabX, matRoomWater, matGaugeThickness, OVEN_ZONE_FIELDS, OVEN_ZONE_DEFAULT, ovenDefaults, ovenTime };

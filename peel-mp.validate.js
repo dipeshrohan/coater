@@ -196,5 +196,19 @@ global.drPsat = global.drPsat || require('./drying.js').drPsat;
   check('a turn bent round the roll: one layer against N/h ± Q κ h/2; two at Timoshenko\'s free curvature, its faces ±QΔ/4, the interface ∓QΔ/2', Math.max(w1, w2) < 1e-12, `worst ${Math.max(w1, w2).toExponential(1)}`);
 }
 
+// ---- 11. GO's own water (2c): the isotherm's C at the turn's temperature (H_c) -- at a steady 40 °C the roll's water is
+//      the isotherm with its C at 40 °C, to the last bit; no T (no heat solved): the isotherm as it is ----
+{
+  const g2 = { Xm: 0.115, C: 200, K: 0.885, T0: 25, Hc: 20000 }, C40 = 200 * Math.exp(20000 / 8.314462618 * (1 / (40 + 273.15) - 1 / (25 + 273.15)));
+  const run = (gab, heat) => P.pmpRoll({ R0: 0.038, core: { E: 0, nu: 0.3, Ri: 0 }, h: 16e-6, n: 200, per: 4, Tw: 0, Er: 1e9, Eth: 1e9, nuTr: 0, tEnd: 24 * 3600, steps: 40,
+    heat, water: { X0: 0.0836, gab, rhoD: 1500, Kv: 1e-15, rhRoom: 0.5 } });
+  const a = run(g2, { T0: 40, k: 0.2, rhoc: 1.5e6, hOut: 8, Troom: 40 }), b = run({ Xm: 0.115, C: C40, K: 0.885 }, { T0: 40, k: 0.2, rhoc: 1.5e6, hOut: 8, Troom: 40 });
+  let d = 0; a.series.forEach((q, i) => q.X.forEach((x, e) => { d = Math.max(d, Math.abs(x - b.series[i].X[e])); }));
+  const c = run(g2, null), e = run({ Xm: 0.115, C: 200, K: 0.885 }, null);
+  let d2 = 0; c.series.forEach((q, i) => q.X.forEach((x, k) => { d2 = Math.max(d2, Math.abs(x - e.series[i].X[k])); }));
+  const last = a.series[a.series.length - 1].X;
+  check('GO\'s own water in the roll at 40 °C: the isotherm with H_c is the isotherm with its C at 40 °C; with no heat solved, the isotherm as it is', d < 1e-12 && d2 === 0,
+    `${d.toExponential(1)}, ${d2} kg/kg; the outer turn at the end ${(last[last.length - 1] * 100).toFixed(2)} %, the core's ${(last[0] * 100).toFixed(2)} %`);
+}
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

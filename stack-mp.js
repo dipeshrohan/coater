@@ -31,7 +31,7 @@
  */
 const SMP = typeof mpMesh === 'function' ? { mpMesh, mpHeatMoisture, mpElastic, mpAt } : require('./mp-core.js');
 const SMP_DR = typeof drPsat === 'function' ? { drPsat, drLatent, drNat, drAir, drUse } : require('./drying.js');
-const SMP_PR = typeof prGAB === 'function' ? { prGAB, prGABslope, prActivity, prProps } : require('./press.js');
+const SMP_PR = typeof prGAB === 'function' ? { prGabAt, prGAB, prGABslope, prActivity, prProps } : require('./press.js');
 const SMP_ML = typeof mlQEval === 'function' ? { mlQEval } : require('./matlib.js');
 /** A property in temperature (MH-4b): its definition q (matlib's, in kelvin) at T (°C), else its constant v. */
 const smpAtT = (q, v) => (q ? T => SMP_ML.mlQEval(q, { T: T + 273.15 }) : () => v);
@@ -87,7 +87,7 @@ function smpAxes(o) {
  *   then the room under the plate), air: { fan (m/s; 0: still air) }, shelf: 'wire' | 'solid', epsPlate, epsGO,
  *   al: { k, rho, c } (the plate's aluminium; MH-2: the Materials' constants, SMP_AL when not given); go's kIn, kThr, c
  *   and al's k, c each with its definition in temperature when it has one (kInT, kThrT, cT, kT: matlib quantities in K, MH-4b),
- *   go: { kIn, kThr (W/(m K)), c (J/(kg K)), rhoS (kg/m³, the GO per film volume), gab, Xcap, K (along a piece),
+ *   go: { kIn, kThr (W/(m K)), c (J/(kg K)), rhoS (kg/m³, the GO per film volume), gab { Xm, C, K, T0, Hc }, Xcap (if any), K (along a piece),
  *   Kthr (through it; kg/(m s Pa)), alpha (1/K, in its plane), nu, tab (the film's rows [X, A, D, eFlat, κ]), tau (s,
  *   the creep time at X0) },
  *   mesh: { nx, ny (in-plane elements on the quarter, graded to the edges), grade, nPlate, ns (the stress mesh's), per
@@ -112,19 +112,25 @@ function smpStack(o) {
   const pvAir = o.rhRoom * SMP_DR.drPsat(o.Troom);   // the room's air, heated in the oven: the same vapour pressure
   const air = { fan: (o.air && o.air.fan) || 0, pv: pvAir, Lfan: o.Lx };
   const M = SMP.mpMesh({ dim, p: 1, axes, mat });   // 0 the pieces, 1 the plate
-  // ---- the pieces' water: the isotherm at the local temperature, capped at the pores' ----
-  const GAB = a => SMP_PR.prGAB(a, go.gab), dGAB = a => SMP_PR.prGABslope(a, go.gab);
-  const aCap = go.Xcap < GAB(1) ? SMP_PR.prActivity(go.Xcap, go.gab) : 1, Xc = GAB(aCap), sl = 1e-3 * dGAB(aCap);
-  const Xa = a => (a <= aCap ? GAB(Math.max(0, a)) : Xc + sl * (a - aCap));   // (past the cap a tiny slope: the step stays solvable)
-  const dXa = a => (a <= aCap ? dGAB(Math.max(0, a)) : sl);
-  const XofPT = (p, T) => Xa(p / SMP_DR.drPsat(T));
+  // ---- the pieces' water: GO's own, the isotherm at the local temperature (its C at T when gab has Hc), capped at
+  //      go.Xcap if one is given ----
+  const byT = !!(go.gab && go.gab.Hc && SMP_PR.prGabAt), hasCap = Number.isFinite(go.Xcap);
+  const gT = T => (byT ? SMP_PR.prGabAt(go.gab, T) : go.gab);
+  const capAt = g => { const aCap = hasCap && go.Xcap < SMP_PR.prGAB(1, g) ? SMP_PR.prActivity(go.Xcap, g) : 1; return { aCap, Xc: SMP_PR.prGAB(aCap, g), sl: 1e-3 * SMP_PR.prGABslope(aCap, g) }; };
+  const c0 = byT ? null : capAt(go.gab), capOf = g => c0 || capAt(g);
+  // (past the cap -- or saturation -- a tiny slope: the step stays solvable)
+  const Xa = (a, T) => { const g = gT(T); if (!hasCap && a <= 1) return SMP_PR.prGAB(Math.max(0, a), g); const c = capOf(g); return a <= c.aCap ? SMP_PR.prGAB(Math.max(0, a), g) : c.Xc + c.sl * (a - c.aCap); };
+  const dXa = (a, T) => { const g = gT(T); if (!hasCap && a <= 1) return SMP_PR.prGABslope(Math.max(0, a), g); const c = capOf(g); return a <= c.aCap ? SMP_PR.prGABslope(Math.max(0, a), g) : c.sl; };
+  const XofPT = (p, T) => Xa(p / SMP_DR.drPsat(T), T);
   const S = (m, p, T) => go.rhoS * XofPT(p, T);
   const dS = (m, p, T) => {
-    const ps = SMP_DR.drPsat(T), a = p / ps, d = dXa(a), dps = (SMP_DR.drPsat(T + 1e-3) - SMP_DR.drPsat(T - 1e-3)) / 2e-3;
-    return [go.rhoS * d / ps, -go.rhoS * d * a * dps / ps];
+    const ps = SMP_DR.drPsat(T), a = p / ps, d = dXa(a, T), dps = (SMP_DR.drPsat(T + 1e-3) - SMP_DR.drPsat(T - 1e-3)) / 2e-3;
+    // (warm GO holds less at the same activity: the isotherm's own change with T)
+    const dT = byT ? (Xa(a, T + 1e-2) - Xa(a, T - 1e-2)) / 2e-2 : 0;
+    return [go.rhoS * d / ps, go.rhoS * (dT - d * a * dps / ps)];
   };
-  const iso = !!o.isothermal, Tstart = iso ? o.stages[0].Tair : o.Troom;
-  const p0 = Math.min(SMP_PR.prActivity(o.X0, go.gab), aCap) * SMP_DR.drPsat(Tstart);   // (its water as cut, at the stack's start temperature)
+  const iso = !!o.isothermal, Tstart = iso ? o.stages[0].Tair : o.Troom, g0 = gT(Tstart);
+  const p0 = Math.min(SMP_PR.prActivity(o.X0, g0), capOf(g0).aCap) * SMP_DR.drPsat(Tstart);   // (its water as it goes in, at the stack's start temperature)
   let stage = 0, Tair = o.stages[0].Tair;
   // ---- the faces ----
   const Lh = hx * hy / (hx + hy);   // a horizontal face's area / perimeter (the whole piece's)

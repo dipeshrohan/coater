@@ -13,7 +13,7 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
-| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Next | Your answers on the pictures |
+| 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your answers | When you weigh after the pre heat; cracks at the edges |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
@@ -49,19 +49,25 @@ keeps it up to date in each pull request. The order and the tasks change only af
   - Above 700 °C it leaves as CO, which leaves about 31 % (0.69 g).
   - 1.03 g needs about 61 % carbon in the GO.
 - **Waiting for**: one piece weighed before and after the furnace (the same piece), and whether paper sticks to it.
+- **Note (2c)**: with GO's own water your 2.4 g piece holds 1.99 g of dry GO; at the app's 27.5 % kept that is 0.55 g
+  after the furnace (you: 1.03 g).
 - **Left**: compare the app with the weights; change the furnace's chemistry only where the weights show a gap.
 
 ## 2c. Pre heat: your piece loses 0.4 g, the app only water
-- **Now**: your piece goes from 2.4 g to 2.0 g in the pre heat and stays there after cooling. The app removes only
-  water (0.18 g), and the piece takes it back under the plate (2.51 g). 0.4 g is more than all the piece's water
-  (0.19 g).
-- **You said**: its colour changes. You will send a picture.
-- **Got**: the pictures of the same piece after cutting and after the pre heat (a close-up); both kept out of the
-  repository and the app.
-- **Left**:
-  - from the pictures, find what the GO does at 100 °C;
-  - ask you about the change, with screenshots;
-  - build it, with checks.
+- **You said**: your piece goes from 2.4 g to 2.0 g in the pre heat and is still 2.0 g hours later, loose in the room
+  (30–50 % humidity); you chose GO's own water between its layers, from published GO-paper isotherms.
+- **Built**: GO's own water (Materials › Drying card: GAB 0.115, 200, 0.885 at 25 °C, and the first layer's binding
+  heat, 20 kJ/mol, so warm GO holds less). In the room the film holds 20.5 % of its GO; the pore cap stays only in the
+  drying on the web. Your 2.4 g piece: 1.99 g of GO; dried through at 100 °C it keeps 4.2 %, so it weighs 2.07 g
+  (0.33 g lost).
+- **Also changed**:
+  - water left at the oven exit: 8.4 % (was 5.0 %);
+  - peel, drying top and bottom: no cracks (was 1.2× its toughness); curl 60 mm (was 71 mm);
+  - pre heat: the drying edges pull 131 MPa, over the film's 100 MPa (was 89 MPa);
+  - gauge thickness 70 µm (was 63 µm); size after the furnace −5.1 % (was −4.1 %).
+- **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
+  Yours stay at 2.0 g.
+- **Left**: your answers on when you weigh and on cracks at the pieces' edges; then match the app to them.
 
 ## 4. Faster tetrahedral mesher
 - **Now**: the mesher's smoothing rounds rebuild the whole mesh after each round. That is about 40 % of its time (35 s
@@ -243,6 +249,7 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- The Line page scrolls on a desktop screen (it was cut off at the Checks table).
 - Paths of paste parcels in the 2D coating flow in time (was task 3): Coating › 2D › Results, the time bar's Pathlines
   and Streaklines switches, with a run in time (Solve › Time: Transient). The parcels start at the streamlines' seeds at
   t = 0. Checked against exact paths, and on a coating flow in time (rings of parcels keep their area).

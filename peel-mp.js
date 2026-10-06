@@ -677,7 +677,7 @@ function pmpRollStress(R0, H, Qs, nE, u, eig) {
  *   R0 (the core's radius), core: { E, nu, Ri }, h (a turn: the film, and the liner if one goes with it), n (turns), per
  *   (turns an element holds), Tw (the pull per width it is wound with, N/m), Er, Eth, nuTr (a turn's stiffnesses through
  *   the roll and along it; ν_θr), the time after: tEnd (s), steps; heat: { T0 (as wound), k, rhoc, hOut, Troom };
- *   water: { X0 (as wound), gab: { Xm, C, K }, Xcap, rhoD (GO per volume of turn), Kv (vapour permeability through the
+ *   water: { X0 (as wound), gab: { Xm, C, K, T0, Hc }, Xcap (if any), rhoD (GO per volume of turn), Kv (vapour permeability through the
  *   turns, kg/(m s Pa)), rhRoom }, beta, betaT (a turn's swelling along it and through it per kg/kg of water), alpha,
  *   alphaT (per K), onProgress }.
  * Winding: each element's turns added in turn, their pull pressing on the roll beneath, p = Σ Tw / r (Hakiel's accretion,
@@ -720,9 +720,11 @@ function pmpRoll(o) {
   const T = new Float64Array(nE).fill(o.heat ? o.heat.T0 : 0), a = new Float64Array(nE), X = new Float64Array(nE);
   const W = o.water, Hh = o.heat;
   const psat = typeof drPsat === 'function' ? drPsat : (typeof require === 'function' ? require('./drying.js').drPsat : null);
-  // (the isotherm: GAB, capped at the pores; or a straight line X = lin · a, the checks')
-  const Xof = q => (W && W.lin ? W.lin * q : Math.min(pmpGAB(q, W.gab), W.Xcap ?? Infinity)), dXda = q => { if (W.lin) return W.lin; const d = 1e-6, lo = Math.max(0, q - d), hi = Math.min(1, q + d); return Xof(hi) - Xof(lo) > 0 ? (Xof(hi) - Xof(lo)) / (hi - lo) : 1e-9; };
-  if (W) { const a0 = W.lin ? Math.min(1, W.X0 / W.lin) : pmpGABinv(Math.min(W.X0, W.Xcap ?? Infinity), W.gab); a.fill(a0); X.fill(Xof(a0)); }
+  // (the isotherm: GO's own water, GAB at the turn's temperature (with the heat solved), capped at Xcap if given; or a
+  //  straight line X = lin · a, the checks')
+  const Xof = (q, Tq) => (W && W.lin ? W.lin * q : Math.min(pmpGAB(q, W.gab, Tq), W.Xcap ?? Infinity)), dXda = (q, Tq) => { if (W.lin) return W.lin; const d = 1e-6, lo = Math.max(0, q - d), hi = Math.min(1, q + d); return Xof(hi, Tq) - Xof(lo, Tq) > 0 ? (Xof(hi, Tq) - Xof(lo, Tq)) / (hi - lo) : 1e-9; };
+  const Tiso = e => (Hh ? T[e] : undefined);
+  if (W) { const a0 = W.lin ? Math.min(1, W.X0 / W.lin) : pmpGABinv(Math.min(W.X0, W.Xcap ?? Infinity), W.gab, Tiso(0)); a.fill(a0); X.fill(Xof(a0, Tiso(0))); }
   const X0 = Float64Array.from(X), Tst = Float64Array.from(T);
   // (at rest, each element's stiffness on its own two nodes; elements i − 1 and i share a node where they touch, their push
   //  on each other as wound sW -- each side's own nodal force from its stress as wound, their mean -- let go where a gap
@@ -771,7 +773,7 @@ function pmpRoll(o) {
         const A = new Float64Array(nE), B = new Float64Array(nE), C = new Float64Array(nE), Rr = new Float64Array(nE);
         for (let e = 0; e < nE; e++) {
           const ps = psat(T[e]), vol = rM[e] * H;
-          Rr[e] = W.rhoD * (Xof(a[e]) - Xn[e]) * vol / dt; B[e] = W.rhoD * dXda(a[e]) * vol / dt;
+          Rr[e] = W.rhoD * (Xof(a[e], Tiso(e)) - Xn[e]) * vol / dt; B[e] = W.rhoD * dXda(a[e], Tiso(e)) * vol / dt;
           if (e > 0) { const G = W.Kv * (R0 + e * H) / H, pl = psat(T[e - 1]); Rr[e] += G * (a[e] * ps - a[e - 1] * pl); B[e] += G * ps; A[e] = -G * pl; }
           if (e < nE - 1) { const G = W.Kv * (R0 + (e + 1) * H) / H, pr = psat(T[e + 1]); Rr[e] += G * (a[e] * ps - a[e + 1] * pr); B[e] += G * ps; C[e] = -G * pr; }
           else { const G = W.Kv * R1 / (H / 2), pr = W.rhRoom * psat(Hh ? Hh.Troom : T[e]); Rr[e] += G * (a[e] * ps - pr); B[e] += G * ps; }
@@ -780,7 +782,7 @@ function pmpRoll(o) {
         let mx = 0; for (let e = 0; e < nE; e++) { const an = Math.min(1, Math.max(0, a[e] + d[e])); mx = Math.max(mx, Math.abs(an - a[e])); a[e] = an; }
         if (mx < 1e-11) break;
       }
-      for (let e = 0; e < nE; e++) X[e] = Xof(a[e]);
+      for (let e = 0; e < nE; e++) X[e] = Xof(a[e], Tiso(e));
     }
     // the stress since the roll was wound: its stress as wound, and what the change of water and heat since gives (the
     // outside free, the core's spring). The turns cannot pull on each other or on the core: neighbouring elements share a
@@ -865,8 +867,11 @@ function pmpTurnStress(layers, kappa, N) {
   return { top: Lt.Q * (e0 + kappa * z - Lt.en), bot: Lb.Q * (e0 - Lb.en), max, min };
 }
 /** The isotherm (GAB, as drying.js's) and its inverse (the activity at a water content), by bisection. */
-const pmpGAB = (a, g) => { const Ka = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * Ka / ((1 - Ka) * (1 - Ka + g.C * Ka)); };
-function pmpGABinv(X, g) { let lo = 0, hi = 1; if (X >= pmpGAB(1, g)) return 1; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (pmpGAB(m, g) < X) lo = m; else hi = m; } return (lo + hi) / 2; }
+// (GO's own water at activity a; at a temperature T (°C) its C as exp(Hc/RT) from its value at T0; no T or no Hc:
+//  the isotherm as it is)
+const pmpGabC = (g, T) => (g.Hc && Number.isFinite(T) ? g.C * Math.exp(g.Hc / 8.314462618 * (1 / (T + 273.15) - 1 / ((Number.isFinite(g.T0) ? g.T0 : 25) + 273.15))) : g.C);
+const pmpGAB = (a, g, T) => { const Ka = g.K * Math.min(Math.max(a, 0), 1), C = pmpGabC(g, T); return g.Xm * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)); };
+function pmpGABinv(X, g, T) { let lo = 0, hi = 1; if (X >= pmpGAB(1, g, T)) return 1; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (pmpGAB(m, g, T) < X) lo = m; else hi = m; } return (lo + hi) / 2; }
 /**
  * The pressure a pull's increment on the outer turn at radius s gives at r in a roll R0 … s of constant stiffnesses with
  * ν_θr = 0 on a core of stiffness kC (closed form: u = C1 r^g + C2 r^−g, g² = E_θ/E_r; σ_r(s) = −δp, σ_r(R0) = kC u(R0) / R0).

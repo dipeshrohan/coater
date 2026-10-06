@@ -37,9 +37,9 @@ function releaseCompact(q, n, table) {
 function stackRun(P, Lx, Ly, S, tick) {
   const n = 8, tO = S.tOven, tR = S.tRest;
   const saveO = [60, 300, 900, 1800, tO].filter((t, i, a) => t <= tO && a.indexOf(t) === i), saveR = [600, 1800, tR].filter((t, i, a) => t <= tR && a.indexOf(t) === i);
-  const stages = [{ tEnd: tO, psat: S.psatOven, aEdge: P.rhDry, creep: true, saveAt: saveO }];
-  if (tR > 0) stages.push({ tEnd: tR, psat: S.psatRoom, aEdge: P.rhRoom, creep: false, saveAt: saveR });
-  const r = prPress({ Lx, Ly, nx: 30, ny: 30, grade: 40, X0: P.Xcut, rhoS: P.rhoG, gab: P.gab, Xcap: P.Xcap, K: S.K, tab: P.tab, nu: P.nu, kSet: P.kSet, tau: S.tau, n, pgrade: 1, stages });
+  const stages = [{ tEnd: tO, psat: S.psatOven, T: P.Tdry, aEdge: P.rhDry, creep: true, saveAt: saveO }];
+  if (tR > 0) stages.push({ tEnd: tR, psat: S.psatRoom, T: P.Troom, aEdge: P.rhRoom, creep: false, saveAt: saveR });
+  const r = prPress({ Lx, Ly, nx: 30, ny: 30, grade: 40, X0: P.Xcut, rhoS: P.rhoG, gab: P.gab, K: S.K, tab: P.tab, nu: P.nu, kSet: P.kSet, tau: S.tau, n, pgrade: 1, stages });
   tick();
   const p0 = prProps(P.tab, P.Xcut), last = r.stages[r.stages.length - 1], ng = last.Xg.length;
   // (the natural fields let go: its water as it is, the creep the stack left; the stretch from as cut)

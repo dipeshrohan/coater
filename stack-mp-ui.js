@@ -28,7 +28,7 @@ function mpStackInputs(dim) {
   const snapMin = [5, 15, 30, 60].filter(m => m * 60 < tOven - 1);
   return { dim, Lx: q.Lx, Ly: q.Ly, N: mpN(), h: P.h, plateT: pl.plateT / 1000, X0: P.Xcut, Troom: P.Troom, rhRoom: P.rhRoom,
     XdryTo: P.Xdry + 0.1 * (P.Xcut - P.Xdry), stages, air: { fan: pl.stackAirU, p: (MAT.dry.pRoom ? MAT.dry.pRoom.v * 1000 : 101325) }, shelf: pl.shelf, epsPlate: pl.epsPl, epsGO: d.emis.v, al: { k: MAT.lib.alK.v, rho: MAT.lib.alRho.v, c: MAT.lib.alC.v, ...hubDefsOf({ kT: MAT.lib.alK, cT: MAT.lib.alC }) },
-    go: { kIn: d.kIn.v, kThr: d.kS.v, c: d.cS.v, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS, cT: d.cS }), rhoS: P.rhoG, gab: P.gab, Xcap: P.Xcap, K: S.K, Kthr: d.skinK.v * 1e-12, alpha: MAT.film.alphaF.v * 1e-6, nu: P.nu, tab: P.tab, tau: S.tau },
+    go: { kIn: d.kIn.v, kThr: d.kS.v, c: d.cS.v, ...hubDefsOf({ kInT: d.kIn, kThrT: d.kS, cT: d.cS }), rhoS: P.rhoG, gab: P.gab, K: S.K, Kthr: d.skinK.v * 1e-12, alpha: MAT.film.alphaF.v * 1e-6, nu: P.nu, tab: P.tab, tau: S.tau },
     ...mpStackMesh(dim), follow: mpFollow(),
     ...(typeof matSolverProps === 'function' && matSolverProps() ? { props: matSolverProps() } : {}),
     snapTimes: [...snapMin.map(m => m * 60), tOven, ...(tRest > 0 ? [tOven + tRest] : [])] };

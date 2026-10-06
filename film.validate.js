@@ -182,6 +182,16 @@ const rel = (a, b) => Math.abs(a - b) / Math.abs(b);
     { const P = r.plate, at = X => { if (X <= P.tab[0][0]) return P.tab[0]; for (let i = 0; i < P.tab.length - 1; i++) if (X <= P.tab[i + 1][0]) { const f = (X - P.tab[i][0]) / (P.tab[i + 1][0] - P.tab[i][0]); return P.tab[i].map((v, c) => v + f * (P.tab[i + 1][c] - v)); } return P.tab[P.tab.length - 1]; };
       const c = at(P.Xcut), d = at(P.Xdry), e = Math.max(rel(c[1], P.A), rel(c[2], P.D), Math.abs(c[3] - P.eFlatCut) / Math.abs(P.eFlatDry - P.eFlatCut), Math.abs(d[3] - P.eFlatDry) / Math.abs(P.eFlatDry - P.eFlatCut), rel(c[4], P.kS));
       check(`the plate by water: linear between its rows within 1e-3, as the plate at the cut and the oven's water (${tag})`, P.tabErr < 1e-3 && e < 1e-3 && P.tab.length === 21, `rows ${P.tab.length}, halfway ${P.tabErr.toExponential(1)}, at the ends ${e.toExponential(1)}`); }
+    // (2c: GO's own water -- the published GO isotherm, its C at the temperature (H_c): on the web, drying, the film's
+    //  water stays under the drying's pore cap; off it -- the room, as cut, dried through in the pre heat -- GO's own,
+    //  the isotherm at that humidity and temperature, by hand)
+    if (!over.where) { const g2 = { Xm: 0.115, C: 200, K: 0.885, T0: 25, Hc: 20000 }, o2 = { ...o, gab: g2, Tdry: 100 }, h2 = F.fmHistory(dr, o2), r2 = F.fmRun(dr, o2).plate;
+      const hand = (a, T) => { const C = 200 * Math.exp(20000 / 8.314462618 * (1 / (T + 273.15) - 1 / 298.15)), Ka = 0.885 * a; return 0.115 * C * Ka / ((1 - Ka) * (1 - Ka + C * Ka)); };
+      const aDry = Math.min(1, 0.5 * drPsat(25) / drPsat(100));
+      let over2 = 0; for (const S of h2.steps) for (let k = 0; k < h2.K; k++) if (S.set[k]) over2 = Math.max(over2, S.X[k] - h2.Xcap);
+      check('GO\'s own water (2c): on the web the drying keeps the film under its pores\' cap; off it the room\'s, as cut and dried through at 100 °C, the isotherm at that humidity and temperature (by hand)',
+        over2 <= 1e-12 && rel(r2.Xroom, hand(0.5, 25)) < 1e-12 && r2.Xcut === r2.Xroom && rel(r2.Xdry, hand(aDry, 100)) < 1e-12 && r2.Xroom > h2.Xcap,
+        `on the web at most ${(h2.Xcap * 100).toFixed(2)} % (${over2 <= 0 ? 'never above' : 'above by ' + over2.toExponential(1)}); room and as cut ${(r2.Xroom * 100).toFixed(2)} %, dried through ${(r2.Xdry * 100).toFixed(2)} %, at the peel ${(r2.Xpeel * 100).toFixed(2)} %`); }
     if (r.worst) {
       const i = r.worst.i, L = F.fmLayout(hh, i, dr.series[i].h, o);
       const fine = F.fmCrack(L, r.worst.which, { ...o, fem: { nx: 24, nz: 24, div: 200, ratio: 1.5, nzCrack: 10 } });

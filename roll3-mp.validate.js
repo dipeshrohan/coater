@@ -66,5 +66,18 @@ const heat0 = { T0: 20, k: 0.2, kIn: 2, rhoc: 1.5e6, hOut: 8, Troom: 20 };
   const x0 = r.hist[0].Xmean, x1 = r.hist[r.hist.length - 1].Xmean, t1 = r.hist[r.hist.length - 1].Tmid;
   check('everything sealed: its water and heat stay as they were', Math.abs(x1 - x0) < 1e-9 && Math.abs(t1 - 30) < 1e-6, `water ${x0.toFixed(9)} → ${x1.toFixed(9)}, temperature 30 → ${t1.toFixed(6)} °C`);
 }
+// 6. GO's own water (2c): its C at the local temperature (H_c), no pore cap -- sealed at 50 °C its water stays as wound
+//    (its vapour from the isotherm at 50 °C and back); at a steady 40 °C it is the isotherm with its C at 40 °C
+{
+  const g2 = { Xm: 0.115, C: 200, K: 0.885, T0: 25, Hc: 20000 }, C40 = 200 * Math.exp(20000 / 8.314462618 * (1 / (40 + 273.15) - 1 / (25 + 273.15)));
+  const water = { X0: 0.0836, gab: g2, rhoD: 1500, Kv: 2e-15, KvIn: 2e-10, rhRoom: 0.5 };
+  const cool = R.r3Run({ R0: 0.038, n: 300, h: 16e-6, W: 0.2, heat: { ...heat0, T0: 50, hOut: 50, Troom: 20 }, water, tEnd: 3600, steps: 20, mesh: { nr: 6, nth: 2, nz: 4 }, check: { ends: 'sealed', outer: 'sealed' } });
+  const x0 = cool.hist[0].Xmean, x1 = cool.hist[cool.hist.length - 1].Xmean, t1 = cool.hist[cool.hist.length - 1].Tmid;
+  check('GO\'s own water, sealed at 50 °C: its water stays as wound', Math.abs(x1 - x0) < 1e-9 && Math.abs(x0 - 0.0836) < 1e-9 && Math.abs(t1 - 50) < 1e-6, `water ${x0.toFixed(9)} → ${x1.toFixed(9)}, ${t1.toFixed(1)} °C at the end`);
+  const at40 = gab => R.r3Run({ R0: 0.038, n: 300, h: 16e-6, W: 0.2, heat: { ...heat0, T0: 40, Troom: 40 }, water: { ...water, gab }, tEnd: 3600 * 6, steps: 20, mesh: { nr: 6, nth: 2, nz: 4 } });
+  const a = at40(g2), b = at40({ Xm: 0.115, C: C40, K: 0.885 });
+  const d = Math.max(...a.hist.map((q, i) => Math.abs(q.Xmean - b.hist[i].Xmean)));
+  check('  at a steady 40 °C, open to the room: the isotherm with H_c is the isotherm with its C at 40 °C', d < 1e-10, `${d.toExponential(1)} kg/kg; its mean water ${(x0 * 100).toFixed(2)} → ${(a.hist[a.hist.length - 1].Xmean * 100).toFixed(2)} %`);
+}
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exitCode = fails ? 1 : 0;

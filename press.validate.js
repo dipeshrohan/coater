@@ -87,5 +87,19 @@ const still = (Lx, Ly, nx, ny, f) => { const wx = P.prWidths(Lx / 2, nx, 1), wy 
   check('with the creep off the stress holds', rel(off.hist[off.hist.length - 1].N, N0) < 1e-9, `${(off.hist[off.hist.length - 1].N / 1e3).toFixed(6)} vs ${(N0 / 1e3).toFixed(6)} kN/m`);
 }
 
+// GO's own water at the stage's temperature (2c): the isotherm's C as exp(Hc/R (1/T − 1/T0)) -- by hand -- and the
+// drying with T and Hc the same, to the last bit, as with that C and no T; Hc 0 or no T: the isotherm as it is
+{
+  const g2 = { Xm: 0.115, C: 200, K: 0.885, T0: 25, Hc: 20000 }, T = 100, Ch = 200 * Math.exp(20000 / 8.314462618 * (1 / 373.15 - 1 / 298.15));
+  const gT = P.prGabAt(g2, T), hand = { Xm: 0.115, C: Ch, K: 0.885 };
+  check('the isotherm at 100 °C: C × exp(H_c/R (1/T − 1/T₀)) by hand; less water than at 25 °C at the same humidity; H_c 0 or no T: as it is',
+    rel(gT.C, Ch) < 1e-12 && P.prGAB(0.0156, gT) < P.prGAB(0.0156, g2) && P.prGabAt({ ...g2, Hc: 0 }, T).C === 200 && P.prGabAt(g2).C === 200,
+    `C ${gT.C.toFixed(2)} (at 25 °C 200); X at 1.56 % ${(P.prGAB(0.0156, gT) * 100).toFixed(2)} % vs ${(P.prGAB(0.0156, g2) * 100).toFixed(2)} %`);
+  const run = gg => P.prDry({ Lx: 0.3, Ly: 0.3, nx: 12, ny: 12, grade: 20, X0: 0.205, aEdge: 0.0156, psat: 101325, T: gg === g2 ? T : undefined, K: 3e-7, rhoS: 1500, gab: gg, tEnd: 3600, steps: 40 });
+  const a = run(g2), b = run(hand);
+  let d = 0; for (let k = 0; k < a.X.length; k++) d = Math.max(d, Math.abs(a.X[k] - b.X[k]));
+  check('  the pressed piece dried at 100 °C with T and H_c: the same, to the last bit, as with that C', d === 0, `largest difference ${d}; mean water at the end ${(meanOf(a) * 100).toFixed(2)} %`);
+}
+
 console.log(fails ? `${fails} FAILED` : 'all passed');
 if (typeof process !== 'undefined') process.exitCode = fails ? 1 : 0;

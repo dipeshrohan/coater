@@ -10,6 +10,9 @@
  */
 
 // ---- the GAB isotherm, its slope and its inverse ----
+// (at a temperature T (°C): the isotherm with its C as exp(Hc/RT) from its value at T0 -- warm GO holds less at the
+//  same humidity; no T, or no Hc (J/mol): the isotherm as it is)
+const prGabAt = (g, T) => (g && g.Hc && Number.isFinite(T) ? { Xm: g.Xm, K: g.K, C: g.C * Math.exp(g.Hc / 8.314462618 * (1 / (T + 273.15) - 1 / ((Number.isFinite(g.T0) ? g.T0 : 25) + 273.15))) } : g);
 const prGAB = (a, g) => { const u = g.K * Math.min(Math.max(a, 0), 1); return g.Xm * g.C * u / ((1 - u) * (1 - u + g.C * u)); };
 const prGABslope = (a, g) => {
   const u = g.K * Math.min(Math.max(a, 0), 1), f = (1 - u) * (1 - u + g.C * u), df = -(1 - u + g.C * u) + (1 - u) * (g.C - 1);
@@ -55,7 +58,7 @@ function prWidths(L, n, ratio) {
  * The water in a pressed piece through its time in the oven. o: { Lx, Ly (m, the piece), nx, ny (cells on the
  * quarter), grade (the first cell over the last toward the edges; 1 even), X0 (its water at the start, kg/kg,
  * uniform), aEdge (the oven air's activity at the edges), psat (Pa, at the oven's temperature), K (kg/(m s Pa)),
- * rhoS (kg/m³), gab { Xm, C, K }, Xcap (the most its pores hold), tEnd (s), steps, D (instead of K, psat and the isotherm: a constant diffusivity,
+ * rhoS (kg/m³), gab { Xm, C, K, T0, Hc }, T (°C, the stage's: the isotherm there), Xcap (the most its pores hold, if any), tEnd (s), steps, D (instead of K, psat and the isotherm: a constant diffusivity,
  * m²/s, X itself the potential -- the checks' linear case), saveAt (times to keep the field at) }.
  * Crank–Nicolson after four implicit Euler steps (Rannacher's start); steps growing geometrically, the last at most a
  * twentieth of the time. Returns the water on the quarter's cells at the end, the cells' centres and widths, its mean
@@ -66,11 +69,11 @@ function prDry(o) {
   const wx = prWidths(o.Lx / 2, nx, o.grade), wy = prWidths(o.Ly / 2, ny, o.grade);
   const cx = []; { let a = 0; for (const w of wx) { cx.push(a + w / 2); a += w; } }
   const cy = []; { let a = 0; for (const w of wy) { cy.push(a + w / 2); a += w; } }
-  const id = (i, j) => j * nx + i, lin = Number.isFinite(o.D);
-  const pot = X => lin ? X : prActivity(X, o.gab), dpot = X => { if (lin) return 1; if (X >= prGAB(1, o.gab)) return 0; return 1 / prGABslope(prActivity(X, o.gab), o.gab); };
+  const id = (i, j) => j * nx + i, lin = Number.isFinite(o.D), gab = prGabAt(o.gab, o.T);
+  const pot = X => lin ? X : prActivity(X, gab), dpot = X => { if (lin) return 1; if (X >= prGAB(1, gab)) return 0; return 1 / prGABslope(prActivity(X, gab), gab); };
   // (the pieces hold at most Xcap -- their pores full: air wetter than that fills them to it and no more)
   const cap = Number.isFinite(o.Xcap) ? o.Xcap : Infinity;
-  const G = lin ? o.D : o.K * o.psat / o.rhoS, pEdge = lin ? (o.XEdge || 0) : Math.min(o.aEdge, cap < Infinity ? prActivity(cap, o.gab) : 1), XE = lin ? (o.XEdge || 0) : Math.min(prGAB(o.aEdge, o.gab), cap);
+  const G = lin ? o.D : o.K * o.psat / o.rhoS, pEdge = lin ? (o.XEdge || 0) : Math.min(o.aEdge, cap < Infinity ? prActivity(cap, gab) : 1), XE = lin ? (o.XEdge || 0) : Math.min(prGAB(o.aEdge, gab), cap);
   // (X0: the water at the start, uniform, or on the cells -- a stage before this one)
   const X = typeof o.X0 === 'number' ? new Float64Array(N).fill(o.X0) : Float64Array.from(o.X0);
   const Xs = Math.max(XE, X.reduce((a, v) => Math.max(a, v), 0));
@@ -96,7 +99,7 @@ function prDry(o) {
   // (Newton on the potential P -- the activity, or X itself in the linear case: the fluxes are linear in it and the
   //  water X(P) is each cell's own, so the Jacobian is exact and symmetric: Cholesky, and Newton converges quadratically.
   //  P stays within [0, the highest potential about] -- the edges' and the start's -- where the isotherm is below the cap)
-  const Xof = P => lin ? P : prGAB(P, o.gab), dXof = P => lin ? 1 : prGABslope(P, o.gab);
+  const Xof = P => lin ? P : prGAB(P, gab), dXof = P => lin ? 1 : prGABslope(P, gab);
   const Pv = Float64Array.from(X, pot), Ptop = Math.max(pEdge, ...Pv);
   dts.forEach((dt, step) => {
     const th = step < 4 ? 1 : 0.5, Xold = Float64Array.from(X), Rold = new Float64Array(N);
@@ -148,7 +151,7 @@ function prProps(tab, X) {
  * nx, ny, grade (the water's cells), X0 (the water as cut, uniform), rhoS, gab, Xcap, K, tab (the plate at a uniform water:
  * rows [X, A, D, e, k] -- stretch and bending stiffness, natural stretch and curvature), nu, kSet (the roll's set
  * along the line, 1/m), tau (the creep time at the water X0, s; the creep's rate goes as the water: dry, none),
- * n, pgrade (the plate's mesh on the quarter), stages: [{ tEnd (s), psat (Pa), aEdge, creep (on or off), steps, saveAt }],
+ * n, pgrade (the plate's mesh on the quarter), stages: [{ tEnd (s), psat (Pa), T (°C), aEdge, creep (on or off), steps, saveAt }],
  * Xstart (the water on the cells at the start, if not X0 all over) }.
  * No friction between the pieces (under a light plate it is far below the stresses): each is held flat but free in
  * its plane. The stress: plane, the natural stretch its water's (from as cut); each Gauss point a Maxwell body -- its
@@ -201,11 +204,11 @@ function prPress(o) {
       if (big > peak.N) peak = { N: big, t: tAll + t, stage: si, x: G[at][0], y: G[at][1], X: Xg[at] };
       hist.push({ t: tAll + t, stage: si, sizeX: 2 * d[ex] / o.Lx, sizeY: 2 * d[ey + 4] / o.Ly, N: big, Xmid: X[0] });
     };
-    const dry = prDry({ Lx: o.Lx, Ly: o.Ly, nx: o.nx, ny: o.ny, grade: o.grade, X0: Xcells, aEdge: st.aEdge, psat: st.psat, K: o.K, rhoS: o.rhoS, gab: o.gab, Xcap: o.Xcap, tEnd: st.tEnd, steps: st.steps || 100, saveAt: st.saveAt, onStep });
+    const dry = prDry({ Lx: o.Lx, Ly: o.Ly, nx: o.nx, ny: o.ny, grade: o.grade, X0: Xcells, aEdge: st.aEdge, psat: st.psat, T: st.T, K: o.K, rhoS: o.rhoS, gab: o.gab, Xcap: o.Xcap, tEnd: st.tEnd, steps: st.steps || 100, saveAt: st.saveAt, onStep });
     Xcells = dry.X; tAll += st.tEnd;
     stages.push({ dry, Xg: Float64Array.from(Xg), ec: Float64Array.from(ec), kc: Float64Array.from(kc), N: Float64Array.from(Nf), sizeX: hist[hist.length - 1].sizeX, sizeY: hist[hist.length - 1].sizeY });
   }
   return { m, G, stages, peak, hist, A0, e0, t: tAll };
 }
 
-if (typeof module !== 'undefined') module.exports = { prGAB, prGABslope, prActivity, prBandSolve, prWidths, prDry, prSampler, prProps, prPress };
+if (typeof module !== 'undefined') module.exports = { prGabAt, prGAB, prGABslope, prActivity, prBandSolve, prWidths, prDry, prSampler, prProps, prPress };

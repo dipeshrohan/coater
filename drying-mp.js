@@ -147,7 +147,7 @@ function dmpDry(o) {
   if (!(phiM > o.phi0 * 1.001)) throw new Error(`the dry film's packing (${phiM}) is not above the slurry's solids (${+(o.phi0 * 100).toFixed(2)} vol%): the film would not shrink as it dries (Materials)`);
   if (!(o.U > 0)) throw new Error('the line is not moving');
   const Zs = DMP_DR.drStretches(o), xEnd = Zs[Zs.length - 1].x1, xStart = Zs[0].x0;
-  const Zl = [...Zs].reverse().find(Z => Z.name !== 'after'), aExit = Math.min(1, Zl.pa / DMP_DR.drPsat(Zl.Ta)), Xb = DMP_DR.drGAB(aExit, o.gab);
+  const Zl = [...Zs].reverse().find(Z => Z.name !== 'after'), aExit = Math.min(1, Zl.pa / DMP_DR.drPsat(Zl.Ta)), Xb = DMP_DR.drGAB(aExit, o.gab, Zl.Ta);
   const xOven = Zs.filter(Z => Z.name !== 'after').pop().x1;
   const es = Math.min(Xb * rhoS / rhoL, 0.9 * em);
   const stretchAt = xv => { for (const Z of Zs) if (xv < Z.x1 - 1e-12) return Z; return Zs[Zs.length - 1]; };

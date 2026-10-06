@@ -31,7 +31,7 @@ function prlInputs() {
   return { film: run.key, where: run.where, R0, core: { E: pl.coreE * 1e9, nu: pl.coreNu, Ri: Math.max(0, R0 - pl.coreWall / 1000) }, h, n, per: m.turns, Tw: pl.windT,
     Er: f.Er.v * 1e6, Eth: EA / h, nuTr: f.nuR.v, tEnd, steps: tEnd > 0 ? m.rsteps : 0,
     heat: { T0: fo.Troom, k: d.kS.v, rhoc: rhoD * d.cS.v, hOut: pl.rollH, Troom: fo.Troom },
-    water: { X0: xt / tt, gab: fo.gab, Xcap: run.Xcap, rhoD, Kv: fo.skinK, rhRoom: fo.rhRoom },
+    water: { X0: xt / tt, gab: fo.gab, rhoD, Kv: fo.skinK, rhRoom: fo.rhRoom },
     beta: F.beta, betaT: f.betaT.v, alpha: F.alphaF, alphaT: f.alphaT.v * 1e-6, layers, sigF: F.sigF, len: L, wet: run.wetAtPeel };
 }
 /** The roll's sizes as the solve takes them: its elements, its outer radius, the core's spring. */
@@ -43,8 +43,8 @@ const prlMm = v => { const m = v * 1000; return m >= 100 ? m.toFixed(0) : m >= 1
 const prlKPa = v => { const k = v / 1000; return (Math.abs(k) >= 100 ? k.toFixed(0) : Math.abs(k) >= 10 ? k.toFixed(1) : k.toFixed(2)).replace(/^-/, '−'); };
 const prlH = s => { const hr = s / 3600; return hr >= 10 ? hr.toFixed(0) : hr >= 1 ? hr.toFixed(1) : hr.toFixed(2); };
 const prlNeg = t => t.replace(/^-/, '−');
-/** The water the room's air leaves in the film (the isotherm at the room's humidity, capped at its pores). */
-const prlXroom = o => Math.min(pmpGAB(o.water.rhRoom, o.water.gab), o.water.Xcap ?? Infinity);
+/** The water the room's air leaves in the film: GO's own, the isotherm at the room's humidity and temperature. */
+const prlXroom = o => Math.min(pmpGAB(o.water.rhRoom, o.water.gab, o.heat ? o.heat.Troom : undefined), o.water.Xcap ?? Infinity);
 
 // ---- drawing: the roll's end, to scale, and the line out through it (the 1D's domain) drawn wide ----
 /**
@@ -172,7 +172,7 @@ const PRL = {
     const f = MAT.film;
     return [['Winding (each turn added)', 'Δp = T_w / r on the roll beneath;  d(r σ_r)/dr − σ_θ = 0;  the new turn σ_θ = T_w / h', `along the turns ${(o.Eth / 1e9).toFixed(1)} GPa, through the roll ${f.Er.v} MPa, ν_θr ${f.nuR.v}; the core a spring`],
       ['Heat', 'ρc ∂T/∂t = (1/r) ∂/∂r (r k ∂T/∂r)', `GO: k ${MAT.dry.kS.v} W/(m·K) through it, c ${MAT.dry.cS.v} J/(kg·K)`],
-      ['Water (vapour through the turns)', 'ρ_GO ∂X/∂t = (1/r) ∂/∂r (r K_v ∂(a p_sat)/∂r);  X = GAB(a)', `K_v ${MAT.dry.skinK.v}×10⁻¹² kg/(m·s·Pa); GAB X_m ${MAT.dry.gabXm.v}, C ${MAT.dry.gabC.v}, K ${MAT.dry.gabK.v}`],
+      ['Water (vapour through the turns)', 'ρ_GO ∂X/∂t = (1/r) ∂/∂r (r K_v ∂(a p_sat)/∂r);  X = GAB(a, T)', `K_v ${MAT.dry.skinK.v}×10⁻¹² kg/(m·s·Pa); GAB X_m ${MAT.dry.gabXm.v}, C ${MAT.dry.gabC.v} at ${MAT.dry.gabT0 ? MAT.dry.gabT0.v : 25} °C (its binding heat ${MAT.dry.gabHc ? MAT.dry.gabHc.v : 0} kJ/mol), K ${MAT.dry.gabK.v}`],
       ['Stress at rest', 'the same equilibrium; natural strain along β ΔX + α ΔT, through β_t ΔX + α_t ΔT', `β ${f.beta.v}, β_t ${f.betaT.v} per kg/kg; α ${f.alphaF.v}, α_t ${f.alphaT.v} ×10⁻⁶/K`],
       ['A turn bent round the roll', 'σ(z) = Q (e₀ + z / r − ε*(z)), its force the roll\'s hoop force', 'each layer\'s Q = E/(1 − ν) at its water, as the Peel page\'s roll']];
   },

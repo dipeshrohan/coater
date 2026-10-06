@@ -107,5 +107,22 @@ for (const dim of [1, 2, 3]) {
   const eE = Math.abs(hot.energy.in - hot.energy.held) / Math.abs(hot.energy.in), eW = Math.abs(hot.water.out - hot.water.lostHeld) / hot.water.start;
   check('  water\'s c_p 6000 J/(kg K) given: the stack warms differently (its heat capacity); heat in = held, water out = lost still', dT && eE < 1e-6 && eW < 1e-8, `energy ${fmt(eE)}, water ${fmt(eW)}`);
 }
+
+// 5. GO's own water (2c): the isotherm with its C at the local temperature (H_c), no pore cap -- at the air's temperature all
+//    through it is the isotherm with that C (to round-off); heated through the stack, its heat and water balance still
+//    close (the storage's change with temperature counted)
+{
+  const g2 = { Xm: 0.115, C: 200, K: 0.885, T0: 25, Hc: 20000 }, Ch = 200 * Math.exp(20000 / 8.314462618 * (1 / 373.15 - 1 / 298.15));
+  const goT = { ...go, gab: g2, Xcap: undefined }, goC = { ...go, gab: { Xm: 0.115, C: Ch, K: 0.885 }, Xcap: undefined };
+  const common = { ...base, X0: 0.2, N: 2, plateT: 0.002, shelf: 'solid', isothermal: true, stages: [{ tEnd: 1800, Tair: 100, creep: false }], steps: 20 };
+  const a = S.smpStack({ ...common, dim: 2, mesh: { nx: 12, grade: 10 }, go: goT }), b = S.smpStack({ ...common, dim: 2, mesh: { nx: 12, grade: 10 }, go: goC });
+  let d = 0; for (let k = 0; k < a.series.length; k++) for (const i of a.follow) d = Math.max(d, Math.abs(a.series[k].X[i][0] - b.series[k].X[i][0]));
+  check('GO\'s own water at 100 °C all through: the isotherm with H_c is the isotherm with its C at 100 °C', d < 1e-9, `${fmt(d)} kg/kg; a piece's mean at the end ${(a.series[a.series.length - 1].X[a.follow[0]][0] * 100).toFixed(2)} %`);
+  for (const dim of [1, 2]) {
+    const r = S.smpStack({ ...base, X0: 0.2, go: goT, dim, steps: 30, tol: 1e-10 });
+    const eE = Math.abs(r.energy.in - r.energy.held) / Math.abs(r.energy.in), eW = Math.abs(r.water.out - r.water.lostHeld) / r.water.start;
+    check(`  ${dim}D heated through the stack: heat in = held, water out = lost (step by step)`, eE < 1e-6 && eW < 1e-8, `energy ${fmt(eE)}, water ${fmt(eW)} (${(r.water.lost / r.water.start * 100).toFixed(1)} % lost)`);
+  }
+}
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;
