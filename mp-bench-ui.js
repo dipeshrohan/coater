@@ -358,7 +358,12 @@ function swbPage(A, dim) {
     if (A.draw) A.draw(cv, dim, o, step); else if (iso) swbDrawIso(cv, A, o, step); else swbDrawSection(cv, A, dim, o, step);
     document.getElementById('swbCvLg').innerHTML = swbLegend(A, dim, o, step);
     if (step === 'mesh' && dim === 3 && !A.meshHTML) swbCellsMount(A, o);
-  } else A.renderResults(dim);
+  } else {
+    // (task 13: the results as a viewer -- its views listed, one shown, its key values beside it -- where the stage has it)
+    if (A.viewer && typeof rvBuild === 'function') rvBuild(document.querySelector('#modWb .mod-extra > section'), `${A.sk}:${dim}`, A.viewNames ? A.viewNames(dim) : {});
+    A.renderResults(dim);
+    if (A.viewer && typeof rvAfter === 'function') rvAfter();
+  }
   swbWire(A, dim);
 }
 /** The page's status line: where its solve stands. */

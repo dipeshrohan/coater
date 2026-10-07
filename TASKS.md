@@ -41,13 +41,12 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **You said**: the visualisation is clumsy; do not fill too many things in one place with a lot of text (a rule for
   the whole application, now in CLAUDE.md); start now, with the Pre heat page.
 - **Pages**: Pre heat treatment first, then Drying, Peel and wind, Cutting, Furnace, Graphene film.
-- **Planned**:
-  - no blocks of text in the main area; explanations go behind the (i) help;
-  - results as aligned tables and figure tiles;
-  - warnings and checks as tables.
-- **Left**, per page:
-  - show you a screenshot of the page now and of the change, and ask;
-  - then build; one pull request per page.
+- **You chose** (from three real drafts of Pre heat › 2D › Results): layout A, a viewer, for every results page.
+  - the views listed on the left, one shown large in the middle, the key values in a column on the right;
+  - the sentences that explain a view behind an (i) on it;
+  - the inputs bar shows only the inputs; its drawings and notes behind an (i) in its head.
+- **Built**: Pre heat's four result views (1D, 2D, 3D Results and the Results tab); waiting for your yes.
+- **Left**, per page: the next stage's before and after screenshots for your yes, then one pull request per stage.
 
 ## 2b. Furnace: the weight your piece keeps (1.03 g)
 - **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the

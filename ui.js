@@ -923,6 +923,7 @@ function render() {
   document.body.dataset.tab = tab;
   document.body.dataset.sec = sec.k;
   document.body.dataset.page = pg;
+  document.body.classList.toggle('rv', typeof RV_PAGES !== 'undefined' && RV_PAGES.has(pg));
   applyPanels();
   document.getElementById('treeNote').textContent = NAV[pg].note || TREE_NOTE[tab] || '';
   ANIM.stop();
