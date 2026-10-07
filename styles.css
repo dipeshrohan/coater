@@ -1824,6 +1824,8 @@ button.ch-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1p
 .sheet-head .film-pic { border-radius: 8px; }
 .sheet-when { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 2px 0 6px; }
 .sheet-when .fv-why { margin: 0; }
+.sheet-when .sheet-way { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto; }   /* (its label and its switch kept together; on the right) */
+@media (max-width: 600px) { .sheet-when .sheet-way { margin-left: 0; } }
 .stack-sec { margin-top: 14px; }
 @media (max-width: 640px) {
   .film-checks { grid-template-columns: 1fr; }
@@ -2972,6 +2974,7 @@ body.rv-page .rv-i-tree { display: inline-grid; }
 .rv-kv td { text-align: right; font-weight: 600; color: var(--ink); white-space: nowrap; padding-left: 10px; font-variant-numeric: tabular-nums; }
 .rv-kv td.rv-bad { color: var(--bad); }
 .rv-kv td.rv-warn { color: var(--warn); }
+.rv-kv td.rv-wrap { white-space: normal; }   /* (words, as a piece's shape: on two lines rather than squeeze the labels) */
 /* (a view's own switches, in its caption: tight enough that a row of them fits the view's width) */
 .rv .rv-view figcaption .seg-sm button { padding: 0 7px; font-size: 12.5px; }
 .rv.rv-wide { grid-template-columns: 190px minmax(0, 1fr); }

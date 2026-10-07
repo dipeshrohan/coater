@@ -206,6 +206,10 @@ SWB_ADAPT['film:piece'] = {
   renderResults: dim => cmRender(dim),
   csv: dim => cmCsv(dim),
   openInputs: () => { setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); } },
+  viewer: true,
+  viewNames: dim => (dim === 1 ? { cm1: 'The stress through the film', cm2: 'Parting at each interface', cmCompare: 'How it was solved' }
+    : dim === 2 ? { cm1: 'Near the cut', cm2: 'Along the interfaces from the cut', cm3: 'Far in: against the 1D' }
+      : { cm1: 'Held up (free)', cm2: 'On a table', cmCompare: 'Against the Cutting page' }),
 };
 
 /** The 3D's drawing (Geometry, Mesh, Solve): the piece flat in a view from above and the front, its quarter's mesh. */
@@ -228,7 +232,7 @@ function cmHTML(dim) {
     : dim === 2 ? [pane('cm1', 'section', 'Near the cut', 'A map of the stress near the cut on the section', chips), pane('cm2', 'cut', 'Along the interfaces from the cut', 'The peel and the shear between the layers against the distance from the cut'), pane('cm3', 'ratio', 'Far in: against the 1D', 'The stress through the film far from the cut against the 1D\'s laminate theory')]
       : [pane('cm1', 'film', 'Held up (free)', 'The cut piece held up, as it curls free'), pane('cm2', 'film', 'On a table (its weight)', 'The cut piece lying on a table under its weight')];
   return `<section class="mp-sec mp-bench" id="cmSec" aria-label="The cut: its answers"><div class="stats mp-stats" id="cmStats"></div>
-    <div class="dry-grid mp-grid mp-grid2">${panes.join('')}</div><div class="mp-compare" id="cmCompare"></div></section>`;
+    <div class="dry-grid mp-grid mp-grid2">${panes.join('')}</div>${dim === 2 ? '' : '<div class="mp-compare" id="cmCompare"></div>'}</section>`;
 }
 function cmRender(dim) {
   const sec = document.getElementById('cmSec');
@@ -328,7 +332,7 @@ function cmRender2(o, r) {
   const xs3 = S3.flatMap(q => q.p.map(p => p[0])), xt3 = pmpTicks(Math.min(0, ...xs3), Math.max(0, ...xs3), 5), yt3 = pmpTicks(0, H * 1e6, 5);
   plotChart(cv3, FILM_ASPECT, { x0: xt3[0], x1: xt3[xt3.length - 1], y0: 0, y1: yt3[yt3.length - 1], xticks: xt3, yticks: yt3, xf: v => String(+v.toPrecision(4)), yf: v => String(+v.toPrecision(4)), xl: 'σ_xx (MPa)', yl: 'height in the film (µm)', s: S3 });
   lg3.innerHTML = oneDLegend(S3.map(q => [q.l, q.c, q.dash ? 'dash' : ''])) + `<p class="fv-why">Far from the cut the section is the free piece: the 1D's laminate theory${r.mesh.bands < o.layers.length ? ` (here the ${o.layers.length} layers in ${r.mesh.bands} bands, each its layers' mean: more bands on the Mesh step follow the 1D closer)` : ''}.</p>`;
-  document.getElementById('cmCompare').innerHTML = '';
+  const cmp = document.getElementById('cmCompare'); if (cmp) cmp.innerHTML = '';   // (the 2D's own check: far in, against the 1D)
 }
 function cmRender3(o, r) {
   const fr = r.free, tb = r.table, L = o.Lx * 1000, Wd = o.Ly * 1000, sgn = o.plate.kS + o.plate.kSet > 0 ? -1 : 1, col = '#e8590c';
@@ -344,7 +348,7 @@ function cmRender3(o, r) {
   const words = (q, table) => `${sheetShapeText(q)}; its corners ${cmMm(q.corner)} ${table ? 'off the table' : 'off its middle'}, the middles of its ends ${cmMm(q.edgeX)}, of its sides ${cmMm(q.edgeY)}`;
   document.getElementById('cm1Lg').innerHTML = `<p class="fv-why">${words(fr, false)}.</p>`;
   document.getElementById('cm2Lg').innerHTML = `<p class="fv-why">${words(tb, true)}.</p>`;
-  document.getElementById('cmCompare').innerHTML = `<h4 class="mp-h">Against the Cutting page</h4><p class="fv-why">The same plate model as the stage's Results (the piece in 3D, sheet.js), here on its own mesh (${o.n} × ${o.n} a quarter; the Results page ${8} × ${8}).${[fr, tb].some(q => q.maxSlope > 0.35) ? ' It curls steeply: this model is for moderate slopes.' : ''}</p>`;
+  document.getElementById('cmCompare').innerHTML = `<h4 class="mp-h">Against the Cutting page</h4><table class="mp-cmp"><tbody><tr><th scope="row">Model</th><td>the same plate model as the stage's Results (the piece in 3D, sheet.js)</td></tr><tr><th scope="row">Mesh</th><td>its own: ${o.n} × ${o.n} a quarter; the Results page ${8} × ${8}</td></tr>${[fr, tb].some(q => q.maxSlope > 0.35) ? '<tr><th scope="row">Slopes</th><td>it curls steeply: this model is for moderate slopes</td></tr>' : ''}</tbody></table>`;
 }
 function cmCsv(dim) {
   const r = cmCurrent(dim) ? CMS.res[dim] : null;
