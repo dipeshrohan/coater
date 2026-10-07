@@ -12,7 +12,8 @@ keeps it up to date in each pull request. The order and the tasks change only af
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
-| 13 | Stage pages to one professional layout, Pre heat first | Medium per page | Next | A yes per page |
+| 26 | The repository's files in folders, by kind | Small | Built; waiting for your yes | A yes |
+| 13 | Stage pages to one professional layout, Pre heat first | Medium per page | Next, after 26 | A yes per page |
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
 | 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
@@ -36,6 +37,18 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 23 | The heap under each stream (free-surface solve) | Large | To do | Whether you want it |
 | 24 | A full viewer on every geometry, mesh and result display | Large | To do | Answers on the list of displays |
 | 25 | Structured block meshing (ANSA level) | Very large | To do | Nothing to start |
+
+## 26. The repository's files in folders, by kind
+- **You said**: the files are hard to find, all in one place; make a detailed plan so the application does not break;
+  do it now, before Graphene film.
+- **You chose**: folders by kind of file; delete the stray copy `.v21.js`.
+- **Folders**: `app/` (the frame: menus, projects, help, report, styles), `pages/` (one script per page), `engine/`
+  (physics and solvers), `workers/` (solvers in the background), `checks/` (the checks and their test meshes),
+  `tools/`, `docs/`. The page **Blade Coat Defect Lab.html** stays at the top; `lib/`, `fonts/`, `benchmarks/` and
+  `proj/` stay as they are. README.md has the map.
+- **Kept working**: every path the app, its workers and its checks use, rewritten and checked by a new
+  `tools/check-paths.js`; every check and the whole app run before and after, the same.
+- **Left**: your yes, then its pull request. Then re-download main into a new, empty folder.
 
 ## 13. Stage pages to one professional layout, Pre heat first
 - **You said**: the visualisation is clumsy; do not fill too many things in one place with a lot of text (a rule for

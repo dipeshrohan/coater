@@ -30,7 +30,7 @@
  *
  * Gravity is in the app's pressure: OpenFOAM's (without gravity, kinematic) times ρ is compared with p − ρg(h − y).
  */
-const path = require('path'), fs = require('fs'), ROOT = path.join(__dirname, '..', '..');
+const path = require('path'), fs = require('fs'), ROOT = path.join(__dirname, '..', '..', 'engine');
 const FT = require(path.join(ROOT, 'feed-pool-tet.js')), UC = require(path.join(ROOT, 'um-core.js')), UFE = require(path.join(ROOT, 'um-fe.js')), FF = require(path.join(ROOT, 'feed-fem.js'));
 
 const R = 0.1, H = 1.725e-3, blade = x => H + R - Math.sqrt(Math.max(0, R * R - x * x)), rho = 1360, g = 9.81, U = 0.28 / 60, mu = 10.5;
