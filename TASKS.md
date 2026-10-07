@@ -258,6 +258,10 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- The repository's files in folders, by kind (was task 26): app/ (the frame: menus, projects, help, report, styles),
+  pages/ (one script per page), engine/ (physics and solvers), workers/, checks/, tools/, docs/; the page stays at the
+  top, README.md has the map. Every check and the whole app ran the same before and after (http and opened as a file).
+  `node tools/run-checks.js` runs every check; `node tools/check-paths.js` finds any file named where it is not.
 - The Line page scrolls on a desktop screen (it was cut off at the Checks table).
 - Paths of paste parcels in the 2D coating flow in time (was task 3): Coating › 2D › Results, the time bar's Pathlines
   and Streaklines switches, with a run in time (Solve › Time: Transient). The parcels start at the streamlines' seeds at

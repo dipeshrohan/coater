@@ -3,7 +3,7 @@
 // Furnace stage calls it: lumped capacity, implicit Euler). Writes T at every element's centre at the
 // output times. node heat_app.js <case.json> <out.json>
 const fs = require('fs'), path = require('path');
-const MP = require(path.join(__dirname, '../../../mp-core.js'));
+const MP = require(path.join(__dirname, '../../../engine/mp-core.js'));
 const C = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const dim = C.dim, L = C.layers, X = C.x, Z = C.z;
 const seg = (a, f) => a.breaks.slice(1).map((b, i) => ({ L: b - a.breaks[i], n: Math.round(a.n[i] * f) }));

@@ -3,7 +3,7 @@
 // plane strain in 2D). Writes T, the displacement and the stress at every element's centre.
 // node stress_app.js <case.json> <out.json> [refine factor]
 const fs = require('fs'), path = require('path');
-const MP = require(path.join(__dirname, '../../../mp-core.js'));
+const MP = require(path.join(__dirname, '../../../engine/mp-core.js'));
 const C = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')), f = Number(process.argv[4] || 1);
 const dim = C.dim, Lx = C.L[0], Lz = C.L[2];
 const axes = [0, 1, 2].slice(0, dim).map(d => ({ L: C.L[d], n: Math.round(C.n[d] * f) }));
