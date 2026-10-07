@@ -45,10 +45,12 @@ keeps it up to date in each pull request. The order and the tasks change only af
   - the views listed on the left, one shown large in the middle, the key values in a column on the right;
   - the sentences that explain a view behind an (i) on it;
   - the inputs bar shows only the inputs; its drawings and notes behind an (i) in its head.
-- **Done**, each with your yes: Pre heat (#156), Drying (#157), Peel and wind (its Results tab: the six checks in one
-  column, six charts, every location, measured; the key values for both ways the water leaves).
-- **Left**: Cutting, Furnace, Graphene film: each with before and after screenshots for your yes, then one pull
-  request per stage.
+- **Done**, each with your yes: Pre heat (#156), Drying (#157), Peel and wind (#159: the six checks in one column, six
+  charts, every location, measured; the key values for both ways the water leaves), Cutting (held up, on a table,
+  measured; the key values both ways, as cut, out of the stack and a day later; its 1D, 2D and 3D too).
+- **You chose**: the grey box "Its own solvers: 1D, 2D, 3D" on Cutting and Graphene film stays as it is.
+- **Left**: Furnace, Graphene film: each with before and after screenshots for your yes, then one pull request per
+  stage.
 
 ## 2b. Furnace: the weight your piece keeps (1.03 g)
 - **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the

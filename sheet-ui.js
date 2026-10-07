@@ -198,6 +198,14 @@ function drawSheet(cv, r, L, Wd, sign, table, col) {
 const sheetShapeKind = r => { const ex = r.edgeX, ey = r.edgeY; return Math.max(ex, ey, r.corner) < 1e-4 ? 'flat' : ex > 3 * ey ? 'along' : ey > 3 * ex ? 'across' : r.corner < 0.7 * Math.min(ex, ey) ? 'edges' : 'bowl'; };
 const SHEET_SHAPES = { flat: 'flat', along: 'rolls up along the line: its ends lift (a tube lying across the web)', across: 'rolls up across the web: its sides lift (a tube lying along the line)', bowl: 'a bowl: its corners lift', edges: 'wavy edges: the middles of its edges lift more than its corners' };
 const sheetShapeText = r => SHEET_SHAPES[sheetShapeKind(r)];
+/** The shape in a word or two (the key values). */
+const SHEET_SHAPES_SHORT = { flat: 'flat', along: 'rolls along', across: 'rolls across', bowl: 'a bowl', edges: 'wavy edges' };
+/** A curl's radius (κ in 1/m), or flat. */
+const sheetRad = k => (Math.abs(k) > 1e-6 ? `${(1000 / Math.abs(k)).toFixed(0)} mm` : 'flat');
+/** How high a piece stands on a table: its highest point (the stack's), else its corners' and its edges' middles (never below it). */
+const sheetHigh = r => Math.max(0, r.high != null ? r.high : Math.max(r.corner, r.edgeX, r.edgeY));
+/** How far a piece held up stands off its middle at most: its corners' or its edges' middles. */
+const sheetLift = r => Math.max(0, r.corner, r.edgeX, r.edgeY);
 const sheetMM = v => `${(v * 1000).toFixed(v * 1000 >= 10 ? 0 : 1)} mm`;
 /** Its size pressed flat later over as cut (Q68/69), from its film's plate. */
 /** Its size pressed flat after the pre heat treatment over as cut (Q71/72: dried through there), from its film's plate. */
@@ -205,16 +213,26 @@ const sheetSize = P => (1 + P.eFlatDry) / (1 + P.eFlatCut);
 const SHEET_WHEN = { cut: 'before the pre heat treatment (as cut)', dry: 'after the pre heat treatment', furnace: 'after the furnace (graphene film)' };
 
 // ---- the section's piece: its frame (inside the film's section), and its render ----
+/** The Results step's views (task 13, the viewer): listed left, one shown. */
+const SHEET_VIEWS = [['sh1', 'Held up (free)'], ['sh2', 'On a table'], ['sheetMeas', 'Measured']];
 function sheetSectionHTML() {
   return `<div class="sheet-sec" id="sheetSec">
-    <h3 class="oned-h" data-fview="piece">A piece cut from the roll, in 3D</h3>
-    <div class="sheet-head" data-fview="piece">${filmPicCut(0.9)}<p class="fv-why">Pieces of ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm are cut from the roll later, then stacked 20 at a time under an aluminium plate and heated in the pre heat treatment. As cut, how a piece curls is not known, nor where it is looked at, so it is shown held up (free) and lying on a table under its weight, drawn with its curl up.</p>
-      <div class="seg" role="tablist" aria-label="Which way the water left" id="sheetWay">${Object.entries(SHEET_WAYS).map(([k, t]) => `<button type="button" role="tab" data-sheetway="${k}" aria-selected="${k === SHEET.way}">${t}</button>`).join('')}</div></div>
-    <div class="sheet-when" data-fview="piece"><span class="fv-why">The piece</span><div class="seg" role="tablist" aria-label="When the piece is shown" id="sheetWhen">${Object.entries(SHEET_STATES).map(([k, t]) => `<button type="button" role="tab" data-sheetwhen="${k}" aria-selected="${k === SHEET.state}">${t}</button>`).join('')}</div></div>
+    <h3 class="oned-h rv-head" data-fview="piece">A piece cut from the roll, in 3D<button type="button" class="rv-i" data-rvabout="sheetAbout" aria-controls="sheetAbout" aria-expanded="false" aria-label="How it is worked out" title="How it is worked out">i</button></h3>
+    <div class="rv-about" id="sheetAbout" data-fview="piece" hidden>
+      <div class="sheet-head">${filmPicCut(0.9)}<p class="fv-why">Pieces of ${OVEN.peel.pieceL} × ${OVEN.peel.pieceW} mm are cut from the roll later, then stacked 20 at a time under an aluminium plate and heated in the pre heat treatment. As cut, how a piece curls is not known, nor where it is looked at, so it is shown held up (free) and lying on a table under its weight, drawn with its curl up.</p></div>
+      <div id="sheetNote"></div>
+    </div>
+    <div class="sheet-when" data-fview="piece"><span class="fv-why">The piece</span><div class="seg" role="tablist" aria-label="When the piece is shown" id="sheetWhen">${Object.entries(SHEET_STATES).map(([k, t]) => `<button type="button" role="tab" data-sheetwhen="${k}" aria-selected="${k === SHEET.state}">${t}</button>`).join('')}</div>
+      <span class="sheet-way"><span class="fv-why">Drawn with the water leaving from</span><span class="seg" role="tablist" aria-label="Which way the water left" id="sheetWay">${Object.entries(SHEET_WAYS).map(([k, t]) => `<button type="button" role="tab" data-sheetway="${k}" aria-selected="${k === SHEET.way}">${t}</button>`).join('')}</span></span></div>
     <div id="sheetState" data-fview="piece"></div>
-    <div class="dry-grid sheet-grid" data-fview="piece">
-      <figure class="pane dry-pane"><figcaption>${uiBadge('film')}Held up (free)</figcaption><canvas id="sh1" role="img" aria-label="The cut piece held up, as it curls free, in a view from above and the front"></canvas><div class="pane-legend" id="sh1Lg"></div></figure>
-      <figure class="pane dry-pane"><figcaption>${uiBadge('film')}On a table (its weight)</figcaption><canvas id="sh2" role="img" aria-label="The cut piece lying on a table under its weight, its curl up, in a view from above and the front"></canvas><div class="pane-legend" id="sh2Lg"></div></figure>
+    <div class="rv" data-rvkey="piece" data-fview="piece">
+      <nav class="rv-list" role="tablist" aria-label="The view shown"><h5>Results</h5>${SHEET_VIEWS.map(([id, t], i) => `<button type="button" role="tab" data-rvview="${id}" aria-selected="${!i}">${t}</button>`).join('')}</nav>
+      <div class="rv-main">
+        <figure class="pane dry-pane rv-view" data-rvid="sh1"><figcaption>${uiBadge('film')}Held up (free)</figcaption><canvas id="sh1" role="img" aria-label="The cut piece held up, as it curls free, in a view from above and the front"></canvas><div class="pane-legend" id="sh1Lg"></div></figure>
+        <figure class="pane dry-pane rv-view" data-rvid="sh2" hidden><figcaption>${uiBadge('film')}On a table (its weight)</figcaption><canvas id="sh2" role="img" aria-label="The cut piece lying on a table under its weight, its curl up, in a view from above and the front"></canvas><div class="pane-legend" id="sh2Lg"></div></figure>
+        <div class="rv-view rv-extra" data-rvid="sheetMeas" id="sheetMeas" hidden></div>
+      </div>
+      <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="sheetKeys"></table></aside>
     </div>
     <div class="stack-sec" id="stackSec" data-fview="stack">
       <h4 class="oned-h rv-head">In the pressed stack, and out of it<button type="button" class="rv-i" data-rvabout="stackAbout" aria-controls="stackAbout" aria-expanded="false" aria-label="How it is worked out" title="How it is worked out">i</button></h4>
@@ -232,7 +250,6 @@ function sheetSectionHTML() {
         <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="stackKeys"></table></aside>
       </div>
     </div>
-    <div id="sheetMeas" data-fview="piece"></div>
   </div>`;
 }
 function sheetStatusPaint() {
@@ -249,6 +266,12 @@ function sheetStatusPaint() {
 function sheetRender() {
   const sec = document.getElementById('sheetSec');
   if (!sec) return;
+  if (typeof rvSync === 'function') rvSync(sec.querySelector('.rv[data-rvkey="piece"]'));   // (the view picked shown, before it draws)
+  sheetDraw(sec);
+  if (typeof rvAfter === 'function') rvAfter();
+}
+/** The piece's controls, its two drawings, its key values and the sentences behind its (i) (sheetRender's). */
+function sheetDraw(sec) {
   if (!sec.dataset.wired) {
     sec.dataset.wired = '1';
     sec.addEventListener('click', e => {
@@ -284,7 +307,19 @@ function sheetRender() {
   document.getElementById('sh2Lg').innerHTML = `<p class="fv-why">${words(run.table, true)}${run.table.middle > 1e-4 ? '' : '; its middle on the table'}.</p>`;
   const warn = [run.free, run.table].some(r => r.maxSlope > 0.35);
   const sz = sheetSize(P), both = q.pieces.map(x => ({ w: x.where, s: sheetSize(x.plate) }));
-  st.innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. As cut from the roll (before the pre heat treatment), it wants to curl to a radius of ${Math.abs(P.kS) > 1e-6 ? `${(1000 / Math.abs(P.kS)).toFixed(0)} mm` : '—'} both ways${Math.abs(P.kSet) > 1e-9 ? `, and along the line the roll's set adds a curl of radius ${(1 / Math.abs(P.kSet) * 1000).toFixed(0)} mm` : ''}${topDown ? ' (away from its top: it is drawn and lies with its top down)' : ' (toward its top)'}. ${['along', 'across'].includes(sheetShapeKind(run.free)) ? `Held up, this piece rolls one way rather than keep a bowl (a bowl would have to stretch)${Math.abs(P.kSet) > 1e-9 ? ': along the line, the roll\'s set' : ': along the line here -- which way is decided by small differences, as the flakes\' alignment; with no roll set it could as well roll across'}.` : sheetShapeKind(run.free) === 'bowl' ? 'Held up, this piece is small enough to keep a bowl.' : ''} Dried through in the pre heat treatment (${P.Tdry} °C) and pressed flat while still dry, a piece cut ${L.toFixed(0)} × ${Wd.toFixed(0)} mm measures <b>${(L * sz).toFixed(1)} × ${(Wd * sz).toFixed(1)} mm</b> (${((sz - 1) * 100).toFixed(2)} %; ${both.map(b => `${SHEET_WAYS[b.w]} ${((b.s - 1) * 100).toFixed(2)} %`).join(', ')}): cut and lying loose in the room it holds GO's own water there (${(P.Xcut * 100).toFixed(1)} % of the GO); the pre heat treatment's air (the room's heated, ${(P.rhDry * 100).toFixed(1)} % humidity) leaves ${(P.Xdry * 100).toFixed(1)} %. Out of the stack and a day later: the buttons above; the stack itself: below.${warn ? ` ${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}` : ''}</p>`;
+  document.getElementById('sheetNote').innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. As cut from the roll (before the pre heat treatment), it wants to curl to a radius of ${Math.abs(P.kS) > 1e-6 ? `${(1000 / Math.abs(P.kS)).toFixed(0)} mm` : '—'} both ways${Math.abs(P.kSet) > 1e-9 ? `, and along the line the roll's set adds a curl of radius ${(1 / Math.abs(P.kSet) * 1000).toFixed(0)} mm` : ''}${topDown ? ' (away from its top: it is drawn and lies with its top down)' : ' (toward its top)'}. ${['along', 'across'].includes(sheetShapeKind(run.free)) ? `Held up, this piece rolls one way rather than keep a bowl (a bowl would have to stretch)${Math.abs(P.kSet) > 1e-9 ? ': along the line, the roll\'s set' : ': along the line here -- which way is decided by small differences, as the flakes\' alignment; with no roll set it could as well roll across'}.` : sheetShapeKind(run.free) === 'bowl' ? 'Held up, this piece is small enough to keep a bowl.' : ''} Dried through in the pre heat treatment (${P.Tdry} °C) and pressed flat while still dry, a piece cut ${L.toFixed(0)} × ${Wd.toFixed(0)} mm measures <b>${(L * sz).toFixed(1)} × ${(Wd * sz).toFixed(1)} mm</b> (${((sz - 1) * 100).toFixed(2)} %; ${both.map(b => `${SHEET_WAYS[b.w]} ${((b.s - 1) * 100).toFixed(2)} %`).join(', ')}): cut and lying loose in the room it holds GO's own water there (${(P.Xcut * 100).toFixed(1)} % of the GO); the pre heat treatment's air (the room's heated, ${(P.rhDry * 100).toFixed(1)} % humidity) leaves ${(P.Xdry * 100).toFixed(1)} %. Out of the stack and a day later: The piece, above; the stack itself: Pre heat treatment.</p>`;
+  st.innerHTML = warn ? `<p class="dry-msg">${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}</p>` : '';
+  // (the key values, both ways the water left: a column each)
+  const at = w => ({ run: SHEET.res.runs.find(r => r.where === w), P: q.pieces.find(x => x.where === w).plate }), ways = Object.keys(SHEET_WAYS);
+  sheetKeysPaint([
+    ['Curl radius', w => sheetRad(at(w).P.kS), 'as cut, both ways'],
+    ...(ways.some(w => Math.abs(at(w).P.kSet) > 1e-9) ? [['Roll\'s set', w => sheetRad(at(w).P.kSet), 'along the line: a curl of this radius added']] : []),
+    ['Held up', w => SHEET_SHAPES_SHORT[sheetShapeKind(at(w).run.free)], 'its shape, free', true],
+    ['Highest, held up', w => sheetMM(sheetLift(at(w).run.free)), 'off its middle: its corners or its edges\' middles'],
+    ['Highest on a table', w => sheetMM(sheetHigh(at(w).run.table)), 'under its weight'],
+    ['Size after pre heat', w => `${((sheetSize(at(w).P) - 1) * 100).toFixed(2)} %`, `dried through and pressed flat, from the ${L.toFixed(0)} × ${Wd.toFixed(0)} mm cut`],
+    ['Water as cut', w => `${(at(w).P.Xcut * 100).toFixed(1)} %`, 'of the GO, lying loose in the room'],
+  ]);
 }
 /** The piece let go (GO-4f): out of the stack or a day later, held up and on a table. */
 function sheetLetGo() {
@@ -307,7 +342,19 @@ function sheetLetGo() {
   const when = k === 'out' ? `Out of the stack (${pl.tOven} h in the pre heat treatment at ${pl.dryT} °C${run.rest ? `, then ${pl.tRest} h under the plate in the room` : ', taken out straight away'}), as you look at it and measure it: its water ${(Xk * 100).toFixed(1)} % of the GO (its middle ${(run.XmidEnd[run.XmidEnd.length - 1] * 100).toFixed(1)} %)`
     : `A day later, laid out in the room: its water the room's all through (${(Xk * 100).toFixed(1)} % of the GO); what is left is what the stack's creep set`;
   const warn = [fr, tb].some(r => r.maxSlope > 0.35);
-  st.innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. ${when}. Pressed flat it measures <b>${(L * (1 + sz[0])).toFixed(1)} × ${(Wd * (1 + sz[1])).toFixed(1)} mm</b> (${(sz[0] * 100).toFixed(2)} % from as cut). Its curl: a radius of ${rad(cu[0])} along the line and ${rad(cu[1])} across (as cut ${rad(run.curl.cut[0])} and ${rad(run.curl.cut[1])}): pressed in the stack, the creep eased it. A thin piece can settle in several shapes of about the same energy: this is the one it reaches let go gradually, even about both middle lines.${warn ? ` ${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}` : ''}</p>`;
+  document.getElementById('sheetNote').innerHTML = `<p class="fv-why dry-where">${dryFilmName(DRY.sel)}, the water leaving from the ${SHEET_WAYS[SHEET.way]}. ${when}. Pressed flat it measures <b>${(L * (1 + sz[0])).toFixed(1)} × ${(Wd * (1 + sz[1])).toFixed(1)} mm</b> (${(sz[0] * 100).toFixed(2)} % from as cut). Its curl: a radius of ${rad(cu[0])} along the line and ${rad(cu[1])} across (as cut ${rad(run.curl.cut[0])} and ${rad(run.curl.cut[1])}): pressed in the stack, the creep eased it. A thin piece can settle in several shapes of about the same energy: this is the one it reaches let go gradually, even about both middle lines.</p>`;
+  st.innerHTML = warn ? `<p class="dry-msg">${pill('It curls steeply here: this model is for moderate slopes, so the shape is rougher', 'warn')}</p>` : '';
+  // (the key values, both ways the water left: a column each)
+  const S = w => STACK.res.runs.find(r => r.where === w).stack, Xw = r => (k === 'out' ? r.Xend[r.Xend.length - 1] : q.pieces[0].plate.Xroom);
+  sheetKeysPaint([
+    ['Curl radius along', w => sheetRad(S(w).curl[k][0]), `along the line; as cut ${rad(run.curl.cut[0])}`],
+    ['Curl radius across', w => sheetRad(S(w).curl[k][1]), `across the web; as cut ${rad(run.curl.cut[1])}`],
+    ['Held up', w => SHEET_SHAPES_SHORT[sheetShapeKind(S(w).shapes[k + 'Free'])], 'its shape, free', true],
+    ['Highest, held up', w => sheetMM(sheetLift(S(w).shapes[k + 'Free'])), 'off its middle: its corners or its edges\' middles'],
+    ['Highest on a table', w => sheetMM(sheetHigh(S(w).shapes[k + 'Table'])), 'under its weight'],
+    ['Size pressed flat', w => `${((k === 'out' ? S(w).sizeOut : S(w).sizeDay)[0] * 100).toFixed(2)} %`, 'from as cut'],
+    ['Water', w => `${(Xw(S(w)) * 100).toFixed(1)} %`, 'of the GO'],
+  ]);
 }
 
 /** The stack (GO-4f): tiles, the water across a piece through time, the pull held flat. */
@@ -362,7 +409,17 @@ function stackRender() {
   if (typeof rvAfter === 'function') rvAfter();
 }
 
-function sheetClear() { paneEmptyIds(['sh1', 'sh2'], paneWhy('sheet')); for (const id of ['sh1', 'sh2']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } }
+function sheetClear() {
+  paneEmptyIds(['sh1', 'sh2'], paneWhy('sheet'));
+  for (const id of ['sh1Lg', 'sh2Lg', 'sheetKeys', 'sheetNote']) { const el = document.getElementById(id); if (el) el.innerHTML = ''; }
+}
+/** The key values (task 13): a row each, a column for each way the water left; rows [label, its value for a way, its note (its tooltip), its words may wrap]. */
+function sheetKeysPaint(rows) {
+  const el = document.getElementById('sheetKeys');
+  if (!el) return;
+  el.innerHTML = `<thead><tr><th scope="col"></th>${Object.values(SHEET_WAYS).map(t => `<th scope="col">${t.charAt(0).toUpperCase() + t.slice(1)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(([l, f, sub, wrap]) => `<tr${sub ? ` title="${l}: ${sub}"` : ''}><th scope="row">${l}</th>${Object.keys(SHEET_WAYS).map(w => `<td${wrap ? ' class="rv-wrap"' : ''}>${f(w)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
 
 /** The plate at a uniform water from its film's table (rows [X, A, D, eFlat, κ, eX]; linear between rows, held past its ends). */
 function sheetTabAt(tab, X) {

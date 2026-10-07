@@ -208,11 +208,14 @@ async function repProcessAll() {
     + '<h4>After the oven</h4>' + repRows([...OVEN_PEEL_FIELDS.map(([k, l, u, , , , d]) => [repEsc(l), repEsc(repUnit(repNum(pl[k], d), u))]),
       ['The stack stands on', repEsc(OVEN_SHELVES[pl.shelf] || '')]], ['', 'Value'])
     + (fNote && cleanText(fNote) ? `<p class="lede">${repEsc(cleanText(fNote))}</p>` : '');
-  // a piece in 3D (GO-4d): its state line, the two shapes in words, the measured size and what it implies (the drawings go with the plots)
-  const sSt = document.getElementById('sheetState'), sL = ['sh1Lg', 'sh2Lg'].map(id => document.getElementById(id)).filter(Boolean);
+  // a piece in 3D (GO-4d): how it is worked out and its warning, its key values both ways, the two shapes in words, the
+  // measured size and what it implies (the drawings go with the plots)
+  const sLede = () => ['sheetNote', 'sheetState'].map(id => document.getElementById(id)).filter(el => el && cleanText(el)).map(el => `<p class="lede">${repEsc(cleanText(el))}</p>`).join('');
+  const sKeys = () => { const rows = [...document.querySelectorAll('#sheetKeys tbody tr')].map(tr => [...tr.children].map(c => repEsc(cleanText(c)))); return rows.length ? repRows(rows, ['', ...Object.values(SHEET_WAYS).map(t => repEsc(t.charAt(0).toUpperCase() + t.slice(1)))]) : ''; };
+  const sSt = document.getElementById('sheetNote'), sL = ['sh1Lg', 'sh2Lg'].map(id => document.getElementById(id)).filter(Boolean);
   const sRows = ((MAT.filmMeas || {}).size || []).map(q => [q.loc === 'web' ? 'The web' : q.loc, repEsc(`size pressed flat, ${SHEET_WHEN[q.when] || SHEET_WHEN.dry}`), repEsc([Number.isFinite(q.L) ? `${q.L} mm long` : '', Number.isFinite(q.W) ? `${q.W} mm wide` : ''].filter(Boolean).join(', '))]);
   const sImp = [...document.querySelectorAll('#sheetMeas .film-imp li')].map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*Use (top only|top and bottom)'s/g, ''))}</li>`);
-  let piece = sSt && cleanText(sSt) ? `<h4>A piece cut from the roll, in 3D (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(sSt))}</p>` + repRows([['Held up (free)', repEsc(cleanText(sL[0]))], ['On a table (its weight)', repEsc(cleanText(sL[1]))]], ['', 'Its shape'])
+  let piece = sSt && cleanText(sSt) ? `<h4>A piece cut from the roll, in 3D (${SHEET_WAYS[SHEET.way]})</h4>${sLede()}` + sKeys() + repRows([['Held up (free)', repEsc(cleanText(sL[0]))], ['On a table (its weight)', repEsc(cleanText(sL[1]))]], ['', 'Its shape'])
     + (sRows.length ? repRows(sRows, ['Measured', 'What', '']) + (sImp.length ? `<ul class="checks">${sImp.join('')}</ul>` : '') : '') : '';
   // the pressed stack (GO-4f): how it is worked out, its warning, its key values both ways the water left (its two charts
   // go with the plots); the piece out of the stack and a day later, each in words and drawn
@@ -225,7 +228,7 @@ async function repProcessAll() {
       SHEET.state = st; sheetRender(); await repFrame();
       const lg = ['sh1Lg', 'sh2Lg'].map(id => cleanText(document.getElementById(id)));
       const figs = imageTargets().filter(t => t.id.startsWith('pane:') && ['sh1', 'sh2'].includes((t.canvases()[0] || {}).id));
-      piece += `<h4>${repEsc(SHEET_STATES[st])} (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(document.getElementById('sheetState')))}</p>`
+      piece += `<h4>${repEsc(SHEET_STATES[st])} (${SHEET_WAYS[SHEET.way]})</h4>${sLede()}` + sKeys()
         + repRows([['Held up (free)', repEsc(lg[0])], ['On a table (its weight)', repEsc(lg[1])]], ['', 'Its shape'])
         + figs.map(t => repFigure(t, `${SHEET_STATES[st]}: ${t.title()}`)).join('');
     }
