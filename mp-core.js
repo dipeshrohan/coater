@@ -625,7 +625,7 @@ function mpHeatMoisture(M, o) {
   }
   const prep = list => (list || []).map(b => ({ ...b, fe: mpFaceElems(M, b.face), nodes: b.type === 'value' ? mpFaceNodes(M, b.face).filter(n => !b.where || b.where(xNode(n))) : null }));
   const bcT = prep(o.bcT), bcV = prep(o.bcV);
-  const R = { T, p: P, t: 0, iters: 0, factors: 0 };
+  const R = { T, p: P, t: 0, iters: 0, factors: 0, unconverged: 0 };
   /** the stored water at a node (its wet material's), and the node's enthalpy's parts */
   const Snode = (n, p, t) => (wetNode[n] ? o.S(nodeMat[n], p, t, xNode(n)) : 0);
   // (each node's share of the elements that hold water -- a node on a wet element's face next to a dry one holds water
@@ -689,7 +689,7 @@ function mpHeatMoisture(M, o) {
     const Sold = new Float64Array(N), Hold = new Float64Array(N);   // the history part: a1 X^n − a2 X^{n−1}
     for (let n = 0; n < N; n++) { Sold[n] = a1 * cur.S[n] - (a2 ? a2 * prev.S[n] : 0); Hold[n] = a1 * cur.H[n] - (a2 ? a2 * prev.H[n] : 0); }
     const Tk = Float64Array.from(T), Pk = Float64Array.from(P), iters = o.iters || 30, tol = o.tol || 1e-9;
-    let F = null, slow = false, lastSize = null;
+    let F = null, slow = false, lastSize = null, done = false;
     for (let it = 0; it < iters; it++) {
       const B = band(F), rhs = new Float64Array(nd);
       // conduction and vapour flow (consistent; or at the nodes: nodal): the coefficients at every point first; when
@@ -762,17 +762,28 @@ function mpHeatMoisture(M, o) {
       const du = mpBackSolve(F, res);
       R.iters++;
       let dT = 0, dP = 0, sP = 0;
+      // (o.limit, optional: the correction scaled so no node's temperature moves more than limit.dT (K) nor its vapour
+      //  pressure more than limit.dp (Pa) in one iteration -- a damped Newton for a steep isotherm, whose slope where a
+      //  step starts overstates the water a large rise in vapour pressure brings, and with it the heat it gives off;
+      //  without it, the full correction as before)
+      let lam = 1;
+      if (o.limit) for (let n = 0; n < N; n++) {
+        const a = Math.abs(du[2 * n]), b = Math.abs(du[2 * n + 1]);
+        if (o.limit.dT && a > o.limit.dT) lam = Math.min(lam, o.limit.dT / a);
+        if (o.limit.dp && b > o.limit.dp) lam = Math.min(lam, o.limit.dp / b);
+      }
       for (let n = 0; n < N; n++) {
         dT = Math.max(dT, Math.abs(du[2 * n])); dP = Math.max(dP, Math.abs(du[2 * n + 1]));
-        Tk[n] += du[2 * n]; Pk[n] += du[2 * n + 1]; sP = Math.max(sP, Math.abs(Pk[n]));
+        Tk[n] += lam * du[2 * n]; Pk[n] += lam * du[2 * n + 1]; sP = Math.max(sP, Math.abs(Pk[n]));
       }
       if (!Tk.every(Number.isFinite) || !Pk.every(Number.isFinite)) throw new Error('mp-core: the heat and moisture step did not converge');
-      if (dT < tol * 100 && dP <= tol * Math.max(sP, 1)) break;
+      if (lam === 1 && dT < tol * 100 && dP <= tol * Math.max(sP, 1)) { done = true; break; }
       // (slow: the correction did not at least halve against the last one)
       const size = dT / 100 + dP / Math.max(sP, 1);
-      slow = o.chord === false || (lastSize !== null && size > 0.5 * lastSize);
+      slow = o.chord === false || lam < 1 || (lastSize !== null && size > 0.5 * lastSize);
       lastSize = size;
     }
+    if (!done) R.unconverged++;   // (the steps whose iterations ran out before the corrections were within tol)
     T.set(Tk); P.set(Pk); R.t = t;
     // the step's change of what is held, as the scheme counts it (a0 X^{n+1} − a1 X^n + a2 X^{n−1}): the heat and the
     // water that came in over the step, dt × the faces' flows, exactly (the discrete balance)

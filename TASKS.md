@@ -80,6 +80,8 @@ keeps it up to date in each pull request. The order and the tasks change only af
   - gauge thickness 70 µm (was 63 µm); size after the furnace −5.1 % (was −4.1 %).
 - **You said**: no cracks at the pieces' edges after the pre heat. The film's swelling β is now 0.042 per kg/kg (the same
   published shrinkage, with GO's own water): the drying edges pull 69 MPa, under its 100 MPa strength.
+- **Fixed**: Peel and wind › 3D (the roll) stopped solving with GO's own water: the film is wound at 8.4 % and the
+  room takes its ends to 20 %, too steep a rise for the solver's step. Each iteration is now damped; it solves again.
 - **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
   Yours stay at 2.0 g for hours; not yet weighed a day later.
 - **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.

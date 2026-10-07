@@ -54,6 +54,8 @@ function r3Run(o) {
     //  elements' chords, as it would with K_θ = K_along on a coarse mesh round the roll)
     kT: () => [H.k, H.k, H.kIn], CT: () => H.rhoc, Kv: () => [Wt.Kv, Wt.Kv, Wt.KvIn],
     S, L: o.latent && R3_DR.drLatent ? T_ => R3_DR.drLatent(T_) : 0, bcT, bcV, T0: H.T0, p0, nodal: true, bdf2: true, tol: 1e-10,
+    // (GO's own water is steep where the film starts, dry: each iteration moves a node at most 5 K and 200 Pa of vapour)
+    limit: lin ? null : (o.limit === undefined ? { dT: 5, dp: 200 } : o.limit), ...(o.iters ? { iters: o.iters } : {}),
   });
   // (the water at a node: kg per kg of GO)
   const Xof = (p, Tq) => S(0, p, Tq) / (lin ? 1 : Wt.rhoD);
@@ -92,7 +94,7 @@ function r3Run(o) {
     if (snapAt.some(s => Math.abs(s - t) <= 1e-9 * tEnd)) keep(t);
     if (o.onProgress && (k % 5 === 0 || k === times.length - 1)) o.onProgress({ k: k + 1, n: times.length });
   }
-  return { mesh: { N: M.N, E: M.E, coord: M.coord, nn }, snaps, hist, R1, water: T.water ? T.water() : null, ms: Date.now() - t0 };
+  return { mesh: { N: M.N, E: M.E, coord: M.coord, nn }, snaps, hist, R1, water: T.water ? T.water() : null, unconverged: T.unconverged || 0, steps: times.length, ms: Date.now() - t0 };
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { r3Run, r3Axes, r3Tensor, r3GAB, r3GABinv };
