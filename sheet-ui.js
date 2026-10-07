@@ -217,13 +217,19 @@ function sheetSectionHTML() {
       <figure class="pane dry-pane"><figcaption>${uiBadge('film')}On a table (its weight)</figcaption><canvas id="sh2" role="img" aria-label="The cut piece lying on a table under its weight, its curl up, in a view from above and the front"></canvas><div class="pane-legend" id="sh2Lg"></div></figure>
     </div>
     <div class="stack-sec" id="stackSec" data-fview="stack">
-      <h4 class="oned-h">In the pressed stack, and out of it</h4>
-      <div class="sheet-head stack-head">${filmPicDryStack(0.9)}${filmPicStackRest(0.9)}<p class="fv-why">Stacked 20 at a time, the pieces lie flat under the plate, free in their own plane. Their water leaves along them to the stack's edges in the pre heat treatment, then comes back the same way under the plate in the room. Held flat, a piece carries the stress of its uneven water, and while wet it creeps and eases it: what the creep leaves is how the piece lies when it is taken out.</p></div>
+      <h4 class="oned-h rv-head">In the pressed stack, and out of it<button type="button" class="rv-i" data-rvabout="stackAbout" aria-controls="stackAbout" aria-expanded="false" aria-label="How it is worked out" title="How it is worked out">i</button></h4>
+      <div class="rv-about" id="stackAbout" hidden>
+        <div class="sheet-head stack-head">${filmPicDryStack(0.9)}${filmPicStackRest(0.9)}<p class="fv-why">Stacked 20 at a time, the pieces lie flat under the plate, free in their own plane. Their water leaves along them to the stack's edges in the pre heat treatment, then comes back the same way under the plate in the room. Held flat, a piece carries the stress of its uneven water, and while wet it creeps and eases it: what the creep leaves is how the piece lies when it is taken out.</p></div>
+        <div id="stackNote"></div>
+      </div>
       <div id="stackState"></div>
-      <div class="stats" id="stackStats"></div>
-      <div class="dry-grid">
-        <figure class="pane dry-pane"><figcaption>${uiBadge('drop')}Water across a piece</figcaption><canvas id="st1" role="img" aria-label="The water along the middle of a piece from its edge in, at times in the pre heat treatment and under the plate after it"></canvas><div class="pane-legend" id="st1Lg"></div></figure>
-        <figure class="pane dry-pane"><figcaption>${uiBadge('cut')}The pull held flat</figcaption><canvas id="st2" role="img" aria-label="The largest pull in a piece held flat in the stack against time, with the film's strength"></canvas><div class="pane-legend" id="st2Lg"></div></figure>
+      <div class="rv" data-rvkey="stack">
+        <nav class="rv-list" role="tablist" aria-label="The view shown"><h5>Results</h5><button type="button" role="tab" data-rvview="st1" aria-selected="true">Water across a piece</button><button type="button" role="tab" data-rvview="st2" aria-selected="false">The pull held flat</button></nav>
+        <div class="rv-main">
+          <figure class="pane dry-pane rv-view" data-rvid="st1"><figcaption>${uiBadge('drop')}Water across a piece</figcaption><canvas id="st1" role="img" aria-label="The water along the middle of a piece from its edge in, at times in the pre heat treatment and under the plate after it"></canvas><div class="pane-legend" id="st1Lg"></div></figure>
+          <figure class="pane dry-pane rv-view" data-rvid="st2" hidden><figcaption>${uiBadge('cut')}The pull held flat</figcaption><canvas id="st2" role="img" aria-label="The largest pull in a piece held flat in the stack against time, with the film's strength"></canvas><div class="pane-legend" id="st2Lg"></div></figure>
+        </div>
+        <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="stackKeys"></table></aside>
       </div>
     </div>
     <div id="sheetMeas" data-fview="piece"></div>
@@ -308,8 +314,9 @@ function sheetLetGo() {
 function stackRender() {
   const el = document.getElementById('stackState');
   if (!el) return;
-  const stats = document.getElementById('stackStats');
-  const clear = () => { stats.innerHTML = ''; paneEmptyIds(['st1', 'st2'], paneWhy('stack')); for (const id of ['st1', 'st2']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } };
+  const keys = document.getElementById('stackKeys'), note = document.getElementById('stackNote');
+  if (typeof rvSync === 'function') rvSync(document.querySelector('#stackSec .rv'));   // (the view picked shown, before it draws)
+  const clear = () => { keys.innerHTML = ''; note.innerHTML = ''; paneEmptyIds(['st1', 'st2'], paneWhy('stack')); for (const id of ['st1', 'st2']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } };
   if (!filmCurrent() || !sheetInputs()) { el.innerHTML = '<p class="fv-why">After the film is solved.</p>'; clear(); return; }
   if (!stackCurrent()) {
     if (STACK.error && STACK.key === stackKeyNow()) { el.innerHTML = `<p class="dry-msg">${pill(`The stack could not be solved: ${dryEsc(STACK.error)}`, 'bad')}</p>`; clear(); return; }
@@ -317,17 +324,20 @@ function stackRender() {
   }
   const q = STACK.res.q, [rt, rb] = STACK.res.runs.map(r => r.stack), pl = OVEN.peel, F = MAT.film, P = q.pieces[0].plate;
   const both = (f, d = 0) => `${f(rt)} · ${f(rb)}`, pct = v => `${(v * 100).toFixed(2)} %`;
-  const tiles = [
-    ['Middle dry after', both(r => r.dryThrough != null ? `${r.dryThrough.toFixed(r.dryThrough < 10 ? 1 : 0)} min` : `over ${pl.tOven} h`), 'oven'],
-    ['Largest pull, held flat', both(r => `${r.peak.MPa.toFixed(0)} MPa`), 'cut'],
-    ['Water when taken out', both(r => `${(r.Xend[r.Xend.length - 1] * 100).toFixed(1)} %`), 'drop'],
-    ['Size out of the stack, from as cut', both(r => pct(r.sizeOut[0])), 'film'],
-    ['Size a day later, from as cut', both(r => pct(r.sizeDay[0])), 'film'],
-    ['Highest on a table, out of the stack', both(r => sheetMM(r.shapes.outTable.high)), 'wave'],
+  // (the key values, both ways the water left: a row each, the pull over the film's strength marked)
+  const rows = [
+    ['Middle dry after', r => r.dryThrough != null ? `${r.dryThrough.toFixed(r.dryThrough < 10 ? 1 : 0)} min` : `over ${pl.tOven} h`],
+    ['Largest pull, held flat', r => `${r.peak.MPa.toFixed(0)} MPa`, r => r.peak.MPa >= F.sigF.v, `the film's strength ${F.sigF.v} MPa`],
+    ['Water when taken out', r => `${(r.Xend[r.Xend.length - 1] * 100).toFixed(1)} %`, null, `of the GO; as cut ${(P.Xcut * 100).toFixed(1)} %`],
+    ['Size out of the stack', r => pct(r.sizeOut[0]), null, 'from as cut'],
+    ['Size a day later', r => pct(r.sizeDay[0]), null, 'from as cut'],
+    ['Highest on a table', r => sheetMM(r.shapes.outTable.high), null, 'out of the stack'],
   ];
-  stats.innerHTML = tiles.map(([l, v, ic]) => `<div class="stat" title="${l} — top only · top and bottom: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>top only · top and bottom</small></div>`).join('');
+  keys.innerHTML = `<thead><tr><th scope="col"></th>${Object.values(SHEET_WAYS).map(t => `<th scope="col">${t.charAt(0).toUpperCase() + t.slice(1)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(([l, f, bad, sub]) => `<tr${sub ? ` title="${l}: ${sub}"` : ''}><th scope="row">${l}</th>${[rt, rb].map(r => `<td${bad && bad(r) ? ' class="rv-bad"' : ''}>${f(r)}</td>`).join('')}</tr>`).join('')}</tbody>`;
   const over = [rt, rb].filter(r => r.peak.MPa >= F.sigF.v);
-  el.innerHTML = `<p class="fv-why dry-where">${pl.tOven} h in the pre heat treatment at ${pl.dryT} °C${pl.tRest > 0 ? `, then ${pl.tRest} h under the plate in the room` : ''}. The water moves along the pieces at ${F.stackK.v} × 10⁻⁷ kg/(m·s·Pa) (the Film card: the least that fits your answers -- dry all over out of the pre heat treatment, the size back to as cut 1–2 h later, the same a day later); wet, the film creeps with a time of ${F.creepTau.v} min. Out of the stack its water is ${both(r => `${(r.Xend[r.Xend.length - 1] * 100).toFixed(1)} %`)} of the GO (as cut ${(P.Xcut * 100).toFixed(1)} %).${over.length ? ` ${pill(`Held flat in the pre heat treatment its drying edges pull ${Math.max(...over.map(r => r.peak.MPa)).toFixed(0)} MPa, over the film's strength (${F.sigF.v} MPa): they may crack at the edges`, 'warn')}` : ''}</p>`;
+  el.innerHTML = over.length ? `<p class="dry-msg">${pill(`Held flat in the pre heat treatment its drying edges pull ${Math.max(...over.map(r => r.peak.MPa)).toFixed(0)} MPa, over the film's strength (${F.sigF.v} MPa): they may crack at the edges`, 'warn')}</p>` : '';
+  note.innerHTML = `<p class="fv-why dry-where">${pl.tOven} h in the pre heat treatment at ${pl.dryT} °C${pl.tRest > 0 ? `, then ${pl.tRest} h under the plate in the room` : ''}. The water moves along the pieces at ${F.stackK.v} × 10⁻⁷ kg/(m·s·Pa) (the Film card: the least that fits your answers -- dry all over out of the pre heat treatment, the size back to as cut 1–2 h later, the same a day later); wet, the film creeps with a time of ${F.creepTau.v} min. Out of the stack its water is ${both(r => `${(r.Xend[r.Xend.length - 1] * 100).toFixed(1)} %`)} of the GO (as cut ${(P.Xcut * 100).toFixed(1)} %).</p>`;
   // (1) the water along the middle line from the edge in: the pre heat treatment's times in one hue light to dark, the room's dashed
   const run = STACK.res.runs.find(r => r.where === SHEET.way).stack, mut = cssVar('--muted'), bad = cssVar('--bad');
   const col = DRY.sel === 'web' ? '#e8590c' : dryFilmColor(DRY.sel), blue = '#1c7ed6';
@@ -339,8 +349,8 @@ function stackRender() {
   plotChart(document.getElementById('st1'), FILM_ASPECT, { x0: 0, x1: half, y0: 0, y1: yHi, xl: 'from the edge in (mm)', yl: 'water (% of the GO)', yd: 1, xd: 0,
     hl: [{ y: P.Xcut * 100, c: mut, t: 'as cut', left: true }],
     s: [...ov.map((p, k) => ({ p: p.x.map((x, i) => [x, p.X[i] * 100]), c: shade(col, k, ov.length), w: 2 })), ...rs.map((p, k) => ({ p: p.x.map((x, i) => [x, p.X[i] * 100]), c: shade(blue, k, rs.length), w: 2, dash: [6, 4] }))] });
-  document.getElementById('st1Lg').innerHTML = oneDLegend([...ov.map((p, k) => [`pre heat treatment, ${minF(p.t)} min`, shade(col, k, ov.length)]), ...rs.map((p, k) => [`under the plate, ${minF(p.t - pl.tOven * 60)} min`, shade(blue, k, rs.length), 'dash'])])
-    + `<p class="fv-why">${dryFilmName(DRY.sel)}, ${SHEET_WAYS[SHEET.way]}: along the middle of a piece, 0 at its edge, ${half.toFixed(0)} mm its middle.</p>`;
+  document.getElementById('st1Lg').innerHTML = oneDLegend([[`in the pre heat treatment, ${minF(ov[0].t)} → ${minF(ov[ov.length - 1].t)} min (faint to strong)`, col], ...(rs.length ? [[`under the plate, ${minF(rs[0].t - pl.tOven * 60)} → ${minF(rs[rs.length - 1].t - pl.tOven * 60)} min`, blue, 'dash']] : [])])
+    + `<p class="fv-why">${dryFilmName(DRY.sel)}, ${SHEET_WAYS[SHEET.way]}: along the middle of a piece, 0 at its edge, ${half.toFixed(0)} mm its middle. The times drawn: ${ov.map(p => minF(p.t)).join(', ')} min in the pre heat treatment${rs.length ? `; ${rs.map(p => minF(p.t - pl.tOven * 60)).join(', ')} min under the plate` : ''}.</p>`;
   // (2) the largest pull in a piece held flat against time (both ways), the pre heat treatment's time shaded, the film's strength
   const tEnd = Math.max(...[rt, rb].map(r => r.hist[r.hist.length - 1].t)), sHi = Math.max(...[rt, rb].flatMap(r => r.hist.map(h => h.MPa)), 1) * 1.15;
   const yTop = Math.max(sHi, Math.min(F.sigF.v * 1.1, sHi * 3));
@@ -349,6 +359,7 @@ function stackRender() {
     hl: F.sigF.v < yTop ? [{ y: F.sigF.v, c: bad, t: `its strength (${F.sigF.v} MPa)`, left: true, below: true }] : [],
     s: [[rt, []], [rb, [6, 4]]].map(([r, dash]) => ({ p: r.hist.map(h => [h.t, h.MPa]), c: col, w: 2, dash })) });
   document.getElementById('st2Lg').innerHTML = oneDLegend([['top only', col], ['top and bottom', col, 'dash']]) + '<p class="fv-why">The largest pull in the piece\'s plane while it is held flat: at its drying edges as the pre heat treatment starts; eased by the creep while wet.</p>';
+  if (typeof rvAfter === 'function') rvAfter();
 }
 
 function sheetClear() { paneEmptyIds(['sh1', 'sh2'], paneWhy('sheet')); for (const id of ['sh1', 'sh2']) { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; } }

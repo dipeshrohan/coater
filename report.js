@@ -214,10 +214,12 @@ async function repProcessAll() {
   const sImp = [...document.querySelectorAll('#sheetMeas .film-imp li')].map(li => `<li class="ok">${repEsc(cleanText(li).replace(/\s*Use (top only|top and bottom)'s/g, ''))}</li>`);
   let piece = sSt && cleanText(sSt) ? `<h4>A piece cut from the roll, in 3D (${SHEET_WAYS[SHEET.way]})</h4><p class="lede">${repEsc(cleanText(sSt))}</p>` + repRows([['Held up (free)', repEsc(cleanText(sL[0]))], ['On a table (its weight)', repEsc(cleanText(sL[1]))]], ['', 'Its shape'])
     + (sRows.length ? repRows(sRows, ['Measured', 'What', '']) + (sImp.length ? `<ul class="checks">${sImp.join('')}</ul>` : '') : '') : '';
-  // the pressed stack (GO-4f): its line and tiles (its two charts go with the plots); the piece out of the stack and a
-  // day later, each in words and drawn
-  const kSt = document.getElementById('stackState'), kTiles = [...document.querySelectorAll('#stackStats .stat')].map(el => [repEsc(cleanText(el.querySelector('span'))), repEsc(cleanText(el.querySelector('strong')))]);
-  if (kSt && cleanText(kSt)) piece += `<h4>In the pressed stack, and out of it</h4><p class="lede">${repEsc(cleanText(kSt))}</p>` + (kTiles.length ? repRows(kTiles, ['', 'Top only · top and bottom']) : '');
+  // the pressed stack (GO-4f): how it is worked out, its warning, its key values both ways the water left (its two charts
+  // go with the plots); the piece out of the stack and a day later, each in words and drawn
+  const kSt = document.getElementById('stackState'), kNote = document.getElementById('stackNote');
+  const kRows = [...document.querySelectorAll('#stackKeys tbody tr')].map(tr => [...tr.children].map(c => repEsc(cleanText(c))));
+  if (kRows.length) piece += `<h4>In the pressed stack, and out of it</h4>${kNote && cleanText(kNote) ? `<p class="lede">${repEsc(cleanText(kNote))}</p>` : ''}${kSt && cleanText(kSt) ? `<p class="lede">${repEsc(cleanText(kSt))}</p>` : ''}`
+    + repRows(kRows, ['', ...Object.values(SHEET_WAYS).map(t => repEsc(t.charAt(0).toUpperCase() + t.slice(1)))]);
   if (keepState && typeof stackCurrent === 'function' && stackCurrent()) {
     for (const st of ['out', 'day']) {
       SHEET.state = st; sheetRender(); await repFrame();

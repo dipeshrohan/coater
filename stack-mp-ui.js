@@ -478,6 +478,8 @@ SWB_ADAPT['film:stack'] = {
   solveTiles: (dim, o, r) => [['Stages', `${o.stages.length}`, o.stages.map(g => `${(g.tEnd / 3600).toFixed(1)} h`).join(' + '), 'period'], ['Time steps', `${o.steps * o.stages.length}`, `${o.steps} a stage`, 'conv'],
     ['Oven\'s air', `${OVEN.peel.dryT} °C`, OVEN.peel.stackAirU > 0 ? `${OVEN.peel.stackAirU} m/s along it` : 'still air', 'temp'], ['Solved in', r ? `${(r.ms / 1000).toFixed(1)} s` : '—', r ? 'for the inputs as they are' : 'not solved yet', 'play']],
   resultsHTML: dim => mpStackHTML(true),
+  viewer: true,
+  viewNames: dim => ({ mp1: 'Temperatures', mp2: 'Water in the pieces', mp3: dim === 1 ? 'Up the stack at its middle' : 'Section through the stack', mpIso: 'The quarter in 3D', mpCompare: 'Against the Results step' }),
   renderResults: dim => mpStackRender(),
   csv: dim => { MPS.dim = dim; mpStackCsv(); },
   openInputs: () => { setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
