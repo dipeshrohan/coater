@@ -193,7 +193,7 @@ async function repProcessAll() {
   // what they imply, its note, and the peel's place and the winder's core
   const fPills = [...document.querySelectorAll('#filmState .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
   const fChecks = [...document.querySelectorAll('#filmChecks .film-check')].map(c => [repEsc(cleanText(c.querySelector('h4'))), ...[...c.querySelectorAll('.film-v')].map(v => repEsc(cleanText(v).replace(/^top only\s*|^top and bottom\s*/, '')))]);
-  const fStats = [...document.querySelectorAll('#filmStats .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
+  const fStats = [...document.querySelectorAll('#filmKeys tbody tr')].map(r => [repEsc(cleanText(r.querySelector('th'))), repEsc([...r.querySelectorAll('td')].map(cleanText).join(' · '))]);
   const fm = MAT.filmMeas || { curl: [], cracks: [], peel: [] }, fLoc = q => q.loc === 'web' ? 'The web' : q.loc;
   const fmRows = [...(fm.curl || []).map(q => [fLoc(q), 'curl', repEsc([Number.isFinite(q.R) ? `radius ${q.R} mm` : '', Number.isFinite(q.lift) ? `edges lift ${q.lift} mm over ${q.sheet} mm` : '', q.toward === 'bottom' ? 'away from its top' : 'toward its top', FILM_WHEN[q.when] || ''].filter(Boolean).join(', '))]),
     ...(fm.cracks || []).map(q => [fLoc(q), 'cracks', repEsc([Number.isFinite(q.spacing) ? `${q.spacing} mm apart` : '', Number.isFinite(q.width) ? `${q.width} µm wide` : '', { web: 'on the web', peel: 'after peeling', roll: 'on the roll' }[q.where] || ''].filter(Boolean).join(', '))]),

@@ -164,11 +164,13 @@ function filmStage() {
 /** The film stage's parts, one at a time -- the film peeled off, a piece cut from it in 3D, the pieces in the pressed stack;
  *  WF-2: each part is a tab of its own (4 Peel and wind, 5 Cutting, 6 Pre heat treatment): its title, and the rows of After the
  *  oven it sets (the stretch to the peel and the winder's core; the pieces' size; the pre heat treatment). */
+/** The Results step's views (task 13, the viewer): listed left, one shown. */
+const FILM_VIEWS = [['filmChecks', 'The six checks'], ['fm1', 'Stress at its top'], ['fm2', 'Crack risk'], ['fm3', 'Peel force'], ['fm4', 'Through it at the peel'], ['fm5', 'Blister risk'], ['fm6', 'On a table'], ['filmTable', 'Every location'], ['filmMeas', 'Measured']];
 const FILM_PART = { film: [4, 'The film, peeled off', ['len', 'core']], piece: [5, 'A piece cut from the roll', ['pieceL', 'pieceW']], stack: [6, 'The pieces in the pressed stack', ['dryT', 'tOven', 'tRest', 'plateT', 'stackAirU', 'epsPl']] };
 const filmPartOf = k => Object.keys(FILM_PART).find(v => FILM_PART[v][2].includes(k)) || 'film';
 function filmSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
-  const pane = (id, icon, title, aria) => `<figure class="pane dry-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
+  const pane = (id, icon, title, aria) => `<figure class="pane dry-pane rv-view" data-rvid="${id}" hidden><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
   return `<section class="dry-sec film-sec" id="filmSec" aria-labelledby="filmH" data-fview="${FILM.view || 'film'}">
     <header class="dry-head"><h3 id="filmH">${uiBadge('film')}${FILM_PART[FILM.view || 'film'][0]} · ${FILM_PART[FILM.view || 'film'][1]}</h3>
       <div class="seg" role="tablist" aria-label="Which film" id="filmSel">${seg.map(([k, t]) => `<button type="button" role="tab" data-film="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
@@ -180,19 +182,21 @@ function filmSectionHTML() {
     <div class="dry-ways" data-pstep="setup" data-fview="film">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">As the drying: where the water leaves decides when each layer of the film sets and how wet it is, so both are followed to the peel.</p></div>
     <div id="filmState" data-pstep="solve results" data-fview="film"></div>
-    <div class="film-checks" id="filmChecks" data-pstep="results" data-fview="film"></div>
-    <div class="stats" id="filmStats" data-pstep="results" data-fview="film"></div>
-    <div data-pstep="results" data-fview="film">${procChipsHTML('film')}</div>
-    <div class="dry-grid furn-one" data-pstep="results" data-fview="film">
-      ${pane('fm1', 'film', 'Stress at the film\'s top', 'The stress in the film\'s top against position along the line')}
-      ${pane('fm2', 'cut', 'Crack risk', 'A crack\'s energy against the film\'s fracture energy along the line')}
-      ${pane('fm3', 'shear', 'Peel force against the angle', 'The force per width to peel the film off the web against the peel angle, with measured peel forces')}
-      ${pane('fm4', 'film', 'Through the film at the peel', 'The stress through the film\'s height where it is peeled')}
-      ${pane('fm5', 'wave', 'Blister risk', 'A blister\'s energy against the film\'s hold on the web along the line')}
-      ${pane('fm6', 'radius', 'The peeled film on a table', 'The peeled sheet drawn curled as computed, right after peeling and settled in the room')}
+    <div class="rv" data-rvkey="film" data-pstep="results" data-fview="film">
+      <nav class="rv-list" role="tablist" aria-label="The view shown"><h5>Results</h5>${FILM_VIEWS.map(([id, t], i) => `<button type="button" role="tab" data-rvview="${id}" aria-selected="${!i}">${t}</button>`).join('')}</nav>
+      <div class="rv-main">
+        <div class="rv-view rv-extra" data-rvid="filmChecks"><h4 class="oned-h">The six checks</h4><div class="film-checks" id="filmChecks"></div><div class="pane-legend"><p class="fv-why">Cracks and blisters: the most a crack (a blister) releases against the film's fracture energy (its hold on the web): 1× and above, they form. Along the line from the oven's entry (m); negative: before it.</p></div></div>
+        ${pane('fm1', 'film', 'Stress at the film\'s top', 'The stress in the film\'s top against position along the line')}
+        ${pane('fm2', 'cut', 'Crack risk', 'A crack\'s energy against the film\'s fracture energy along the line')}
+        ${pane('fm3', 'shear', 'Peel force against the angle', 'The force per width to peel the film off the web against the peel angle, with measured peel forces')}
+        ${pane('fm4', 'film', 'Through the film at the peel', 'The stress through the film\'s height where it is peeled')}
+        ${pane('fm5', 'wave', 'Blister risk', 'A blister\'s energy against the film\'s hold on the web along the line')}
+        ${pane('fm6', 'radius', 'The peeled film on a table', 'The peeled sheet drawn curled as computed, right after peeling and settled in the room')}
+        <div class="rv-view rv-extra rv-wide" data-rvid="filmTable" id="filmTable" hidden></div>
+        <div class="rv-view rv-extra" data-rvid="filmMeas" id="filmMeas" hidden></div>
+      </div>
+      <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="filmKeys"></table></aside>
     </div>
-    <div id="filmTable" data-pstep="results" data-fview="film"></div>
-    <div id="filmMeas" data-pstep="results" data-fview="film"></div>
     <div data-pstep="results">${typeof sheetSectionHTML === 'function' ? sheetSectionHTML() : ''}</div>
     ${PROC_ALL && typeof mpStackHTML === 'function' ? `<div data-fview="stack">${mpStackHTML()}</div>` : ''}
     <p class="fv-note" id="filmNote" data-pstep="solve"></p>
@@ -207,6 +211,7 @@ function filmRender() {
   const sec = document.getElementById('filmSec');
   if (!sec) return;
   if (!sec.dataset.wired) filmWire(sec);
+  if (typeof rvSync === 'function') rvSync(sec.querySelector('.rv[data-rvkey="film"]'));   // (the view picked shown, before it draws)
   if (typeof sheetRender === 'function') sheetRender();   // (the piece in 3D, GO-4d: after the film, the film shown)
   // (the stack's multiphysics, MP-1: its own pages, MP-W; for the report, every view open, drawn too once solved -- then it
   //  asks nothing of its solver)
@@ -229,16 +234,16 @@ function filmRender() {
   filmChecks(rt, rb);
   filmStats(rt, rb);
   filmCharts(rt, rb);
-  procShowChart('film');
   filmTable();
   filmMeasured(rt, rb);
   document.getElementById('filmNote').innerHTML = filmNoteText();
+  if (typeof rvAfter === 'function') rvAfter();
 }
 function filmClear() {
-  ['filmChecks', 'filmStats', 'filmTable', 'filmNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+  ['filmChecks', 'filmKeys', 'filmTable', 'filmNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   paneEmptyIds(['fm1', 'fm2', 'fm3', 'fm4', 'fm5', 'fm6'], paneWhy('film'));
-  procShowChart('film');   // (one chart at a time, solved or not)
   filmMeasured(null, null);
+  if (typeof rvAfter === 'function') rvAfter();
 }
 function filmWire(sec) {
   sec.dataset.wired = '1';
@@ -279,20 +284,22 @@ function filmChecks(rt, rb) {
     card(filmPicBlisters(), 'Blisters or wrinkles', both(blis)),
   ].join('');
 }
+/** The key values (the viewer's right-hand column): a row each, a value for each way the water leaves; cracks, blisters,
+ * the roll and a wet film marked as the checks and the warnings mark them. */
 function filmStats(rt, rb) {
-  const both = (f, fmt) => `${fmt(f(rt))} · ${fmt(f(rb))}`;
-  const tiles = [
-    ['Cracks', both(r => r.worst ? r.worst.ratio : 0, v => `${v.toFixed(2)}×`), 'cut'],
-    ['Crack spacing', both(r => r.spacing, s => s ? `${(s.lo * 1000).toFixed(1)}–${(s.hi * 1000).toFixed(1)} mm` : '—'), 'length'],
-    [`Peel by hand (${OVEN.peel.peelDeg}°)`, both(r => r.peel.hand.f, v => `${filmN(v)} N/m`), 'shear'],
-    ['Peel at 90°', both(r => filmAngle(r, 90).f, v => `${filmN(v)} N/m`), 'shear'],
-    ['Curl radius, settled', both(r => r.curl.settled.kappa, k => Math.abs(k) < 1e-6 ? 'flat' : `${(1000 / Math.abs(k)).toFixed(0)} mm`), 'radius'],
-    ['On the roll', both(r => r.roll.sMax / 1e6, v => `${v.toFixed(0)} MPa`), 'ratio'],
-    ['Blisters', both(r => r.blisters.max.ratio, v => `${v.toFixed(2)}×`), 'wave'],
-    ['Water at the peel', both(r => r.atPeel.waterPct, v => `${v.toFixed(1)} %`), 'drop'],
+  const F = MAT.film, mm = s => s ? `${(s.lo * 1000).toFixed(1)}–${(s.hi * 1000).toFixed(1)} mm` : '—';
+  const rows = [
+    ['Cracks', r => `${(r.worst ? r.worst.ratio : 0).toFixed(2)}×`, r => r.worst && r.worst.ratio >= 1 && 'rv-warn', 'the most a crack releases against the film\'s fracture energy: 1× and above, they form'],
+    ['Crack spacing', r => mm(r.spacing)],
+    [`Peel by hand (${OVEN.peel.peelDeg}°)`, r => `${filmN(r.peel.hand.f)} N/m`, r => r.peel.selfPeel && 'rv-warn', 'the force per width'],
+    ['Peel at 90°', r => `${filmN(filmAngle(r, 90).f)} N/m`, null, 'the force per width'],
+    ['Curl radius, settled', r => { const k = r.curl.settled.kappa; return Math.abs(k) < 1e-6 ? 'flat' : `${(1000 / Math.abs(k)).toFixed(0)} mm`; }],
+    ['On the roll', r => `${(r.roll.sMax / 1e6).toFixed(0)} MPa`, r => r.roll.cracks && 'rv-warn', `bent round the core; the film's strength ${F.sigF.v} MPa`],
+    ['Blisters', r => `${r.blisters.max.ratio.toFixed(2)}×`, r => r.blisters.max.ratio >= 1 && 'rv-warn', 'the most a blister releases against the film\'s hold on the web: 1× and above, they form'],
+    ['Water at the peel', r => `${r.atPeel.waterPct.toFixed(1)} %`, r => r.wetAtPeel && 'rv-bad', 'of the GO'],
   ];
-  document.getElementById('filmStats').innerHTML = tiles.map(([l, v, ic]) => `<div class="stat" title="${l} — top only · top and bottom: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>top only · top and bottom</small></div>`).join('')
-    + `<p class="fv-why dry-where">Cracks and blisters: the most a crack (a blister) releases against the film's fracture energy (its hold on the web): 1× and above, they form. Along the line from the oven's entry (m); negative: before it.</p>`;
+  document.getElementById('filmKeys').innerHTML = `<thead><tr><th scope="col"></th><th scope="col">Top only</th><th scope="col">Top and bottom</th></tr></thead>
+    <tbody>${rows.map(([l, f, mark, sub]) => `<tr${sub ? ` title="${l}: ${sub}"` : ''}><th scope="row">${l}</th>${[rt, rb].map(r => { const c = mark && mark(r); return `<td${c ? ` class="${c}"` : ''}>${f(r)}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
 }
 
 /** The charts: along the line (both ways, solid and dashed), the peel force against the angle, through the film, the peeled sheet. */
