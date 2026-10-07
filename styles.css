@@ -2929,17 +2929,17 @@ canvas.mx-strip { width: 100%; display: block; margin: 4px 0 10px; }
 .tm-kv input.geo-in { width: 92px; }
 .dock-grid .tm-wide { grid-column: 1 / -1; }
 
-/* ---- task 13: the results viewer (results-viewer.js; the owner's layout A) -- on the pages in RV_PAGES (body.rv) ---- */
+/* ---- task 13: the results viewer (results-viewer.js; the owner's layout A) -- on the pages in RV_PAGES (body.rv-page) ---- */
 /* (the sentences that explain behind an (i): a view's, under its chart; the inputs bar's drawings and notes) */
 .rv-view:not(.rv-notes) .pane-legend p.fv-why, .rv-view.mp-compare:not(.rv-notes) > p.fv-why { display: none; }
-body.rv .verdict .vq, body.rv .verdict .pg-scope { display: none; }
-body.rv:not(.rv-tree-notes) #treeNote, body.rv:not(.rv-tree-notes) .tree-scroll .ovz-pic, body.rv:not(.rv-tree-notes) .tree-scroll .prop-note { display: none; }
+body.rv-page .verdict .vq, body.rv-page .verdict .pg-scope { display: none; }
+body.rv-page:not(.rv-tree-notes) #treeNote, body.rv-page:not(.rv-tree-notes) .tree-scroll .ovz-pic, body.rv-page:not(.rv-tree-notes) .tree-scroll .prop-note { display: none; }
 .rv-i { margin-left: auto; flex: 0 0 auto; width: 20px; height: 20px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 50%;
   background: var(--surface); color: var(--muted); font: italic 600 11.5px/1 Georgia, 'Times New Roman', serif; cursor: pointer; }
 .rv-i:hover, .rv-notes .rv-i, .rv-i[aria-pressed=true], .rv-i[aria-expanded=true] { color: var(--accent); border-color: var(--accent); }
 .rv-i:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rv-i-tree { display: none; margin: 0 6px 0 auto; }
-body.rv .rv-i-tree { display: inline-grid; }
+body.rv-page .rv-i-tree { display: inline-grid; }
 .mp-compare .mp-h, .oned-h.rv-head { display: flex; align-items: center; gap: 8px; }
 .rv-head .rv-i { margin-left: 4px; }
 .rv-about { margin: 6px 0 14px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }

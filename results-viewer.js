@@ -2,7 +2,7 @@
  * results-viewer.js — task 13: a stage's results laid out as a viewer (the owner's choice, layout A): its views listed
  * on the left, one of them large in the middle, its key values in a column on the right; the sentences that explain a
  * view behind an (i) on it, and the inputs bar showing only the inputs (its drawings and notes behind an (i) in its head).
- * On the pages in RV_PAGES (Pre heat first; the other stages follow, one at a time, each with the owner's yes).
+ * On the pages in RV_PAGES (marked body.rv-page; Pre heat first; the other stages follow, one at a time, each with the owner's yes).
  *   rvBuild(sec, key, names): before a results section draws, its views (figures, and its .rv-extra tables) moved into the
  *     viewer, only the one picked shown; its key values (.mp-stats) into the right-hand column
  *   rvAfter(): after it draws, an (i) on each view, the key values' notes in their tooltips
