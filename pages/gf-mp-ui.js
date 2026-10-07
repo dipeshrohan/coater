@@ -243,6 +243,9 @@ SWB_ADAPT['furn:product'] = {
   renderResults: dim => gfRender(dim),
   csv: dim => gfCsv(dim),
   openInputs: () => { setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="gfuse"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
+  viewer: true,
+  viewNames: dim => ({ gf1: 'Temperature along the film', gf2: 'Against time', gf3: dim === 3 ? 'On the film\'s plane' : 'Its stress across the piece',
+    gf4: dim === 1 ? 'Where the heat leaves' : dim === 2 ? 'On the section' : 'The quarter in 3D', gfCompare: 'Against independent answers' }),
 };
 /** The solve's energy balance in words: the heater's power against what left to the air, steady. */
 function gfBal(r) {
