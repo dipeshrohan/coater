@@ -477,6 +477,8 @@ SWB_ADAPT['furn:runs'] = {
   resultsHTML: dim => fmpHTML(true),
   renderResults: dim => fmpRender(),
   csv: dim => { FMS.dim = dim; fmpCsv(); },
+  viewer: true,
+  viewNames: dim => ({ fmp1: 'Temperatures', fmp2: 'Its oxygen gone', fmp3: 'The gas against its hold', fmp4: 'The pull, converting unevenly', fmp5: dim === 1 ? 'Along the stack' : 'On a section', fmpIso: 'The quarter in 3D', fmpCompare: 'Against the Results step' }),
   openInputs: () => { setPanelHidden('model', false); FV.tree.furn = true; const d = document.querySelector('#setupExtra details[data-tree="furn"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
 };
 /** The balance of a solve, in words. */

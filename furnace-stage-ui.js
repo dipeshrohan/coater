@@ -185,6 +185,9 @@ function furnChipsHTML() {
   return `<div class="furn-chips" role="tablist" aria-label="Which chart" data-fpart="runs">${FURN_CHARTS.map(([id, t]) => `<button type="button" role="tab" class="chip" data-furnchart="${id}" aria-selected="${id === (FURN.chart || 'fu4')}">${t}</button>`).join('')}</div>`;
 }
 function furnShowChart() {
+  // (the furnace's tab: its views in the viewer, the one picked shown before they draw)
+  const rv = document.querySelector('#furnSec .rv[data-rvkey="furn"]');
+  if (rv) { if (typeof rvSync === 'function') rvSync(rv); return; }
   // (the graphene film's tab shows its one chart, the film across the piece; the furnace's, the one its chips pick)
   const k = !PROC_ALL && FURN.part === 'product' ? 'fu6' : FURN.chart || 'fu4';
   document.querySelectorAll('#furnSec [data-furnchart]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.furnchart === (FURN.chart || 'fu4'))));

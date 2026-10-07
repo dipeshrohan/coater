@@ -210,6 +210,48 @@ function furnPicCheck(kind, sc = 1) {
 }
 
 // ---- the Process tab's section ----
+/** The furnace's charts (their panes, in the order the graphene film's tab lists them). */
+const furnPanes = pane => ({
+  fu1: pane('fu1', 'oven', 'The two runs', 'The furnace temperature against time in each run'),
+  fu2: pane('fu2', 'weight', 'Its weight', 'The piece\'s weight kept against time through the two runs'),
+  fu3: pane('fu3', 'drop', 'Its oxygen: C/O', 'The film\'s carbon to oxygen ratio against time through the two runs, on a log scale'),
+  fu4: pane('fu4', 'film', 'Its thickness', 'The piece\'s thickness at its middle and its edge against time through the two runs'),
+  fu5: pane('fu5', 'ratio', 'The gas against its hold', 'The gas in the piece\'s middle against its layers\' hold, against time through the two runs'),
+  fu6: pane('fu6', 'length', 'The graphene film across the piece', 'The graphene film\'s thickness from the piece\'s middle to its edge and to its corner'),
+  fu7: pane('fu7', 'ratio', 'Along itself: pulled and squeezed', 'The pull in the piece against its strength, and its squeeze against what buckles it, against time through the two runs'),
+});
+/** The Results step's views (task 13, the viewer; the furnace's tab): listed left, one shown. */
+const furnViews = () => [['furnChecks', 'The five checks'], ['furnPieces', 'The stack'], ...FURN_CHARTS, ['furnPiece', 'The piece'], ['furnMeas', 'Measured']];
+/** The furnace's results (its tab, task 13): the piece shown picked above; the views listed left, one shown, the key values beside it. */
+function furnResultsHTML(pane) {
+  const view = f => f.replace('<figure class="pane dry-pane">', `<figure class="pane dry-pane rv-view" data-rvid="${/id="(fu\d)"/.exec(f)[1]}" hidden>`);
+  const P = furnPanes(pane);
+  return `<div class="furn-posrow" id="furnPosRow" data-pstep="results" data-fpart="runs"></div>
+    <div class="rv" data-rvkey="furn" data-pstep="results" data-fpart="runs">
+      <nav class="rv-list" role="tablist" aria-label="The view shown"><h5>Results</h5>${furnViews().map(([id, t], i) => `<button type="button" role="tab" data-rvview="${id}" aria-selected="${!i}">${t}</button>`).join('')}</nav>
+      <div class="rv-main">
+        <div class="rv-view rv-extra" data-rvid="furnChecks"><h4 class="oned-h">The five checks</h4><div class="furn-checks" id="furnChecks"></div></div>
+        <div class="rv-view rv-extra rv-wide" data-rvid="furnPieces" hidden><h4 class="oned-h">The stack</h4><div class="furn-pieces" id="furnPieces"></div></div>
+        ${FURN_CHARTS.map(([id]) => view(P[id])).join('')}
+        <figure class="pane dry-pane furn-piece-fig rv-view" data-rvid="furnPiece" hidden><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
+        <div class="rv-view rv-extra" data-rvid="furnMeas" id="furnMeas" hidden></div>
+      </div>
+      <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="furnKeys"></table></aside>
+    </div>
+    <div class="stats" id="furnStats" data-pstep="results" data-fpart="product"></div>`;
+}
+/** The graphene film's results (its tab, as they were: the stack, the tiles, one chart, the piece, the measured). */
+function furnResultsOldHTML(pane) {
+  return `    <div class="furn-checks" id="furnChecks" data-pstep="results" data-fpart="runs"></div>
+    <div class="furn-pieces" id="furnPieces" data-pstep="results"></div>
+    <div class="stats" id="furnStats" data-pstep="results" data-fpart="product"></div>
+    <div class="furn-res" data-pstep="results"><div class="furn-chart">${typeof furnChipsHTML === 'function' ? furnChipsHTML() : ''}<div class="dry-grid furn-one">
+      ${Object.values(furnPanes(pane)).join('\n      ')}
+    </div></div>
+      <figure class="pane dry-pane furn-piece-fig"><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
+    </div>
+    <div id="furnMeas" data-pstep="results"></div>`;
+}
 function furnSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
   const pane = (id, icon, title, aria) => `<figure class="pane dry-pane"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
@@ -227,21 +269,7 @@ function furnSectionHTML() {
     </div>
     <div id="furnSolve" data-pstep="solve" data-fpart="runs"></div>
     <div id="furnState" data-pstep="results"></div>
-    <div class="furn-checks" id="furnChecks" data-pstep="results" data-fpart="runs"></div>
-    <div class="furn-pieces" id="furnPieces" data-pstep="results"></div>
-    <div class="stats" id="furnStats" data-pstep="results" data-fpart="product"></div>
-    <div class="furn-res" data-pstep="results"><div class="furn-chart">${typeof furnChipsHTML === 'function' ? furnChipsHTML() : ''}<div class="dry-grid furn-one">
-      ${pane('fu1', 'oven', 'The two runs', 'The furnace temperature against time in each run')}
-      ${pane('fu2', 'weight', 'Its weight', 'The piece\'s weight kept against time through the two runs')}
-      ${pane('fu3', 'drop', 'Its oxygen: C/O', 'The film\'s carbon to oxygen ratio against time through the two runs, on a log scale')}
-      ${pane('fu4', 'film', 'Its thickness', 'The piece\'s thickness at its middle and its edge against time through the two runs')}
-      ${pane('fu5', 'ratio', 'The gas against its hold', 'The gas in the piece\'s middle against its layers\' hold, against time through the two runs')}
-      ${pane('fu6', 'length', 'The graphene film across the piece', 'The graphene film\'s thickness from the piece\'s middle to its edge and to its corner')}
-      ${pane('fu7', 'ratio', 'Along itself: pulled and squeezed', 'The pull in the piece against its strength, and its squeeze against what buckles it, against time through the two runs')}
-    </div></div>
-      <figure class="pane dry-pane furn-piece-fig"><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
-    </div>
-    <div id="furnMeas" data-pstep="results"></div>
+    ${FURN.part === 'product' ? furnResultsOldHTML(pane) : furnResultsHTML(pane)}
     ${PROC_ALL && typeof fmpHTML === 'function' ? `<div data-fpart="runs">${fmpHTML()}</div>` : ''}
     <p class="fv-note" id="furnNote" data-pstep="solve" data-fpart="runs"></p>
   </section>`;
@@ -278,13 +306,18 @@ function furnPosGo(i) {
   const b = document.querySelector(`#furnPosSel [data-furnpos="${i}"]`); if (b) b.focus();
 }
 function furnClear() {
-  ['furnChecks', 'furnStats', 'furnNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+  ['furnChecks', 'furnStats', 'furnNote', 'furnKeys', 'furnPosRow'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   const ids = ['fu1', 'fu2', 'fu3', 'fu4', 'fu5', 'fu6'];
   paneEmptyIds(ids, paneWhy('furn')); ids.forEach(id => { const lg = document.getElementById(id + 'Lg'); if (lg) lg.innerHTML = ''; });
 }
 function furnRender() {
   const sec = document.getElementById('furnSec');
   if (!sec) return;
+  furnDraw(sec);
+  if (typeof rvAfter === 'function') rvAfter();
+}
+/** The section's results drawn (furnRender's): the answer, the checks, the stack, the key values, the charts, the piece. */
+function furnDraw(sec) {
   if (!sec.dataset.wired) furnWire(sec);
   sec.querySelectorAll('[data-furn]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.furn === DRY.sel)));
   const st = document.getElementById('furnState');
@@ -305,6 +338,7 @@ function furnRender() {
   if (typeof furnSolveRender === 'function') { furnSolveRender(r); furnPieceDraw(rv); }
   furnChecks(r);
   furnPiecesRender(r);
+  furnKeys(r, rv);
   furnStats(rv);
   furnCharts(rv);
   furnMeasured(r);
@@ -365,7 +399,9 @@ function furnPiecesRender(r) {
   const sRow = (lab, s) => `<tr><th>${lab} <small>${s.d > 0 ? '+' : '−'}${Math.abs(s.d).toFixed(0)} °C at the top</small></th><td class="fv-why">as above</td><td>${furnUm(s.hMean)} µm</td><td>${(s.hSD * 1e6).toFixed(1)} µm</td><td>${pct(Math.max(...s.pos.map(p => p.ratioMax)))}</td><td>${pct(Math.max(...s.pos.map(p => p.waveMax)))}</td><td>${sStuck(s)}</td></tr>`;
   const sHead = `<tr class="furn-pos-g"><th colspan="7">The load's stacks <small>each its ${L.length > 1 ? 'pieces together' : 'piece'}; their runs ${sp ? sp.spread / 2 : 0} °C colder or hotter at the top</small></th></tr>`;
   const B = furnBatch(r);
-  el.innerHTML = `${sel}<div class="oned-scroll"><table class="proc-kv proc-grid furn-pos-t"><thead><tr><th>${L.length > 1 ? 'The stack' : ''}</th><th>Weight on it <small>the plate, papers and pieces above</small></th><th>Thickness <small>its mean</small></th><th>Its spread <small>standard deviation</small></th><th>Pull <small>of its strength</small></th><th>Squeeze <small>of what buckles it</small></th><th>Sticks from</th></tr></thead><tbody>${rows}${sp ? sHead + sRow('Coldest stack', sp.cold) + sRow('Hottest stack', sp.hot) : ''}</tbody></table></div>
+  const row = document.getElementById('furnPosRow');
+  if (row) row.innerHTML = sel;
+  el.innerHTML = `${row ? '' : sel}<div class="oned-scroll"><table class="proc-kv proc-grid furn-pos-t"><thead><tr><th>${L.length > 1 ? 'The stack' : ''}</th><th>Weight on it <small>the plate, papers and pieces above</small></th><th>Thickness <small>its mean</small></th><th>Its spread <small>standard deviation</small></th><th>Pull <small>of its strength</small></th><th>Squeeze <small>of what buckles it</small></th><th>Sticks from</th></tr></thead><tbody>${rows}${sp ? sHead + sRow('Coldest stack', sp.cold) + sRow('Hottest stack', sp.hot) : ''}</tbody></table></div>
     <p class="fv-why">The batch: <b>${furnUm(B.h)} µm ± ${(B.sd * 1e6).toFixed(1)} µm</b> (standard deviation over ${B.stacks ? 'its stacks, from the coldest to the hottest, and' : ''} each stack's pieces, top to bottom, and across each piece). ${B.stacks ? `Within one stack ± ${(B.within * 1e6).toFixed(1)} µm.` : 'The stacks\' differences are not in it: the load\'s temperature spread is not known (under The furnace).'}</p>`;
 }
 /** A check's level against its limit (1 = at it): amber from 0.8 (a risk), red at 1 (it happens). */
@@ -448,6 +484,28 @@ function furnChecks(r) {
   document.getElementById('furnChecks').innerHTML = `<div class="furn-lights" role="tablist" aria-label="The furnace's checks">${lights}</div>
     <div class="furn-light-d" role="tabpanel">${furnPicCheck(pic)}<div><h4>${pick.t}</h4>${furnCheckBody(r, pick.k)}</div></div>${size}`;
   if (typeof applyHelp === 'function') applyHelp();   // (rebuilt outside render, as a light is picked: its help again)
+}
+/** The key values (task 13, the furnace's tab): the piece shown -- its graphene film, the batch's, when it puffs, its pull
+ * and squeeze against their limits (marked as its checks), when it sticks, its size and weight after. */
+function furnKeys(r, rv) {
+  const el = document.getElementById('furnKeys');
+  if (!el) return;
+  const q = rv.piece, pl = rv.plane, B = furnBatch(r), pct = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)} %` : '—';
+  const lv = v => (Number.isFinite(v) ? { ok: '', warn: 'rv-warn', bad: 'rv-bad' }[furnLevel(v)] : '');
+  const puff = rv.runs.map((x, i) => x.puffAt ? `run ${i + 1}, ${x.puffAt.T.toFixed(0)} °C` : '').filter(Boolean)[0];
+  const rows = [
+    ['Graphene film', `${furnUm(rv.end.h)} µm`, '', `its mean; ${(rv.end.h / r.q.P.h).toFixed(2)}× the GO piece (${furnUm(r.q.P.h)} µm)`],
+    ['The batch', `${furnUm(B.h)} ± ${(B.sd * 1e6).toFixed(1)} µm`, lv(B.sd * 1e6 / OVEN.furn.sdMax), `standard deviation against your ${OVEN.furn.sdMax} µm`],
+    ['Puffs up', puff || 'no', puff ? 'rv-bad' : '', 'where it starts: the run and the program\'s temperature'],
+    ['Pull, most', pct(pl && pl.ratioMax), lv(pl && pl.ratioMax), 'of its strength'],
+    ['Squeeze, most', pct(pl && pl.waveMax), lv(pl && pl.waveMax), 'of what buckles it'],
+    ['Sticks from', pl && pl.stuckAt ? `${pl.stuckAt.T.toFixed(0)} °C` : 'no', pl && pl.stuckAt ? 'rv-bad' : '', `to ${furnOnPlate(q) && pl && pl.stuckPlAt ? 'the plate' : 'its paper'}`],
+    ['Size after', pl ? `${(pl.size.free * 100).toFixed(2)} %` : '—', '', pl ? `free on its own (${(pl.size.held * 100).toFixed(2)} % as held on its paper)` : ''],
+    ['Weight kept', `${(rv.end.kept * 100).toFixed(1)} %`, '', 'of the dry GO'],
+  ];
+  const head = q && q.name !== 'only' ? `${FURN_POS_NAME[q.name]} <small>${furnOrd(q.nth)}</small>` : 'The piece';
+  el.innerHTML = `<thead><tr><th scope="col"></th><th scope="col">${head}</th></tr></thead>
+    <tbody>${rows.map(([l, v, c, sub]) => `<tr${sub ? ` title="${l}: ${sub}"` : ''}><th scope="row">${l}</th><td${c ? ` class="${c}"` : ''}>${v}</td></tr>`).join('')}</tbody>`;
 }
 function furnStats(r) {
   const e = r.end, P = r.q.P;
