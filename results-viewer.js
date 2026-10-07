@@ -2,12 +2,12 @@
  * results-viewer.js — task 13: a stage's results laid out as a viewer (the owner's choice, layout A): its views listed
  * on the left, one of them large in the middle, its key values in a column on the right; the sentences that explain a
  * view behind an (i) on it, and the inputs bar showing only the inputs (its drawings and notes behind an (i) in its head).
- * On the pages in RV_PAGES (marked body.rv-page; Pre heat first; the other stages follow, one at a time, each with the owner's yes).
+ * On the pages in RV_PAGES (marked body.rv-page; Pre heat, then Drying; the other stages follow, one at a time, each with the owner's yes).
  *   rvBuild(sec, key, names): before a results section draws, its views (figures, and its .rv-extra tables) moved into the
  *     viewer, only the one picked shown; its key values (.mp-stats) into the right-hand column
  *   rvAfter(): after it draws, an (i) on each view, the key values' notes in their tooltips
  */
-const RV_PAGES = new Set(['stack', 'stack1d', 'stack2d', 'stack3d']);
+const RV_PAGES = new Set(['stack', 'stack1d', 'stack2d', 'stack3d', 'dry', 'dry1d', 'dry2d', 'dry3d']);
 const RV = { sel: {} };
 
 /** The views a results section holds, in its order: its figures and its comparison tables. */
@@ -41,20 +41,25 @@ function rvBuild(sec, key, names = {}) {
   rvSync(wrap);
 }
 
-/** A viewer's view shown as picked (the first, until another is): before its charts draw, so the one shown fills its place. */
+/** A viewer's view shown as picked (the first, until another is): before its charts draw, so the one shown fills its place.
+ * (The report, PROC_ALL: every view shown, each drawn at its full width.) */
 function rvSync(wrap) {
   if (!wrap) return;
   const views = [...wrap.querySelectorAll('.rv-main > .rv-view')], ids = views.map(v => v.dataset.rvid), key = wrap.dataset.rvkey;
   const sel = ids.includes(RV.sel[key]) ? RV.sel[key] : ids[0];
-  for (const v of views) v.hidden = v.dataset.rvid !== sel;
+  const all = typeof PROC_ALL !== 'undefined' && PROC_ALL;
+  for (const v of views) v.hidden = !all && v.dataset.rvid !== sel;
+  // (a wide view, a table of every location: the key values' column given to it -- the table holds them all)
+  wrap.classList.toggle('rv-wide', !all && views.some(v => v.dataset.rvid === sel && v.classList.contains('rv-wide')));
   for (const b of wrap.querySelectorAll('[data-rvview]')) b.setAttribute('aria-selected', String(b.dataset.rvview === sel));
 }
 
-/** After the section draws: an (i) on each view for its sentences; the key values' notes in their tooltips. */
+/** After the section draws: an (i) on each view that has sentences to explain it (those under its chart); the key
+ * values' notes in their tooltips. */
 function rvAfter() {
   for (const v of document.querySelectorAll('.rv .rv-view')) {
     const cap = v.querySelector('figcaption') || v.querySelector('h4');
-    if (cap && !cap.querySelector('.rv-i')) cap.insertAdjacentHTML('beforeend', '<button type="button" class="rv-i" data-rvi aria-label="What it shows" title="What it shows">i</button>');
+    if (cap && !cap.querySelector('.rv-i') && v.querySelector('.pane-legend p.fv-why, :scope > p.fv-why')) cap.insertAdjacentHTML('beforeend', '<button type="button" class="rv-i" data-rvi aria-label="What it shows" title="What it shows">i</button>');
   }
   for (const s of document.querySelectorAll('.rv-keys .stat')) {
     const lab = s.querySelector('span'), sm = s.querySelector('small');

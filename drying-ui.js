@@ -15,6 +15,8 @@ const DRY = { key: null, pending: null, res: null, busy: false, again: false, er
 /** Stop the drying's solve (New, Open): its worker ended. */
 function dryStop() { if (DRY.worker) { DRY.worker.terminate(); DRY.worker = null; } Object.assign(DRY, { busy: false, again: false, pending: null, prog: null }); }
 const DRY_WAYS = { top: 'From the top only', both: 'From the top and the bottom' };
+/** The Results step's views (task 13, the viewer): listed left, one shown. */
+const DRY_VIEWS = [['dryOven', 'The film in the oven'], ['dr1', 'Water in the film'], ['dr2', 'Temperatures'], ['dr3', 'Evaporation'], ['dr4', 'The film and its skin'], ['dr5', 'Through the film'], ['dryTable', 'Every location'], ['dryMeas', 'Measured']];
 const DRY_ASPECT = 0.5;   // (the charts' height / width: the section scrolls, so they keep their shape)
 const dryEsc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
@@ -144,7 +146,7 @@ function procOvenLine() { const o = ovenTime(lineSpeed()); return `${OVEN.zones.
 /** The section's frame (filled by dryRender after the page is drawn). */
 function drySectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
-  const pane = (id, icon, title, aria, cls = '') => `<figure class="pane dry-pane${cls}"><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
+  const pane = (id, icon, title, aria) => `<figure class="pane dry-pane rv-view" data-rvid="${id}" hidden><figcaption>${uiBadge(icon)}${title}</figcaption><canvas id="${id}" role="img" aria-label="${aria}"></canvas><div class="pane-legend" id="${id}Lg"></div></figure>`;
   return `<section class="dry-sec" id="drySec" aria-labelledby="dryH">
     <header class="dry-head"><h3 id="dryH">${uiBadge('oven')}4 · Drying in the oven</h3>
       <div class="seg" role="tablist" aria-label="Which film" id="drySel">${seg.map(([k, t]) => `<button type="button" role="tab" data-dry="${k}" aria-selected="${k === DRY.sel}">${t}</button>`).join('')}</div>
@@ -154,18 +156,20 @@ function drySectionHTML() {
     <div class="dry-ways" id="dryWays" data-pstep="setup">${['top', 'both'].map(w => `<div class="dry-way">${dryWaySketch(w)}<span><b>${DRY_WAYS[w]}</b><i class="lg-ln${w === 'both' ? ' dash' : ''}" style="--c:var(--ink)"></i>${w === 'both' ? 'dashed' : 'solid'} in the charts</span></div>`).join('')}
       <p class="fv-why">Where the water leaves is not known, so both are computed. From the top only: the fibre under the film only brings the hot air's heat. From the top and the bottom: vapour also goes into the air blown up through the fibre, which carries it away.</p></div>
     <div id="dryState" data-pstep="solve results"></div>
-    <figure class="pane dry-oven" data-pstep="results"><figcaption>${uiBadge('oven')}The film through the room and the oven <span class="fv-why">(click to look through the film there)</span></figcaption><canvas id="dryOven" role="img" aria-label="The oven drawn along the line: its zones, what is above the film, and the film with its skin, top-only way above, top-and-bottom below"></canvas></figure>
-    <div class="stats" id="dryStats" data-pstep="results"></div>
-    <div data-pstep="results">${procChipsHTML('dry')}</div>
-    <div class="dry-grid furn-one" data-pstep="results">
-      ${pane('dr1', 'drop', 'Water in the film', 'Water in the film against position along the line')}
-      ${pane('dr2', 'oven', 'Temperatures', 'The film\'s top and bottom temperature and the air against position along the line, with measured temperatures')}
-      ${pane('dr3', 'drop', 'Evaporation', 'Evaporation from the top and the bottom against position along the line')}
-      ${pane('dr4', 'film', 'The film and its skin', 'The film\'s thickness and its skin against position along the line')}
-      ${pane('dr5', 'film', 'Through the film', 'Solids through the film\'s height at the chosen place')}
+    <div class="rv" data-rvkey="dry" data-pstep="results">
+      <nav class="rv-list" role="tablist" aria-label="The view shown"><h5>Results</h5>${DRY_VIEWS.map(([id, t], i) => `<button type="button" role="tab" data-rvview="${id}" aria-selected="${!i}">${t}</button>`).join('')}</nav>
+      <div class="rv-main">
+        <figure class="pane dry-oven rv-view" data-rvid="dryOven"><figcaption>${uiBadge('oven')}The film through the room and the oven <span class="fv-why">(click to look through the film there)</span></figcaption><canvas id="dryOven" role="img" aria-label="The oven drawn along the line: its zones, what is above the film, and the film with its skin, top-only way above, top-and-bottom below"></canvas></figure>
+        ${pane('dr1', 'drop', 'Water in the film', 'Water in the film against position along the line')}
+        ${pane('dr2', 'oven', 'Temperatures', 'The film\'s top and bottom temperature and the air against position along the line, with measured temperatures')}
+        ${pane('dr3', 'drop', 'Evaporation', 'Evaporation from the top and the bottom against position along the line')}
+        ${pane('dr4', 'film', 'The film and its skin', 'The film\'s thickness and its skin against position along the line')}
+        ${pane('dr5', 'film', 'Through the film', 'Solids through the film\'s height at the chosen place')}
+        <div class="rv-view rv-extra rv-wide" data-rvid="dryTable" id="dryTable" hidden></div>
+        <div class="rv-view rv-extra" data-rvid="dryMeas" id="dryMeas" hidden></div>
+      </div>
+      <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="dryKeys"></table></aside>
     </div>
-    <div id="dryTable" data-pstep="results"></div>
-    <div id="dryMeas" data-pstep="results"></div>
     <p class="fv-note" id="dryNote" data-pstep="solve"></p>
     ${PROC_ALL && typeof dmpHTML === 'function' ? dmpHTML() : ''}
   </section>`;
@@ -180,6 +184,7 @@ function dryRender() {
   const sec = document.getElementById('drySec');
   if (!sec) return;
   if (!sec.dataset.wired) dryWire(sec);
+  if (typeof rvSync === 'function') rvSync(sec.querySelector('.rv'));   // (the view picked shown, before it draws)
   sec.querySelectorAll('[data-dry]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.dry === DRY.sel)));
   const st = document.getElementById('dryState');
   const films = dryFilms();
@@ -201,18 +206,18 @@ function dryRender() {
   drawDryOven(rt, rb);
   dryStats(rt, rb);
   dryCharts(rt, rb);
-  procShowChart('dry');
   dryTable();
   dryMeasured(rt, rb);
   document.getElementById('dryNote').innerHTML = dryNoteText(rt);
+  if (typeof rvAfter === 'function') rvAfter();
   // (the report: the drying's multiphysics, MP-5, as solved)
   if (typeof dmpRender === 'function' && PROC_ALL && dmpCurrent(DMS.dim)) dmpRender();
 }
 function dryClear() {
-  ['dryStats', 'dryTable', 'dryNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+  ['dryKeys', 'dryTable', 'dryNote'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
   paneEmptyIds(['dryOven', 'dr1', 'dr2', 'dr3', 'dr4', 'dr5'], paneWhy('dry'));
-  procShowChart('dry');   // (one chart at a time, solved or not)
   dryMeasured(null, null);
+  if (typeof rvAfter === 'function') rvAfter();
 }
 function dryWire(sec) {
   sec.dataset.wired = '1';
@@ -239,6 +244,7 @@ function dryWire(sec) {
     const [rt] = dryRuns(DRY.sel); if (!rt) return;
     const places = rt.profiles.map(p => p.x);
     DRY.x = places.reduce((a, b) => Math.abs(b - x) < Math.abs(a - x) ? b : a, places[0]);
+    if (typeof RV !== 'undefined') RV.sel.dry = 'dr5';   // (the viewer: shown through the film there)
     dryRender();
   });
 }
@@ -318,19 +324,20 @@ function drawDryOven(rt, rb) {
 }
 const dryTicks = (a, b) => { const span = b - a, step = span > 12 ? 2 : span > 5 ? 1 : span > 2 ? 0.5 : 0.25, out = []; for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) out.push(+v.toFixed(6)); return out; };
 
+/** The key values (the viewer's right-hand column): a row each, a value for each way the water leaves; not dry and
+ * boiling marked as the warnings mark them. */
 function dryStats(rt, rb) {
-  const both = (f, fmt) => `${fmt(f(rt))} · ${fmt(f(rb))}`;
-  const pe = r => (r.rates.find(q => q.name !== 'room') || r.rates[0]).Pe;
-  const tiles = [
-    ['Dry at', both(r => r.exit.dry ? r.events.dry : null, v => v == null ? 'not dry' : `${v.toFixed(2)} m`), 'check'],
-    ['Water left at the exit', both(r => r.exit.waterPct, v => `${v.toFixed(1)} %`), 'drop'],
-    ['Skin forms at', both(r => r.events.skinTop, v => v == null ? 'none' : `${v.toFixed(2)} m`), 'film'],
-    ['Film at the exit', both(r => r.exit.h * 1e6, v => `${v.toFixed(0)} µm`), 'film'],
-    ['Hottest film', both(r => r.Tmax, v => `${v.toFixed(0)} °C`), 'oven'],
-    ['Drying Peclet, zone 1', both(pe, v => v >= 100 ? v.toExponential(1) : v.toFixed(1)), 'bars'],
+  const pe = r => (r.rates.find(q => q.name !== 'room') || r.rates[0]).Pe, where = 'along the line from the oven\'s entry (m); negative: in the room before it';
+  const rows = [
+    ['Dry at', r => r.exit.dry ? `${r.events.dry.toFixed(2)} m` : 'not dry', r => !r.exit.dry && 'rv-warn', where],
+    ['Water left at the exit', r => `${r.exit.waterPct.toFixed(1)} %`, null, 'of the GO'],
+    ['Skin forms at', r => r.events.skinTop == null ? 'none' : `${r.events.skinTop.toFixed(2)} m`, null, where],
+    ['Film at the exit', r => `${(r.exit.h * 1e6).toFixed(0)} µm`],
+    ['Hottest film', r => `${r.Tmax.toFixed(0)} °C`, r => r.events.boil != null && 'rv-bad', `the water boils at ${rt.Tboil.toFixed(0)} °C`],
+    ['Drying Peclet, zone 1', r => { const v = pe(r); return v >= 100 ? v.toExponential(1) : v.toFixed(1); }],
   ];
-  document.getElementById('dryStats').innerHTML = tiles.map(([l, v, ic]) => `<div class="stat" title="${l} — top only · top and bottom: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong><small>top only · top and bottom</small></div>`).join('')
-    + `<p class="fv-why dry-where">Along the line from the oven's entry (m); negative: in the room before it.</p>`;
+  document.getElementById('dryKeys').innerHTML = `<thead><tr><th scope="col"></th><th scope="col">Top only</th><th scope="col">Top and bottom</th></tr></thead>
+    <tbody>${rows.map(([l, f, mark, sub]) => `<tr${sub ? ` title="${l}: ${sub}"` : ''}><th scope="row">${l}</th>${[rt, rb].map(r => { const c = mark && mark(r); return `<td${c ? ` class="${c}"` : ''}>${f(r)}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
 }
 
 /** The charts along the line (both ways: solid top only, dashed top and bottom) and through the film. */

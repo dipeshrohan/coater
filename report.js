@@ -180,7 +180,7 @@ async function repProcessAll() {
   // the drying (GO-3): its checks, its numbers for the film shown, the table of every film, the measured, its note
   const dt = document.querySelector('.dry-table'), dNote = document.getElementById('dryNote');
   const dPills = [...document.querySelectorAll('#dryState .pill')].map(p => `<li class="${p.classList.contains('bad') ? 'bad' : p.classList.contains('warn') ? 'warn' : 'ok'}">${repEsc(cleanText(p))}</li>`);
-  const dStats = [...document.querySelectorAll('#dryStats .stat')].map(s => [repEsc(cleanText(s.querySelector('span'))), repEsc(cleanText(s.querySelector('strong')))]);
+  const dStats = [...document.querySelectorAll('#dryKeys tbody tr')].map(r => [repEsc(cleanText(r.querySelector('th'))), repEsc([...r.querySelectorAll('td')].map(cleanText).join(' · '))]);
   const m = MAT.dryMeas || { temps: [], exit: [] };
   const mRows = [...m.temps.map(q => [repEsc(q.name), 'temperatures in the oven', `${q.rows.length} readings`]),
     ...m.exit.map(q => [q.loc === 'web' ? 'The web' : q.loc, 'at the oven\'s exit', repEsc([Number.isFinite(q.water) ? `${q.water} % water left` : '', Number.isFinite(q.h) ? `dry film ${q.h} µm` : '', Number.isFinite(q.dryAt) ? `dry at ${q.dryAt} m` : ''].filter(Boolean).join(', '))])];

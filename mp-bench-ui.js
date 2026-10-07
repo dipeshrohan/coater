@@ -279,7 +279,11 @@ function swbDrawIso(cv, A, o, what, field) {
   };
   lab([0, Y1, 0], [X1, Y1, 0], `${swbMm(X1)} mm`, -14, 18);
   lab([X1, Y1, 0], [X1, 0, 0], `${swbMm(Y1)} mm`, 16, 18);
-  c.textAlign = 'left'; lab([X1, 0, 0], [X1, 0, Z1], `${swbMm(Z1)} mm${kz !== 1 ? ` (drawn ×${kz})` : ''}`, 10, 0);
+  c.textAlign = 'left';
+  // (the height and how it is stretched: on two lines where one would run over the drawing)
+  const zt = `${swbMm(Z1)} mm`, zk = kz !== 1 ? `(drawn ×${kz})` : '', zx = (P(X1, 0, 0)[0] + P(X1, 0, Z1)[0]) / 2 + 10;
+  if (zk && zx + c.measureText(`${zt} ${zk}`).width > w - 4) { lab([X1, 0, 0], [X1, 0, Z1], zt, 10, -7); lab([X1, 0, 0], [X1, 0, Z1], zk, 10, 7); }
+  else lab([X1, 0, 0], [X1, 0, Z1], zk ? `${zt} ${zk}` : zt, 10, 0);
   // the faces' numbers (solve), on the visible faces
   if (what === 'solve') faces.forEach((f, n) => {
     if (!f.at3) return;

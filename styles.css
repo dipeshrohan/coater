@@ -2971,8 +2971,13 @@ body.rv-page .rv-i-tree { display: inline-grid; }
 .rv-kv tbody th { font-weight: 500; color: var(--muted); text-align: left; padding-right: 8px; }
 .rv-kv td { text-align: right; font-weight: 600; color: var(--ink); white-space: nowrap; padding-left: 10px; font-variant-numeric: tabular-nums; }
 .rv-kv td.rv-bad { color: var(--bad); }
+.rv-kv td.rv-warn { color: var(--warn); }
+/* (a view's own switches, in its caption: tight enough that a row of them fits the view's width) */
+.rv .rv-view figcaption .seg-sm button { padding: 0 7px; font-size: 12.5px; }
+.rv.rv-wide { grid-template-columns: 190px minmax(0, 1fr); }
+.rv.rv-wide .rv-keys { display: none; }
 @media (max-width: 900px) {
-  .rv { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .rv, .rv.rv-wide { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .rv-list { flex-direction: row; overflow-x: auto; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
   .rv-list h5 { display: none; }
   .rv-list button { white-space: nowrap; }

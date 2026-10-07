@@ -321,6 +321,8 @@ SWB_ADAPT.dry = {
   csv: dim => { DMS.dim = dim; dmpCsv(); },
   openInputs: () => { setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
   tools: (dim, step) => (step === 'solve' || step === 'results' ? `<div class="seg seg-sm" role="tablist" aria-label="Where the water leaves the film" id="dmpWhere">${[['top', 'Water: top'], ['both', 'Top and underside']].map(([k, t]) => `<button type="button" role="tab" data-dmpwhere="${k}" aria-selected="${dmpWhere() === k}">${t}</button>`).join('')}</div>` : ''),
+  viewer: true,
+  viewNames: dim => ({ dmp1: 'Temperatures along the line', dmp2: 'Water along the line', dmp3: dim === 1 ? 'Up through the film and web' : dim === 2 ? 'Section across the web' : 'Section through the piece', dmpIso: 'The piece in 3D', dmp4: 'Drying stress along the line', dmpCompare: 'Against the Drying page' }),
   wire: () => { document.querySelectorAll('[data-dmpwhere]').forEach(b => { b.onclick = () => { if (dmpWhere() === b.dataset.dmpwhere) return; dmpSetWhere(b.dataset.dmpwhere); undoCommit(); render(); }; }); },
 };
 /** A solve's balances, in words. */
