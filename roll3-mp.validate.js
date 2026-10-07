@@ -8,6 +8,8 @@
  *     pmpRoll, finite volumes) -- its mean water through the time on the roll.
  *  4. Its heat, the ends sealed: the 1D roll's mean temperature through the time.
  *  5. Everything sealed: the water and the heat stay as they were (nothing made or lost).
+ *  6. GO's own water (its C with temperature): sealed it stays as wound; at a steady temperature, the isotherm there.
+ *  7. The app's roll at its defaults: every step converges, the same answer however hard each iteration is damped.
  */
 const R = require('./roll3-mp.js'), P = require('./peel-mp.js'), { drPsat } = require('./drying.js');
 let fails = 0;
@@ -78,6 +80,27 @@ const heat0 = { T0: 20, k: 0.2, kIn: 2, rhoc: 1.5e6, hOut: 8, Troom: 20 };
   const a = at40(g2), b = at40({ Xm: 0.115, C: C40, K: 0.885 });
   const d = Math.max(...a.hist.map((q, i) => Math.abs(q.Xmean - b.hist[i].Xmean)));
   check('  at a steady 40 °C, open to the room: the isotherm with H_c is the isotherm with its C at 40 °C', d < 1e-10, `${d.toExponential(1)} kg/kg; its mean water ${(x0 * 100).toFixed(2)} → ${(a.hist[a.hist.length - 1].Xmean * 100).toFixed(2)} %`);
+}
+// 7. The app's roll at its defaults (GO's own water: steep where the wound film starts, 8.4 %; the room's air at 50 % takes
+//    its ends toward 20 %, along the turns): every step converges, and the answer is the same however hard each iteration
+//    is damped; without the damping the first steps' iterations run away (the isotherm's slope at 8.4 % overstates the
+//    water a rise to the room's vapour brings, and so the heat it gives off)
+{
+  const gab = { Xm: 0.115, C: 200, K: 0.885, T0: 25, Hc: 20000 };
+  const base = { R0: 0.038, n: 387, h: 15.93e-6, W: 0.62, heat: { T0: 25, k: 0.2, kIn: 1, rhoc: 1372750, hOut: 8, Troom: 25 },
+    water: { X0: 0.0836, gab, rhoD: 1615, Kv: 1e-12, KvIn: 3e-7, rhRoom: 0.5 }, tEnd: 3600 * 6, steps: 40, latent: true,
+    mesh: { nr: 10, gr: 50, nth: 2, nz: 8, gz: 20 } };
+  const a = R.r3Run(base), b = R.r3Run({ ...base, limit: { dT: 1, dp: 50 }, iters: 300 });
+  const la = a.hist[a.hist.length - 1], lb = b.hist[b.hist.length - 1], Xroom = R.r3GAB(0.5, gab, 25);
+  const d = Math.max(...a.hist.map((q, i) => Math.max(Math.abs(q.Xmean - b.hist[i].Xmean), Math.abs(q.Xend - b.hist[i].Xend), Math.abs(q.Tend - b.hist[i].Tend) / 100)));
+  const Tlo = Math.min(...a.hist.map(q => Math.min(q.Tmid, q.Tend))), Thi = Math.max(...a.hist.map(q => Math.max(q.Tmid, q.Tend)));
+  // (the most the water taken up could warm the film, all its heat kept: L ΔX ρ / ρc)
+  const Tad = 25 + 2.44e6 * (Xroom - 0.0836) * 1615 / 1372750;
+  check('the app\'s roll at its defaults, open to the room: every step converges', a.unconverged === 0 && b.unconverged === 0, `${a.steps} steps; its mean water ${(la.Xmean * 100).toFixed(2)} %, its end ${(la.Xend * 100).toFixed(2)} % (the room's ${(Xroom * 100).toFixed(2)} %) after 6 h`);
+  check('  the same answer damped at 5 K / 200 Pa and at 1 K / 50 Pa an iteration', d < 1e-8, `largest difference ${d.toExponential(1)}`);
+  check('  its temperature between the room\'s and the most the water taken up could give', Tlo > 25 - 1e-6 && Thi < Tad && la.Xend > 0.0836 && la.Xend <= Xroom + 1e-9, `${Tlo.toFixed(2)}–${Thi.toFixed(2)} °C, under ${Tad.toFixed(0)} °C`);
+  let undamped = null; try { const c = R.r3Run({ ...base, limit: null }); undamped = c.unconverged ? `${c.unconverged} steps unconverged` : 'converged'; } catch (e) { undamped = e.message; }
+  check('  without the damping it does not solve (why it is there)', undamped !== 'converged', undamped);
 }
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exitCode = fails ? 1 : 0;
