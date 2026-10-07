@@ -318,6 +318,10 @@ SWB_ADAPT['film:film'] = {
   renderResults: () => pmpRender(),
   csv: () => pmpCsv(),
   openInputs: () => { setPanelHidden('model', false); const d = document.querySelector('#setupExtra details[data-tree="oven"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'nearest' }); const f = d.querySelector('input'); if (f) f.focus(); } },
+  viewer: true,
+  viewNames: dim => (dim === 1 ? { prl1: 'Pressure between the turns', prl2: 'Pull along the turns', prl3: 'Through the roll at times', prl4: 'The core\'s pressure in time', prlCompare: 'Against independent answers' }
+    : dim === 2 ? { pmp1: 'The front, as it peels', pmp2: 'Stress along the film at the front', pmp3: 'The hold along the front', pmp4: 'Peel force against the angle', pmp5: 'Stress at the front against the angle', pmpCompare: 'Against the Peel page' }
+      : { pr31: 'Its water in time', pr32: 'Along its width', pr33: 'On its section', pr34: 'Its temperature in time', pr3Compare: 'Against the 1D roll' }),
   tools: (dim, step) => {
     const where = (step === 'solve' || step === 'results') && typeof dmpWhere === 'function' ? `<div class="seg seg-sm" role="tablist" aria-label="Where the water left the film" id="pmpWhere">${[['top', 'Water: top'], ['both', 'Top and underside']].map(([k, t]) => `<button type="button" role="tab" data-pmpwhere="${k}" aria-selected="${dmpWhere() === k}">${t}</button>`).join('')}</div>` : '';
     const view = step === 'mesh' ? `<div class="seg seg-sm" role="tablist" aria-label="The mesh shown" id="pmpView">${[['front', 'Near the front'], ['whole', 'Whole section']].map(([k, t]) => `<button type="button" role="tab" data-pmpview="${k}" aria-selected="${(PMS.view === 'whole' ? 'whole' : 'front') === k}">${t}</button>`).join('')}</div>` : '';

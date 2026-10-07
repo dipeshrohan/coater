@@ -185,10 +185,9 @@ function procAnswerHTML(line, warnHTML) {
   return `<p class="furn-answer">${line}</p>${pills.length ? `<details class="furn-warn"><summary>${nBad ? '<i class="pt-dot pt-bad" aria-hidden="true"></i>' : ''}Warnings (${pills.length})</summary>${warnHTML}</details>` : ''}`;
 }
 /** A stage's charts one at a time, picked by chips above them (Q118): each grid's chosen chart (its canvas's id). */
-const PROC_CHART = { film: 'fm1', mix: 'mxP' };
+const PROC_CHART = { mix: 'mxP' };
 const PROC_CHARTS = {
   mix: MIX_CHARTS,
-  film: [['fm1', 'Stress at its top'], ['fm2', 'Crack risk'], ['fm3', 'Peel force'], ['fm4', 'Through it at the peel'], ['fm5', 'Blister risk'], ['fm6', 'On a table']],
 };
 function procChipsHTML(k) {
   return `<div class="furn-chips" role="tablist" aria-label="Which chart">${PROC_CHARTS[k].map(([id, t]) => `<button type="button" role="tab" class="chip" data-pchart="${k}|${id}" aria-selected="${id === PROC_CHART[k]}">${t}</button>`).join('')}</div>`;
@@ -295,7 +294,7 @@ function processPageBody() {
       if (tab !== 12) return;
       // (a step of the page shown)
       const pc = e.target.closest && e.target.closest('[data-pchart]');
-      if (pc) { const [k, id] = pc.dataset.pchart.split('|'); PROC_CHART[k] = id; procShowChart(k); if (k === 'mix') mixRender(); else filmRender(); return; }
+      if (pc) { const [k, id] = pc.dataset.pchart.split('|'); PROC_CHART[k] = id; procShowChart(k); if (k === 'mix') mixRender(); return; }
       const sp = e.target.closest && e.target.closest('[data-pstepgo]');
       if (sp) { PROC.step[procStepKey()] = sp.dataset.pstepgo; render(); return; }
       const b = e.target.closest && e.target.closest('[data-chain]');

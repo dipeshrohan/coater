@@ -2,12 +2,12 @@
  * results-viewer.js — task 13: a stage's results laid out as a viewer (the owner's choice, layout A): its views listed
  * on the left, one of them large in the middle, its key values in a column on the right; the sentences that explain a
  * view behind an (i) on it, and the inputs bar showing only the inputs (its drawings and notes behind an (i) in its head).
- * On the pages in RV_PAGES (marked body.rv-page; Pre heat, then Drying; the other stages follow, one at a time, each with the owner's yes).
+ * On the pages in RV_PAGES (marked body.rv-page; Pre heat, Drying, Peel and wind; the other stages follow, one at a time, each with the owner's yes).
  *   rvBuild(sec, key, names): before a results section draws, its views (figures, and its .rv-extra tables) moved into the
  *     viewer, only the one picked shown; its key values (.mp-stats) into the right-hand column
  *   rvAfter(): after it draws, an (i) on each view, the key values' notes in their tooltips
  */
-const RV_PAGES = new Set(['stack', 'stack1d', 'stack2d', 'stack3d', 'dry', 'dry1d', 'dry2d', 'dry3d']);
+const RV_PAGES = new Set(['stack', 'stack1d', 'stack2d', 'stack3d', 'dry', 'dry1d', 'dry2d', 'dry3d', 'peel', 'peel1d', 'peel2d', 'peel3d']);
 const RV = { sel: {} };
 
 /** The views a results section holds, in its order: its figures and its comparison tables. */
@@ -59,7 +59,7 @@ function rvSync(wrap) {
 function rvAfter() {
   for (const v of document.querySelectorAll('.rv .rv-view')) {
     const cap = v.querySelector('figcaption') || v.querySelector('h4');
-    if (cap && !cap.querySelector('.rv-i') && v.querySelector('.pane-legend p.fv-why, :scope > p.fv-why')) cap.insertAdjacentHTML('beforeend', '<button type="button" class="rv-i" data-rvi aria-label="What it shows" title="What it shows">i</button>');
+    if (cap && !cap.querySelector('.rv-i') && (v.querySelector('.pane-legend p.fv-why') || (v.classList.contains('mp-compare') && v.querySelector(':scope > p.fv-why')))) cap.insertAdjacentHTML('beforeend', '<button type="button" class="rv-i" data-rvi aria-label="What it shows" title="What it shows">i</button>');
   }
   for (const s of document.querySelectorAll('.rv-keys .stat')) {
     const lab = s.querySelector('span'), sm = s.querySelector('small');
