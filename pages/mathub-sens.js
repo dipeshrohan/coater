@@ -66,7 +66,7 @@ function sensHeld(r) {
 /** Whether the line's ranked stages are solved for the inputs as they are (the base every change is taken from). */
 const sensBaseReady = () => SENS_STAGES.every(s => solveState(s.k) === 'solved');
 /** What the ranking was made for: the stages' inputs (their solve keys). */
-const sensKeyNow = () => JSON.stringify([SENS_STAGES.map(s => solveSafe(SOLVE_M[s.k].key, null)), sensValues().map(q => q.id)]);
+const sensKeyNow = () => JSON.stringify([SENS_STAGES.map(s => solveSafe(SOLVE_M[s.k].key, null)), sensValues().map(q => q.id), lineSel(), lineWay()]);
 /** About how long a ranking takes (s): each value twice, its stage (and what before it its value also changes) solved. */
 const sensEstimate = (vals = sensValues()) => vals.reduce((t, q) => t + 2 * q.s.secs, 0);
 const sensClock = s => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
@@ -79,7 +79,7 @@ function sensStart() {
   const vals = sensValues();
   SENS.keep = sensKeep();
   const base = Object.fromEntries(SENS_STAGES.map(s => [s.k, s.outs.map(o => { try { return o.get(); } catch (e) { return NaN; } })]));
-  Object.assign(SENS, { status: 'running', stop: false, t0: Date.now(), i: 0, base, key: sensKeyNow(), cur: null,
+  Object.assign(SENS, { status: 'running', stop: false, t0: Date.now(), i: 0, base, key: sensKeyNow(), cur: null, snap: (sensDerived(), sensInputs()),
     rows: vals.map(q => ({ ...q, v0: hubVal(q.p).v, lo: NaN, hi: NaN, yLo: null, yHi: null, err: null })),
     jobs: vals.flatMap((_, n) => [[n, 1 - SENS_F], [n, 1 + SENS_F]]) });
   logCFD(0, `Ranking the assumed values: ${vals.length} values at ±${SENS_F * 100} %, about ${sensClock(sensEstimate(vals))}`);
@@ -95,6 +95,7 @@ function sensNext() {
   const x = Math.min(Number.isFinite(v.hi) ? v.hi : Infinity, Math.max(Number.isFinite(v.lo) ? v.lo : -Infinity, row.v0 * f));
   if (f < 1) row.lo = x; else row.hi = x;
   try { hubSet(row.p, x); } catch (e) { row.err = e.message; SENS.i++; setTimeout(sensNext, 0); return; }
+  sensDerived();
   // (its stage, and every model before it on the line the change has put out of date too: a value the drying and the
   //  film both read solves both; the solids' density, read by the mixing the coating takes its slurry from, solves both)
   const L = SOLVE_LINE, at = L.indexOf(row.s.k), arm = [...L.slice(0, at).filter(k => solveState(k) === 'stale'), row.s.k];
@@ -113,6 +114,12 @@ function sensNext() {
     if (f < 1) row.yLo = y; else row.yHi = y;
     if (!ok) row.err = `${row.s.l} could not be solved at ${hubFmt(x, -4)}`;
     sensRestore(row);
+    // (the inputs not as the run started from -- changed by a button, a reset, an import while it solved: stopped)
+    if (SENS.snap && sensInputs() !== SENS.snap) {
+      sensEnd('stopped');
+      if (typeof imgToast === 'function') imgToast('The ranking stopped: the inputs were changed while it ran. Rank them again when you are done.', 'warn');
+      return;
+    }
     SENS.i++;
     if (tab === 13 && HUB.view === 'ready') hubPaint();
     setTimeout(sensNext, 0);
@@ -126,6 +133,7 @@ function sensRestore(row) {
   for (const k of (SENS.cur && SENS.cur.arm) || []) if (solveState(k) !== 'busy') SOLVE_ASK.delete(k);
   const x = SENS.cur && SENS.cur.x, now = sensRowGone(row) ? null : hubVal(row.p).v;
   if (now != null && (x == null || now === x)) { try { hubSet(row.p, row.v0); } catch (e) { /* (as it was: within its range) */ } }
+  sensDerived();
   sensPutBack(SENS.keep);
 }
 function sensEnd(status) {
@@ -139,10 +147,17 @@ function sensEnd(status) {
 /** Stop: the change under way ends, then its value and the results go back. now (New, Open): at once, before the
  *  project is left -- the solve under way is stopped with the rest and its answer never read. */
 function sensStop(now = false) {
-  if (SENS.status !== 'running') return;
-  SENS.stop = true;
-  if (now || !SENS.cur) { if (SENS.cur) sensRestore(SENS.rows[SENS.cur.n]); sensEnd('stopped'); }
+  if (SENS.status === 'running') {
+    SENS.stop = true;
+    if (now || !SENS.cur) { if (SENS.cur) sensRestore(SENS.rows[SENS.cur.n]); sensEnd('stopped'); }
+  }
+  // (New, Open: the project being left's ranking, done or stopped, goes with it)
+  if (now) Object.assign(SENS, { status: 'idle', rows: [], jobs: [], i: 0, base: null, key: null, keep: null, cur: null, stop: false, all: false, snap: null });
 }
+/** The inputs that follow from others, set again (as a redraw does): the slurry's solids from the Mixing recipe. */
+const sensDerived = () => { if (typeof mixSyncSlurry === 'function') mixSyncSlurry(); };
+/** The project's inputs, every one undo keeps (a change the ranking did not make: a button, a reset, an import). */
+const sensInputs = () => (typeof undoSnap === 'function' ? JSON.stringify(undoSnap()) : null);
 // (an input edited while it runs -- typed, picked, slid: the ranking stops, its change put back but the edit kept; the
 //  rest of the run would be taken from inputs other than those it started from)
 for (const ev of ['input', 'change']) document.addEventListener(ev, e => {
