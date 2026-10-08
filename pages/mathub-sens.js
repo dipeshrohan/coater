@@ -39,6 +39,12 @@ function sensValues() {
   }
   return out;
 }
+/** A change held at the value's limit (its allowed range): what was used instead of −20 % or +20 %. */
+function sensHeld(r) {
+  const off = (x, f) => x != null && Math.abs(x - r.v0 * f) > 1e-9 * Math.abs(r.v0);
+  const t = [off(r.lo, 1 - SENS_F) ? `−20 % held at ${hubFmt(r.lo, -4)}` : '', off(r.hi, 1 + SENS_F) ? `+20 % held at ${hubFmt(r.hi, -4)}` : ''].filter(Boolean);
+  return t.length ? ` · ${t.join(', ')}, its limit` : '';
+}
 /** Whether the line's ranked stages are solved for the inputs as they are (the base every change is taken from). */
 const sensBaseReady = () => SENS_STAGES.every(s => solveState(s.k) === 'solved');
 /** What the ranking was made for: the stages' inputs (their solve keys). */
@@ -141,7 +147,7 @@ function sensHTML() {
   if (!ranked.length) return `<section class="hub-sens">${head}${btn}</div>${note}</section>`;
   const show = SENS.all ? ranked : ranked.slice(0, 12), fmt = (v, d) => (Number.isFinite(v) ? v.toFixed(d) : '—');
   const rows = show.map((x, i) => { const { r, sc } = x;
-    return `<tr><td class="num">${i + 1}</td><td><button type="button" class="hub-link" data-hubjump="${r.r.id}|${r.p.id}">${hubEsc(hubPropName(r.r, r.p))}</button><small>${hubEsc(hubName(r.r))} · ${hubFmt(r.v0, -4)} ${hubEsc(hubVal(r.p).u || '')}</small></td>
+    return `<tr><td class="num">${i + 1}</td><td><button type="button" class="hub-link" data-hubjump="${r.r.id}|${r.p.id}">${hubEsc(hubPropName(r.r, r.p))}</button><small>${hubEsc(hubName(r.r))} · ${hubFmt(r.v0, -4)} ${hubEsc(hubVal(r.p).u || '')}${sensHeld(r)}</small></td>
       <td>${hubEsc(r.s.l)}</td><td>${hubEsc(sc.o.l)}<small>${hubEsc(sc.o.u)}</small></td><td class="num">${fmt(sc.yLo, sc.o.d)}</td><td class="num">${fmt(sc.y0, sc.o.d)}</td><td class="num">${fmt(sc.yHi, sc.o.d)}</td>
       <td class="num"><span class="hub-sens-bar" style="--w:${Math.min(100, sc.ch)}%"></span>${sc.ch < 0.1 ? '< 0.1' : sc.ch.toFixed(sc.ch < 10 ? 1 : 0)} %</td></tr>`; }).join('');
   return `<section class="hub-sens">${head}${btn}</div>${note}
