@@ -74,12 +74,26 @@ function meshState(k) {
 }
 /** Whether a model may solve: no Mesh step of its own, or its mesh made for its inputs (or its result current). */
 const meshReady = k => !meshNeeded(k) || meshState(k) === 'ok' || solveState(k) === 'solved';
-/** Mesh (the Mesh step's button): the model's mesh made for its inputs as they are. */
+/** How each model's page lays out its mesh (set by the page): returns nothing when laid out, or why it cannot be. */
+const MESH_LAY = {};
+/** Why a model's mesh could not be laid out, for the inputs (key) it was tried on: { key, error }. */
+const MESH_ERR = {};
+/** Why the model's mesh cannot be laid out for its inputs as they are (null when it can, or was not tried). */
+const meshError = k => (MESH_ERR[k] && MESH_ERR[k].key === solveSafe(SOLVE_M[k].key, null) ? MESH_ERR[k].error : null);
+/** Mesh (the Mesh step's button): the model's mesh laid out for its inputs as they are -- marked made only once laid out. */
 function meshDo(k) {
   const key = solveSafe(SOLVE_M[k].key, null);
   if (key == null) return;
-  MESH_DONE[k] = key; SOLVE_NOMESH.delete(k);
+  let err = null;
+  try { err = MESH_LAY[k] ? MESH_LAY[k]() || null : null; } catch (e) { err = (e && e.message) || String(e); }
+  if (err) { delete MESH_DONE[k]; MESH_ERR[k] = { key, error: String(err) }; }
+  else { MESH_DONE[k] = key; delete MESH_ERR[k]; SOLVE_NOMESH.delete(k); }
   if (typeof render === 'function') render();
+}
+/** The model with a Mesh step on the page shown (the Mesh menu's "Mesh this page"), or null. */
+function meshPageId() {
+  const n = typeof navNow === 'function' ? navNow() : null;
+  return n ? Object.keys(SOLVE_M).find(k => meshNeeded(k) && SOLVE_M[k].nav === n) || null : null;
 }
 /** The order a pump starts them in (each after what it needs). */
 const SOLVE_ORDER = ['mix', 'xmp2', 'xmp3', '1d', 'su1', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'pmp1', 'pmp2', 'pmp3', 'cmp1', 'cmp2', 'cmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'gmp1', 'gmp2', 'gmp3', 'pool2', 'pool3'];
@@ -184,7 +198,12 @@ function solveCtl(ids, label, noBtn) {
   ids = [].concat(ids);
   const k = ids[0], st = ids.some(i => SOLVE_ASK.has(i) && solveState(i) !== 'busy') ? 'busy' : solveState(k), [t, c] = SOLVE_ST[st];
   const what = label || SOLVE_M[k].l, btn = noBtn || st === 'solved' || st === 'busy' ? '' : `<button type="button" class="btn btn-primary btn-sm" data-solve="${ids.join(',')}">${typeof uiIco === 'function' ? uiIco('play') : ''}${st === 'stale' ? 'Solve again' : 'Solve'}</button>`;
-  if (SOLVE_NOMESH.has(k) && !meshReady(k)) return `<span class="solve-ctl" data-st="mesh">${pill(`${what}: not meshed -- press Mesh on its Mesh step, then Solve`, 'warn')}</span>`;
+  // (a model with a Mesh step: "Mesh first" until its mesh is made for the inputs as they are -- task 4b)
+  //  (while what it needs first is not solved, Solve solves that, and the chain stops at the mesh)
+  if (meshNeeded(k) && st !== 'busy' && !meshReady(k) && SOLVE_M[k].up.every(u => solveState(u) === 'solved')) {
+    const why = meshError(k) ? 'the mesh cannot be laid out' : meshState(k) === 'stale' ? 'mesh out of date' : 'not meshed';
+    return `<span class="solve-ctl" data-st="mesh">${pill(`${what}: ${why} -- press Mesh on its Mesh step, then Solve`, 'warn')}${noBtn ? '' : `<button type="button" class="btn btn-primary btn-sm" disabled title="Solve needs the mesh, laid out for the inputs as they are: press Mesh on the Mesh step">${typeof uiIco === 'function' ? uiIco('mesh') : ''}Mesh first</button>`}</span>`;
+  }
   return `<span class="solve-ctl" data-st="${st}">${pill(`${what}: ${t}`, c)}${btn}</span>`;
 }
 /** What a chart of a model with nothing to draw says (its frame's short box). */

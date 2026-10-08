@@ -323,22 +323,23 @@ function swbTools(A, dim, step, o) {
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim;
   const scale = dim === 2 && step !== 'results' && A.layout(2, o || A.inputs(2)).bands ? `<div class="seg seg-sm" role="tablist" aria-label="The drawing's scale" id="swbScale">${[['true', 'True scale'], ['stretch', 'Layers stretched']].map(([k, t]) => `<button type="button" role="tab" data-swbscale="${k}" aria-selected="${(SWB.scale[A.sk] || 'true') === k}">${t}</button>`).join('')}</div>` : '';
   const id = A.sid + dim, mOk = meshReady(id);
-  if (o && !mOk && !busy) return [A.tools ? A.tools(dim, step) : '', scale, step === 'mesh' ? swbMeshBtn(A, dim) : '',
+  const reset = step === 'mesh' ? `<button type="button" class="btn btn-secondary btn-sm" id="swbMeshReset"${OVEN.mp && OVEN.mp[A.key] && OVEN.mp[A.key][dim] ? '' : ' disabled'}>${uiIco('restart')}Default mesh</button>` : '';
+  if (o && !mOk && !busy) return [A.tools ? A.tools(dim, step) : '', scale, step === 'mesh' ? swbMeshBtn(A, dim) : '', reset,
     step === 'solve' || step === 'results' ? `<button type="button" class="btn btn-primary btn-sm" id="swbSolve" disabled title="Solve needs the mesh, laid out for the inputs as they are: press Mesh on the Mesh step">${uiIco('mesh')}Mesh first</button>` : ''].filter(Boolean).join('');
   const solve = `<button type="button" class="btn btn-primary btn-sm" id="swbSolve"${busy || cur ? ' disabled' : ''} title="${cur ? 'Solved for the inputs as they are' : !o ? `Solve the ${SWB_DIMS[dim]} (and first what it needs: the stages before it)` : dim === 3 ? A.slow3 : `Solve the ${SWB_DIMS[dim]}`}">${uiIco('play')}Solve ${SWB_DIMS[dim]}</button>`;
   const stop = busy ? `<button type="button" class="btn btn-secondary btn-sm" id="swbStop">${uiIco('stop')}Stop</button>` : '';
   const prog = busy ? `<span class="swb-prog" role="progressbar" aria-label="The solve's progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${S.prog ? Math.round(100 * S.prog.k / S.prog.n) : 0}"><i style="width:${S.prog ? (100 * S.prog.k / S.prog.n).toFixed(1) : 0}%"></i></span>` : '';
   const csv = step === 'results' ? `<button type="button" class="btn btn-secondary btn-sm" id="swbCsv"${cur ? '' : ' disabled'}>${uiIco('download')}Export CSV</button>` : '';
-  const reset = step === 'mesh' ? `<button type="button" class="btn btn-secondary btn-sm" id="swbMeshReset"${OVEN.mp && OVEN.mp[A.key] && OVEN.mp[A.key][dim] ? '' : ' disabled'}>${uiIco('restart')}Default mesh</button>` : '';
   return [A.tools ? A.tools(dim, step) : '', scale, step === 'mesh' && o ? swbMeshBtn(A, dim) : '', reset, step === 'solve' || step === 'results' ? solve + stop + prog : '', csv].filter(Boolean).join('');
 }
 /** The Mesh step's Mesh button: the mesh laid out only when pressed (task 4b). */
 const swbMeshBtn = (A, dim) => `<button type="button" class="btn btn-primary btn-sm" id="swbMesh" title="Lay out the mesh for the inputs as they are: Solve needs it">${uiIco('mesh')}${meshState(A.sid + dim) === 'ok' ? 'Mesh again' : 'Mesh'}</button>`;
 /** The Mesh step before Mesh is pressed (or after the inputs changed): what to do, and the mesh's settings. */
 function swbNotMeshedHTML(A, dim) {
-  const set = swbSettings(A, dim), F = A.meshFields(dim), stale = meshState(A.sid + dim) === 'stale';
+  const set = swbSettings(A, dim), F = A.meshFields(dim), stale = meshState(A.sid + dim) === 'stale', err = meshError(A.sid + dim);
   return `<div class="swb-tables">
-    <section class="swb-card">${emptyHint(stale ? 'Mesh out of date' : 'Not meshed yet', stale ? 'The inputs changed since the mesh was laid out. Press Mesh to lay it out again: Solve needs it.' : 'Press Mesh to lay out the mesh with the settings beside. Solve needs it.',
+    <section class="swb-card">${err ? emptyHint('The mesh cannot be laid out', `${mEsc(err.charAt(0).toUpperCase() + err.slice(1))}. Change the settings beside, then press Mesh again.`, `<button type="button" class="btn btn-primary btn-sm" data-swbmesh>${uiIco('mesh')}Mesh</button>`)
+      : emptyHint(stale ? 'Mesh out of date' : 'Not meshed yet', stale ? 'The inputs changed since the mesh was laid out. Press Mesh to lay it out again: Solve needs it.' : 'Press Mesh to lay out the mesh with the settings beside. Solve needs it.',
       `<button type="button" class="btn btn-primary btn-sm" data-swbmesh>${uiIco('mesh')}Mesh</button>`)}</section>
     <section class="swb-card"><h4>${uiBadge('tune')}Mesh and time steps</h4>
       <table class="swb-t swb-set"><tbody>${F.map(f => `<tr><th scope="row"><label for="swbm_${f.k}">${f.t}</label></th><td><input type="number" id="swbm_${f.k}" data-swbm="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${set[f.k]}" aria-label="${f.t}"></td><td class="swb-u">${f.u || ''}</td><td class="swb-def">${set[f.k] === f.def ? '' : `default ${f.def}`}</td></tr>`).join('')}</tbody></table>
@@ -493,6 +494,13 @@ function swbWire(A, dim) {
   const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
   on('swbSolve', () => { A.request(dim); render(); });
   on('swbStop', () => { A.stop(); render(); });
+  // (Mesh lays the mesh out here first: marked made only when it is -- the Mesh menu's "Mesh this page" too)
+  MESH_LAY[A.sid + dim] = () => {
+    const o = A.inputs(dim);
+    if (!o) return 'what it needs first is not solved';
+    const st = A.meshStats ? A.meshStats(dim, o) : swbMesh(A, dim, o).stats;
+    return st && st.nodes > 0 && st.elems > 0 ? null : 'the mesh has no elements';
+  };
   on('swbMesh', () => meshDo(A.sid + dim));
   view.querySelectorAll('[data-swbmesh]').forEach(b => { b.onclick = () => meshDo(A.sid + dim); });
   on('swbCsv', () => A.csv(dim));

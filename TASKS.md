@@ -232,12 +232,12 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
-- Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool and
-  feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage pages
-  show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's Solve are
-  greyed "Mesh first" until meshed; Solve the line, and a Solve that solves the stage before first, stop at the first
-  model without a mesh ("not meshed" on its bar). Studies you start (mesh study, mesh to an accuracy, DOE, measured-data
-  runs) still mesh each run they solve.
+- Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool
+  and feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage
+  pages show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's
+  Solve are greyed "Mesh first" until meshed; a Solve that solves the stage before first stops at the model without a
+  mesh ("not meshed" on its bar). Solve the line solves the line's own models, which have no Mesh step, so it needs no
+  mesh. Studies you start (mesh study, mesh to an accuracy, DOE, measured-data runs) still mesh each run they solve.
 - Faster tetrahedral mesher (was task 4), your choice of the same meshes: 22.7 → 17.7 s on the coater's pool (85,000
   tetrahedra), every mesh identical to main's; small meshes (a few seconds) as before. A moved point is searched for
   from where it was; the surface's triangles are kept in a lookup updated as they change, instead of rebuilt. Updating
