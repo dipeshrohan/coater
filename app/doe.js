@@ -88,6 +88,11 @@ const DOE_OUTPUTS = [
   { k: 'furnWave', l: 'Its squeeze against what buckles it, the stack\'s worst piece', u: '% (100: waves)', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnStuck', l: 'Stuck to its paper or plate, the stack\'s most', u: '% of the piece', g: 'Furnace (graphene film)', d: 0 },
   { k: 'furnSize', l: 'Its size after the furnace, free', u: '% (along itself)', g: 'Furnace (graphene film)', d: 2 },
+  // (the mixer, task 7: the batch at the program's end, the 1D batch model)
+  { k: 'mixD50', l: 'Flake size, the median', u: 'µm', g: 'Mixing', d: 2 },
+  { k: 'mixLumps', l: 'Lumps left', u: '% of the GO', g: 'Mixing', d: 3 },
+  { k: 'mixPH', l: 'pH at the end', u: '', g: 'Mixing', d: 2 },
+  { k: 'mixT', l: 'Batch temperature at the end', u: '°C', g: 'Mixing', d: 1 },
 ];
 const DOE = {
   loc: 0,
@@ -95,7 +100,7 @@ const DOE = {
   factors: null,                 // the design being edited: [{ k, min, max, n } | { k, vals }]
   design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, active: new Set(),
   plot: 'response', out: 'film', x: 0, mx: 0, my: 1, dock: 'design', dockH: null,
-  mode: 'coat',                  // 'coat': the coating's DOE (the 2D CFD); 'furn': the furnace's (GO-6)
+  mode: 'coat',                  // 'coat': the coating's DOE (the 2D CFD); 'furn': the furnace's (GO-6); 'mix': the mixer's (task 7)
 };
 /**
  * The furnace's DOE (GO-6, Q122): the furnace's settings and its card's uncertain values varied for the film's piece as
@@ -117,24 +122,36 @@ const DOE_FURN_FACTORS = [
   ...['sigZ', 'es', 'Dgal', 'bO', 'bG', 'mu', 'Tst', 'pSt', 'tauB', 'Bpl', 'muPl'].map(k => { const q = MAT_FURN.find(r => r[0] === k), whole = { bG: 'Shrinks along it as its layers order into graphite', pSt: 'It sticks where pressed at least' };
     return { k: 'c_' + k, card: k, l: whole[k] || q[1], u: q[2], kind: 'fcard', g: 'The Furnace card', d: q[6], lo: q[3], hi: q[4] }; }),
 ];
+/**
+ * The mixer's DOE (task 7): the program's steps varied -- each step's disc and arm speeds and its minutes -- the batch
+ * solved again in the 1D (under a second a run). kind 'mx': a step's field, its step by its place in the program.
+ */
+const DOE_MIX_FIELDS = [['Nd', 'disc speed', 'rpm', 0, 0, 5000], ['No', 'arm speed', 'rpm', 0, 1, 200], ['min', 'time', 'min', 1, 0.5, 600]];
+function doeMixFactors() {
+  const st = (typeof mixIn === 'function' && mixIn().steps) || [];
+  return st.flatMap((q, i) => DOE_MIX_FIELDS.map(([fld, l, u, d, lo, hi]) => ({ k: `mx${fld}${i}`, l: `${q.name || `Step ${i + 1}`}: ${l}`, u, kind: 'mx', step: i, field: fld, g: 'The program', d, lo, hi })));
+}
 /** The DOE shown: the coating's (the 2D CFD at a location) or the furnace's; the other's design and runs kept aside. */
-const DOE_STASH = { coat: null, furn: null };
+const DOE_STASH = { coat: null, furn: null, mix: null };
 const DOE_KEEP = ['factors', 'design', 'runs', 'status', 'key', 't0', 't1', 'out', 'x', 'mx', 'my'];
-const doeFactors = () => DOE.mode === 'furn' ? DOE_FURN_FACTORS : DOE_FACTORS;
-const doeOutputsNow = () => DOE.mode === 'furn' ? DOE_OUTPUTS.filter(o => o.g === 'Furnace (graphene film)') : DOE_OUTPUTS;
-const doeFactor = k => doeFactors().find(f => f.k === k) || DOE_FACTORS.find(f => f.k === k) || DOE_FURN_FACTORS.find(f => f.k === k);
+const doeFactors = () => DOE.mode === 'furn' ? DOE_FURN_FACTORS : DOE.mode === 'mix' ? doeMixFactors() : DOE_FACTORS;
+const doeOutputsNow = () => DOE.mode === 'furn' ? DOE_OUTPUTS.filter(o => o.g === 'Furnace (graphene film)') : DOE.mode === 'mix' ? DOE_OUTPUTS.filter(o => o.g === 'Mixing') : DOE_OUTPUTS.filter(o => o.g !== 'Mixing');
+/** A factor by its key: in the DOE shown, else the others' (a mixer step's that is no longer in the program: its own
+ *  words, not varied). */
+const doeFactor = k => doeFactors().find(f => f.k === k) || DOE_FACTORS.find(f => f.k === k) || DOE_FURN_FACTORS.find(f => f.k === k) || doeMixFactors().find(f => f.k === k)
+  || (/^mx(Nd|No|min)\d+$/.test(k) ? (([, fld, i]) => { const q = DOE_MIX_FIELDS.find(x => x[0] === fld); return { k, l: `Step ${+i + 1}: ${q[1]}`, u: q[2], kind: 'mx', step: +i, field: fld, g: 'The program', d: q[3], lo: q[4], hi: q[5], gone: true }; })(k.match(/^mx(Nd|No|min)(\d+)$/)) : undefined);
 function doeSetMode(m) {
-  if (m === DOE.mode || DOE.status === 'running' || !['coat', 'furn'].includes(m)) return;
+  if (m === DOE.mode || DOE.status === 'running' || !['coat', 'furn', 'mix'].includes(m)) return;
   DOE_STASH[DOE.mode] = Object.fromEntries(DOE_KEEP.map(k => [k, DOE[k]]));
   const back = DOE_STASH[m];
   if (back) DOE_KEEP.forEach(k => { DOE[k] = back[k]; });
-  else Object.assign(DOE, { factors: null, design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, out: m === 'furn' ? 'furnH' : 'film', x: 0, mx: 0, my: 1 });
+  else Object.assign(DOE, { factors: null, design: null, runs: [], status: 'idle', key: null, t0: 0, t1: 0, out: { furn: 'furnH', mix: 'mixLumps' }[m] || 'film', x: 0, mx: 0, my: 1 });
   DOE.mode = m;
   render();
 }
 /** The key of what the DOE's base case is, as the inputs are (its results go stale when it changes). */
 const doeBaseKey = () => (typeof sensAsSet === 'function' ? sensAsSet(doeBaseKeyNow) : doeBaseKeyNow());
-const doeBaseKeyNow = () => DOE.mode === 'furn' ? (typeof furnKeyNow === 'function' ? furnKeyNow() : null) : cfdInputsKey(cfdGeometry(DOE.loc));
+const doeBaseKeyNow = () => DOE.mode === 'furn' ? (typeof furnKeyNow === 'function' ? furnKeyNow() : null) : DOE.mode === 'mix' ? (typeof mixKeyNow === 'function' ? mixKeyNow() : null) : cfdInputsKey(cfdGeometry(DOE.loc));
 /** The furnace's options for a run of its DOE: the settings as they are, the run's factors set. */
 function doeFurnOpts(set) {
   const q = furnInputs();
@@ -180,10 +197,41 @@ function doeStartFurn(run) {
   w.onerror = e => { if (run.worker !== w) return; end(); Object.assign(run, { status: 'error', error: e.message || 'worker error' }); doePump(); renderDOE(); };
   w.postMessage({ id: 1, kind: 'run', o });
 }
+/** The mixer's options for a run of its DOE: the program as it is, the run's factors set in it (the page's units). */
+function doeMixOpts(set) {
+  const keep = OVEN.mix, m = JSON.parse(JSON.stringify(mixIn()));
+  for (const { f, v } of set) if (f.kind === 'mx' && m.steps[f.step]) m.steps[f.step][f.field] = v;
+  try { OVEN.mix = m; return mixOpts(); } finally { OVEN.mix = keep; }
+}
+/** The mixer's first design: the disc's speed and the time of the step it turns fastest in. */
+function doeMixFirst() {
+  const st = mixIn().steps || [], i = st.reduce((b, q, k) => (q.Nd > (st[b] ? st[b].Nd : -1) ? k : b), 0);
+  return st.length ? [doeNewFactor(`mxNd${i}`, 0), doeNewFactor(`mxmin${i}`, 0)] : [];
+}
+/** A mixer run's outputs (as the DOE lists them): the batch at the program's end. */
+const doeMixOutputs = e => ({ mixD50: e.d50 * 1e6, mixLumps: e.lumps * 100, mixPH: e.pH, mixT: e.T });
+/** A mixer run: the 1D batch on this page (under a second), one after another (the DOE's own pace: no worker). */
+function doeStartMix(run) {
+  const set = DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] }));
+  Object.assign(run, { status: 'running', worker: null, progress: null, slot: 0, live: null });
+  DOE.active.add(run);
+  setTimeout(() => {
+    if (!DOE.active.has(run)) return;   // (stopped before it started)
+    const t0 = performance.now(), keep = DR_P;
+    let r;
+    try { if (typeof drUse === 'function') drUse(mixProps()); r = mixRun(doeMixOpts(set)); } catch (e) { r = { error: e.message || String(e) }; } finally { DR_P = keep; }
+    DOE.active.delete(run); run.ms = performance.now() - t0;
+    if (run.status !== 'running') return;   // (stopped while it solved)
+    if (r.error) Object.assign(run, { status: 'error', error: r.error });
+    else Object.assign(run, { status: 'done', out: doeMixOutputs(r.end) });
+    doePump(); renderDOE();
+  }, 20);
+}
 /** A factor can be varied with the current model and blade shape. */
-const doeAvailable = f => f.kind && f.kind[0] === 'f' && f.kind !== 'fcard' && f.kind !== 'fstack' ? !(OVEN.furn.runs[f.run] && OVEN.furn.runs[f.run].file) : (!f.shape || (Array.isArray(f.shape) ? f.shape.includes(CFDG.shape) : f.shape === CFDG.shape)) && (!f.uses || RHEO_MODELS[CFDG.model].uses.includes(f.uses));
+const doeAvailable = f => f.kind === 'mx' ? !f.gone && !!(mixIn().steps || [])[f.step] : f.kind && f.kind[0] === 'f' && f.kind !== 'fcard' && f.kind !== 'fstack' ? !(OVEN.furn.runs[f.run] && OVEN.furn.runs[f.run].file) : (!f.shape || (Array.isArray(f.shape) ? f.shape.includes(CFDG.shape) : f.shape === CFDG.shape)) && (!f.uses || RHEO_MODELS[CFDG.model].uses.includes(f.uses));
 /** A factor's value in the base case at location i. */
 function doeBase(f, i) {
+  if (f.kind === 'mx') { const q = (mixIn().steps || [])[f.step]; return q ? q[f.field] : NaN; }
   if (f.kind === 'fx') return 1;
   if (f.kind === 'ftop' || f.kind === 'fhold') { const st = OVEN.furn.runs[f.run].steps; return st[st.length - 1][f.kind === 'ftop' ? 'to' : 'hold']; }
   if (f.kind === 'fstack') return OVEN.furn[f.k];
@@ -299,6 +347,7 @@ function doePump() {
 }
 function doeStart(run) {
   if (DOE.mode === 'furn') { doeStartFurn(run); return; }
+  if (DOE.mode === 'mix') { doeStartMix(run); return; }
   const G = doeGeometry(DOE.loc, DOE.design.map((d, m) => ({ f: d.f, v: run.vals[m] })), true), geo = G.geo;
   // (inputs outside what the solver can do: the run is not solved)
   const errs = checkGeometry(geo, null).filter(p => p.level === 'error');
@@ -349,14 +398,14 @@ function stopDOE() {
 }
 const doeClock = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`; };
 /** A run's time here: the locations' last solves, else 9 s. */
-const doeRunSeconds = () => { if (DOE.mode === 'furn') return typeof FURN !== 'undefined' && FURN.ms ? FURN.ms / 1000 : 5; const t = cfdRuns.filter(r => r.elapsedMs).map(r => r.elapsedMs / 1000); return t.length ? t.reduce((a, b) => a + b, 0) / t.length : 9; };
+const doeRunSeconds = () => { if (DOE.mode === 'furn') return typeof FURN !== 'undefined' && FURN.ms ? FURN.ms / 1000 : 5; if (DOE.mode === 'mix') return typeof MIX !== 'undefined' && MIX.ms ? MIX.ms / 1000 : 1; const t = cfdRuns.filter(r => r.elapsedMs).map(r => r.elapsedMs / 1000); return t.length ? t.reduce((a, b) => a + b, 0) / t.length : 9; };
 
 // ---------------------------------------------------------------------
 // The module: base case in the model tree; toolbar, plots in the viewport, design and runs in the dock
 // ---------------------------------------------------------------------
 function viewDOE() {
   // (the first visit makes the default design: not an unsaved change)
-  if (!DOE.factors) { const clean = PROJ.savedKey != null && !projDirty(); DOE.factors = DOE.mode === 'furn' ? [doeNewFactor('r2x', DOE.loc), doeNewFactor('plateW', DOE.loc)] : [doeNewFactor('U', DOE.loc), doeNewFactor('mu', DOE.loc)]; if (clean) PROJ.savedKey = projKey(); }
+  if (!DOE.factors) { const clean = PROJ.savedKey != null && !projDirty(); DOE.factors = DOE.mode === 'furn' ? [doeNewFactor('r2x', DOE.loc), doeNewFactor('plateW', DOE.loc)] : DOE.mode === 'mix' ? doeMixFirst() : [doeNewFactor('U', DOE.loc), doeNewFactor('mu', DOE.loc)]; if (clean) PROJ.savedKey = projKey(); }
   const i = DOE.loc, s = solverOf(i), own = Object.keys(CFD_LOCS[i].over);
   const row = (l, v) => `<div class="prop prop-ro"><span class="prop-l">${l}</span><span class="prop-v">${v}</span></div>`;
   document.getElementById('setupExtra').innerHTML = `
@@ -374,6 +423,19 @@ function viewDOE() {
       <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToCfd">${uiIco(4)}Edit in 2D CFD</button></div>
     </details>`;
   document.getElementById('doeToCfd').onclick = () => { tab = 4; render(); };
+  if (DOE.mode === 'mix') {
+    // (the mixer's base case: the recipe and the program on the Mixing tab, the slurry and its flow law on Materials)
+    const m = mixIn(), st = m.steps || [];
+    document.getElementById('setupExtra').innerHTML = `<div class="tree-sep">DOE base case</div>
+      <details class="grp cfd-grp" open><summary>From the mixer</summary>
+        ${row('The batch', `${(+m.mPaste).toFixed(1)} kg GO paste, ${(+m.mWat + +m.mSoak).toFixed(1)} kg water`)}
+        ${st.map((q, k) => row(q.name || `Step ${k + 1}`, `${q.min} min · arm ${q.No} rpm · disc ${q.Nd ? `${q.Nd} rpm` : 'off'}`)).join('')}
+        <p class="prop-note">Every run is the mixer's 1D batch, its factors set; everything else as on the Mixing tab and Materials.</p>
+        <div class="prop-actions"><button type="button" class="btn btn-secondary btn-sm" id="doeToMix">${uiIco('drop')}Open the mixer</button></div>
+      </details>`;
+    document.getElementById('doeToMix').onclick = () => navGo('mix');
+    const tn = document.getElementById('treeNote'); if (tn) tn.textContent = 'The mixer\'s DOE starts from the mixer as set on the Mixing tab (its base case) and varies its program\'s steps: their disc and arm speeds and their times.';
+  }
   if (DOE.mode === 'furn') {
     // (the furnace's base case: the film's piece, the runs and the stack as set on Process, the Furnace card)
     const q = typeof furnInputs === 'function' ? furnInputs() : null, fu = OVEN.furn;
@@ -395,9 +457,9 @@ function viewDOE() {
         <button id="doeRun" class="btn btn-primary btn-sm tool-run" type="button" title="Solve every combination of the factor levels"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3v10l8-5z" fill="currentColor"/></svg>Run DOE</button>
         <button id="doeStop" class="tool-btn tool-stop" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg>Stop</button>
         <span class="vp-sep" aria-hidden="true"></span>
-        <div class="seg seg-sm" role="tablist" aria-label="Which DOE" id="doeMode">${[['coat', 'Coating DOE'], ['furn', 'Furnace DOE']].map(([k, t]) => `<button type="button" role="tab" data-doemode="${k}" aria-selected="${k === DOE.mode}">${t}</button>`).join('')}</div>
-        <label class="vp-ctl"${DOE.mode === 'furn' ? ' hidden' : ''}>Location <select id="doeLoc">${CFD_LOCS.map((l, k) => `<option value="${k}"${k === DOE.loc ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('')}</select></label>
-        <label class="vp-ctl" title="Runs solved at the same time (each uses one processor core)">At a time <select id="doeWorkers">${[1, 2, 3, 4, 6, 8].map(n => `<option value="${n}"${n === DOE.workers ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+        <div class="seg seg-sm" role="tablist" aria-label="Which DOE" id="doeMode">${[['mix', 'Mixing DOE'], ['coat', 'Coating DOE'], ['furn', 'Furnace DOE']].map(([k, t]) => `<button type="button" role="tab" data-doemode="${k}" aria-selected="${k === DOE.mode}">${t}</button>`).join('')}</div>
+        <label class="vp-ctl"${DOE.mode !== 'coat' ? ' hidden' : ''}>Location <select id="doeLoc">${CFD_LOCS.map((l, k) => `<option value="${k}"${k === DOE.loc ? ' selected' : ''}>L${l.id} · z ${l.z} mm</option>`).join('')}</select></label>
+        <label class="vp-ctl" title="Runs solved at the same time (each uses one processor core)"${DOE.mode === 'mix' ? ' hidden' : ''}>At a time <select id="doeWorkers">${[1, 2, 3, 4, 6, 8].map(n => `<option value="${n}"${n === DOE.workers ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
         <span class="doe-status" id="doeStatus" role="status"></span>
         <span class="vp-spacer"></span>
         <button class="tool-btn" type="button" id="doeCsv" title="Export the runs as CSV"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 12.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>CSV</button>
@@ -500,10 +562,10 @@ function renderDOEDesign() {
       <td class="mono doe-levels">${levels}</td>
       <td class="case-act"><button type="button" class="btn btn-secondary btn-sm" data-fdel="${m}"${DOE.factors.length < 2 || running ? ' disabled' : ''}>${uiIco('trash')}Remove</button></td></tr>`;
   }).join('');
-  const N = doeRunCount(), t = doeRunSeconds(), est = N * t / Math.min(DOE.workers, N) * (DOE.workers > 1 ? 1.25 : 1);
+  const N = doeRunCount(), t = doeRunSeconds(), est = DOE.mode === 'mix' ? N * t : N * t / Math.min(DOE.workers, N) * (DOE.workers > 1 ? 1.25 : 1);
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table doe-ftable"><thead><tr><th>Factor</th><th>From</th><th>To</th><th>Levels</th><th>Values</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="fv-bar doe-addbar"><button type="button" class="btn btn-secondary btn-sm" id="doeAdd"${DOE.factors.length >= 3 || running ? ' disabled' : ''}>${uiIco('plus')}Add factor</button>
-      <span class="fv-why"><b>${N} runs</b> (every combination) ${DOE.mode === 'furn' ? 'of the furnace, for the film\'s piece as it is' : `at location ${DOE.loc + 1}`}: about ${doeClock(est * 1000)} with ${DOE.workers} at a time, a run taking about ${t.toFixed(0)} s here. Up to three factors, 2 to 5 levels each, evenly spaced.</span></div>`;
+      <span class="fv-why"><b>${N} runs</b> (every combination) ${DOE.mode === 'furn' ? 'of the furnace, for the film\'s piece as it is' : DOE.mode === 'mix' ? 'of the mixer\'s batch' : `at location ${DOE.loc + 1}`}: about ${doeClock(est * 1000)}${DOE.mode === 'mix' ? ', one after another' : ` with ${DOE.workers} at a time`}, a run taking about ${t.toFixed(0)} s here. Up to three factors, 2 to 5 levels each, evenly spaced.</span></div>`;
   host.querySelectorAll('[data-fk]').forEach(el => el.addEventListener('change', () => { DOE.factors[+el.dataset.fk] = doeNewFactor(el.value, DOE.loc); renderDOE(); }));
   const num = (sel, key) => host.querySelectorAll(sel).forEach(el => el.addEventListener('change', () => {
     const fs = DOE.factors[+el.dataset[key]], f = doeFactor(fs.k);
@@ -541,7 +603,7 @@ function exportDOE() {
   const d = DOE.design, unit = u => u ? `_${u.replace(/[^A-Za-z0-9]+/g, '_')}` : '';
   const OS = doeOutputsNow(), rows = [['run', ...d.map(x => x.f.k + unit(x.f.u)), ...OS.map(o => o.k + unit(o.u)), 'status', 'seconds']];
   for (const r of DOE.runs) rows.push([r.n + 1, ...r.vals, ...OS.map(o => r.out ? r.out[o.k] : ''), r.status === 'error' ? `failed: ${r.error}` : r.status, r.ms ? r.ms / 1000 : '']);
-  downloadCSV(`doe-${DOE.mode === 'furn' ? 'furnace' : `L${DOE.loc + 1}`}-${csvStamp()}.csv`, rows);
+  downloadCSV(`doe-${DOE.mode === 'furn' ? 'furnace' : DOE.mode === 'mix' ? 'mixer' : `L${DOE.loc + 1}`}-${csvStamp()}.csv`, rows);
 }
 
 // ---------------------------------------------------------------------
@@ -569,7 +631,7 @@ function renderDOEPlots() {
   drawDOELive();
   if (!d || !done.length) {
     host.innerHTML = DOE.status === 'running' ? '' : emptyHint('No DOE results yet',
-      `Choose 1 to 3 factors and their levels in the Design tab below: every combination is solved ${DOE.mode === 'furn' ? 'in the furnace, for the film\'s piece as it is' : `in the CFD at location ${DOE.loc + 1}`} (${doeRunCount()} runs now, a few seconds each, ${DOE.workers} at a time).`,
+      `Choose 1 to 3 factors and their levels in the Design tab below: every combination is solved ${DOE.mode === 'furn' ? 'in the furnace, for the film\'s piece as it is' : DOE.mode === 'mix' ? 'in the mixer\'s 1D batch' : `in the CFD at location ${DOE.loc + 1}`} (${doeRunCount()} runs now, ${DOE.mode === 'mix' ? 'about a second each, one after another' : `a few seconds each, ${DOE.workers} at a time`}).`,
       `<button type="button" class="btn btn-primary btn-sm" data-hint-doe>${uiIco('play')}Run DOE</button><button type="button" class="btn btn-secondary btn-sm" data-hint-design>${uiIco('doe')}Open the design</button>`);
     const r = host.querySelector('[data-hint-doe]'); if (r) r.onclick = runDOE;
     const g = host.querySelector('[data-hint-design]'); if (g) g.onclick = () => { DOE.dock = 'design'; setPanelHidden('dock', false); };

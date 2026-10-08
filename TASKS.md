@@ -23,7 +23,6 @@ The 6-month plan that puts these tasks in order is in docs/PLAN_6_MONTHS.md. Eac
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
-| 7 | Mixing: your measured data, studies, report and help | Medium | Built; waiting to go into the app | Nothing |
 | 8 | Mixing: air bubbles and their removal under vacuum | Medium | Built; waiting to go into the app | Nothing |
 | 10 | Results for the whole line | Medium | Built; waiting to go into the app | Nothing |
 | 11 | Each input edited in one place only | Medium | Built; waiting to go into the app | Nothing |
@@ -55,14 +54,10 @@ Removed (10 Oct, your choice): task 14, the first seconds of coating in 2D.
 
 ## Built, waiting to go into the app
 
-Tasks 7, 8, 10, 11 and 12 are built and checked. Each goes into the app through its own pull request, after the
+Tasks 8, 10, 11 and 12 are built and checked. Each goes into the app through its own pull request, after the
 automatic code review has passed. The review service allows only a few reviews per day, so they go in one after the
 other.
 
-- **7. Mixing: your measured data, studies, report and help.** You can load your mixer's power or torque log, its
-  temperature log and the viscosity measured after mixing; they are drawn over the app's 1D, 2D and 3D mixer results.
-  The mixer's results (flake size, lumps, temperature, power) can be studied in the design-of-experiments page, and are
-  in the report and the help.
 - **8. Mixing: air bubbles and their removal under vacuum.** The disc pulls air into the paste during the first mixing
   steps. The app calculates how much air goes in and how big the bubbles are, how they grow when the vacuum is pulled in
   step 4, whether they can rise through the paste (a thick paste can hold them in place), and how much air is left after
@@ -251,6 +246,13 @@ other.
 - **Then**: the app is matched to that weight.
 
 ## Done
+- Mixing in the studies, report and help (was task 7; the logs part dropped, your choice): Studies › DOE › Mixing DOE,
+  beside the coating's and the furnace's. Its factors, your choice: each program step's disc speed, arm speed and time;
+  its outputs, the four agreed: the flakes' median size, the lumps left, the pH and the batch's temperature at the end.
+  Each run is the mixer's 1D batch (about half a second, one after another); the base case is the Mixing tab and
+  Materials. Its design and runs are kept in the project with the other two DOEs'; the report's DOE section says which
+  DOE it shows. At your defaults the flakes keep their 5 µm (the disc's stress is far below what breaks a flake), the
+  lumps go between 15 and 22.5 minutes at 750 rpm, and the batch warms with the disc's speed and time (21 to 29 °C).
 - Materials page, what was left of the planned redesign (was task 5), your choices: the rows of a flow law or
   alignment model not chosen are hidden; the streamlines through the film and the flakes on each moved to Coating › 2D
   › Solve; Materials › Readiness ranks the assumed values that matter most (each at −20 % and +20 %, its own stage

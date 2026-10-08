@@ -71,7 +71,9 @@ function projectDataNow() {
       status: DOE.status === 'running' ? 'stopped' : DOE.status, key: DOE.key, t0: DOE.t0, t1: DOE.t1 || Date.now(),
       design: DOE.design ? DOE.design.map(d => ({ k: d.k, min: d.min, max: d.max, n: d.n, vals: d.vals, levels: d.levels })) : null,
       runs: DOE.runs.map(r => ({ n: r.n, idx: r.idx, vals: r.vals, status: r.status === 'running' || r.status === 'pending' ? 'stopped' : r.status, out: r.out, error: r.error, ms: r.ms })),
+      // (the DOEs not shown, each kept aside: others by mode; other, the coating's or the furnace's, as before task 7)
       mode: DOE.mode, other: doeSnapOut(DOE_STASH[DOE.mode === 'furn' ? 'coat' : 'furn']),
+      others: Object.fromEntries(['coat', 'furn', 'mix'].filter(m => m !== DOE.mode).map(m => [m, doeSnapOut(DOE_STASH[m])])),
     },
     results: cfdRuns.map(runOut),
     meshStudy: meshStudy ? { loc: meshStudy.loc, key: meshStudy.key, status: meshStudy.status === 'running' ? 'cancelled' : meshStudy.status, runs: meshStudy.runs.map(r => ({ name: r.name, f: r.f, solver: r.solver, status: r.status === 'running' ? 'cancelled' : r.status, r: r.r, ms: r.ms, error: r.error, reused: r.reused })) } : null,
@@ -353,10 +355,11 @@ function applyProject(p) {
   });
   cfdAutoStarted = cfdRuns.some(r => r.field);
   meshStudy = p.meshStudy ? { ...p.meshStudy, runs: p.meshStudy.runs.map(r => ({ ...r, metrics: r.r ? flowMetrics(makeFlowField(r.r, { rho: cfdGeometry(p.meshStudy.loc).rho, ty: cfdGeometry(p.meshStudy.loc).ty })) : null })) } : null;
-  const d = p.doe || {}, mode = d.mode === 'furn' ? 'furn' : 'coat';
+  const d = p.doe || {}, mode = ['furn', 'mix'].includes(d.mode) ? d.mode : 'coat';
   DOE.mode = mode;   // (the factors below are looked up in the DOE shown)
-  DOE_STASH.coat = null; DOE_STASH.furn = null;
-  DOE_STASH[mode === 'furn' ? 'coat' : 'furn'] = doeSnapIn(d.other);
+  DOE_STASH.coat = null; DOE_STASH.furn = null; DOE_STASH.mix = null;
+  if (d.others) for (const m of ['coat', 'furn', 'mix']) { if (m !== mode && d.others[m]) DOE_STASH[m] = doeSnapIn(d.others[m]); }
+  else DOE_STASH[mode === 'furn' ? 'coat' : 'furn'] = doeSnapIn(d.other);   // (a project from before the mixer's DOE)
   Object.assign(DOE, DOE_DEFAULTS, { mode, loc: d.loc ?? 0, workers: d.workers ?? DOE_DEFAULTS.workers, factors: d.factors || null, plot: d.plot || 'response', out: d.out || 'film', x: d.x || 0, mx: d.mx || 0, my: d.my ?? 1, dock: d.dock || 'design', dockH: dockHSaved(d.dockH),
     design: d.design ? d.design.map(x => ({ ...x, f: doeFactor(x.k) })) : null, runs: d.runs || [], status: d.runs && d.runs.length ? (d.status || 'done') : 'idle', key: d.key || null, t0: d.t0 || 0, t1: d.t1 || 0, active: new Set() });
   cfdLog.length = 0; for (const m of p.messages || []) cfdLog.push({ ...m, t: new Date(m.t) });
