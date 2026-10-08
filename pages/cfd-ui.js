@@ -649,7 +649,11 @@ function runLocation(i) {
   renderCFD();
 }
 
-function runAllLocations() { runFromSolve2D(); CFD_LOCS.forEach((_, i) => runLocation(i)); }
+function runAllLocations() {
+  // (Results opens by itself only when all four can be solved: a location without its mesh is not, and is named in Messages)
+  if (typeof mesh2DReady !== 'function' || CFD_LOCS.every((_, i) => mesh2DReady(i))) runFromSolve2D(); else FV.stepAuto = false;
+  CFD_LOCS.forEach((_, i) => runLocation(i));
+}
 
 function cancelAllLocations() {
   FV.stepAuto = false;

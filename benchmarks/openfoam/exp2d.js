@@ -16,7 +16,14 @@ const OUT = process.argv[2], port = process.argv[3] || 8795, SET = JSON.parse(pr
     if (S.cfdg) Object.assign(CFDG, S.cfdg);
     const L = S.loc || 0;
     if (S.solver) Object.assign(CFD_LOCS[L].solver, S.solver);
-    navGo('cfd2d'); goStep2D('solve'); render();
+    navGo('cfd2d');
+    // (nothing meshes on its own: the mesh laid out first, as Mesh on the Mesh step does, then the solve)
+    if (typeof mesh2DDo === 'function') {
+      goStep2D('mesh'); mesh2DDo();
+      for (let i = 0; i < 1200 && ['busy', 'none'].includes(mesh2DState(L)); i++) await new Promise(r => setTimeout(r, 250));
+      if (mesh2DState(L) !== 'ok') return { error: 'mesh: ' + mesh2DState(L) + (MESH_PV.byLoc[L] && MESH_PV.byLoc[L].error ? ' ' + MESH_PV.byLoc[L].error : '') };
+    }
+    goStep2D('solve'); render();
     runLocation(L);
     for (let i = 0; i < 3600 && cfdRuns[L].status === 'running'; i++) await new Promise(r => setTimeout(r, 500));
     const run = cfdRuns[L];

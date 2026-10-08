@@ -558,10 +558,12 @@ function requestMeshPreviews() {
     if (checkLocation(i).some(p => p.level === 'error' && GEO_CODES.includes(p.code))) { MESH_PV.byLoc[i] = { key, error: 'fix the geometry first' }; return; }
     const geo = cfdGeometry(i);
     meshPvQueue({ key, msg: cfdWorkerMessage(geo), done: d => {
-      if (d.ok && d.preview === key) {
-        const run = { field: makeFlowField(d.result, { rho: geo.rho, ty: geo.ty }), result: d.result, geo, preview: true };
-        MESH_PV.byLoc[i] = { key, run, stats: meshStats(run.field) };
-      } else MESH_PV.byLoc[i] = { key, error: d.error || 'no mesh' };
+      // (every location sent the same message shares this mesh: the queue lays out each message once)
+      const field = d.ok && d.preview === key ? makeFlowField(d.result, { rho: geo.rho, ty: geo.ty }) : null, stats = field ? meshStats(field) : null;
+      CFD_LOCS.forEach((_, j) => {
+        if (j !== i && meshPvKey(j) !== key) return;
+        MESH_PV.byLoc[j] = field ? { key, run: { field, result: d.result, geo: j === i ? geo : cfdGeometry(j), preview: true }, stats } : { key, error: d.error || 'no mesh' };
+      });
       if (tab === 4 && document.getElementById('cfdWb')) { renderStepBar2D(); if (step2D() === 'mesh') { renderStepView2D(); renderMeshLocs2D(); } }
     } });
   });
@@ -1062,26 +1064,40 @@ function requestMeshPreview3D() {
     if (tab === 9) render();
   } });
 }
-/** The 3D mesh as the user made it (Mesh): the inputs it was laid out for. Nothing is meshed until Mesh is pressed. */
-const C3D_M = { key: null };
+/** The 3D mesh as the user made it (Mesh): the inputs it was laid out for (the whole solve key: region, location,
+ *  source, the message, the strip, the file, the edge), and for a blade from a file what Mesh laid out from the file
+ *  (its underside along the stations and their sections: m, the solve's message), or why it could not. Nothing is
+ *  meshed until Mesh is pressed. */
+const C3D_M = { key: null, m: null, error: null };
+/** What decides the 3D mesh: everything the solve is keyed on. */
+const c3dMeshKey = () => { try { return c3dSolveKey(); } catch (e) { return null; } };
 /** The 3D mesh: 'ok' (made for the inputs as they are), 'stale' (made for others), 'busy', 'error' or 'none' (not made). */
 function mesh3DState() {
-  const key = c3dPreviewKey();
-  if (key && MESH_PV.pending.has(key)) return 'busy';
+  const pk = c3dPreviewKey(), key = c3dMeshKey();
+  if (pk && MESH_PV.pending.has(pk)) return 'busy';
   if (!C3D_M.key) return 'none';
   if (C3D_M.key !== key) return 'stale';
-  // (a blade made here: its stations' starting layout laid out in the worker; a file's blade: its underside, built with the geometry)
-  if (C3D.source === 'made' && C3D_PV.key === key && C3D_PV.error) return 'error';
-  if (C3D.source === 'made' && C3D_PV.key !== key) return 'none';
+  // (a blade made here: its stations' starting layout laid out in the worker; a file's blade: its stations from the file, laid out at Mesh)
+  if (C3D.source === 'made' && C3D_PV.key === pk && C3D_PV.error) return 'error';
+  if (C3D.source === 'made' && C3D_PV.key !== pk) return 'none';
+  if (C3D.source === 'file' && C3D_M.error) return 'error';
   return 'ok';
+}
+/** A blade from a file: the solve's message as Mesh laid it out (the file's underside and sections at the stations), when current. */
+const c3dMeshedMessage = () => C3D.source === 'file' && C3D_M.m && C3D_M.key === c3dMeshKey() ? C3D_M.m : null;
+/** New, Open: the meshes the user made belong to the project being left (none is kept in a project). */
+function meshMarksReset() {
+  MESH_PV.byLoc.fill(null);
+  Object.assign(C3D_M, { key: null, m: null, error: null });
 }
 /** Whether the 3D may be solved: its mesh made for the inputs as they are (or its result current: nothing changed). */
 const mesh3DReady = () => mesh3DState() === 'ok' || (() => { const S = c3dShown(); return !!(S && S.result && S.key === c3dSolveKey3(S)); })();
 /** Mesh: the 3D mesh laid out for the inputs as they are (the Mesh step's button, the menu). */
 function mesh3DDo() {
-  const key = c3dPreviewKey(); if (!key) return;
-  C3D_M.key = key;
+  const key = c3dMeshKey(); if (!key) return;
+  Object.assign(C3D_M, { key, m: null, error: null });
   if (C3D.source === 'made') requestMeshPreview3D();
+  else { try { C3D_M.m = c3dSolveMessage(true); } catch (e) { C3D_M.error = e.message; } }
   render();
 }
 function stepStatus3D() {

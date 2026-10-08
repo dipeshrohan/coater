@@ -637,7 +637,7 @@ function c3dNotMeshedHTML() {
   const st = mesh3DState();
   if (st === 'busy') return `<figure class="pane v3d"><p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Laying out the 3D mesh…</p></figure>`;
   const t = st === 'stale' ? ['Mesh out of date', 'The inputs changed since the 3D mesh was laid out. Press Mesh to lay it out again: Solve needs it.']
-    : st === 'error' ? ['No mesh', 'The mesher could not lay out this geometry: see Problems, or change the geometry or the mesh setup.']
+    : st === 'error' ? ['No mesh', C3D.source === 'file' && C3D_M.error ? `The blade file's stations could not be laid out: ${C3D_M.error}.` : 'The mesher could not lay out this geometry: see Problems, or change the geometry or the mesh setup.']
       : ['Not meshed yet', 'Press Mesh to lay out the 3D mesh with the setup on the right. Solve needs it.'];
   return `<figure class="pane v3d">${emptyHint(t[0], t[1], `<button type="button" class="btn btn-primary btn-sm" data-mesh3d>${uiIco('mesh')}Mesh</button>`)}</figure>`;
 }
@@ -659,7 +659,7 @@ function c3dRun(stay = false) {
   }
   if (P.skew && c3dOpenEdges()) return stop(`a skewed blade (${P.skew}°) with an open web edge is not modelled: set the skew to 0 (Inputs › Blade), or ${C3D.region === 'edge' ? 'solve a strip or the full width' : 'the web edges to Symmetry'}`);
   const est = c3dEstimate();
-  const m = c3dSolveMessage(true), key = c3dSolveKey();
+  const m = c3dMeshedMessage() || c3dSolveMessage(true), key = c3dSolveKey();   // (a file's blade: as Mesh laid it out)
   C3D_RUN.meshRec = c3dMeshRecord();   // (the mesh this solve starts on, kept with its result)
   if (C3D.region === 'full') { c3dRunWide(m, key); return; }
   if (C3D.region === 'edge') { c3dRunEdge(m, key, est); return; }
