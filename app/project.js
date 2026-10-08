@@ -94,6 +94,7 @@ function projStopAll() {
   oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop(); if (typeof gfmStop === 'function') gfmStop(); if (typeof cmStop === 'function') cmStop(); if (typeof xmStop === 'function') xmStop();
   if (typeof poolStop === 'function') poolStop();
   if (typeof su1Stop === 'function') su1Stop();
+  if (typeof sensStop === 'function') sensStop(true);   // (the ranking of the assumed values: its values and results put back)
   if (typeof meshMarksReset === 'function') meshMarksReset();   // (the meshes made: the project being left's)
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */

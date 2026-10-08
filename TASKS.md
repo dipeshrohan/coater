@@ -14,7 +14,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
-| 5 | Materials page: check what is left of the planned redesign | Small | Doing | Nothing |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
 | 8 | Mixing: air bubbles and their removal under vacuum | Medium | To do | Nothing to start |
@@ -77,8 +76,8 @@ keeps it up to date in each pull request. The order and the tasks change only af
   - the rows of a flow law (or alignment model) not chosen are hidden; picking it brings them back;
   - the streamlines through the film and the flakes on each go to Coating › 2D › Solve;
   - the assumed values that matter most, ranked on the Readiness tab (each value ±20 %, computed only when you press it).
-- **Done**: the first two (this pull request).
-- **Left**: the ranked list.
+- **Done**: all three. The ranking: Readiness › Rank them; each value solved twice in its own stage (about 50 minutes at
+  the defaults), put back afterwards.
 
 ## 6. Dynamic contact angle in the 2D coating flow in time
 - **Now**: not built anywhere. In a steady flow the contact line on the blade's face is at rest, so its angle cannot
