@@ -69,16 +69,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
   Yours stay at 2.0 g for hours; not yet weighed a day later.
 - **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
 
-## 5. Materials page: check what is left of the planned redesign
-- **Compared** (the 30 Sep plan against the page): built already -- the material list on the left, one shown at a time,
-  the fixed columns with symbols, engineering names, a row's full source when it is opened.
-- **Your choices** (8 Oct, with screenshots):
-  - the rows of a flow law (or alignment model) not chosen are hidden; picking it brings them back;
-  - the streamlines through the film and the flakes on each go to Coating › 2D › Solve;
-  - the assumed values that matter most, ranked on the Readiness tab (each value ±20 %, computed only when you press it).
-- **Done**: all three. The ranking: Readiness › Rank them; each value solved twice in its own stage (about 50 minutes at
-  the defaults), put back afterwards.
-
 ## 6. Dynamic contact angle in the 2D coating flow in time
 - **Now**: not built anywhere. In a steady flow the contact line on the blade's face is at rest, so its angle cannot
   change there. In time the line moves.
@@ -231,6 +221,12 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- Materials page, what was left of the planned redesign (was task 5), your choices: the rows of a flow law or
+  alignment model not chosen are hidden; the streamlines through the film and the flakes on each moved to Coating › 2D
+  › Solve; Materials › Readiness ranks the assumed values that matter most (each at −20 % and +20 %, its own stage
+  solved again, by the stage's main answers; about an hour at the defaults, everything put back after). The first full
+  run: the dry film's packing (0.85, +20 % held at its limit 1), the graphitization peak, the GO's density and the
+  stack's vapour permeability move the answers most.
 - Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool
   and feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage
   pages show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's
