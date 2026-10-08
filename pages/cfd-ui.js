@@ -579,6 +579,7 @@ function logCFD(i, text, kind = '') {
 }
 
 function runLocation(i) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const run = cfdRuns[i];
   if (run.status === 'running') return;
   // (inputs outside what the solver can do: not run, and listed under Problems)

@@ -31,8 +31,8 @@ function sensWetFilm() {
 }
 /** The models whose results a run changes and puts back, each with every field its solve sets (the 1D's across the web
  *  too; the mixing, which a value the coating reads may solve again). */
-const SENS_MODELS = () => [[ONE_D, ['res', 'key', 'across', 'acrossKey', 'error']], [MIX, ['res', 'key', 'error']], [DRY, ['res', 'key', 'error']],
-  [FILM, ['res', 'key', 'error']], [SHEET, ['res', 'key', 'error']], [STACK, ['res', 'key', 'error']], [FURN, ['res', 'key', 'error']]];
+const SENS_MODELS = () => [[ONE_D, ['res', 'key', 'across', 'acrossKey', 'error', 'ms']], [MIX, ['res', 'key', 'error', 'ms']], [DRY, ['res', 'key', 'error', 'ms']],
+  [FILM, ['res', 'key', 'error', 'ms']], [SHEET, ['res', 'key', 'error', 'ms']], [STACK, ['res', 'key', 'error', 'ms']], [FURN, ['res', 'key', 'error', 'ms']]];
 /** A row whose value is a material copy's that has since been deleted: no longer ranked, nor shown. */
 const sensRowGone = r => !!(r.p.b.inst && !(MAT.inst && MAT.inst[r.p.b.inst]));
 const sensKeep = () => SENS_MODELS().map(([M, f]) => ({ M, v: Object.fromEntries(f.map(k => [k, M[k]])) }));
@@ -100,7 +100,7 @@ function sensNext() {
   //  film both read solves both; the solids' density, read by the mixing the coating takes its slurry from, solves both)
   const L = SOLVE_LINE, at = L.indexOf(row.s.k), arm = [...L.slice(0, at).filter(k => solveState(k) === 'stale'), row.s.k];
   SENS.cur = { n, f, arm, x };
-  solveArm(...arm);
+  SENS.arming = true; try { solveArm(...arm); } finally { SENS.arming = false; }
   const run = SENS.t0;
   let tries = 0;
   const wait = () => {
@@ -108,7 +108,7 @@ function sensNext() {
     if (SENS.stop && !arm.some(k => solveState(k) === 'busy')) { sensRestore(row); sensEnd('stopped'); return; }
     if (SOLVE_ASK.size || arm.some(k => solveState(k) === 'busy')) { setTimeout(wait, 300); return; }
     // (one that ended out of date: it started before one before it had set what it reads -- the mixing's solids: again)
-    if (tries < 3 && arm.some(k => solveState(k) === 'stale')) { tries++; solveArm(...arm.filter(k => solveState(k) === 'stale')); setTimeout(wait, 300); return; }
+    if (tries < 3 && arm.some(k => solveState(k) === 'stale')) { tries++; SENS.arming = true; try { solveArm(...arm.filter(k => solveState(k) === 'stale')); } finally { SENS.arming = false; } setTimeout(wait, 300); return; }
     // (the location or the water route the answers are read at changed while it ran: the base was read at the other)
     if (SENS.sel && sensSel() !== SENS.sel) {
       sensRestore(row); sensEnd('stopped');
@@ -167,6 +167,13 @@ function sensAsSet(f) {
   const live = sensKeep();
   try { hubSet(row.p, row.v0); sensDerived(); sensPutBack(SENS.keep); return f(); }
   finally { sensPutBack(live); hubSet(row.p, c.x); sensDerived(); }
+}
+/** A solve asked for while the ranking runs (Solve, Run, a study): refused, said why -- it would take the value under
+ *  change, not the project's. The ranking's own: let through. */
+function sensBlocks() {
+  if (SENS.status !== 'running' || SENS.arming) return false;
+  if (typeof imgToast === 'function') imgToast('The ranking of the assumed values is running: stop it first (Materials › Readiness › Stop), then solve.', 'warn');
+  return true;
 }
 /** Where the answers are read (the oven's location, the water's route): a change of either stops a run. */
 const sensSel = () => JSON.stringify([lineSel(), lineWay()]);

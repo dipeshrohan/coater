@@ -113,6 +113,7 @@ function solveState(k) {
 
 /** Ask for models (with what they need first, when not current) and start what can start. */
 function solveArm(...ids) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const add = k => {
     const m = SOLVE_M[k];
     if (!m || SOLVE_ASK.has(k)) return;

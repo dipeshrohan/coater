@@ -335,6 +335,7 @@ function accEverywhere(i, k) {
 }
 /** Run: each chosen location's loop (they run side by side, each in its own worker). */
 function runAccuracy() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (Object.values(ACC.runs).some(r => r.status === 'running')) return;
   if (!ACC.film && !ACC.cl) { ACC.film = true; }
   const locs = ACC.loc === 'all' ? CFD_LOCS.map((_, i) => i) : [ACC.loc];

@@ -263,6 +263,7 @@ function doeOutputs(r, geo) {
 // Running: a queue of runs, DOE.workers solving at a time
 // ---------------------------------------------------------------------
 function runDOE() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (DOE.status === 'running') return;
   const design = DOE.factors.map(fs => ({ ...fs, f: doeFactor(fs.k) })).filter(d => doeAvailable(d.f)).map(d => ({ ...d, levels: doeLevels(d) }));
   if (!design.length) return;
