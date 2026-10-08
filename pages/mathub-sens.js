@@ -75,6 +75,11 @@ const sensClock = s => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(
 function sensStart() {
   if (SENS.status === 'running') return;
   if (!sensBaseReady()) { imgToast('Solve the line first (Solve the line): each value\'s change is taken from it.', 'warn'); return; }
+  // (something else solving -- a DOE, a 2D or 3D run, a study, a stage: it would read the values under change)
+  const busy = typeof projRunning === 'function' ? projRunning() : [];
+  if (busy.length || (typeof SOLVE_ASK !== 'undefined' && SOLVE_ASK.size)) {
+    imgToast(`Wait for what is solving to end, or stop it, then rank them${busy.length ? ` (${busy.map(b => `${b.where}: ${b.what}`).join('; ')})` : ''}.`, 'warn'); return;
+  }
   undoCommit();
   const vals = sensValues();
   SENS.keep = sensKeep();
