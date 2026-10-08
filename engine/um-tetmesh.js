@@ -115,6 +115,11 @@ class UmtTriMap {
     return undefined;
   }
   has(a, b, c) { return this.get(a, b, c) !== undefined; }
+  delete(a, b, c) {
+    let t; if (a > b) { t = a; a = b; b = t; } if (b > c) { t = b; b = c; c = t; } if (a > b) { t = a; a = b; b = t; }
+    const L = this.l[a]; if (L) for (let i = 0; i < L.length; i += 3) if (L[i] === b && L[i + 1] === c) { L.splice(i, 3); return true; }
+    return false;
+  }
 }
 /** The faces of a tetrahedron: its corners other than the k-th. */
 const UMT_FACE = [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]];
@@ -133,8 +138,9 @@ function umtVolume(S, o = {}) {
   // the surface's edges → their triangles (for splitting)
   const ekey = (a, b) => (a < b ? a + ',' + b : b + ',' + a);
   const edgeTris = new Map();
-  const eAdd = f => { for (let k = 0; k < 3; k++) { const key = ekey(F[3 * f + k], F[3 * f + (k + 1) % 3]); (edgeTris.get(key) || edgeTris.set(key, []).get(key)).push(f); } };
-  const eDel = f => { for (let k = 0; k < 3; k++) { const key = ekey(F[3 * f + k], F[3 * f + (k + 1) % 3]), l = edgeTris.get(key); l.splice(l.indexOf(f), 1); } };
+  let skLive = null;   // (the surface's triangles by their corners, kept up to date as they change once first asked for)
+  const eAdd = f => { if (skLive) skLive.set(F[3 * f], F[3 * f + 1], F[3 * f + 2], f); for (let k = 0; k < 3; k++) { const key = ekey(F[3 * f + k], F[3 * f + (k + 1) % 3]); (edgeTris.get(key) || edgeTris.set(key, []).get(key)).push(f); } };
+  const eDel = f => { if (skLive) skLive.delete(F[3 * f], F[3 * f + 1], F[3 * f + 2]); for (let k = 0; k < 3; k++) { const key = ekey(F[3 * f + k], F[3 * f + (k + 1) % 3]), l = edgeTris.get(key); l.splice(l.indexOf(f), 1); } };
   for (let f = 0; f < F.length / 3; f++) eAdd(f);
   let D = UMM_T.umtTri(X, Y, Z, { seed: o.seed });
   let inside = new Uint8Array(0);   // (per tetrahedron: 1 inside, 0 outside, 255 not yet known)
@@ -213,8 +219,7 @@ function umtVolume(S, o = {}) {
   const surfFace = (sk, t, k) => { const [i, j, l] = UMT_FACE[k], a = D.tv[4 * t + i], b = D.tv[4 * t + j], c = D.tv[4 * t + l]; return a < 0 || b < 0 || c < 0 ? undefined : sk.get(a, b, c); };
   // 1. the surface into the tetrahedralization
   if (!recoverSurface()) throw new Error('um-tetmesh: the surface could not be recovered');
-  let skCache = null, skN = -1;
-  const surfKeysNow = () => { if (skN !== F.length) { skCache = surfKeys(); skN = F.length; } return skCache; };
+  const surfKeysNow = () => skLive || (skLive = surfKeys());
   // the inside: flood from outside (the ghosts), each surface triangle crossed turning inside to outside and back
   const surfKeys = () => { const s = new UmtTriMap(); for (let f = 0; f < F.length / 3; f++) if (alive[f]) s.set(F[3 * f], F[3 * f + 1], F[3 * f + 2], f); return s; };
   const classify = () => {
@@ -324,7 +329,9 @@ function umtVolume(S, o = {}) {
    *  missing are undone (and the rebuild tried again), so one bad move does not cost the round; true if any kept. */
   const tryRound = moves0 => {
     const lab = new Map();
-    const moves = moves0.filter(([, q]) => { const t = D.locate(...q); return D.infAt(t) < 0 && t < inside.length && inside[t] === 1; });
+    // (each new place found by a walk from a tetrahedron at the point's old place)
+    const at = new Int32Array(X.length).fill(-1); for (let t = 0; t < D.nT; t++) if (D.alive[t]) for (let k = 0; k < 4; k++) { const v = D.tv[4 * t + k]; if (v >= 0) at[v] = t; }
+    const moves = moves0.filter(([v, q]) => { const t = D.locate(...q, at[v]); return D.infAt(t) < 0 && t < inside.length && inside[t] === 1; });
     if (!moves.length) return false;
     const old = new Map(moves.map(([v]) => [v, [X[v], Y[v], Z[v]]]));
     for (const [v, q] of moves) { X[v] = q[0]; Y[v] = q[1]; Z[v] = q[2]; }
