@@ -568,6 +568,7 @@ document.addEventListener('click', e => {
     const sp = acrossSpanNow(), rows = t.dataset.v === 'parabola' ? R.zs.map(z => [z, acrossBowTyped(z, R.a * 1e6, 'parabola', sp)]) : R.zs.map((z, k) => [z, R.c[k] * 1e6]);
     saveBlob(new Blob([`z_mm,crown_um\n${rows.map(([z, v]) => `${z.toFixed(3)},${v.toFixed(4)}`).join('\n')}\n`], { type: 'text/csv' }), `crown-${t.dataset.v === 'parabola' ? 'parabola' : 'free-curve'}.csv`);
   } else if (act === 'crown-3d') {
-    Object.assign(C3D, { region: 'full', source: 'made', step: 'solve' }); tab = 9; render(); c3dRun(true);
+    // (the full width's mesh laid out by the user first, then Solve: nothing meshes on its own)
+    Object.assign(C3D, { region: 'full', source: 'made', step: mesh3DReady() ? 'solve' : 'mesh' }); tab = 9; render(); if (mesh3DReady()) c3dRun(true);
   }
 });

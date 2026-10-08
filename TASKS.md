@@ -81,8 +81,12 @@ keeps it up to date in each pull request. The order and the tasks change only af
     waits for Re-mesh;
   - Solve the line (and a Solve that solves the stage before first) stops at the first model without a mesh and points
     to its Mesh step.
-- **Left**: the Mesh buttons, the out-of-date marks, Solve's wait, the chain's stop; help, report, projects; the tests;
-  screenshots before and after.
+- **Done (Coating 2D and 3D)**: a Mesh button on each Mesh step (and in the Mesh menu); nothing laid out until it is
+  pressed; a mesh made for other inputs marked out of date; Run (2D) and Solve 3D greyed "Mesh first" until meshed; the
+  Re-solve bar leaves out a 2D or 3D whose mesh is missing ("mesh first"); "Check the crown in 3D" opens the 3D's Mesh step.
+  Studies you start (mesh study, mesh to an accuracy, DOE, measured-data runs) still mesh each run they solve.
+- **Left**: Pool and feed 2D and 3D, the stages' 1D, 2D and 3D Mesh steps, Solve the line stopping at a model without a
+  mesh; help, report; the tests; screenshots before and after.
 
 ## 5. Materials page: check what is left of the planned redesign
 - **Then**: the workflow plan (30 Sep) had a Materials page redesign.

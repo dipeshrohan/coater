@@ -87,12 +87,14 @@ function stepStatus2D() {
   const st = {};
   st.geometry = geoErr.length ? { state: 'bad', note: `${geoErr.length} problem${geoErr.length > 1 ? 's' : ''}`, title: geoErr.map(p => p.text).join(' ') }
     : { state: 'done', note: `${CFDG.shape === 'round' ? `round R ${CFDG.R} mm` : CFDG.shape === 'flat' ? `flat land ${P.L} mm` : BLADE_SHAPES.find(q => q[0] === CFDG.shape)[1].toLowerCase()} · gap ${gTxt}`, title: 'The blade and the gap at each location' };
-  const ms = locs.map(i => meshShown2D(i)).filter(Boolean), pend = locs.some(i => !MESH_PV.byLoc[i] || MESH_PV.byLoc[i].key !== meshPvKey(i));
+  const ms = locs.map(i => meshShown2D(i)).filter(Boolean);
   if (ms.some(m => m.error)) st.mesh = { state: 'bad', note: 'no valid mesh', title: ms.find(m => m.error).error };
   else if (ms.length && ms.every(m => m.stats)) {
     const els = [...new Set(ms.map(m => m.stats.elements))], worst = Math.min(...ms.map(m => m.stats.worst));
     st.mesh = { state: worst < 0.2 ? 'warn' : 'done', note: `${els.length > 1 ? `${Math.min(...els)}–${Math.max(...els)}` : els[0]} elements · worst ${worst.toFixed(2)}`, title: 'Elements and the worst element\'s shape quality (1 = undistorted), over the four locations' };
-  } else st.mesh = { state: '', note: pend ? 'laying out…' : '—' };
+  } else st.mesh = locs.some(i => mesh2DState(i) === 'busy') ? { state: '', note: 'laying out…' }
+    : locs.some(i => mesh2DState(i) === 'stale') ? { state: 'warn', note: 'out of date', title: 'The inputs changed since the mesh was laid out: press Mesh' } : { state: '', note: 'not meshed' };
+  if (st.mesh.state === 'done' || st.mesh.state === 'warn') { const old = locs.filter(i => !mesh2DReady(i)); if (old.length) st.mesh = { state: 'warn', note: `${old.map(i => `L${i + 1}`).join(', ')} out of date`, title: 'The inputs changed since the mesh was laid out: press Mesh' }; }
   const running = cfdRuns.filter(r => r.status === 'running').length, done = cfdRuns.filter(r => r.field).length, bad = cfdRuns.map((r, i) => r.status === 'error' || r.status === 'blocked' ? `L${i + 1}` : null).filter(Boolean);
   const stopped = cfdRuns.some(r => r.status === 'cancelled');
   if (running) st.solve = { state: 'run', note: `solving ≈ ${Math.floor(100 * (cfdProgShare() || 0))} %` };
@@ -148,13 +150,15 @@ function stepToolsHTML2D(k) {
       ${sep}<label class="fv-chk"><input type="checkbox" id="stepDims"${FV.stepDims ? ' checked' : ''}> Dimensions</label>`;
   if (k === 'mesh') {
     const solved = cfdRuns[i].field && !cfdIsStale(i);
-    return `${locSegHTML(i)}${sep}<label class="vp-ctl">Mesh <select id="stepMeshPreset" aria-label="Mesh">${sharedMeshPresets().map(([m, p]) => opt(m, p.l + (m === 'medium' ? ' (default)' : ''), CFDS.mesh)).join('')}</select></label>
+    const st = CFD_LOCS.map((_, k) => mesh2DState(k)), busy = st.includes('busy'), fresh = st.every(x => x === 'ok');
+    return `<button id="cfdMeshAll" class="btn btn-primary btn-sm tool-run" type="button"${busy ? ' disabled' : ''} title="Lay out the four locations' meshes for the inputs as they are: Solve needs them">${busy ? '<i class="spin" aria-hidden="true"></i>' : uiIco('mesh')}${busy ? 'Meshing…' : fresh ? 'Mesh again' : 'Mesh'}<span class="hide-mid"> all 4</span></button>${sep}${locSegHTML(i)}${sep}<label class="vp-ctl">Mesh <select id="stepMeshPreset" aria-label="Mesh">${sharedMeshPresets().map(([m, p]) => opt(m, p.l + (m === 'medium' ? ' (default)' : ''), CFDS.mesh)).join('')}</select></label>
       <div class="seg" role="tablist" aria-label="Which mesh"><button type="button" role="tab" data-meshshow="start" aria-selected="${meshShowOf2D(i) === 'start'}">Starting</button><button type="button" role="tab" data-meshshow="solved" aria-selected="${meshShowOf2D(i) === 'solved'}"${solved ? '' : ' disabled title="Solve first (or the solve is out of date)"'}>Solved</button></div>
       <label class="fv-chk"><input type="checkbox" id="stepMeshShade"${FV.meshShade ? ' checked' : ''}> Shade by quality</label>
       <button class="tool-btn" type="button" id="stepMeshStudy" title="Solve this location on a coarser and a finer mesh as well, and compare">${uiIco('grading')}Mesh study…</button>
       <button class="tool-btn" type="button" id="stepMeshAcc" title="Refine the mesh until the wet film and contact line stop changing">${uiIco('tolerance')}Mesh to an accuracy…</button>`;
   }
-  if (k === 'solve') return `<button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)">${uiIco('play')}Run<span class="hide-mid"> all 4</span></button>
+  if (k === 'solve') return `${CFD_LOCS.every((_, k2) => mesh2DReady(k2)) ? `<button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" title="Solve all four locations (Ctrl+Enter)">${uiIco('play')}Run<span class="hide-mid"> all 4</span></button>`
+      : `<button id="cfdRunAll" class="btn btn-primary btn-sm tool-run" type="button" disabled title="Solve needs each location's mesh, laid out for the inputs as they are: press Mesh on the Mesh step">${uiIco('mesh')}Mesh first</button>`}
       <button id="cfdCancel" class="tool-btn tool-stop" type="button" hidden>${uiIco('stop')}Stop</button>${sep}${locSegHTML(i)}${sep}
       <label class="vp-ctl">Tolerance <select id="stepTol" aria-label="Newton tolerance">${SOLVER_TOLS.map(t => `<option value="${t}"${t === CFDS.tol ? ' selected' : ''}>${fmtTol(t)}${t === SOLVER_DEFAULTS.tol ? ' (default)' : ''}</option>`).join('')}</select></label>
       <label class="vp-ctl">Iterations <input type="number" id="stepIter" min="10" max="300" step="1" value="${CFDS.maxIter}" aria-label="Newton iterations, at most"></label>${sep}
@@ -171,6 +175,7 @@ function wireStepTools2D() {
   const mp = document.getElementById('stepMeshPreset'); if (mp) mp.onchange = () => { const s = document.getElementById('cfdMesh'); s.value = mp.value; s.dispatchEvent(new Event('change')); };
   document.querySelectorAll('[data-meshshow]').forEach(b => { b.onclick = () => { FV.meshShow = b.dataset.meshshow; viewCFD(); }; });
   const sh = document.getElementById('stepMeshShade'); if (sh) sh.onchange = () => { FV.meshShade = sh.checked; renderStepView2D(); };
+  const mAll = document.getElementById('cfdMeshAll'); if (mAll) mAll.onclick = mesh2DDo;
   const ms = document.getElementById('stepMeshStudy'); if (ms) ms.onclick = () => { FV.dock = 'mesh'; viewCFD(); };
   const ma = document.getElementById('stepMeshAcc'); if (ma) ma.onclick = () => { FV.dock = 'accuracy'; ACC.loc = stepLoc2D(); viewCFD(); };
   const tol = document.getElementById('stepTol'); if (tol) tol.onchange = () => { CFDS.tol = +tol.value; viewCFD(); };
@@ -561,6 +566,20 @@ function requestMeshPreviews() {
     } });
   });
 }
+/** Location i's starting mesh as the user made it (Mesh): 'ok' (made for the inputs as they are), 'stale' (made for
+ *  others: inputs changed since), 'busy' (being laid out), 'error' (could not be laid out) or 'none' (not made yet).
+ *  Nothing is meshed until Mesh is pressed (the owner's rule: no meshing on its own). */
+function mesh2DState(i) {
+  const c = MESH_PV.byLoc[i], key = meshPvKey(i);
+  if (MESH_PV.pending.has(key)) return 'busy';
+  if (!c) return 'none';
+  if (c.key !== key) return 'stale';
+  return c.error ? 'error' : 'ok';
+}
+/** Whether location i may be solved: its mesh made for the inputs as they are (or its solve current: nothing changed). */
+const mesh2DReady = i => mesh2DState(i) === 'ok' || !!(cfdRuns[i].field && !cfdIsStale(i));
+/** Mesh: the four locations' starting meshes laid out for the inputs as they are (the Mesh step's button, the menu). */
+function mesh2DDo() { requestMeshPreviews(); if (tab === 4 && document.getElementById('cfdWb')) viewCFD(); }
 /** Which mesh the Mesh step shows at location i: the solved one when chosen and up to date, else the starting one. */
 const meshShowOf2D = i => FV.meshShow === 'solved' && cfdRuns[i].field && !cfdIsStale(i) ? 'solved' : 'start';
 /** Location i's mesh as shown: { run, stats, solved } (or { error }), or null while it is laid out. */
@@ -609,14 +628,20 @@ const zoomCtlHTML = (i, withImg = true) => `<div class="zoom-ctl" role="toolbar"
 function renderMeshStep2D(host) {
   const i = stepLoc2D(), l = CFD_LOCS[i];
   let m = meshShown2D(i);
-  // (while a changed mesh is laid out again, the last one stays up, marked)
-  const last = MESH_PV.byLoc[i];
-  if (!m && last && !last.error && meshShowOf2D(i) !== 'solved') { m = { run: last.run, stats: last.stats, solved: false, stale: true }; requestMeshPreviews(); }
-  if (!m) { host.innerHTML = `<div class="step-view"><p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Laying out the mesh at L${i + 1}…</p></div>`; requestMeshPreviews(); return; }
+  // (a mesh made for other inputs stays up, marked out of date, until Mesh is pressed again; none made: nothing laid out)
+  const ms = mesh2DState(i), last = MESH_PV.byLoc[i];
+  if (!m && last && !last.error && meshShowOf2D(i) !== 'solved') m = { run: last.run, stats: last.stats, solved: false, stale: true, busy: ms === 'busy' };
+  if (!m) {
+    host.innerHTML = ms === 'busy' ? `<div class="step-view"><p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Laying out the mesh at L${i + 1}…</p></div>`
+      : `<div class="step-view mesh-view"><div class="step-draw">${emptyHint(`Not meshed yet`, `Press Mesh to lay out the four locations' meshes with the settings here (the preset, the refinement zones) and in Inputs › Solver and mesh. Solve needs them.`,
+        `<button type="button" class="btn btn-primary btn-sm" data-mesh2d>${uiIco('mesh')}Mesh</button>`)}</div><aside class="step-side">${zonesPanelHTML(null, i)}</aside></div>`;
+    if (ms !== 'busy') { host.querySelectorAll('[data-mesh2d]').forEach(b => { b.onclick = mesh2DDo; }); wireZonesPanel(host.querySelector('.step-side'), i); }
+    return;
+  }
   if (m.error) { host.innerHTML = `<div class="step-view">${emptyHint(`No mesh at L${i + 1}`, `The mesher could not lay out this geometry: ${escAttr(m.error)}. See Problems, or change the geometry.`)}</div>`; return; }
   const s = m.stats, hmax = Math.max(...s.hist, 1);
   host.innerHTML = `<div class="step-view mesh-view"><div class="step-draw" id="cfdMeshPlot">
-      <div class="fv-caption">L${i + 1} · z = ${l.z} mm · ${m.solved ? 'solved mesh' : m.stale ? '<i class="spin" aria-hidden="true"></i>laying the mesh out again' : 'starting mesh (not solved)'}: ${s.nEx} × ${s.nEy} elements · <span class="fv-ex"></span></div>
+      <div class="fv-caption">L${i + 1} · z = ${l.z} mm · ${m.solved ? 'solved mesh' : m.busy ? '<i class="spin" aria-hidden="true"></i>laying the mesh out again' : m.stale ? '<span class="warn-text">out of date: the inputs changed since it was laid out; Mesh again</span>' : 'starting mesh (not solved)'}: ${s.nEx} × ${s.nEy} elements · <span class="fv-ex"></span></div>
       <div class="fv-plot" data-i="${i}" data-zk="m${i}"><canvas class="fv-main" role="img" aria-label="Mesh at location ${i + 1}"></canvas><canvas class="fv-over" aria-hidden="true"></canvas>${zoomCtlHTML(i, false)}<div class="fv-tip" hidden></div></div>
     </div>
     <aside class="step-side">${zonesPanelHTML(s, i)}<h4>${uiBadge('mesh')}Mesh at L${i + 1}${m.solved ? '' : ' (before solving)'}</h4><table class="kv">
@@ -814,7 +839,7 @@ function renderMeshLocs2D() {
   if (!host) return;
   host.innerHTML = `<div class="table-wrap"><table class="cfd-table nowrap-table"><thead><tr><th>Location</th><th>Mesh</th><th>Elements</th><th>Blade + face + surface × gap</th><th>Nodes (velocity / pressure)</th><th>Quality worst</th><th>Quality mean</th><th>Below 0.5</th><th>Aspect ratio worst</th><th>Shortest edge (mm)</th></tr></thead><tbody>${CFD_LOCS.map((_, i) => {
     const m = meshShown2D(i);
-    if (!m) return `<tr><td>L${i + 1}</td><td colspan="9">laying out…</td></tr>`;
+    if (!m) { const st = mesh2DState(i); return `<tr><td>L${i + 1}</td><td colspan="9"${st === 'stale' ? ' class="warn-text"' : ''}>${st === 'busy' ? 'laying out…' : st === 'stale' ? 'out of date: the inputs changed since it was laid out; press Mesh' : 'not meshed yet'}</td></tr>`; }
     if (m.error) return `<tr><td>L${i + 1}</td><td colspan="9" class="warn-text">${escAttr(m.error)}</td></tr>`;
     const s = m.stats;
     return `<tr><td>L${i + 1}</td><td>${m.solved ? 'solved' : 'starting'}</td><td>${s.elements}</td><td>${s.nB} + ${s.nF} + ${s.nS} × ${s.nEy}</td><td>${s.nodesV.toLocaleString()} / ${s.nodesP.toLocaleString()}</td><td>${s.worst.toFixed(2)}</td><td>${s.mean.toFixed(2)}</td><td>${s.below}</td><td>${s.ar.toFixed(1)}</td><td>${(s.lmin * 1000).toFixed(3)}</td></tr>`;
@@ -1037,6 +1062,28 @@ function requestMeshPreview3D() {
     if (tab === 9) render();
   } });
 }
+/** The 3D mesh as the user made it (Mesh): the inputs it was laid out for. Nothing is meshed until Mesh is pressed. */
+const C3D_M = { key: null };
+/** The 3D mesh: 'ok' (made for the inputs as they are), 'stale' (made for others), 'busy', 'error' or 'none' (not made). */
+function mesh3DState() {
+  const key = c3dPreviewKey();
+  if (key && MESH_PV.pending.has(key)) return 'busy';
+  if (!C3D_M.key) return 'none';
+  if (C3D_M.key !== key) return 'stale';
+  // (a blade made here: its stations' starting layout laid out in the worker; a file's blade: its underside, built with the geometry)
+  if (C3D.source === 'made' && C3D_PV.key === key && C3D_PV.error) return 'error';
+  if (C3D.source === 'made' && C3D_PV.key !== key) return 'none';
+  return 'ok';
+}
+/** Whether the 3D may be solved: its mesh made for the inputs as they are (or its result current: nothing changed). */
+const mesh3DReady = () => mesh3DState() === 'ok' || (() => { const S = c3dShown(); return !!(S && S.result && S.key === c3dSolveKey3(S)); })();
+/** Mesh: the 3D mesh laid out for the inputs as they are (the Mesh step's button, the menu). */
+function mesh3DDo() {
+  const key = c3dPreviewKey(); if (!key) return;
+  C3D_M.key = key;
+  if (C3D.source === 'made') requestMeshPreview3D();
+  render();
+}
 function stepStatus3D() {
   const G = c3dBuild(), S = c3dShown(), R = S && S.result, stale = S && S.key !== c3dSolveKey3(S), m = c3dMeshSize(), st = {};
   st.geometry = G.error ? { state: 'bad', note: 'cannot be built', title: G.error } : G.empty ? { state: 'warn', note: 'no blade file yet' }
@@ -1046,7 +1093,9 @@ function stepStatus3D() {
   const hx = m.a0 === m.a1 ? c3dHexes(m.a0, m).toLocaleString() : `${c3dHexes(m.a0, m).toLocaleString()}–${c3dHexes(m.a1, m).toLocaleString()}`;
   // (the mesh's problems: an error -- the solve will not start -- or warnings, each named on hover)
   const MP = c3dMeshProblems(), mErr = MP.find(p => p.level === 'error');
-  st.mesh = { state: mErr ? 'bad' : G.mesh || R ? ((q != null && q < 0.2) || MP.length ? 'warn' : 'done') : '', note: `${hx} hexahedra${q != null ? ` · worst ${q.toFixed(2)}` : ''}${mErr ? ' · error' : MP.length ? ` · ${MP.length} warning${MP.length === 1 ? '' : 's'}` : ''}`,
+  const m3s = mesh3DState(), m3ok = mesh3DReady();
+  st.mesh = !m3ok && !R ? { state: m3s === 'stale' ? 'warn' : m3s === 'error' ? 'bad' : '', note: m3s === 'busy' ? 'laying out…' : m3s === 'stale' ? 'out of date' : m3s === 'error' ? 'could not be laid out' : 'not meshed', title: 'Press Mesh on the Mesh step: Solve needs the mesh' }
+    : { state: mErr ? 'bad' : G.mesh || R ? ((q != null && q < 0.2) || MP.length ? 'warn' : 'done') : '', note: `${hx} hexahedra${q != null ? ` · worst ${q.toFixed(2)}` : ''}${mErr ? ' · error' : MP.length ? ` · ${MP.length} warning${MP.length === 1 ? '' : 's'}` : ''}`,
     ...(MP.length ? { title: MP.map(p => `${p.level === 'error' ? 'Error' : 'Warning'}: ${p.text}`).join('\n') } : {}) };
   st.solve = C3D_RUN.status === 'running' ? { state: 'run', note: `solving ≈ ${Math.floor(100 * (c3dProgShare() || 0))} %` }
     : C3D_RUN.status === 'error' ? { state: 'bad', note: 'failed', title: C3D_RUN.error } : R ? { state: stale ? 'warn' : 'done', note: stale ? 'out of date' : `solved in ${c3dTime(S.ms / 1000)}` } : { state: '', note: 'not solved' };

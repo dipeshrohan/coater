@@ -627,9 +627,25 @@ function c3dMeshDone(rec, R) {
   }
   return out;
 }
+/** The Mesh step's Mesh button (the 3D mesh laid out only when pressed). */
+function c3dMeshBtnHTML() {
+  const st = mesh3DState(), busy = st === 'busy';
+  return `<button type="button" class="btn btn-primary btn-sm tool-run" id="c3dMeshBtn" data-mesh3d${busy ? ' disabled' : ''} title="Lay out the 3D mesh for the inputs as they are: Solve needs it">${busy ? '<i class="spin" aria-hidden="true"></i>Meshing…' : `${uiIco('mesh')}${st === 'ok' ? 'Mesh again' : 'Mesh'}`}</button>`;
+}
+/** The Mesh step before Mesh is pressed (or after the inputs changed): what to do, instead of a mesh. */
+function c3dNotMeshedHTML() {
+  const st = mesh3DState();
+  if (st === 'busy') return `<figure class="pane v3d"><p class="cap fv-empty"><i class="spin" aria-hidden="true"></i>Laying out the 3D mesh…</p></figure>`;
+  const t = st === 'stale' ? ['Mesh out of date', 'The inputs changed since the 3D mesh was laid out. Press Mesh to lay it out again: Solve needs it.']
+    : st === 'error' ? ['No mesh', 'The mesher could not lay out this geometry: see Problems, or change the geometry or the mesh setup.']
+      : ['Not meshed yet', 'Press Mesh to lay out the 3D mesh with the setup on the right. Solve needs it.'];
+  return `<figure class="pane v3d">${emptyHint(t[0], t[1], `<button type="button" class="btn btn-primary btn-sm" data-mesh3d>${uiIco('mesh')}Mesh</button>`)}</figure>`;
+}
 function c3dRun(stay = false) {
   if (C3D_RUN.status === 'running') return;
-  if (stay !== true) runFromSolve3D();   // (meshing to an accuracy solves from the Mesh step and stays there)
+  // (Solve needs the 3D mesh, laid out by the user for the inputs as they are; meshing to an accuracy lays out its own)
+  if (stay !== 'study' && typeof mesh3DReady === 'function' && !mesh3DReady()) { C3D.step = 'mesh'; render(); return; }
+  if (stay !== true && stay !== 'study') runFromSolve3D();   // (meshing to an accuracy solves from the Mesh step and stays there)
   const G = c3dBuild();
   const stop = why => { C3D_RUN.status = 'error'; C3D_RUN.error = why; render(); };
   if (G.error || G.empty) return stop(G.error || 'no blade: import an STL or STEP file of the blade');
@@ -968,9 +984,10 @@ function view3D() {
   const vscale = `<select data-c3d="vscale" aria-label="Vertical scale" title="Heights drawn this many times larger (the gap is thin)">${[1, 2, 5, 10, 20, 50].map(v => `<option value="${v}"${v === C3D.vscale ? ' selected' : ''}>Height ×${v}</option>`).join('')}</select>`;
   const tools = {
     geometry: `${viewSeg}${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${vscale}`,
-    mesh: `<div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${!secOn && C3D.view === v}">${t}</button>`).join('')}</div>
+    mesh: `${c3dMeshBtnHTML()}<span class="vp-sep" aria-hidden="true"></span><div class="seg" role="tablist" aria-label="View">${views.map(([v, t]) => `<button type="button" role="tab" data-v3view="${v}" aria-selected="${!secOn && C3D.view === v}">${t}</button>`).join('')}</div>
       <span class="tb-lbl">Sections</span><div class="seg" role="tablist" aria-label="Mesh sections">${C3D_SECTIONS.filter(q => q[0] !== '3d').map(([v, t, tip]) => `<button type="button" role="tab" data-c3dsec="${v}" aria-selected="${C3D.section === v}" title="${tip}">${t}</button>`).join('')}</div>${secOn ? '' : `${tog('blade', 'Blade')}${vscale}`}`,
-    solve: running ? `<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">${uiIco('stop')}Stop</button>` : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">${uiIco('play')}Solve 3D</button>`,
+    solve: running ? `<button type="button" class="btn btn-secondary btn-sm" id="c3dStop">${uiIco('stop')}Stop</button>` : mesh3DReady() ? `<button type="button" class="btn btn-primary btn-sm" id="c3dRun">${uiIco('play')}Solve 3D</button>`
+      : `<button type="button" class="btn btn-primary btn-sm" id="c3dRun" disabled title="Solve needs the 3D mesh, laid out for the inputs as they are: press Mesh on the Mesh step">${uiIco('mesh')}Mesh first</button>`,
     results: `${viewSeg}
       <label class="fv-chk">Field <select data-c3d="field"${R ? '' : ' disabled title="Solve first"'}>${Object.entries(C3D_FIELDS).map(([k, f]) => `<option value="${k}"${k === C3D.field ? ' selected' : ''}>${f.l}</option>`).join('')}</select></label>
       ${tog('blade', 'Blade')}${tog('slurry', 'Slurry')}${tog('web', 'Web')}${tog('mesh', 'Mesh')}
@@ -989,7 +1006,7 @@ function view3D() {
       ${secOn ? `<div class="pane-legend"><span>${secT[2]}</span><span id="c3dSecK"></span><span>The elements' edges through their middle nodes; the metering edge and the contact line marked</span><span>Point at the section for the position</span></div></figure>` : `<div class="pane-legend"><span>x: machine direction →</span><span>y: up from the web (drawn ×${C3D.vscale})</span><span>z: across the web</span><span>Blade cut off just above the slurry</span>${R ? '<span>Mesh: as solved</span>' : ''}${CM ? '<span>Cells: checkMesh\'s measures, on the true heights</span>' : stp === 'mesh' && !secOn && C3D.source !== 'made' && !c3dSolvedMesh() ? '<span>The solve lays its mesh out from the blade\'s file: its cells show here once solved</span>' : ''}${(R0 ? R0.skew : P.skew) ? `<span>Blade skewed ${(R0 ? R0.skew : P.skew).toFixed(1)}° (drawn in the machine frame; the web runs along x)</span>` : ''}${R && C3D.stream ? `<span>Streamlines: from the inlet, spaced by equal flow up the gap${showField ? ', coloured by ' + fld.l.toLowerCase() : ''}${R.skew ? '; a line that leaves through the region\'s open side ends there' : ''}</span>` : ''}<span>Drag to turn, wheel to zoom, right-drag to pan</span></div></figure>`}`;
   const extra = {
     geometry: fig,
-    mesh: `<div class="step-view c3d-mesh">${fig}<aside class="step-side" id="c3dMeshSide">${c3dMeshSideHTML()}</aside>${m3StudyHTML()}</div>`,
+    mesh: `<div class="step-view c3d-mesh">${mesh3DReady() || R ? fig : c3dNotMeshedHTML()}<aside class="step-side" id="c3dMeshSide">${c3dMeshSideHTML()}</aside>${m3StudyHTML()}</div>`,
     solve: `<div id="c3dProg"></div>${c3dSolveHTML()}`,
     results: FO ? `<div id="c3dProg"></div>${c3dEndsAnswers(FO, stale)}${R0 ? fig + charts : ''}${c3dEndsHTML(FO)}<div class="oned-table" id="oneDTable"></div>`
       : R0 ? `<div id="c3dProg"></div>${E3 ? c3dEdgeHTML(E3, stale) : ''}${fig}${c3dStreamPanel(R)}${charts}<div class="oned-table" id="oneDTable"></div>`
@@ -1080,15 +1097,15 @@ function view3D() {
   }
   const odt = document.getElementById('oneDTable'); if (odt) odt.innerHTML = oneDCompareTable();
   const rb = document.getElementById('c3dRun'); if (rb) rb.onclick = () => c3dRun();
+  view.querySelectorAll('[data-mesh3d]').forEach(b => { b.onclick = mesh3DDo; });
   const sb = document.getElementById('c3dStop'); if (sb) sb.onclick = c3dStop;
   if (R) { c3dCharts(R); c3dEdgeCharts(R); c3dDrawUz(R); wireC3dStream(view.querySelector('.c3d-stream')); wireC3dStream(view.querySelector('.m3-uz')); }
   if (FO && stp === 'results') { c3dEdgeCharts(c3dEndView(FO, 'left'), 'L'); c3dEdgeCharts(c3dEndView(FO, 'right'), 'R'); }
   if (stp === 'solve') { drawSolve3D(); return; }
-  if (stp === 'mesh') requestMeshPreview3D();
   if (secOn) { c3dDrawSection(); return; }
   if (!document.getElementById('v3dHost')) return;
   // (the mesh: always on Mesh, never on Geometry, as chosen on Results)
-  const meshOn = stp === 'mesh' ? true : stp === 'geometry' ? false : C3D.mesh;
+  const meshOn = stp === 'mesh' ? mesh3DReady() || !!R : stp === 'geometry' ? false : C3D.mesh;
   // (drawn at once when three.js is in: an image export redraws the page and takes the view straight away)
   if (!G.mesh && !R) document.getElementById('v3dHost').innerHTML = `<p class="v3d-msg">${G.error ? 'Nothing to show: the geometry could not be built.' : 'No blade yet: import an STL or STEP file of the blade (inputs, 3D geometry).'}</p>`;
   else {

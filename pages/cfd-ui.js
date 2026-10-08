@@ -590,6 +590,11 @@ function runLocation(i) {
     if (tabBtn && FV.dock !== 'problems') tabBtn.click(); else renderCFD();
     return;
   }
+  // (Solve needs the location's mesh, laid out by the user for the inputs as they are: nothing meshes on its own)
+  if (typeof mesh2DReady === 'function' && !mesh2DReady(i)) {
+    logCFD(i, `not solved: ${mesh2DState(i) === 'stale' ? 'the mesh is out of date (the inputs changed since it was laid out)' : 'not meshed yet'}; press Mesh on the Mesh step`, 'bad');
+    renderCFD(); return;
+  }
   const geo = cfdGeometry(i);
   const worker = makeWorker('cfd-worker.js');
   cfdWorkers[i] = worker;
@@ -1135,7 +1140,6 @@ function renderCFD() {
   } else renderStepView2D();
   renderDims2D();
   renderMeshLocs2D();
-  requestMeshPreviews();
   renderCases();
   renderProbes();
   renderCuts();

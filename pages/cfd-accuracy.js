@@ -564,7 +564,7 @@ async function acc3Run() {
 /** One 3D solve of the page's current settings, from the Mesh step: its result (C3D_RES), or null (stopped, failed). */
 function acc3Solve() {
   return new Promise(done => {
-    c3dRun(true);
+    c3dRun('study');
     if (C3D_RUN.status !== 'running') { ACC3.status = 'error'; ACC3.error = C3D_RUN.error || 'the 3D could not start'; done(null); return; }
     const t = setInterval(() => {
       if (C3D_RUN.status === 'running') { acc3Status(); return; }
@@ -652,7 +652,7 @@ const m3sCounts = p => Object.fromEntries(C3D_PRESET_KEYS.map(k => [k, C3D_MESH_
 /** One 3D solve of the page's current settings, from the Mesh step: its result (C3D_RES), or null (stopped, failed: M3S says which). */
 function m3sSolve() {
   return new Promise(done => {
-    c3dRun(true);
+    c3dRun('study');
     if (C3D_RUN.status !== 'running') { M3S.status = 'error'; M3S.error = C3D_RUN.error || 'the 3D could not start'; done(null); return; }
     const t = setInterval(() => {
       if (C3D_RUN.status === 'running') { m3sStatus(); return; }
