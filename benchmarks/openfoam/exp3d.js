@@ -17,7 +17,14 @@ const OUT = process.argv[2], port = process.argv[3] || 8795, SET = JSON.parse(pr
     if (S.stripW != null) C3D.stripW = S.stripW;
     if (S.loc != null) C3D.loc = S.loc;
     if (S.mesh) Object.assign(C3D, S.mesh);
-    navGo('cfd3d'); goStep3D('solve'); render();
+    navGo('cfd3d');
+    // (nothing meshes on its own: the mesh laid out first, as Mesh on the Mesh step does, then the solve)
+    if (typeof mesh3DDo === 'function') {
+      goStep3D('mesh'); mesh3DDo();
+      for (let i = 0; i < 1200 && ['busy', 'none'].includes(mesh3DState()); i++) await new Promise(r => setTimeout(r, 250));
+      if (mesh3DState() !== 'ok') return { error: 'mesh: ' + mesh3DState() };
+    }
+    goStep3D('solve'); render();
     c3dRun(true);
     for (let i = 0; i < 3600 && C3D_RUN.status === 'running'; i++) await new Promise(r => setTimeout(r, 500));
     if (C3D_RUN.status !== 'done') return { error: C3D_RUN.status + ': ' + C3D_RUN.error };

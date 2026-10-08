@@ -111,10 +111,10 @@ setInterval(() => { if (SOLVE_ASK.size) solvePump(); else solveBarPaint(); }, 40
 function solveStaleList() {
   const out = [];
   for (const k of SOLVE_ORDER) if (solveState(k) === 'stale' && !SOLVE_ASK.has(k)) out.push({ id: k, l: SOLVE_M[k].l, key: solveSafe(SOLVE_M[k].key, null) });
-  if (typeof cfdRuns !== 'undefined') cfdRuns.forEach((r, i) => { if (r.status !== 'running' && solveSafe(() => cfdIsStale(i), false)) out.push({ id: 'cfd' + i, l: `2D at L${i + 1}`, key: solveSafe(() => cfdInputsKey(cfdGeometry(i)), null) }); });
+  if (typeof cfdRuns !== 'undefined') cfdRuns.forEach((r, i) => { if (r.status !== 'running' && solveSafe(() => cfdIsStale(i), false)) out.push({ id: 'cfd' + i, l: `2D at L${i + 1}${typeof mesh2DReady === 'function' && !mesh2DReady(i) ? ' (mesh first)' : ''}`, key: solveSafe(() => cfdInputsKey(cfdGeometry(i)), null) }); });
   if (typeof C3D_RES !== 'undefined' && C3D_RES && C3D_RUN.status !== 'running') {
     const k3 = solveSafe(() => c3dSolveKey3(C3D_RES), null);
-    if (k3 && k3 !== C3D_RES.key) out.push({ id: '3d', l: C3D_RES.region === 'strip' ? `3D strip at L${C3D_RES.loc + 1}` : C3D_RES.region === 'edge' ? '3D edge strip' : '3D full width', key: k3 });
+    if (k3 && k3 !== C3D_RES.key) out.push({ id: '3d', l: (C3D_RES.region === 'strip' ? `3D strip at L${C3D_RES.loc + 1}` : C3D_RES.region === 'edge' ? '3D edge strip' : '3D full width') + (typeof mesh3DReady === 'function' && !mesh3DReady() ? ' (mesh first)' : ''), key: k3 });
   }
   return out;
 }
@@ -146,8 +146,9 @@ const solveStaleSig = L => JSON.stringify(L.map(s => [s.id, s.key]));
 function solveResolve(ids) {
   const own = ids.filter(k => SOLVE_M[k]), cfd = ids.filter(k => /^cfd\d$/.test(k)).map(k => +k.slice(3));
   solveSel.clear();
-  if (cfd.length && typeof runLocation === 'function') cfd.forEach(i => runLocation(i));
-  if (ids.includes('3d') && typeof c3dRun === 'function') c3dRun(true);
+  // (the 2D and 3D only where their mesh is laid out for the inputs as they are: Solve needs the user's mesh)
+  if (cfd.length && typeof runLocation === 'function') cfd.forEach(i => { if (typeof mesh2DReady !== 'function' || mesh2DReady(i)) runLocation(i); });
+  if (ids.includes('3d') && typeof c3dRun === 'function' && (typeof mesh3DReady !== 'function' || mesh3DReady())) c3dRun(true);
   if (own.length) solveArm(own); else if (typeof render === 'function') render();
 }
 

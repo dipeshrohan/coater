@@ -126,8 +126,10 @@ mbA('phys.inputs', { l: 'Process inputs (web speed, gap, slurry …)', tip: 'The
 mbA('mesh.2d', { l: '2D mesh…', tip: 'The 2D mesh of each location, before it is solved: preview, quality, zones (Coating › 2D, Mesh).', run: () => mb2D('mesh'), chk: () => tab === 4 && step2D() === 'mesh' });
 ['coarse', 'medium', 'fine'].forEach(k => mbA('mesh.2d.' + k, { l: MESH_PRESETS[k].l, tip: `The 2D mesh preset: ${MESH_PRESETS[k].l.toLowerCase()}.`, run: () => mbSelect(() => mb2D('mesh'), '#cfdMesh', k), chk: () => CFDS.mesh === k }));
 mbA('mesh.2d.custom', { l: 'Custom counts', tip: 'Set the 2D mesh\'s counts yourself (Mesh step).', run: () => mbSelect(() => mb2D('mesh'), '#cfdMesh', 'custom'), chk: () => CFDS.mesh === 'custom' });
+mbA('mesh.2d.do', { l: 'Mesh 2D (the four locations)', tip: 'Lay out the four locations\' 2D meshes for the inputs as they are: Solve needs them.', run: () => { mb2D('mesh'); mesh2DDo(); } });
 mbA('mesh.2d.study', { l: '2D mesh study…', tip: 'One location on three meshes, to see how much the answer moves.', run: () => mbClick(() => mb2D('mesh'), '#stepMeshStudy') });
 mbA('mesh.2d.acc', { l: '2D mesh to an accuracy…', tip: 'Refine where the answer needs it, until it stops changing.', run: () => mbClick(() => mb2D('mesh'), '#stepMeshAcc') });
+mbA('mesh.3d.do', { l: 'Mesh 3D', tip: 'Lay out the 3D mesh for the inputs as they are: Solve needs it.', run: () => { mb3D('mesh'); mesh3DDo(); } });
 mbA('mesh.3d', { l: '3D mesh…', tip: 'The 3D mesh: presets, the gap, across the web, zones, statistics (Coating › 3D, Mesh).', run: () => mb3D('mesh'), chk: () => tab === 9 && step3D() === 'mesh' });
 Object.entries(C3D_MESH_PRESETS).forEach(([k, q]) => mbA('mesh.3d.' + k, { l: q.l, tip: `The 3D mesh preset: ${q.l.toLowerCase()} (${q.nxGap} along the blade, ${q.ny} across the gap, ${q.nzStrip} across a strip).`,
   run: () => { mb3D('mesh'); c3dSetPreset(k); }, chk: () => c3dPresetOf() === k, on: () => !mbBusy3D(), why: () => 'Wait for the 3D solve or study to end.' }));
@@ -222,8 +224,8 @@ const MB_MENUS = {
     { sub: 'Custom profile', items: ['imp.profile.csv', 'imp.profile.dxf', 'imp.profile.stl'] }, '-', 'geo.3d', { sub: 'Blade for the 3D', items: ['geo.src.made', 'geo.src.file'] }, 'imp.blade3d', 'exp.stl3d', '-', 'geo.across', 'imp.gap'],
   physics: ['phys.mat', { sub: 'Materials', items: ['phys.card.matSlurryH', 'phys.card.matRheoH', 'phys.card.matOrH', 'phys.card.matFibreH', 'phys.card.matDryH', 'phys.card.matFilmH', 'phys.card.matFurnH'] },
     { sub: 'Rheology model', items: Object.keys(RHEO_MODELS).map(k => 'phys.rheo.' + k) }, 'phys.struct', 'imp.rheometer', '-', 'phys.process', { sub: 'Process stage', items: MB_STAGES.map(s => 'phys.stage.' + s.k) }, 'phys.inputs'],
-  mesh: [{ h: '2D' }, 'mesh.2d', { sub: '2D mesh preset', items: ['mesh.2d.coarse', 'mesh.2d.medium', 'mesh.2d.fine', 'mesh.2d.custom'] }, 'mesh.2d.study', 'mesh.2d.acc',
-    { h: '3D' }, 'mesh.3d', { sub: '3D mesh preset', items: Object.keys(C3D_MESH_PRESETS).map(k => 'mesh.3d.' + k) }, { sub: 'Element type', items: ['mesh.3d.type'] }, 'mesh.3d.stats',
+  mesh: [{ h: '2D' }, 'mesh.2d.do', 'mesh.2d', { sub: '2D mesh preset', items: ['mesh.2d.coarse', 'mesh.2d.medium', 'mesh.2d.fine', 'mesh.2d.custom'] }, 'mesh.2d.study', 'mesh.2d.acc',
+    { h: '3D' }, 'mesh.3d.do', 'mesh.3d', { sub: '3D mesh preset', items: Object.keys(C3D_MESH_PRESETS).map(k => 'mesh.3d.' + k) }, { sub: 'Element type', items: ['mesh.3d.type'] }, 'mesh.3d.stats',
     { sub: '3D mesh views', items: C3D_SECTIONS.map(q => 'mesh.3d.sec.' + q[0]) }, 'mesh.3d.study', 'mesh.3d.studyStop', 'mesh.3d.acc', 'mesh.3d.accStop'],
   simulation: [{ sub: 'Dimension', items: ['sim.dim.8', 'sim.dim.4', 'sim.dim.9'] }, 'key:run.run', 'key:run.stop',
     { sub: '2D CFD', items: [{ h: 'Steps' }, ...STEPS.map(q => 'sim.2d.' + q[0]), { h: 'Run' }, 'sim.2d.runAll', 'sim.2d.run0', 'sim.2d.run1', 'sim.2d.run2', 'sim.2d.run3', 'sim.2d.stop', '-', 'sim.2d.conv'] },
@@ -428,7 +430,7 @@ const mbRecent = () => { try { const v = JSON.parse(localStorage.getItem(MB_RECE
 function mbRecentAdd(id) { const r = [id, ...mbRecent().filter(x => x !== id)].slice(0, 8); try { localStorage.setItem(MB_RECENT_STORE, JSON.stringify(r)); } catch (e) { /* not kept */ } }
 /** Other words a command is found by in the palette (as users name it: run, generate, show, export results …). */
 const MB_KW = { 'sim.3d.run': 'run 3d cfd simulation start', 'sim.2d.runAll': 'run 2d cfd simulation solve start', 'key:run.run': 'run solve start simulation',
-  'mesh.2d': 'generate mesh preview 2d', 'mesh.3d': 'generate mesh hexahedra 3d', 'sim.2d.stop': 'cancel', 'sim.3d.stop': 'cancel', 'key:run.stop': 'cancel',
+  'mesh.2d': 'generate mesh preview 2d', 'mesh.3d': 'generate mesh hexahedra 3d', 'mesh.2d.do': 'generate mesh make 2d', 'mesh.3d.do': 'generate mesh make 3d', 'sim.2d.stop': 'cancel', 'sim.3d.stop': 'cancel', 'key:run.stop': 'cancel',
   'key:view.fitAll': 'fit all zoom extents reset view', 'view.3d.reset': 'reset camera fit', 'sim.2d.conv': 'residuals monitor', 'res.2d.probe': 'add probe',
   'res.3d.xflow': 'diagnostic cross flow', 'mesh.3d.stats': 'quality diagnostics', 'file.imgSave': 'screenshot png svg picture', 'tools.report': 'html',
   'edit.prefs': 'settings options', 'help.about': 'version system information' };
