@@ -10,8 +10,7 @@
  *  rather than the answer itself (an answer near zero: a crack risk of 0.02, a flat curl). secs: one solve, measured. */
 const SENS_STAGES = [
   { k: '1d', phys: 'coat', l: 'Coating', secs: 4.3, outs: [
-    { l: 'Wet film', u: 'mm', d: 3, floor: 0.01, get: () => { const w = typeof processWeb === 'function' ? processWeb() : null; if (w && Number.isFinite(w.mean)) return w.mean * 1000;
-      const f = ONE_D.res.locs.map(L => L.film); return f.reduce((a, b) => a + b, 0) / f.length * 1000; } }] },
+    { l: 'Wet film', u: 'mm', d: 3, floor: 0.01, get: sensWetFilm }] },
   { k: 'dry', phys: 'dry', l: 'Drying', secs: 9.2, outs: [
     { l: 'Water left at the oven\'s exit', u: '% of the GO', d: 1, floor: 1, get: () => linePick(dryRuns(lineSel())).exit.waterPct }] },
   { k: 'film', phys: 'film', l: 'Peel and wind', secs: 17.9, outs: [
@@ -23,10 +22,19 @@ const SENS_STAGES = [
     { l: 'Graphene film thickness', u: 'µm', d: 2, floor: 0.1, get: () => furnBatch(FURN.res).h * 1e6 },
     { l: 'Crack risk', u: '% of its strength', d: 0, floor: 5, get: () => { const q = furnLights(FURN.res).find(x => x.k === 'crack'); return q && Number.isFinite(q.v) ? q.v * 100 : NaN; } }] },
 ];
+/** The wet film's mean across the web (mm), from the 1D across the web alone: the same model at the base and at each
+ *  change (the Line page's scales it to a 2D or 3D, which a change puts out of date; the ranking solves the 1D again). */
+function sensWetFilm() {
+  const A = typeof oneDAcrossNow === 'function' ? oneDAcrossNow() : null;
+  if (A && A.length > 1) { let area = 0; for (let k = 1; k < A.length; k++) area += (A[k].film + A[k - 1].film) / 2 * (A[k].z - A[k - 1].z); return area / (A[A.length - 1].z - A[0].z) * 1000; }
+  const f = ONE_D.res.locs.map(L => L.film); return f.reduce((a, b) => a + b, 0) / f.length * 1000;
+}
 /** The models whose results a run changes and puts back, each with every field its solve sets (the 1D's across the web
  *  too; the mixing, which a value the coating reads may solve again). */
-const SENS_MODELS = () => [[ONE_D, ['res', 'key', 'across', 'acrossKey']], [MIX, ['res', 'key']], [DRY, ['res', 'key']], [FILM, ['res', 'key']],
-  [SHEET, ['res', 'key']], [STACK, ['res', 'key']], [FURN, ['res', 'key']]];
+const SENS_MODELS = () => [[ONE_D, ['res', 'key', 'across', 'acrossKey', 'error']], [MIX, ['res', 'key', 'error']], [DRY, ['res', 'key', 'error']],
+  [FILM, ['res', 'key', 'error']], [SHEET, ['res', 'key', 'error']], [STACK, ['res', 'key', 'error']], [FURN, ['res', 'key', 'error']]];
+/** A row whose value is a material copy's that has since been deleted: no longer ranked, nor shown. */
+const sensRowGone = r => !!(r.p.b.inst && !(MAT.inst && MAT.inst[r.p.b.inst]));
 const sensKeep = () => SENS_MODELS().map(([M, f]) => ({ M, v: Object.fromEntries(f.map(k => [k, M[k]])) }));
 const sensPutBack = keep => { for (const q of keep || []) Object.assign(q.M, q.v); };
 /** The ranking: status 'idle' | 'running' | 'done' | 'stopped'; rows (each value's place); the run's queue and where it is. */
@@ -81,7 +89,9 @@ function sensStart() {
 /** The next change: the value set, its stage (and anything before it its value also changes) solved, its answers read. */
 function sensNext() {
   if (SENS.stop || SENS.i >= SENS.jobs.length) { sensEnd(SENS.stop ? 'stopped' : 'done'); return; }
-  const [n, f] = SENS.jobs[SENS.i], row = SENS.rows[n], v = hubVal(row.p);
+  const [n, f] = SENS.jobs[SENS.i], row = SENS.rows[n];
+  if (sensRowGone(row)) { row.err = 'its material copy was deleted'; SENS.i++; setTimeout(sensNext, 0); return; }
+  const v = hubVal(row.p);
   const x = Math.min(Number.isFinite(v.hi) ? v.hi : Infinity, Math.max(Number.isFinite(v.lo) ? v.lo : -Infinity, row.v0 * f));
   if (f < 1) row.lo = x; else row.hi = x;
   try { hubSet(row.p, x); } catch (e) { row.err = e.message; SENS.i++; setTimeout(sensNext, 0); return; }
@@ -112,8 +122,10 @@ function sensNext() {
 /** The value back as it was, and every model's result put back (the next change starts from the same base). */
 function sensRestore(row) {
   // (the value back as it was -- unless the user typed another while it was being changed: theirs is kept)
-  const x = SENS.cur && SENS.cur.x, now = hubVal(row.p).v;
-  if (x == null || now === x) { try { hubSet(row.p, row.v0); } catch (e) { /* (as it was: within its range) */ } }
+  // (and the change's solves still queued dropped: stopped between two, the next would start on the restored inputs)
+  for (const k of (SENS.cur && SENS.cur.arm) || []) if (solveState(k) !== 'busy') SOLVE_ASK.delete(k);
+  const x = SENS.cur && SENS.cur.x, now = sensRowGone(row) ? null : hubVal(row.p).v;
+  if (now != null && (x == null || now === x)) { try { hubSet(row.p, row.v0); } catch (e) { /* (as it was: within its range) */ } }
   sensPutBack(SENS.keep);
 }
 function sensEnd(status) {
@@ -164,8 +176,9 @@ function sensHTML() {
     return `<section class="hub-sens">${head}<button type="button" class="btn btn-secondary btn-sm" id="hubSensStop">${uiIco('stop')}Stop</button></div>
       <div class="hub-sens-prog"><progress max="${N}" value="${k}"></progress><span>${k} of ${N} solves${row ? ` · ${hubEsc(hubPropName(row.r, row.p))} ${SENS.cur.f < 1 ? '−' : '+'}${SENS_F * 100} % (${hubEsc(row.s.l)})` : ''} · about ${sensClock(Math.max(0, left))} left</span></div></section>`;
   }
-  const ranked = SENS.rows.map(r => ({ r, sc: sensScore(r) })).filter(x => x.sc).sort((a, b) => b.sc.ch - a.sc.ch);
-  const left = SENS.rows.filter(r => !sensScore(r)), errs = left.filter(r => r.err);
+  const live = SENS.rows.filter(r => !sensRowGone(r));   // (a deleted copy's: left out; the ranking reads out of date)
+  const ranked = live.map(r => ({ r, sc: sensScore(r) })).filter(x => x.sc).sort((a, b) => b.sc.ch - a.sc.ch);
+  const left = live.filter(r => !sensScore(r)), errs = left.filter(r => r.err);
   const stale = ranked.length && SENS.key !== sensKeyNow();
   const btn = `<button type="button" class="btn btn-primary btn-sm" id="hubSensRun"${sensBaseReady() ? '' : ' disabled title="Solve the line first: each value\'s change is taken from it"'}>${uiIco('play')}${ranked.length ? 'Rank them again' : 'Rank them'}</button>`;
   const note = `<p class="hub-sens-note">${vals.length} assumed values, each at −${SENS_F * 100} % and +${SENS_F * 100} %, its own stage solved again: about ${sensClock(est)}.${sensBaseReady() ? '' : ' Solve the line first.'}${stale ? ' <b>Out of date</b>: the inputs changed since it was ranked.' : ''}${SENS.rows.length && left.length ? ` <span class="warn-text" title="${hubEsc(errs.map(r => `${hubPropName(r.r, r.p)}: ${r.err}`).join('\n'))}">${left.length} not ranked: ${sensWhyLeft(left, errs)}.</span>` : ''}</p>`;
