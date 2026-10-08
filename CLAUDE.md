@@ -17,6 +17,8 @@
 
 ## Shipping
 - Everything reaches main through a pull request, squash merged.
-- Never leave a pull request unmerged: once its review (Codex) is complete and nothing is left to fix, merge it at once, or work is lost.
+- Never merge before the Codex review is complete: it is complete when Codex puts a 👍 on the pull request (no findings)
+  or posts its comments. Fix every comment, or answer on it why not, before merging.
+- Never leave a pull request unmerged: once its review is complete and nothing is left to fix, merge it at once, or work is lost.
 - After every merge, tell the owner to re-download main (https://github.com/dipeshrohan/coater/archive/refs/heads/main.zip) or run `git pull`.
 - Give short, frequent status updates.
