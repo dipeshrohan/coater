@@ -100,6 +100,11 @@ function swbMesh(A, dim, o) {
   SWB_MESH.set(key, out);
   return out;
 }
+/** The domain's block without the mesh: one cell for each part along each axis (a drawing's outline, not a mesh). */
+function swbOutline(A, dim, o) {
+  const ax = A.axes(dim, o), axes = ax.axes.map(segs => [].concat(segs).map(S => ({ ...S, n: 1, grade: 1 })));
+  return { M: mpMesh({ dim, p: 1, axes, mat: ax.mat }) };
+}
 /** The mesh's numbers: nodes, elements, unknowns, the band and its memory, each axis's smallest and largest element,
  *  and the elements' worst aspect ratio (their longest side over their shortest). */
 function swbMeshStats(M, dpn) {
@@ -225,7 +230,10 @@ function swbDrawSection(cv, A, dim, o, what) {
  * face condition (solve) or by a field (results: f(node index) on the faces). Returns the projection.
  */
 function swbDrawIso(cv, A, o, what, field) {
-  const dim = 3, L3 = A.layout(3, o), { M } = swbMesh(A, 3, o), [xs, ys, zs] = M.coord;
+  // (the domain drawn on its parts' block, one cell a part, until the user's mesh is there: nothing meshed on its own --
+  //  the mesh only on Mesh, on Solve once meshed, and under a result's field)
+  const useMesh = !!field || what === 'mesh' || (what === 'solve' && meshReady(A.sid + 3));
+  const dim = 3, L3 = A.layout(3, o), { M } = useMesh ? swbMesh(A, 3, o) : swbOutline(A, 3, o), [xs, ys, zs] = M.coord;
   const X1 = xs[xs.length - 1], Y1 = ys[ys.length - 1], Z1 = zs[zs.length - 1];
   const kz = L3.kz || 1;   // (the height drawn this many times its scale: 1, true)
   const { c, w, h } = setupCanvas(cv, 0.56), ink = cssVar('--ink'), mut = cssVar('--muted');
@@ -300,10 +308,12 @@ function swbStatus(A, dim, o) {
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim, err = A.failed(dim);
   if (!o) return { geometry: { note: 'after the stage before' }, mesh: {}, solve: {}, results: {} };
   // (a model with its own mesh -- not mp-core's block -- gives its numbers itself)
-  const st = A.meshStats ? A.meshStats(dim, o) : swbMesh(A, dim, o).stats;
+  const id = A.sid + dim, ms = meshReady(id) ? 'ok' : meshState(id);
+  const st = ms === 'ok' ? (A.meshStats ? A.meshStats(dim, o) : swbMesh(A, dim, o).stats) : null;
   return {
     geometry: { state: 'done', note: A.domainShort(dim, o) },
-    mesh: { state: 'done', note: `${st.nodes.toLocaleString('en')} nodes · ${st.elems.toLocaleString('en')} elements` },
+    mesh: st ? { state: 'done', note: `${st.nodes.toLocaleString('en')} nodes · ${st.elems.toLocaleString('en')} elements` }
+      : { state: ms === 'stale' ? 'warn' : '', note: ms === 'stale' ? 'out of date' : 'not meshed', title: 'Press Mesh on the Mesh step: Solve needs the mesh' },
     solve: { state: cur ? 'done' : busy ? 'run' : err ? 'bad' : '', note: cur ? `solved in ${swbSecs(S.res[dim].ms)}` : busy ? (S.prog ? `step ${S.prog.k} of ${S.prog.n}` : 'setting up…') : err ? 'failed' : 'not solved' },
     results: { state: cur ? '' : '', note: cur ? 'the answers' : 'nothing yet' },
   };
@@ -312,12 +322,28 @@ function swbStatus(A, dim, o) {
 function swbTools(A, dim, step, o) {
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim;
   const scale = dim === 2 && step !== 'results' && A.layout(2, o || A.inputs(2)).bands ? `<div class="seg seg-sm" role="tablist" aria-label="The drawing's scale" id="swbScale">${[['true', 'True scale'], ['stretch', 'Layers stretched']].map(([k, t]) => `<button type="button" role="tab" data-swbscale="${k}" aria-selected="${(SWB.scale[A.sk] || 'true') === k}">${t}</button>`).join('')}</div>` : '';
+  const id = A.sid + dim, mOk = meshReady(id);
+  if (o && !mOk && !busy) return [A.tools ? A.tools(dim, step) : '', scale, step === 'mesh' ? swbMeshBtn(A, dim) : '',
+    step === 'solve' || step === 'results' ? `<button type="button" class="btn btn-primary btn-sm" id="swbSolve" disabled title="Solve needs the mesh, laid out for the inputs as they are: press Mesh on the Mesh step">${uiIco('mesh')}Mesh first</button>` : ''].filter(Boolean).join('');
   const solve = `<button type="button" class="btn btn-primary btn-sm" id="swbSolve"${busy || cur ? ' disabled' : ''} title="${cur ? 'Solved for the inputs as they are' : !o ? `Solve the ${SWB_DIMS[dim]} (and first what it needs: the stages before it)` : dim === 3 ? A.slow3 : `Solve the ${SWB_DIMS[dim]}`}">${uiIco('play')}Solve ${SWB_DIMS[dim]}</button>`;
   const stop = busy ? `<button type="button" class="btn btn-secondary btn-sm" id="swbStop">${uiIco('stop')}Stop</button>` : '';
   const prog = busy ? `<span class="swb-prog" role="progressbar" aria-label="The solve's progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${S.prog ? Math.round(100 * S.prog.k / S.prog.n) : 0}"><i style="width:${S.prog ? (100 * S.prog.k / S.prog.n).toFixed(1) : 0}%"></i></span>` : '';
   const csv = step === 'results' ? `<button type="button" class="btn btn-secondary btn-sm" id="swbCsv"${cur ? '' : ' disabled'}>${uiIco('download')}Export CSV</button>` : '';
   const reset = step === 'mesh' ? `<button type="button" class="btn btn-secondary btn-sm" id="swbMeshReset"${OVEN.mp && OVEN.mp[A.key] && OVEN.mp[A.key][dim] ? '' : ' disabled'}>${uiIco('restart')}Default mesh</button>` : '';
-  return [A.tools ? A.tools(dim, step) : '', scale, reset, step === 'solve' || step === 'results' ? solve + stop + prog : '', csv].filter(Boolean).join('');
+  return [A.tools ? A.tools(dim, step) : '', scale, step === 'mesh' && o ? swbMeshBtn(A, dim) : '', reset, step === 'solve' || step === 'results' ? solve + stop + prog : '', csv].filter(Boolean).join('');
+}
+/** The Mesh step's Mesh button: the mesh laid out only when pressed (task 4b). */
+const swbMeshBtn = (A, dim) => `<button type="button" class="btn btn-primary btn-sm" id="swbMesh" title="Lay out the mesh for the inputs as they are: Solve needs it">${uiIco('mesh')}${meshState(A.sid + dim) === 'ok' ? 'Mesh again' : 'Mesh'}</button>`;
+/** The Mesh step before Mesh is pressed (or after the inputs changed): what to do, and the mesh's settings. */
+function swbNotMeshedHTML(A, dim) {
+  const set = swbSettings(A, dim), F = A.meshFields(dim), stale = meshState(A.sid + dim) === 'stale';
+  return `<div class="swb-tables">
+    <section class="swb-card">${emptyHint(stale ? 'Mesh out of date' : 'Not meshed yet', stale ? 'The inputs changed since the mesh was laid out. Press Mesh to lay it out again: Solve needs it.' : 'Press Mesh to lay out the mesh with the settings beside. Solve needs it.',
+      `<button type="button" class="btn btn-primary btn-sm" data-swbmesh>${uiIco('mesh')}Mesh</button>`)}</section>
+    <section class="swb-card"><h4>${uiBadge('tune')}Mesh and time steps</h4>
+      <table class="swb-t swb-set"><tbody>${F.map(f => `<tr><th scope="row"><label for="swbm_${f.k}">${f.t}</label></th><td><input type="number" id="swbm_${f.k}" data-swbm="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${set[f.k]}" aria-label="${f.t}"></td><td class="swb-u">${f.u || ''}</td><td class="swb-def">${set[f.k] === f.def ? '' : `default ${f.def}`}</td></tr>`).join('')}</tbody></table>
+      <p class="fv-why">${A.meshHow(dim)}</p></section>
+  </div>`;
 }
 /** The number tiles above a step's drawing. */
 function swbTiles(A, dim, step, o) {
@@ -325,6 +351,7 @@ function swbTiles(A, dim, step, o) {
   const tile = (l, v, sub, ic) => `<div class="stat" title="${l}: ${v}"><span>${uiBadge(ic)}${l}</span><strong>${v}</strong>${sub ? `<small>${sub}</small>` : ''}</div>`;
   const S = A.S(), r = A.current(dim) ? S.res[dim] : null;
   if (step === 'geometry') return A.geoTiles(dim, o).map(q => tile(...q)).join('');
+  if (step === 'mesh' && !meshReady(A.sid + dim)) return '';
   if (step === 'mesh' && A.meshTiles) return A.meshTiles(dim, o).map(q => tile(...q)).join('');
   const st = step === 'mesh' ? swbMesh(A, dim, o).stats : null;
   if (step === 'mesh') return [tile('Nodes', st.nodes.toLocaleString('en'), `${A.dofs(dim)} unknowns at each`, 'mesh'), tile('Elements', st.elems.toLocaleString('en'), dim === 1 ? 'linear, on a line' : dim === 2 ? 'linear quadrilaterals' : 'linear hexahedra', 'grading'),
@@ -349,8 +376,11 @@ function swbPage(A, dim) {
     const sb = document.getElementById('swbSolve'); if (sb) sb.onclick = () => { A.request(dim); render(); };
     return;
   }
-  if (step !== 'results') panes = [pane('swbCv', step === 'geometry' ? 'section' : step === 'mesh' ? 'mesh' : 'flow', names[step], `${names[step]}: ${A.domain(dim, o)}`)];
+  // (the Mesh step before Mesh is pressed: the domain drawn as on Geometry, nothing laid out -- task 4b)
+  const meshed = meshReady(A.sid + dim), drawAs = step === 'mesh' && !meshed ? 'geometry' : step;
+  if (step !== 'results') panes = [pane('swbCv', drawAs === 'geometry' ? 'section' : step === 'mesh' ? 'mesh' : 'flow', names[drawAs], `${names[drawAs]}: ${A.domain(dim, o)}`)];
   if (step === 'geometry') extra = swbGeoHTML(A, dim, o);
+  else if (step === 'mesh' && !meshed) extra = swbNotMeshedHTML(A, dim);
   else if (step === 'mesh') extra = (A.meshHTML ? A.meshHTML(dim, o) : swbMeshHTML(A, dim, o)) + (dim === 3 && !A.meshHTML ? swbCellsHTML(A, o) : '');
   else if (step === 'solve') extra = swbSolveHTML(A, dim, o);
   else extra = A.resultsHTML(dim);
@@ -359,9 +389,9 @@ function swbPage(A, dim) {
   swbStatusPills(A, dim, o);
   if (step !== 'results') {
     const cv = document.getElementById('swbCv');
-    if (A.draw) A.draw(cv, dim, o, step); else if (iso) swbDrawIso(cv, A, o, step); else swbDrawSection(cv, A, dim, o, step);
-    document.getElementById('swbCvLg').innerHTML = swbLegend(A, dim, o, step);
-    if (step === 'mesh' && dim === 3 && !A.meshHTML) swbCellsMount(A, o);
+    if (A.draw) A.draw(cv, dim, o, drawAs); else if (iso) swbDrawIso(cv, A, o, drawAs); else swbDrawSection(cv, A, dim, o, drawAs);
+    document.getElementById('swbCvLg').innerHTML = swbLegend(A, dim, o, drawAs);
+    if (step === 'mesh' && meshed && dim === 3 && !A.meshHTML) swbCellsMount(A, o);
   } else {
     // (task 13: the results as a viewer -- its views listed, one shown, its key values beside it -- where the stage has it)
     if (A.viewer && typeof rvBuild === 'function') rvBuild(document.querySelector('#modWb .mod-extra > section'), `${A.sk}:${dim}`, A.viewNames ? A.viewNames(dim) : {});
@@ -375,6 +405,7 @@ function swbStatusPills(A, dim, o) {
   const el = document.getElementById('st');
   if (!el) return;
   const S = A.S(), cur = A.current(dim), busy = S.busy && S.bdim === dim, err = A.failed(dim);
+  if (!busy && SOLVE_NOMESH.has(A.sid + dim) && !meshReady(A.sid + dim)) { el.innerHTML = pill(`The ${SWB_DIMS[dim]} is not solved: its mesh is not laid out for the inputs as they are -- press Mesh on the Mesh step, then Solve`, 'warn'); return; }
   el.innerHTML = busy ? pill(`Solving the ${SWB_DIMS[dim]}${S.prog ? `: time step ${S.prog.k} of ${S.prog.n}` : '…'}`, '')
     : cur ? pill(`Solved in ${swbSecs(S.res[dim].ms)} for the inputs as they are`, 'ok')
     : err ? pill(`The ${SWB_DIMS[dim]} could not be solved: ${dryEsc(S.error[dim])}`, 'bad')
@@ -462,6 +493,8 @@ function swbWire(A, dim) {
   const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
   on('swbSolve', () => { A.request(dim); render(); });
   on('swbStop', () => { A.stop(); render(); });
+  on('swbMesh', () => meshDo(A.sid + dim));
+  view.querySelectorAll('[data-swbmesh]').forEach(b => { b.onclick = () => meshDo(A.sid + dim); });
   on('swbCsv', () => A.csv(dim));
   on('swbMeshReset', () => { swbResetMesh(A, dim); undoCommit(); render(); });
   if (A.wire) A.wire(dim);

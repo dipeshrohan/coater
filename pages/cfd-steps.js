@@ -1089,6 +1089,9 @@ const c3dMeshedMessage = () => C3D.source === 'file' && C3D_M.m && C3D_M.key ===
 function meshMarksReset() {
   MESH_PV.byLoc.fill(null);
   Object.assign(C3D_M, { key: null, m: null, error: null });
+  // (the stages' and the pool's meshes, app/solve-ctl.js)
+  if (typeof MESH_DONE !== 'undefined') for (const k of Object.keys(MESH_DONE)) delete MESH_DONE[k];
+  if (typeof SOLVE_NOMESH !== 'undefined') SOLVE_NOMESH.clear();
 }
 /** Whether the 3D may be solved: its mesh made for the inputs as they are (or its result current: nothing changed). */
 const mesh3DReady = () => mesh3DState() === 'ok' || (() => { const S = c3dShown(); return !!(S && S.result && S.key === c3dSolveKey3(S)); })();

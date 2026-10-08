@@ -20,7 +20,9 @@ const solveAsked = k => SOLVE_ASK.has(k);
 const solveTake = k => { SOLVE_ASK.delete(k); };
 /** Whether a model may start now: asked for, and nothing it needs first still asked for or solving (it never starts on
  *  part of its inputs; the pump starts it once they are done). */
-const solveMay = k => SOLVE_ASK.has(k) && !((SOLVE_M[k] || { up: [] }).up.some(u => SOLVE_ASK.has(u) || solveState(u) === 'busy'));
+const solveMay = k => SOLVE_ASK.has(k) && !solveUpWait(k) && meshReady(k);
+/** Whether what model k needs first is still asked for or solving. */
+const solveUpWait = k => (SOLVE_M[k] || { up: [] }).up.some(u => SOLVE_ASK.has(u) || solveState(u) === 'busy');
 
 const fnOk = f => typeof f === 'function';
 /** The models (id → what it is called, the page it is on, what it needs first, and its state). */
@@ -58,6 +60,27 @@ const SOLVE_M = {
 // (the pool behind the blade in 2D and 3D, Coating › 2D and 3D › Pool and feed: from the 1D's pulse cycle)
 for (const d of [2, 3]) SOLVE_M['pool' + d] = { l: `Pool and feed ${d}D`, nav: `feed${d}d`, up: ['1d'], dim: d, has: () => !!POOL[d].res, cur: () => poolCurrent(d), busy: () => POOL[d].busy,
   err: () => !!(POOL[d].error && POOL[d].key === poolKeyNow(d)), key: () => poolKeyNow(d), ready: () => poolBase(d) != null, go: () => poolRequest(d) };
+// ---- meshing only when asked (task 4b): a model with a Mesh step solves only on the mesh the user made for its inputs ----
+/** The meshes the user made (Mesh), by model: the inputs (its key) each was laid out for. */
+const MESH_DONE = {};
+/** The models dropped from a solve for want of their mesh (shown on their page until meshed). */
+const SOLVE_NOMESH = new Set();
+/** The models with a Mesh step of their own: the stages' 1D, 2D and 3D, and the pool in 3D. */
+const meshNeeded = k => /^(dmp|pmp|mps|fmp|gmp|cmp|xmp)\d$/.test(k) || k === 'pool3';
+/** A model's mesh: 'ok' (made for its inputs as they are), 'stale' (made for others) or 'none' (not made). */
+function meshState(k) {
+  if (!MESH_DONE[k]) return 'none';
+  return MESH_DONE[k] === solveSafe(SOLVE_M[k].key, null) ? 'ok' : 'stale';
+}
+/** Whether a model may solve: no Mesh step of its own, or its mesh made for its inputs (or its result current). */
+const meshReady = k => !meshNeeded(k) || meshState(k) === 'ok' || solveState(k) === 'solved';
+/** Mesh (the Mesh step's button): the model's mesh made for its inputs as they are. */
+function meshDo(k) {
+  const key = solveSafe(SOLVE_M[k].key, null);
+  if (key == null) return;
+  MESH_DONE[k] = key; SOLVE_NOMESH.delete(k);
+  if (typeof render === 'function') render();
+}
 /** The order a pump starts them in (each after what it needs). */
 const SOLVE_ORDER = ['mix', 'xmp2', 'xmp3', '1d', 'su1', 'dry', 'film', 'sheet', 'stack', 'furn', 'dmp1', 'dmp2', 'dmp3', 'pmp1', 'pmp2', 'pmp3', 'cmp1', 'cmp2', 'cmp3', 'mps1', 'mps2', 'mps3', 'fmp1', 'fmp2', 'fmp3', 'gmp1', 'gmp2', 'gmp3', 'pool2', 'pool3'];
 /** The line's chain, for "Solve the line". */
@@ -93,6 +116,8 @@ function solvePump() {
     const m = SOLVE_M[k];
     if (solveSafe(m.busy, false)) continue;
     if (solveSafe(m.cur, false)) { SOLVE_ASK.delete(k); continue; }
+    // (its mesh not made for these inputs, once what it needs is done: not solved -- the user meshes; the chain stops here)
+    if (!solveUpWait(k) && !meshReady(k)) { SOLVE_ASK.delete(k); SOLVE_NOMESH.add(k); continue; }
     if (!solveMay(k)) continue;                                                  // (what it needs first: asked for or solving)
     if (m.ready && !solveSafe(m.ready, false)) {
       // (waiting for what it needs: while that is asked for or solving; else it can't be solved now)
@@ -110,7 +135,7 @@ setInterval(() => { if (SOLVE_ASK.size) solvePump(); else solveBarPaint(); }, 40
 /** What is out of date now: the line's models, the stages' multiphysics, the 2D at each location, the 3D. */
 function solveStaleList() {
   const out = [];
-  for (const k of SOLVE_ORDER) if (solveState(k) === 'stale' && !SOLVE_ASK.has(k)) out.push({ id: k, l: SOLVE_M[k].l, key: solveSafe(SOLVE_M[k].key, null) });
+  for (const k of SOLVE_ORDER) if (solveState(k) === 'stale' && !SOLVE_ASK.has(k)) out.push({ id: k, l: SOLVE_M[k].l + (meshReady(k) ? '' : ' (mesh first)'), key: solveSafe(SOLVE_M[k].key, null) });
   if (typeof cfdRuns !== 'undefined') cfdRuns.forEach((r, i) => { if (r.status !== 'running' && solveSafe(() => cfdIsStale(i), false)) out.push({ id: 'cfd' + i, l: `2D at L${i + 1}${typeof mesh2DReady === 'function' && !mesh2DReady(i) ? ' (mesh first)' : ''}`, key: solveSafe(() => cfdInputsKey(cfdGeometry(i)), null) }); });
   if (typeof C3D_RES !== 'undefined' && C3D_RES && C3D_RUN.status !== 'running') {
     const k3 = solveSafe(() => c3dSolveKey3(C3D_RES), null);
@@ -159,6 +184,7 @@ function solveCtl(ids, label, noBtn) {
   ids = [].concat(ids);
   const k = ids[0], st = ids.some(i => SOLVE_ASK.has(i) && solveState(i) !== 'busy') ? 'busy' : solveState(k), [t, c] = SOLVE_ST[st];
   const what = label || SOLVE_M[k].l, btn = noBtn || st === 'solved' || st === 'busy' ? '' : `<button type="button" class="btn btn-primary btn-sm" data-solve="${ids.join(',')}">${typeof uiIco === 'function' ? uiIco('play') : ''}${st === 'stale' ? 'Solve again' : 'Solve'}</button>`;
+  if (SOLVE_NOMESH.has(k) && !meshReady(k)) return `<span class="solve-ctl" data-st="mesh">${pill(`${what}: not meshed -- press Mesh on its Mesh step, then Solve`, 'warn')}</span>`;
   return `<span class="solve-ctl" data-st="${st}">${pill(`${what}: ${t}`, c)}${btn}</span>`;
 }
 /** What a chart of a model with nothing to draw says (its frame's short box). */

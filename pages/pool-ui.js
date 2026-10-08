@@ -265,6 +265,13 @@ function poolCellMesh(base) {
 }
 /** The page's mesh figure: the viewer, or why there is nothing to show yet. */
 function poolMeshHTML(base) {
+  // (nothing laid out until Mesh is pressed -- task 4b: the user meshes)
+  if (base && typeof meshReady === 'function' && !meshReady('pool3')) {
+    const stale = meshState('pool3') === 'stale';
+    return `<figure class="pane pl-mesh"><figcaption>${uiBadge('mesh')}The mesh</figcaption>${emptyHint(stale ? 'Mesh out of date' : 'Not meshed yet',
+      stale ? 'The inputs changed since the pool\'s mesh was laid out. Press Mesh to lay it out again: Solve needs it.' : 'Press Mesh to lay out the pool\'s mesh (at the levels of the 1D\'s pulse cycle). Solve needs it.',
+      `<button type="button" class="btn btn-primary btn-sm" data-poolmesh>${uiIco('mesh')}Mesh</button>`)}</figure>`;
+  }
   const C = poolCellMesh(base), part = POOL.state ? 'between pulses' : 'during a pulse';
   if (!C || C.error) return `<figure class="pane pl-mesh"><figcaption>${uiBadge('mesh')}The mesh</figcaption>${emptyHint(C ? 'The mesh cannot be laid out' : 'No mesh yet', C ? mEsc(C.error.charAt(0).toUpperCase() + C.error.slice(1)) + '.' : 'The pool\'s mesh is laid out at the levels of the 1D\'s pulse cycle: Solve solves the 1D first, then the pool.')}</figure>`;
   const P = C.P, I = P.info;
@@ -296,6 +303,7 @@ function viewPoolFeed(dim) {
     // (3D: the mesh the solve takes, before it solves, in the mesh viewer)
     extra: dim === 3 ? poolMeshHTML(poolBase(3)) : '',
   });
+  view.querySelectorAll('[data-poolmesh]').forEach(b => { b.onclick = () => meshDo('pool3'); });
   if (dim === 3 && document.querySelector('[data-mv="pool3"]')) { const C = poolCellMesh(poolBase(3)); if (C && C.P) mvMount('pool3', C.P, { height: 1, own: true, label: 'The pool\'s mesh in 3D, cell by cell' }); }
   const st = document.getElementById('st'), ss = document.getElementById('ss');
   const ctl = solvePending(id) ? pill('Solving…', '') + `<span class="pl-prog" id="plProg"></span>` : solveCtl(id);

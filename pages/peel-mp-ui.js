@@ -102,8 +102,10 @@ function pmpPlanAt(o, deg = o.angles[0]) {
   const cells = o.cells.map(c => ({ t: c.t, C: pmpTI(c.Ep, c.Et, c.nup, c.nupt, c.Gpt), en: c.en })), web = { tw: o.web.tw, C: pmpTI(o.web.Ew, o.web.Et, o.web.nuw, o.web.nupt, o.web.G) };
   const th = deg * Math.PI / 180, L = pmpLayers(cells), lam0 = Math.sqrt(L.Dn / Math.max(pmpSteady(L, th, o.hold.Gi) * 0.99, 1e-9));
   const P = pmpPlan({ layers: cells, web, hold: o.hold, theta: th, mesh: { nzF: o.mesh.nzF, nzW: o.mesh.nzW, grow: o.mesh.grow, capA: lam0 / o.mesh.armN } });
-  const M = pmpMesh(P.mo), el = pmpElastica(P.fT, th, L.Dn, P.mo.La);
-  const out = { ...P, M, el, deg, web };
+  const el = pmpElastica(P.fT, th, L.Dn, P.mo.La);
+  // (the mesh laid out only when it is first read -- the Mesh step once meshed, the solve: the geometry needs none)
+  let M = null;
+  const out = { ...P, el, deg, web, get M() { return M || (M = pmpMesh(P.mo)); } };
   if (PMP_PLAN.size > 8) PMP_PLAN.clear();
   PMP_PLAN.set(key, out);
   return out;
@@ -126,7 +128,7 @@ const pmpMmTxt = v => { const m = v * 1000; return m >= 10 ? m.toFixed(1) : m >=
  * what 'solve': the faces, numbered as the table below.
  */
 function pmpDrawWhole(cv, o, what) {
-  const P = pmpPlanAt(o), { mo, el, M } = P, tw = o.web.tw, th = P.th;
+  const P = pmpPlanAt(o), { mo, el } = P, tw = o.web.tw, th = P.th;
   const { c, w, h } = setupCanvas(cv, 0.42), ink = cssVar('--ink'), mut = cssVar('--muted');
   c.clearRect(0, 0, w, h);
   // the arm's centre line (the elastica, true scale) and the box round everything
