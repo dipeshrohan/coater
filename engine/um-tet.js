@@ -186,8 +186,8 @@ function umtTri(X, Y, Z, opts = {}) {
   const REST = [];
   for (let k = 0; k < 4; k++) for (let q = 0; q < 4; q++) REST.push([0, 1, 2, 3].filter(i => i !== k && i !== q));
   /** The tetrahedron (or ghost) holding point p: a walk across any face p is beyond. */
-  const locate = p => {
-    let t = last, guard = 0;
+  const locate = (p, from = last) => {
+    let t = from, guard = 0;
     walk: for (;;) {
       if (++guard > 10 * (nT + 10)) throw new Error('um-tet: the walk did not end');
       const j = infAt(t);
@@ -254,7 +254,10 @@ function umtTri(X, Y, Z, opts = {}) {
   };
   return {
     insert: p => { if (dup.length <= p) { const d2 = new Int32Array(Math.max(2 * dup.length, p + 1)).fill(-1); d2.set(dup); dup = d2; } return insert(p); },
-    locate: (x, y, z) => { const p = X.length; X.push(x); Y.push(y); Z.push(z); const t = locate(p); X.pop(); Y.pop(); Z.pop(); return t; },
+    /** The tetrahedron (or ghost) holding (x, y, z): the walk started at tetrahedron hint if given (alive, not a ghost),
+     *  else at the last made. */
+    locate: (x, y, z, hint) => { const p = X.length; X.push(x); Y.push(y); Z.push(z);
+      const t = locate(p, hint !== undefined && hint >= 0 && hint < nT && alive[hint] && infAt(hint) < 0 ? hint : last); X.pop(); Y.pop(); Z.pop(); return t; },
     /** The tetrahedra a point at (x, y, z) would replace (its conflict cavity), without inserting it: [located, …]. Until
      *  the next cavityOf or insert, inCavity(t) says whether t is in it. */
     cavityOf: (x, y, z) => {

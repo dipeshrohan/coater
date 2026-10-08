@@ -136,5 +136,18 @@ function audit(label, X, Y, Z, D, { brute = false, hullVolume = null } = {}) {
   }
 }
 
+// ---- a point found by a walk from a tetrahedron given (the mesher's: from a point's old place), as from the last made ----
+{
+  const X = [], Y = [], Z = []; for (let i = 0; i < 2000; i++) { X.push(rnd()); Y.push(rnd()); Z.push(rnd()); }
+  const W = T.umtTri(X, Y, Z); let same = 0, n = 0, inside = 0;
+  for (let i = 0; i < 500; i++) {
+    const q = [rnd() * 1.2 - 0.1, rnd() * 1.2 - 0.1, rnd() * 1.2 - 0.1]; let h; do h = Math.floor(rnd() * W.nT); while (!W.alive[h]);
+    const a = W.locate(...q), b = W.locate(...q, h), ia = W.infAt(a) < 0; n++; if (ia) inside++;
+    // (inside the hull its one tetrahedron; outside, a ghost either way: more than one hull face may see it)
+    if (ia ? a === b : W.infAt(b) >= 0) same++;
+  }
+  check('a point found from a tetrahedron given: the same tetrahedron as found from the last made (outside the hull, a ghost both ways)', same === n, `${same}/${n} the same, ${inside} inside the hull`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exitCode = fails ? 1 : 0;
