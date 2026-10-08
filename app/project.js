@@ -47,6 +47,11 @@ const projMatKey = () => ({ ...MAT, sem: MAT.sem ? { tables: MAT.sem.tables, ima
 const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), FEED_POS.z, FEED_POS.entry, CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
+  // (saved, and kept for the session, as set: a value the ranking of the assumed values has changed for a moment, and
+  //  the results it solved with it, are not the project's)
+  return typeof sensAsSet === 'function' ? sensAsSet(projectDataNow) : projectDataNow();
+}
+function projectDataNow() {
   // (a run's march in time, T-2: its record and kept times, not the fields drawn from them nor the paths traced through them)
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, orientKey: r.orientKey || null,
     ...(r.transient ? { transient: { ...r.transient, cache: undefined, paths: undefined } } : {}) } : null;

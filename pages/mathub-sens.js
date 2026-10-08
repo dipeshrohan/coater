@@ -79,7 +79,7 @@ function sensStart() {
   const vals = sensValues();
   SENS.keep = sensKeep();
   const base = Object.fromEntries(SENS_STAGES.map(s => [s.k, s.outs.map(o => { try { return o.get(); } catch (e) { return NaN; } })]));
-  Object.assign(SENS, { status: 'running', stop: false, t0: Date.now(), i: 0, base, key: sensKeyNow(), cur: null, snap: (sensDerived(), sensInputs()),
+  Object.assign(SENS, { status: 'running', stop: false, t0: Date.now(), i: 0, base, key: sensKeyNow(), cur: null, snap: (sensDerived(), sensInputs()), sel: sensSel(),
     rows: vals.map(q => ({ ...q, v0: hubVal(q.p).v, lo: NaN, hi: NaN, yLo: null, yHi: null, err: null })),
     jobs: vals.flatMap((_, n) => [[n, 1 - SENS_F], [n, 1 + SENS_F]]) });
   logCFD(0, `Ranking the assumed values: ${vals.length} values at ±${SENS_F * 100} %, about ${sensClock(sensEstimate(vals))}`);
@@ -109,6 +109,12 @@ function sensNext() {
     if (SOLVE_ASK.size || arm.some(k => solveState(k) === 'busy')) { setTimeout(wait, 300); return; }
     // (one that ended out of date: it started before one before it had set what it reads -- the mixing's solids: again)
     if (tries < 3 && arm.some(k => solveState(k) === 'stale')) { tries++; solveArm(...arm.filter(k => solveState(k) === 'stale')); setTimeout(wait, 300); return; }
+    // (the location or the water route the answers are read at changed while it ran: the base was read at the other)
+    if (SENS.sel && sensSel() !== SENS.sel) {
+      sensRestore(row); sensEnd('stopped');
+      if (typeof imgToast === 'function') imgToast('The ranking stopped: where its answers are read (the location, the water route) was changed while it ran.', 'warn');
+      return;
+    }
     const ok = solveState(row.s.k) === 'solved';
     const y = row.s.outs.map(o => { try { return ok ? o.get() : NaN; } catch (e) { return NaN; } });
     if (f < 1) row.yLo = y; else row.yHi = y;
@@ -154,6 +160,16 @@ function sensStop(now = false) {
   // (New, Open: the project being left's ranking, done or stopped, goes with it)
   if (now) Object.assign(SENS, { status: 'idle', rows: [], jobs: [], i: 0, base: null, key: null, keep: null, cur: null, stop: false, all: false, snap: null });
 }
+/** f with the project as set: the value under change back at its own and every model's result back, then as they were. */
+function sensAsSet(f) {
+  const c = SENS.status === 'running' ? SENS.cur : null, row = c ? SENS.rows[c.n] : null;
+  if (!row || sensRowGone(row) || hubVal(row.p).v !== c.x || !SENS.keep) return f();
+  const live = sensKeep();
+  try { hubSet(row.p, row.v0); sensDerived(); sensPutBack(SENS.keep); return f(); }
+  finally { sensPutBack(live); hubSet(row.p, c.x); sensDerived(); }
+}
+/** Where the answers are read (the oven's location, the water's route): a change of either stops a run. */
+const sensSel = () => JSON.stringify([lineSel(), lineWay()]);
 /** The inputs that follow from others, set again (as a redraw does): the slurry's solids from the Mixing recipe. */
 const sensDerived = () => { if (typeof mixSyncSlurry === 'function') mixSyncSlurry(); };
 /** The project's inputs, every one undo keeps (a change the ranking did not make: a button, a reset, an import). */

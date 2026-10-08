@@ -226,6 +226,10 @@ const UNDO_UNITS = (() => {
 })();
 const UNDO_BY_ID = new Map(UNDO_UNITS.map(u => [u.id, u]));
 function undoSnap() {
+  // (a value the ranking of the assumed values has changed for a moment is taken as it is set: never in the history)
+  return typeof sensAsSet === 'function' ? sensAsSet(undoSnapNow) : undoSnapNow();
+}
+function undoSnapNow() {
   const m = {};
   for (const u of UNDO_UNITS) m[u.id] = JSON.stringify(u.get());
   return m;
