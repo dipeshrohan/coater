@@ -1013,7 +1013,12 @@ function viewCFD() {
     });
   }
   document.getElementById('cfdTol').addEventListener('change', e => { CFDS.tol = +e.target.value; renderCFD(); });
-  document.getElementById('cfdSolverReset').onclick = () => { undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
+  document.getElementById('cfdSolverReset').onclick = () => {
+    undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS);
+    // (the flake alignment's solver settings, on Solve with the rest: back to theirs too)
+    if (typeof OR_SOLVE !== 'undefined') { const o = { ...MAT.orient }; for (const [, k] of OR_SOLVE) o[k] = { ...o[k], v: MAT_ORIENT.find(r => r[0] === k)[7] }; MAT.orient = o; }
+    viewCFD();
+  };
   // (the mesh study's tab is on the Mesh and Results steps: from another step, the Mesh step)
   document.getElementById('cfdStudyOpen').onclick = () => { if (!STEP_DOCK_2D[step2D()].includes('mesh')) goStep2D('mesh'); FV.dock = 'mesh'; viewCFD(); };
   document.getElementById('cfdZonesOpen').onclick = () => goStep2D('mesh');
