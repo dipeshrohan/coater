@@ -140,7 +140,7 @@ function hubEditorHTML(r) {
 
 // the property table
 function hubPropsHTML(r) {
-  const body = r.groups.map(g => `<tbody class="hub-grp"><tr class="hub-grp-h"><th colspan="7" scope="rowgroup">${hubEsc(g.l)}</th></tr>${g.props.map(p => hubRowHTML(r, p)).join('')}</tbody>`).join('');
+  const body = r.groups.map(g => `<tbody class="hub-grp"><tr class="hub-grp-h"><th colspan="7" scope="rowgroup">${hubEsc(g.l)}</th></tr>${g.props.filter(p => !hubHidden(p)).map(p => hubRowHTML(r, p)).join('')}</tbody>`).join('');
   return `<div class="table-wrap"><table class="hub-table"><thead><tr><th scope="col">Property</th><th scope="col">Symbol</th><th scope="col">Method</th><th scope="col" class="hub-c-v">Value</th><th scope="col">Unit</th><th scope="col" class="hub-c-rng">Valid range</th><th scope="col" class="hub-c-src">Data source</th></tr></thead>${body}</table></div>`;
 }
 /** A property's value cell: its input (an editable value), select or switch, else the value. */

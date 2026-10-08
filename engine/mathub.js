@@ -163,14 +163,14 @@ const HUB_RECORDS = [
       ] },
       { l: 'Flow law (generalized Newtonian)', key: 'flow', props: [
         { id: 'model', sym: '', l: 'Law', b: { t: 'model' }, phys: ['coat', 'mix'] },
-        { id: 'mu', sym: 'μ', l: 'Viscosity', b: hI('mu'), phys: ['coat', 'mix'], off: () => (CFDG.model === 'newtonian' ? '' : 'the Newtonian law\'s: the others set their own parameters') },
-        { id: 'K', sym: 'K', l: 'Consistency', b: hI('K'), phys: ['coat', 'mix'], off: () => rheoOffNote('K') },
-        { id: 'eta0', sym: 'η₀', l: 'Zero-shear viscosity', b: hI('eta0'), phys: ['coat', 'mix'], off: () => rheoOffNote('eta0') },
-        { id: 'n', sym: 'n', l: 'Flow index', b: hI('n'), phys: ['coat', 'mix'], off: () => rheoOffNote('n') },
-        { id: 'ty', sym: 'τ_y', l: 'Yield stress', b: hI('ty'), phys: ['coat', 'mix'], off: () => rheoOffNote('ty') },
-        { id: 'etaInf', sym: 'η∞', l: 'Infinite-shear viscosity', b: hC('rheo', 'etaInf'), phys: ['coat', 'mix'] },
-        { id: 'lamT', sym: 'λ', l: 'Time constant', b: hC('rheo', 'lamT'), phys: ['coat', 'mix'] },
-        { id: 'aCY', sym: 'a', l: 'Yasuda exponent', b: hC('rheo', 'aCY'), phys: ['coat', 'mix'] },
+        { id: 'mu', sym: 'μ', l: 'Viscosity', b: hI('mu'), law: true, phys: ['coat', 'mix'], off: () => (CFDG.model === 'newtonian' ? '' : 'the Newtonian law\'s: the others set their own parameters') },
+        { id: 'K', sym: 'K', l: 'Consistency', b: hI('K'), law: true, phys: ['coat', 'mix'], off: () => rheoOffNote('K') },
+        { id: 'eta0', sym: 'η₀', l: 'Zero-shear viscosity', b: hI('eta0'), law: true, phys: ['coat', 'mix'], off: () => rheoOffNote('eta0') },
+        { id: 'n', sym: 'n', l: 'Flow index', b: hI('n'), law: true, phys: ['coat', 'mix'], off: () => rheoOffNote('n') },
+        { id: 'ty', sym: 'τ_y', l: 'Yield stress', b: hI('ty'), law: true, phys: ['coat', 'mix'], off: () => rheoOffNote('ty') },
+        { id: 'etaInf', sym: 'η∞', l: 'Infinite-shear viscosity', b: hC('rheo', 'etaInf'), law: true, phys: ['coat', 'mix'] },
+        { id: 'lamT', sym: 'λ', l: 'Time constant', b: hC('rheo', 'lamT'), law: true, phys: ['coat', 'mix'] },
+        { id: 'aCY', sym: 'a', l: 'Yasuda exponent', b: hC('rheo', 'aCY'), law: true, phys: ['coat', 'mix'] },
         { id: 'mu27', sym: 'η(2.7 s⁻¹)', l: 'Viscosity at 2.7 1/s, the law', b: hCalc(() => P.mu, 'Pa·s', 3, 'the law at 2.7 1/s: the form the solvers take (μref with τy and n), exact'), phys: ['coat', 'mix'] },
         { id: 'meas27', sym: 'η(2.7 s⁻¹)', l: 'Viscosity at 2.7 1/s, measured', b: { t: 'measured' }, phys: [] },
       ] },
@@ -183,10 +183,8 @@ const HUB_RECORDS = [
         { id: 'orModel', sym: '', l: 'Model', b: { t: 'orModel' }, phys: ['align'] },
         { id: 'U', sym: 'U', l: 'Ordering strength (Maier–Saupe)', b: hC('orient', 'U'), phys: ['align'] },
         { id: 'Dr', sym: 'D_r', l: 'Rotary diffusivity', b: hC('orient', 'Dr'), phys: ['align'] },
-        { id: 'Ci', sym: 'C_i', l: 'Interaction coefficient', b: hC('orient', 'Ci'), phys: ['align'] },
-        { id: 'Srest', sym: 'S₀', l: 'Order parameter at rest', b: hCalc(() => (MAT.orient.model === 'dh' ? orRestS(MAT.orient.U.v) : NaN), '', 3, 'the liquid crystal at rest (Maier–Saupe, from U): 1 all aligned, 0 isotropic'), phys: ['align'], off: () => (MAT.orient.model === 'dh' ? '' : 'the liquid crystal\'s (Doi–Hess)') },
-        { id: 'nLines', sym: '', l: 'Streamlines through the film', b: hC('orient', 'nLines'), phys: ['align'], note: 'how finely it is computed: a solver setting' },
-        { id: 'nFlakes', sym: '', l: 'Flakes on each streamline', b: hC('orient', 'nFlakes'), phys: ['align'], note: 'how finely it is computed: a solver setting' },
+        { id: 'Ci', sym: 'C_i', l: 'Interaction coefficient', b: hC('orient', 'Ci'), law: true, phys: ['align'] },
+        { id: 'Srest', sym: 'S₀', l: 'Order parameter at rest', b: hCalc(() => (MAT.orient.model === 'dh' ? orRestS(MAT.orient.U.v) : NaN), '', 3, 'the liquid crystal at rest (Maier–Saupe, from U): 1 all aligned, 0 isotropic'), law: true, phys: ['align'], off: () => (MAT.orient.model === 'dh' ? '' : 'the liquid crystal\'s (Doi–Hess)') },
       ] },
       { l: 'Transport in the wet film', props: [
         { id: 'mul', sym: 'f_D', l: 'Collective diffusion, × the hard-sphere law', b: hC('dry', 'mul'), phys: ['dry', 'film'] },
@@ -734,6 +732,12 @@ function hubStiff(which) {
   const f = MAT.film, v = k => f[k].v;
   if (which === 'web') return mlCEval({ form: 'ti', Ep: v('Ew') * 1e9, Et: v('Ew') * v('soft') * 1e9, nup: v('nuw'), nupt: MAT.lib.webNupt.v, Gpt: v('Ew') * v('soft') * 1e9 / 2, axis: 2 });
   return mlCEval({ form: 'ti', Ep: v('Ep') * 1e9, Et: v('Et') * 1e9, nup: v('nup'), nupt: v('nupt'), Gpt: v('Gpt') * 1e9, axis: 2 });
+}
+/** Whether a row is left out of the table: a parameter of a law or model not chosen (the chosen one's rows only; picking
+ *  another brings its rows in, their values kept). A switch turned off only greys its rows. */
+function hubHidden(p) {
+  if (!p.law || !hubOff(p)) return false;
+  return !(p.b.t === 'card' && p.b.card === 'orient' && !MAT.orient.on);
 }
 /** Whether a property is used as things are set (its law, its model, its switch): '' when it is, else why not. */
 function hubOff(p) {

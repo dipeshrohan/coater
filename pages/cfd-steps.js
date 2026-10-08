@@ -933,6 +933,7 @@ function renderSolveStep2D(host) {
       ${law.includes('n') ? `<tr><td>Shear-thinning n</td><td>${locInput(i, 'n').toFixed(2)}</td></tr>` : ''}${law.includes('ty') ? `<tr><td>Yield stress</td><td>${locInput(i, 'ty').toFixed(1)} Pa</td></tr>` : ''}
       <tr><td>Density</td><td>${geo.rho.toFixed(0)} kg/m³</td></tr></table>
       <h4>${uiBadge('tolerance')}Solver</h4><table class="kv"><tr><td>Newton tolerance</td><td>${fmtTol(CFDS.tol)}</td></tr><tr><td>Iterations, at most</td><td>${CFDS.maxIter}</td></tr><tr><td>Mesh</td><td>${MESH_PRESETS[CFDS.mesh].l}${zonesActive(zonesOf()) ? ' + zones' : ''}</td></tr></table>
+      ${orSolveHTML()}
       ${tmFirst ? '' : timeCardHTML(i)}
       <h4>${uiBadge('location')}Locations</h4><table class="kv">${cfdRuns.map((r, k) => `<tr${k === i ? ' class="on"' : ''}><td>L${k + 1}</td><td>${st(r, k)}${r.status === 'done' && r.elapsedMs ? ` · ${(r.elapsedMs / 1000).toFixed(1)} s` : ''}</td></tr>`).join('')}</table>
       <p class="side-note">Click a blue value on the drawing to change it (a location's own value when it has one, else the shared input).</p></aside></div>`;
@@ -940,6 +941,25 @@ function renderSolveStep2D(host) {
   d.innerHTML = bladeSVG(i, w, h, { dims: false, bc: bcCallouts(i) }).svg;
   wireBcEdits(d, i);
   wireTimeControls();
+  wireOrSolve();
+}
+/** The flake alignment's solver settings (how finely it is computed: the 2D computes it with each run, when on). */
+const OR_SOLVE = [['cfdOrLines', 'nLines'], ['cfdOrFlakes', 'nFlakes']];
+function orSolveHTML() {
+  if (!MAT.orient.on) return '';
+  const row = ([id, k]) => { const q = MAT_ORIENT.find(r => r[0] === k); return `<tr><td><label for="${id}">${q[1]}</label></td><td><input type="number" id="${id}" data-mo="${k}" min="${q[3]}" max="${q[4]}" step="${q[5]}" value="${MAT.orient[k].v}"></td></tr>`; };
+  return `<h4>${uiBadge('fibre')}Flake alignment</h4><table class="kv">${OR_SOLVE.map(row).join('')}</table>`;
+}
+function wireOrSolve() {
+  for (const [id, k] of OR_SOLVE) {
+    const el = document.getElementById(id), q = MAT_ORIENT.find(r => r[0] === k);
+    if (el) el.addEventListener('change', () => guardNumber(el, { label: q[1], lo: q[3], hi: q[4] }, x => {
+      if (x === MAT.orient[k].v) return;
+      undoHint(`${q[1]}: ${x}`);
+      MAT.orient = { ...MAT.orient, [k]: { ...MAT.orient[k], v: x } };
+      viewCFD();
+    }));
+  }
 }
 /** A boundary-condition drawing's values: click (or Enter) to type a new one. */
 function wireBcEdits(d, i) {

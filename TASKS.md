@@ -14,7 +14,7 @@ keeps it up to date in each pull request. The order and the tasks change only af
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
-| 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
+| 5 | Materials page: check what is left of the planned redesign | Small | Doing | Nothing |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
 | 8 | Mixing: air bubbles and their removal under vacuum | Medium | To do | Nothing to start |
@@ -71,14 +71,14 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
 
 ## 5. Materials page: check what is left of the planned redesign
-- **Then**: the workflow plan (30 Sep) had a Materials page redesign.
-- **Since**: you specified the material card, now built (tabs, Method column, no source labels).
-- **Maybe still open**: some planned points, for example which assumed values matter most, and engineering names with
-  symbols.
-- **Left**:
-  - compare the plan with the page as it is;
-  - show you screenshots of what differs and ask;
-  - build only what you choose.
+- **Compared** (the 30 Sep plan against the page): built already -- the material list on the left, one shown at a time,
+  the fixed columns with symbols, engineering names, a row's full source when it is opened.
+- **Your choices** (8 Oct, with screenshots):
+  - the rows of a flow law (or alignment model) not chosen are hidden; picking it brings them back;
+  - the streamlines through the film and the flakes on each go to Coating › 2D › Solve;
+  - the assumed values that matter most, ranked on the Readiness tab (each value ±20 %, computed only when you press it).
+- **Done**: the first two (this pull request).
+- **Left**: the ranked list.
 
 ## 6. Dynamic contact angle in the 2D coating flow in time
 - **Now**: not built anywhere. In a steady flow the contact line on the blade's face is at rest, so its angle cannot
