@@ -57,6 +57,12 @@ const femFlows = r => ({ Qin: r.psi[r.NR - 1], Qout: r.psi[(r.NC - 1) * r.NR + r
  *             contact line's mode and the mesh's layout (solveCoaterFEM's meshInfo) the result is on
  *   maxSteps  (default 20000); maxIter: Newton per step (default 12)
  *   faceSlip  slip length (m) on the exit face below the contact line (solveFEM's faceSlip), for the whole march
+ *   dynamic   { thetaS (the static contact angle, deg), lnR (ln of the macroscopic length over the slip length, L/lambda),
+ *             mu (Pa s), gamma (N/m) }: the contact line on the face meets it at Cox-Voinov's dynamic angle,
+ *             theta_d^3 = theta_s^3 + 9 Ca ln(L/lambda), Ca = mu v / gamma, v the line's speed up the face (+ advancing
+ *             onto the dry face, - receding), implicit in each step: v is the step's own BDF2 (first step backward Euler)
+ *             of the line's place, so the angle is a function of where the step's solve puts it. Without it the angle is the
+ *             static one, as the steady solve. (out.angle: the angle at the end of each step.)
  *   onStep(rec)  after each accepted step; return false to stop
  *   carry     a field the slurry carries with it, at the nodes as r.lam (the structure: cfd-struct.js's structMarch):
  *             start(r0, t0) -> the field at the start; fixed(r) (the solve's options with r's own field); predict(rPrev,
@@ -104,12 +110,26 @@ function femMarch(r0, opts = {}) {
   // history, newest first: { t, r }
   let hist = [{ t: t0, r: r0 }];
   if (opts.earlier) hist.push({ t: t0 - opts.earlier.dt, r: opts.earlier.r });
-  const out = { t: [], dt: [], h: [], top: [], s: [], Qin: [], Qout: [], area: [], err: [], iterations: [], mode: [], frames: [], remeshes: [], track: [], steps: 0, rejected: 0, failed: 0, corrected: 0, completed: false };
+  const out = { t: [], dt: [], h: [], top: [], s: [], Qin: [], Qout: [], area: [], err: [], iterations: [], mode: [], frames: [], remeshes: [], track: [], angle: [], steps: 0, rejected: 0, failed: 0, corrected: 0, completed: false };
+  // Cox-Voinov: the dynamic angle (deg) at a speed v up the face (m/s); kept between 0.5 and 179.5 deg
+  const dyn = opts.dynamic || null, D = Math.PI / 180;
+  const cvAngle = v => { const c = (dyn.thetaS * D) ** 3 + 9 * dyn.mu * v / dyn.gamma * dyn.lnR; return Math.min(179.5, Math.max(0.5, Math.cbrt(c) / D)); };
+  // a step's contact line: the static angle's direction plus the dynamic angle's difference from it, at the speed the step
+  // gives the line for a place s (BDF2 over the line's last places; the first step after a start or a new mesh, backward Euler)
+  const dynLine = (cl, h) => {
+    if (!dyn || !cl || mode !== 'climbed') return cl;
+    const base = cl.alphaDeg, s1 = hist[0].r.surface.s, two = hist.length > 1;
+    const w = two ? h / (hist[0].t - hist[1].t) : 0, s2 = two ? hist[1].r.surface.s : 0;
+    const v = two ? q => ((1 + 2 * w) * q - (1 + w) ** 2 * s1 + w * w * s2) / (h * (1 + w)) : q => (q - s1) / h;
+    return { ...cl, alphaDeg: q => (typeof base === 'function' ? base(q) : base) + cvAngle(v(q)) - dyn.thetaS, speed: v };
+  };
+  let lastV = 0;
   const record = (t, r, dt, err) => {
     const f = femFlows(r), NR = r.NR, x = new Float64Array(r.NC), y = new Float64Array(r.NC);
     for (let c = 0; c < r.NC; c++) { x[c] = r.x[c * NR + NR - 1]; y[c] = r.y[c * NR + NR - 1]; }
     out.t.push(t); out.dt.push(dt); out.h.push(Float64Array.from(r.surface ? r.surface.h : [])); out.top.push({ x, y }); out.s.push(r.surface ? r.surface.s : 0);
     out.Qin.push(f.Qin); out.Qout.push(f.Qout); out.area.push(femArea(r)); out.err.push(err); out.iterations.push(r.iterations || 0); out.mode.push(mode);
+    out.angle.push(dyn ? (mode === 'climbed' ? cvAngle(lastV) : null) : null);
     if (opts.track) out.track.push(opts.track(r, { mode, meshInfo: mInfo }));
   };
   record(t0, r0, 0, 0);
@@ -171,6 +191,7 @@ function femMarch(r0, opts = {}) {
     let r = null, why = '';
     const o = { ...call, ...(opts.at ? opts.at(tn) : {}) };
     if (o.U) o.flatEnd = false;
+    if (dyn && o.contactLine) o.contactLine = dynLine(o.contactLine, h);
     const ext = carry ? carry.predict(hist[0].r, t, h) : null;
     const step = (more, extra = ext) => FT_.solveFEM({ ...o, ...(extra || {}), maxIter: more ? Math.max(40, maxIter) : maxIter, ...(more ? { homotopy: true } : {}), init: guess(h),
       time: { t: tn, dt: h, dtPrev: two ? hist[0].t - hist[1].t : 0, prev: two ? [hist[0].r, hist[1].r] : [hist[0].r] } });
@@ -200,6 +221,7 @@ function femMarch(r0, opts = {}) {
       continue;
     }
     // accept
+    if (dyn && o.contactLine && o.contactLine.speed) lastV = o.contactLine.speed(r.surface.s);
     t = tn; out.steps++; fresh = false;
     if (carry) carry.accept(r, t);
     hist.unshift({ t, r }); if (hist.length > 3) hist.length = 3;

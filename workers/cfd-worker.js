@@ -91,10 +91,15 @@ function marchInTime(o, fo, r, geo, shapeProf, onStep) {
     return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full), ...st };
   };
   const n = Math.max(2, Math.round(T.frames)), times = Array.from({ length: n }, (_, k) => (k + 1) * T.end / n);
-  const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0,
+  // (the dynamic contact angle, Cox-Voinov: with slip on the face only -- the line moves with the liquid there; the paste's
+  //  viscosity at the process shear rate, the web's speed over the gap)
+  const dyn = T.dyn && T.slip > 0 ? { thetaS: o.contactDeg, lnR: Math.log(T.ratio > 1 ? T.ratio : Hr / T.slip), gamma: o.gamma,
+    mu: fo.mu(Math.max(U1, U0, 1e-6) / Hr) } : null;
+  const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0, ...(dyn ? { dynamic: dyn } : {}),
     keep: (rr, t, info) => frame(rr, info), onStep, ...(carry ? { carry, track: (rr, info) => structColumn(rr, rr.lam, cornerOf(info)) } : {}) });
   return {
     scen: T.scen, end: T.end, ramp: T.ramp, P0, P1, U0, U1, slip: T.slip || 0, auto: !!T.auto, tol: T.tol, dtSet: T.dt, ms: Date.now() - t0,
+    ...(dyn ? { dyn: { thetaS: dyn.thetaS, lnR: dyn.lnR, mu: dyn.mu }, angle: m.angle } : {}),
     t: m.t, dt: m.dt, s: m.s, Qin: m.Qin, Qout: m.Qout, area: m.area, err: m.err, iterations: m.iterations, mode: m.mode,
     hOut: m.top.map(q => q.y[q.y.length - 1]), ...(carry ? { lamEdge: m.track, corrected: m.corrected } : {}),
     remeshes: m.remeshes, steps: m.steps, rejected: m.rejected, failed: m.failed, completed: m.completed, error: m.error || null,
