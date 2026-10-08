@@ -12,10 +12,9 @@ keeps it up to date in each pull request. The order and the tasks change only af
 
 | # | Task | Size | Status | Needs from you |
 |---|---|---|---|---|
-| 13 | Stage pages to one professional layout, Pre heat first | Medium per page | Next | A yes per page |
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
-| 4 | Faster tetrahedral mesher | Small to medium | To do | Nothing |
+| 4 | Faster tetrahedral mesher | Small to medium | Next | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
@@ -36,22 +35,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 | 23 | The heap under each stream (free-surface solve) | Large | To do | Whether you want it |
 | 24 | A full viewer on every geometry, mesh and result display | Large | To do | Answers on the list of displays |
 | 25 | Structured block meshing (ANSA level) | Very large | To do | Nothing to start |
-
-## 13. Stage pages to one professional layout, Pre heat first
-- **You said**: the visualisation is clumsy; do not fill too many things in one place with a lot of text (a rule for
-  the whole application, now in CLAUDE.md); start now, with the Pre heat page.
-- **Pages**: Pre heat treatment first, then Drying, Peel and wind, Cutting, Furnace, Graphene film.
-- **You chose** (from three real drafts of Pre heat › 2D › Results): layout A, a viewer, for every results page.
-  - the views listed on the left, one shown large in the middle, the key values in a column on the right;
-  - the sentences that explain a view behind an (i) on it;
-  - the inputs bar shows only the inputs; its drawings and notes behind an (i) in its head.
-- **Done**, each with your yes: Pre heat (#156), Drying (#157), Peel and wind (#159: the six checks in one column, six
-  charts, every location, measured; the key values for both ways the water leaves), Cutting (#160: held up, on a
-  table, measured; the key values both ways, as cut, out of the stack and a day later; its 1D, 2D and 3D too),
-  Furnace (the five checks, the stack, its seven charts, the piece, measured; the key values for the piece shown,
-  marked as its checks; the piece picked above; its 1D, 2D and 3D too).
-- **You chose**: the grey box "Its own solvers: 1D, 2D, 3D" on Cutting and Graphene film stays as it is.
-- **Left**: Graphene film: before and after screenshots for your yes, then its pull request.
 
 ## 2b. Furnace: the weight your piece keeps (1.03 g)
 - **Now**: the app's piece comes out of the furnace at 0.64 g. It keeps 27.5 % of the dry GO and loses about half the
@@ -258,6 +241,12 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- Stage pages to one professional layout (was task 13), each with your yes: layout A, a viewer, on every stage's results
+  and their 1D, 2D and 3D -- the views listed on the left, one shown large, the key values on the right; the sentences
+  that explain a view behind an (i) on it; the inputs bar's drawings and notes behind an (i) in its head. Pre heat (#156),
+  Drying (#157), Peel and wind (#159), Cutting (#160), Furnace (#161), Graphene film (the piece first, then across the
+  piece, the stack and measured; the tiles' values and the batch in the key values). The grey box "Its own solvers"
+  on Cutting and Graphene film stays as it is (your choice).
 - The repository's files in folders, by kind (was task 26): app/ (the frame: menus, projects, help, report, styles),
   pages/ (one script per page), engine/ (physics and solvers), workers/, checks/, tools/, docs/; the page stays at the
   top, README.md has the map. Every check and the whole app ran the same before and after (http and opened as a file).

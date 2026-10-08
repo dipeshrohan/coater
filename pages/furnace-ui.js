@@ -240,17 +240,26 @@ function furnResultsHTML(pane) {
     </div>
     <div class="stats" id="furnStats" data-pstep="results" data-fpart="product"></div>`;
 }
-/** The graphene film's results (its tab, as they were: the stack, the tiles, one chart, the piece, the measured). */
-function furnResultsOldHTML(pane) {
-  return `    <div class="furn-checks" id="furnChecks" data-pstep="results" data-fpart="runs"></div>
-    <div class="furn-pieces" id="furnPieces" data-pstep="results"></div>
-    <div class="stats" id="furnStats" data-pstep="results" data-fpart="product"></div>
-    <div class="furn-res" data-pstep="results"><div class="furn-chart">${typeof furnChipsHTML === 'function' ? furnChipsHTML() : ''}<div class="dry-grid furn-one">
-      ${Object.values(furnPanes(pane)).join('\n      ')}
-    </div></div>
-      <figure class="pane dry-pane furn-piece-fig"><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
+/** The graphene film's views (task 13, the viewer; its tab): listed left, one shown -- the piece first. */
+const furnProductViews = () => [['furnPiece', 'The piece'], ['fu6', 'Across the piece'], ['furnPieces', 'The stack'], ['furnMeas', 'Measured']];
+/** The graphene film's results (its tab, task 13): the piece shown picked above; its views listed left, one shown, the key
+ *  values beside it (the tiles' values and the batch). The furnace's other charts are drawn with it, never listed: the
+ *  report, every step open, takes them all, as before; the tiles too, kept hidden for it. */
+function furnProductHTML(pane) {
+  const view = f => f.replace('<figure class="pane dry-pane">', `<figure class="pane dry-pane rv-view" data-rvid="${/id="(fu\d)"/.exec(f)[1]}" hidden>`);
+  return `<div class="furn-posrow" id="furnPosRow" data-pstep="results" data-fpart="product"></div>
+    <div class="furn-checks" id="furnChecks" data-pstep="results" data-fpart="runs"></div>
+    <div class="rv" data-rvkey="gfilm" data-pstep="results" data-fpart="product">
+      <nav class="rv-list" role="tablist" aria-label="The view shown"><h5>Results</h5>${furnProductViews().map(([id, t], i) => `<button type="button" role="tab" data-rvview="${id}" aria-selected="${!i}">${t}</button>`).join('')}</nav>
+      <div class="rv-main">
+        ${Object.values(furnPanes(pane)).map(view).join('')}
+        <figure class="pane dry-pane furn-piece-fig rv-view" data-rvid="furnPiece"><figcaption>${uiBadge('film')}The piece <span class="seg seg-sm" role="tablist" aria-label="The piece as" id="furnPieceSel"><button type="button" role="tab" data-furnpiece="map" aria-selected="true">Map</button><button type="button" role="tab" data-furnpiece="3d" aria-selected="false">3D</button></span></figcaption><canvas id="furnPiece" role="img" aria-label="The graphene film's thickness over the whole piece, from above as a colour map or in 3D"></canvas><div class="pane-legend" id="furnPieceLg"></div></figure>
+        <div class="rv-view rv-extra rv-wide" data-rvid="furnPieces" hidden><h4 class="oned-h">The stack</h4><div class="furn-pieces" id="furnPieces"></div></div>
+        <div class="rv-view rv-extra" data-rvid="furnMeas" id="furnMeas" hidden></div>
+      </div>
+      <aside class="rv-keys" aria-label="Key values"><h5>Key values</h5><table class="rv-kv" id="furnKeys"></table></aside>
     </div>
-    <div id="furnMeas" data-pstep="results"></div>`;
+    <div class="stats" id="furnStats" data-pstep="results" data-fpart="product" hidden></div>`;
 }
 function furnSectionHTML() {
   const seg = [...CFD_LOCS.map((l, i) => [`L${i + 1}`, `<i class="loc-dot" style="background:${locColor(i)}"></i>L${i + 1}`]), ['web', 'The web']];
@@ -269,7 +278,7 @@ function furnSectionHTML() {
     </div>
     <div id="furnSolve" data-pstep="solve" data-fpart="runs"></div>
     <div id="furnState" data-pstep="results"></div>
-    ${FURN.part === 'product' ? furnResultsOldHTML(pane) : furnResultsHTML(pane)}
+    ${FURN.part === 'product' ? furnProductHTML(pane) : furnResultsHTML(pane)}
     ${PROC_ALL && typeof fmpHTML === 'function' ? `<div data-fpart="runs">${fmpHTML()}</div>` : ''}
     <p class="fv-note" id="furnNote" data-pstep="solve" data-fpart="runs"></p>
   </section>`;
@@ -485,17 +494,24 @@ function furnChecks(r) {
     <div class="furn-light-d" role="tabpanel">${furnPicCheck(pic)}<div><h4>${pick.t}</h4>${furnCheckBody(r, pick.k)}</div></div>${size}`;
   if (typeof applyHelp === 'function') applyHelp();   // (rebuilt outside render, as a light is picked: its help again)
 }
-/** The key values (task 13, the furnace's tab): the piece shown -- its graphene film, the batch's, when it puffs, its pull
- * and squeeze against their limits (marked as its checks), when it sticks, its size and weight after. */
+/** The key values (task 13): the piece shown. The furnace's tab: its graphene film, the batch's, when it puffs, its pull
+ * and squeeze against their limits (marked as its checks), when it sticks, its size and weight after. The graphene film's
+ * tab: its thickness, the batch's against your limit, its density, heat along it, C/O, weight kept and graphitization. */
 function furnKeys(r, rv) {
   const el = document.getElementById('furnKeys');
   if (!el) return;
   const q = rv.piece, pl = rv.plane, B = furnBatch(r), pct = v => Number.isFinite(v) ? `${(v * 100).toFixed(0)} %` : '—';
   const lv = v => (Number.isFinite(v) ? { ok: '', warn: 'rv-warn', bad: 'rv-bad' }[furnLevel(v)] : '');
   const puff = rv.runs.map((x, i) => x.puffAt ? `run ${i + 1}, ${x.puffAt.T.toFixed(0)} °C` : '').filter(Boolean)[0];
-  const rows = [
-    ['Graphene film', `${furnUm(rv.end.h)} µm`, '', `its mean; ${(rv.end.h / r.q.P.h).toFixed(2)}× the GO piece (${furnUm(r.q.P.h)} µm)`],
-    ['The batch', `${furnUm(B.h)} ± ${(B.sd * 1e6).toFixed(1)} µm`, lv(B.sd * 1e6 / OVEN.furn.sdMax), `standard deviation against your ${OVEN.furn.sdMax} µm`],
+  const e = rv.end, film = ['Graphene film', `${furnUm(e.h)} µm`, '', `its mean; ${(e.h / r.q.P.h).toFixed(2)}× the GO piece (${furnUm(r.q.P.h)} µm)`];
+  const batch = ['The batch', `${furnUm(B.h)} ± ${(B.sd * 1e6).toFixed(1)} µm`, lv(B.sd * 1e6 / OVEN.furn.sdMax), `standard deviation against your ${OVEN.furn.sdMax} µm`];
+  const rows = FURN.part === 'product' ? [film, batch,
+    ['Density', `${(e.rho / 1000).toFixed(2)} g/cm³`, '', `its layers alone ${(e.mEnd / e.hc / 1000).toFixed(2)}`],
+    ['Heat along it', `${e.kappa.toFixed(0)} W/(m·K)`, '', 'a correlation (the Furnace card)'],
+    ['C/O', furnCO(e.CO), '', `the GO's ${MAT.slurry.co.v}`],
+    ['Weight kept', `${(e.kept * 100).toFixed(1)} %`, '', 'of the dry GO'],
+    ['Graphitized', `${(e.g * 100).toFixed(0)} %`, '', `layers ${(e.d * 10).toFixed(3)} Å apart, crystallites ${e.La >= 1000 ? (e.La / 1000).toFixed(2) + ' µm' : e.La.toFixed(0) + ' nm'}`],
+  ] : [film, batch,
     ['Puffs up', puff || 'no', puff ? 'rv-bad' : '', 'where it starts: the run and the program\'s temperature'],
     ['Pull, most', pct(pl && pl.ratioMax), lv(pl && pl.ratioMax), 'of its strength'],
     ['Squeeze, most', pct(pl && pl.waveMax), lv(pl && pl.waveMax), 'of what buckles it'],
