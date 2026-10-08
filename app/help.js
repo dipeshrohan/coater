@@ -62,9 +62,10 @@ const HELP = {
   // CFD: blade geometry
   // MP-W: a stage's multiphysics pages (Pre heat treatment, Furnace: 1D, 2D, 3D, each Geometry › Mesh › Solve › Results)
   'swb.step': { t: 'Steps of the solve', d: 'Geometry: the domain drawn to scale, its parts and their materials. Mesh: the mesh the solve uses, its numbers and its settings. Solve: the equations, the boundary conditions on each face, the time, the solver; Solve and its progress. Results: the answers, the fields and the charts.', u: 'Drying, Pre heat treatment, Furnace' },
-  'swb.solve': { t: 'Solve', d: 'Solves this dimension for the inputs as they are, in the background, when you press it -- and first what it needs (the stages before it) if they are not solved. Nothing solves by itself: an input change marks the answers out of date and asks whether to solve again.', e: 'Its answers on Results; a solve already running finishes first.', u: 'Drying, Pre heat treatment, Furnace' },
+  'swb.solve': { t: 'Solve', d: 'Solves this dimension for the inputs as they are, in the background, when you press it -- and first what it needs (the stages before it) if they are not solved. It needs a mesh: greyed "Mesh first" until you press Mesh, and a Solve that solves the stages before it first stops there until you press Mesh (Solve the line solves the line\'s own models, which need no mesh). Nothing solves by itself: an input change marks the answers out of date and asks whether to solve again.', e: 'Its answers on Results; a solve already running finishes first.', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.stop': { t: 'Stop', d: 'Stops the solve running now; nothing of it is kept.', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.csv': { t: 'Export CSV', d: 'The answers against time of this dimension\'s solve, as a CSV file.', u: 'Drying, Pre heat treatment, Furnace' },
+  'swb.mesh': { t: 'Mesh', d: 'Lays out this dimension\'s mesh for the inputs as they are. Nothing is meshed until you press it; Solve needs it; after an input change it is out of date until you press Mesh again.', u: 'Drying, Pre heat treatment, Furnace, Peel and wind, Pool and feed' },
   'swb.reset': { t: 'Default mesh', d: 'Puts this dimension\'s mesh and time steps back to the solver\'s own (one undo step).', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.scale': { t: 'The drawing\'s scale', d: 'True scale: one scale both ways. Layers stretched: the thin layers (the pieces, the stack) drawn taller, each its share of the height, so their elements and faces can be seen.', u: 'Drying, Pre heat treatment, Furnace' },
   'swb.rec': { t: 'Its material', d: 'The part\'s material on Materials: its record opens there (its values are the solve\'s).', u: 'Drying, Pre heat treatment, Furnace' },
@@ -711,7 +712,7 @@ const HELP_RESULTS = {
 
 // ---- attaching: by id, by selector, by label ----
 const HELP_BY_ID = {
-  swbSolve: 'swb.solve', swbStop: 'swb.stop', swbCsv: 'swb.csv', swbMeshReset: 'swb.reset',
+  swbSolve: 'swb.solve', swbMesh: 'swb.mesh', swbStop: 'swb.stop', swbCsv: 'swb.csv', swbMeshReset: 'swb.reset',
   dmp1: 'dmp.temps', dmp2: 'dmp.water', dmp3: 'dmp.field', dmp4: 'dmp.stress', dmpIso: 'dmp.iso', dmpCompare: 'dmp.compare',
   prl1: 'prl.pressure', prl2: 'prl.pull', prl3: 'prl.field', prl4: 'prl.core', prlCompare: 'prl.compare',
   pr31: 'pr3.water', pr32: 'pr3.along', pr33: 'pr3.map', pr34: 'pr3.temp', pr3Compare: 'pr3.compare',

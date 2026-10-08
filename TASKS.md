@@ -14,7 +14,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
-| 4b | Meshing only when you ask | Medium | Next | Nothing |
 | 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
@@ -70,23 +69,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
   Yours stay at 2.0 g for hours; not yet weighed a day later.
 - **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
-
-## 4b. Meshing only when you ask
-- **Now**: some meshes are made without a click. Coating › 2D lays out its four locations' meshes whenever the page is
-  drawn; Coating › 3D makes its mesh when its Mesh step opens; Pool and feed 3D and the stages' 3D Mesh steps make
-  theirs as soon as the stage before is solved.
-- **Your choice**:
-  - every Mesh step has a Mesh button; nothing is meshed until it is pressed;
-  - Solve needs a mesh: greyed, "Mesh first", until meshed; after an input change the mesh is out of date and Solve
-    waits for Re-mesh;
-  - Solve the line (and a Solve that solves the stage before first) stops at the first model without a mesh and points
-    to its Mesh step.
-- **Done (Coating 2D and 3D)**: a Mesh button on each Mesh step (and in the Mesh menu); nothing laid out until it is
-  pressed; a mesh made for other inputs marked out of date; Run (2D) and Solve 3D greyed "Mesh first" until meshed; the
-  Re-solve bar leaves out a 2D or 3D whose mesh is missing ("mesh first"); "Check the crown in 3D" opens the 3D's Mesh step.
-  Studies you start (mesh study, mesh to an accuracy, DOE, measured-data runs) still mesh each run they solve.
-- **Left**: Pool and feed 2D and 3D, the stages' 1D, 2D and 3D Mesh steps, Solve the line stopping at a model without a
-  mesh; help, report; the tests; screenshots before and after.
 
 ## 5. Materials page: check what is left of the planned redesign
 - **Then**: the workflow plan (30 Sep) had a Materials page redesign.
@@ -250,6 +232,12 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool
+  and feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage
+  pages show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's
+  Solve are greyed "Mesh first" until meshed; a Solve that solves the stage before first stops at the model without a
+  mesh ("not meshed" on its bar). Solve the line solves the line's own models, which have no Mesh step, so it needs no
+  mesh. Studies you start (mesh study, mesh to an accuracy, DOE, measured-data runs) still mesh each run they solve.
 - Faster tetrahedral mesher (was task 4), your choice of the same meshes: 22.7 → 17.7 s on the coater's pool (85,000
   tetrahedra), every mesh identical to main's; small meshes (a few seconds) as before. A moved point is searched for
   from where it was; the surface's triangles are kept in a lookup updated as they change, instead of rebuilt. Updating
