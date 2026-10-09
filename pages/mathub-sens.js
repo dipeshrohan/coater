@@ -9,7 +9,9 @@
  *  answers (get: from its result as the Line page reads it) and the size below which a change is taken against the floor
  *  rather than the answer itself (an answer near zero: a crack risk of 0.02, a flat curl). secs: one solve, measured. */
 const SENS_STAGES = [
-  { k: '1d', phys: 'coat', l: 'Coating', secs: 4.3, outs: [
+  // (the wet film is the gap flow's q / U: surface tension, the contact angles and the structure (worked out after the
+  //  gap flow, not fed back into it) are read by the other coating models, not by it -- ranked against it they would read 0)
+  { k: '1d', phys: 'coat', l: 'Coating', secs: 4.3, skip: ['in.g', 'in.th', 'in.dth', 'in.thw', 'rheo.tb', 'rheo.gdc', 'rheo.cy', 'rheo.ce'], outs: [
     { l: 'Wet film', u: 'mm', d: 3, floor: 0.01, get: sensWetFilm }] },
   { k: 'dry', phys: 'dry', l: 'Drying', secs: 9.2, outs: [
     { l: 'Water left at the oven\'s exit', u: '% of the GO', d: 1, floor: 1, get: () => linePick(dryRuns(lineSel())).exit.waterPct }] },
@@ -51,7 +53,9 @@ function sensValues() {
     const r = rc && p0.b.t === 'card' ? rc : r0, p = rc && p0.b.t !== 'card' ? { ...p0, b: hubPlainB(p0.b) } : p0;
     // (the slurry's solids while the Mixing recipe sets them: a change would be set back from the recipe before any solve)
     if (!['card', 'inp'].includes(p.b.t) || !p.phys.includes(s.phys) || hubOff(p) || (typeof hubPhiMix === 'function' && hubPhiMix(p))) continue;
-    const id = `${s.k}|${p.b.inst || ''}|${p.b.t === 'card' ? p.b.card + '.' + p.b.k : 'in.' + p.b.k}`, v = hubVal(p);
+    const key = p.b.t === 'card' ? p.b.card + '.' + p.b.k : 'in.' + p.b.k, id = `${s.k}|${p.b.inst || ''}|${key}`;
+    if (s.skip && s.skip.includes(key)) continue;
+    const v = hubVal(p);
     if (seen.has(id) || v.prov !== 'assumed' || typeof v.v !== 'number' || !Number.isFinite(v.v) || v.v === 0 || v.def) continue;
     seen.add(id); out.push({ s, r, p, id });
     }
@@ -69,7 +73,11 @@ const sensBaseReady = () => SENS_STAGES.every(s => solveState(s.k) === 'solved')
 /** What the ranking was made for: the stages' inputs (their solve keys). */
 const sensKeyNow = () => JSON.stringify([SENS_STAGES.map(s => solveSafe(SOLVE_M[s.k].key, null)), sensValues().map(q => q.id), lineSel(), lineWay()]);
 /** About how long a ranking takes (s): each value twice, its stage (and what before it its value also changes) solved. */
-const sensEstimate = (vals = sensValues()) => vals.reduce((t, q) => t + 2 * q.s.secs, 0);
+// (each change solves its stage and the stages before it on the line that read the same value: the mixing, 0.7 s measured)
+const SENS_PRE = [{ k: 'mix', phys: 'mix', secs: 0.7 }];
+const sensSecs = q => { const L = SOLVE_LINE, at = L.indexOf(q.s.k);
+  return q.s.secs + [...SENS_PRE, ...SENS_STAGES].filter(t => L.indexOf(t.k) >= 0 && L.indexOf(t.k) < at && q.p.phys.includes(t.phys)).reduce((a, t) => a + t.secs, 0); };
+const sensEstimate = (vals = sensValues()) => vals.reduce((t, q) => t + 2 * sensSecs(q), 0);
 const sensClock = s => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
 
 /** Rank them: the queue of every value at −20 % and +20 %, run one after another in the background. */
@@ -167,6 +175,8 @@ function sensEnd(status) {
 function sensStop(now = false) {
   if (SENS.status === 'running') {
     SENS.stop = true;
+    // (the change's stages not yet started: dropped at once -- the queue would start the next before this one ends)
+    for (const k of (SENS.cur && SENS.cur.arm) || []) if (solveState(k) !== 'busy') SOLVE_ASK.delete(k);
     if (now || !SENS.cur) { if (SENS.cur) sensRestore(SENS.rows[SENS.cur.n]); sensEnd('stopped'); }
   }
   // (New, Open: the project being left's ranking, done or stopped, goes with it)
@@ -199,6 +209,10 @@ for (const ev of ['input', 'change']) document.addEventListener(ev, e => {
   if (SENS.status !== 'running' || SENS.stop || !e.isTrusted) return;
   const t = e.target;
   if (!t || !t.matches || !t.matches('input, select, textarea') || t.closest('.hub-sens')) return;
+  // (the value under change back first: the edit's own handler, which runs after this, then works from the project's
+  //  values -- a viscosity at 2.7 1/s turned into the law's own parameter with its n and yield stress as set)
+  const c = SENS.cur, row = c && SENS.rows[c.n];
+  if (row && !sensRowGone(row) && hubVal(row.p).v === c.x) { try { hubSet(row.p, row.v0); } catch (er) { /* (as it was: within its range) */ } sensDerived(); }
   sensStop();
   if (typeof imgToast === 'function') imgToast('The ranking stopped: an input was edited while it ran. Rank them again when you are done.', 'warn');
 }, true);
