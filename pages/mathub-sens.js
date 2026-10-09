@@ -40,7 +40,7 @@ const sensRowGone = r => !!(r.p.b.inst && !(MAT.inst && MAT.inst[r.p.b.inst]));
 const sensKeep = () => SENS_MODELS().map(([M, f]) => ({ M, v: Object.fromEntries(f.map(k => [k, M[k]])) }));
 const sensPutBack = keep => { for (const q of keep || []) Object.assign(q.M, q.v); };
 /** The ranking: status 'idle' | 'running' | 'done' | 'stopped'; rows (each value's place); the run's queue and where it is. */
-const SENS = { status: 'idle', rows: [], jobs: [], i: 0, t0: 0, key: null, keep: null, cur: null, stop: false, all: false, held: false };
+const SENS = { status: 'idle', rows: [], jobs: [], i: 0, t0: 0, key: null, keep: null, cur: null, stop: false, all: false, held: false, asSet: 0 };
 const SENS_F = 0.2;
 
 /** The values ranked, by stage: each assumed number its stage's solver reads, as set (a law not chosen, a switch off: not
@@ -186,15 +186,23 @@ function sensStop(now = false) {
 /** f with the project as set: the value under change back at its own and every model's result back, then as they were. */
 function sensAsSet(f) {
   const c = SENS.status === 'running' ? SENS.cur : null, row = c ? SENS.rows[c.n] : null;
-  if (!row || sensRowGone(row) || hubVal(row.p).v !== c.x || !SENS.keep) return f();
+  if (!row || sensRowGone(row) || hubVal(row.p).v !== c.x || !SENS.keep) { SENS.asSet = (SENS.asSet || 0) + 1; try { return f(); } finally { SENS.asSet--; } }
   // (a redraw the swap queues -- setting an input does -- dropped: a redraw reads the project's key through here, and
   //  would queue the next, drawing the page anew every frame while the ranking runs; one queued before it is kept)
   const live = sensKeep(), q0 = typeof renderPending !== 'undefined' ? renderPending : 0;
+  SENS.asSet = (SENS.asSet || 0) + 1;
   try { hubSet(row.p, row.v0); sensDerived(); sensPutBack(SENS.keep); return f(); }
   finally {
-    sensPutBack(live); hubSet(row.p, c.x); sensDerived();
+    SENS.asSet--; sensPutBack(live); hubSet(row.p, c.x); sensDerived();
     if (typeof renderPending !== 'undefined' && renderPending !== q0) { cancelAnimationFrame(renderPending); renderPending = 0; if (q0) queueRender(); }
   }
+}
+/** A file saved while the ranking runs (a stage's CSV, an image, a table): refused, said why -- the results it would hold
+ *  are the value under change's, not the project's. Saved through sensAsSet (the project, a material file): let through. */
+function sensFileRefused() {
+  if (SENS.status !== 'running' || SENS.asSet) return false;
+  if (typeof imgToast === 'function') imgToast('The ranking of the assumed values is running: files are saved when it ends (or stop it: Materials › Readiness › Stop). They would hold its changed values.', 'warn');
+  return true;
 }
 /** A solve asked for while the ranking runs (Solve, Run, a study): refused, said why -- it would take the value under
  *  change, not the project's. The ranking's own: let through. */

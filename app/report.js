@@ -674,8 +674,7 @@ async function makeReport(o, fmt) {
     const html = await buildReport(o);
     if (fmt === 'html') {
       const name = `${repSlug(o.title)}-${imgStamp()}.html`;
-      saveBlob(new Blob([html], { type: 'text/html' }), name);
-      imgToast(`Saved ${name}`);
+      if (saveBlob(new Blob([html], { type: 'text/html' }), name) !== false) imgToast(`Saved ${name}`);
     } else {
       printReport(html);
       imgToast('Report ready: in the print dialog choose "Save as PDF", paper A4.');

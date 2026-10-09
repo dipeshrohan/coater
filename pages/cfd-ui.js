@@ -1179,6 +1179,7 @@ function renderCFD() {
 // ---------------------------------------------------------------------
 const csvCell = v => { const t = typeof v === 'number' ? (Number.isFinite(v) ? String(+v.toPrecision(9)) : '') : String(v ?? ''); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
 function downloadCSV(name, rows) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const blob = new Blob(['\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;

@@ -634,7 +634,7 @@ function hubWireEditor(r) {
     hubAssign(base, +i, el.value === base ? null : el.value); render();
   }));
   const re = document.getElementById('hubRecExport');
-  if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubAsSet(() => hubExport([r.id])));
+  if (re) re.onclick = () => hubAsSet(() => hubDownload(`${r.id}.material.json`, hubExport([r.id])));
   if (HUB.tab === 'meas' && r.id === 'slurry') rtDraw();
   // (a copy's plots drawn with its own values in place, MC-2)
   const raf = f => requestAnimationFrame(() => (r.inst ? hubInInst(r.inst, f) : f()));
@@ -723,6 +723,7 @@ function hubWireCompare() {
 
 // ---- material files ----
 function hubDownload(name, data) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })); a.download = name;
   document.body.appendChild(a); a.click();
@@ -730,6 +731,7 @@ function hubDownload(name, data) {
 }
 /** A text file to save (the measurement sheet: with a byte-order mark, so spreadsheets read its µ, ³ and ° as written). */
 function hubDownloadText(name, text, type) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF' + text], { type })); a.download = name;
   document.body.appendChild(a); a.click();
@@ -740,10 +742,10 @@ function hubDownloadText(name, text, type) {
 const hubAsSet = f => (typeof sensAsSet === 'function' ? sensAsSet(f) : f());
 function hubSheetFile() {
   const n = hubAsSet(() => hubSheetRows().length);
-  hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubAsSet(hubSheetCSV), 'text/csv');
+  if (hubAsSet(() => hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv')) === false) return;
   imgToast(`Materials CSV: ${n} values. Enter yours under "Your value" (and its unit and source), then Import the file.`);
 }
-function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubAsSet(() => hubExport())); }
+function hubExportFile() { hubAsSet(() => hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport())); }
 function hubImportFile() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,.csv,application/json,text/csv';

@@ -453,7 +453,10 @@ function composeImage(ctx, shot, opt, mode) {
 // Files
 // ---------------------------------------------------------------------
 const imgStamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
-function saveBlob(blob, name) {
+/** A file to save. asSet: built from the project as set (the project file, through sensAsSet) -- saved while the ranking
+ *  of the assumed values runs too. */
+function saveBlob(blob, name, asSet) {
+  if (!asSet && typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click();

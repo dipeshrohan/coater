@@ -439,7 +439,7 @@ async function saveProject(as = false) {
       rememberRecent(handle);
     } else {
       if (as || PROJ.name === 'Untitled') { const nm = await askProjectName(PROJ.name); if (nm == null) return false; PROJ.name = nm; }
-      saveBlob(new Blob([text], { type: 'application/json' }), `${PROJ.name}.bcdl`);
+      saveBlob(new Blob([text], { type: 'application/json' }), `${PROJ.name}.bcdl`, true);
     }
   } catch (e) { if (e && e.name === 'AbortError') return false; imgToast(`Could not save: ${e.message}`, 'error'); return false; }
   PROJ.savedKey = projKey(); updateProjectTitle();
