@@ -624,7 +624,7 @@ function hubWireEditor(r) {
   }));
   view.querySelectorAll('input[data-hubdexpr]').forEach(el => el.addEventListener('change', () => defSet(el.dataset.hubdexpr, { kind: 'expr', src: el.value.trim() }, 'expression edited')));
   const du = document.getElementById('hubRecDup');
-  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubDuplicate(r.id); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
+  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubAsSet(() => hubDuplicate(r.id)); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
   const dl = document.getElementById('hubRecDel');
   if (dl) dl.onclick = () => { undoHint(`Delete ${hubName(r)}`); const base = r.base; hubDeleteInst(r.inst); HUB.sel = base; HUB.open = null; render(); };
   // (Domain Assignments: the material each domain takes, MC-2)

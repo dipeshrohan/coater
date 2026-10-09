@@ -1498,7 +1498,8 @@ function saveCase() {
   if (!name) { caseMsg('Give the case a name first.'); el.focus(); return; }
   const list = readCases();
   if (!list) { caseMsg('Local storage is not available in this browser.'); return; }
-  const c = {
+  // (the ranking of the assumed values running: the project's own values saved, not the one under change)
+  const c = (typeof sensAsSet === 'function' ? sensAsSet : f => f())(() => ({
     name, saved: new Date().toISOString(),
     P: Object.fromEntries(CFG.map(q => [q.k, P[q.k]])),
     CFDG: { ...CFDG },
@@ -1509,7 +1510,7 @@ function saveCase() {
     probes: cfdProbes.map(q => ({ ...q })),
     cuts: cfdCuts.map(q => ({ ...q })),
     summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
-  };
+  }));
   const at = list.findIndex(x => x.name === name);
   if (at >= 0) list[at] = c; else list.unshift(c);
   if (!writeCases(list)) { caseMsg('Could not save: local storage is full or blocked.'); return; }
