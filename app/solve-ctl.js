@@ -127,6 +127,8 @@ function solveArm(...ids) {
 }
 /** Start each asked model whose inputs are ready (in the line's order); drop an ask whose upstream failed or is not asked. */
 function solvePump() {
+  // (the ranking of the assumed values holds its value under change back while an edit is handled: nothing starts then)
+  if (typeof SENS !== 'undefined' && SENS.held) return;
   for (const k of SOLVE_ORDER) {
     if (!SOLVE_ASK.has(k)) continue;
     const m = SOLVE_M[k];

@@ -40,7 +40,7 @@ const sensRowGone = r => !!(r.p.b.inst && !(MAT.inst && MAT.inst[r.p.b.inst]));
 const sensKeep = () => SENS_MODELS().map(([M, f]) => ({ M, v: Object.fromEntries(f.map(k => [k, M[k]])) }));
 const sensPutBack = keep => { for (const q of keep || []) Object.assign(q.M, q.v); };
 /** The ranking: status 'idle' | 'running' | 'done' | 'stopped'; rows (each value's place); the run's queue and where it is. */
-const SENS = { status: 'idle', rows: [], jobs: [], i: 0, t0: 0, key: null, keep: null, cur: null, stop: false, all: false };
+const SENS = { status: 'idle', rows: [], jobs: [], i: 0, t0: 0, key: null, keep: null, cur: null, stop: false, all: false, held: false };
 const SENS_F = 0.2;
 
 /** The values ranked, by stage: each assumed number its stage's solver reads, as set (a law not chosen, a switch off: not read). */
@@ -180,15 +180,20 @@ function sensStop(now = false) {
     if (now || !SENS.cur) { if (SENS.cur) sensRestore(SENS.rows[SENS.cur.n]); sensEnd('stopped'); }
   }
   // (New, Open: the project being left's ranking, done or stopped, goes with it)
-  if (now) Object.assign(SENS, { status: 'idle', rows: [], jobs: [], i: 0, base: null, key: null, keep: null, cur: null, stop: false, all: false, snap: null });
+  if (now) Object.assign(SENS, { status: 'idle', rows: [], jobs: [], i: 0, base: null, key: null, keep: null, cur: null, stop: false, all: false, snap: null, held: false });
 }
 /** f with the project as set: the value under change back at its own and every model's result back, then as they were. */
 function sensAsSet(f) {
   const c = SENS.status === 'running' ? SENS.cur : null, row = c ? SENS.rows[c.n] : null;
   if (!row || sensRowGone(row) || hubVal(row.p).v !== c.x || !SENS.keep) return f();
-  const live = sensKeep();
+  // (a redraw the swap queues -- setting an input does -- dropped: a redraw reads the project's key through here, and
+  //  would queue the next, drawing the page anew every frame while the ranking runs; one queued before it is kept)
+  const live = sensKeep(), q0 = typeof renderPending !== 'undefined' ? renderPending : 0;
   try { hubSet(row.p, row.v0); sensDerived(); sensPutBack(SENS.keep); return f(); }
-  finally { sensPutBack(live); hubSet(row.p, c.x); sensDerived(); }
+  finally {
+    sensPutBack(live); hubSet(row.p, c.x); sensDerived();
+    if (typeof renderPending !== 'undefined' && renderPending !== q0) { cancelAnimationFrame(renderPending); renderPending = 0; if (q0) queueRender(); }
+  }
 }
 /** A solve asked for while the ranking runs (Solve, Run, a study): refused, said why -- it would take the value under
  *  change, not the project's. The ranking's own: let through. */
@@ -209,13 +214,30 @@ for (const ev of ['input', 'change']) document.addEventListener(ev, e => {
   if (SENS.status !== 'running' || SENS.stop || !e.isTrusted) return;
   const t = e.target;
   if (!t || !t.matches || !t.matches('input, select, textarea') || t.closest('.hub-sens')) return;
-  // (the value under change back first: the edit's own handler, which runs after this, then works from the project's
-  //  values -- a viscosity at 2.7 1/s turned into the law's own parameter with its n and yield stress as set)
+  // (stopped only when the edit changes a project input: a search box, a report's title, a view's control leave it
+  //  running. The inputs as they were taken first, then compared once the edit's own handlers have run; nothing starts
+  //  meanwhile -- solvePump waits while it is held)
   const c = SENS.cur, row = c && SENS.rows[c.n];
-  if (row && !sensRowGone(row) && hubVal(row.p).v === c.x) { try { hubSet(row.p, row.v0); } catch (er) { /* (as it was: within its range) */ } sensDerived(); }
+  if (!SENS.held) { SENS.held = { before: sensInputs(), back: false, c }; setTimeout(sensHeldEnd, 0); }
+  // (as an edit is committed -- its change, or a slider's move, which sets its value at once -- the value under change
+  //  back first: the edit's handler then works from the project's values, a viscosity at 2.7 1/s turned into the law's
+  //  own parameter with its n and yield stress as set. A box being typed in is left alone: its keystrokes set nothing)
+  if ((ev === 'change' || t.type === 'range') && row && !sensRowGone(row) && hubVal(row.p).v === c.x) {
+    try { hubSet(row.p, row.v0); SENS.held.back = true; } catch (er) { /* (as it was: within its range) */ }
+    sensDerived();
+  }
+}, true);
+/** After an edit's handlers: the value under change set again, and the ranking stopped if a project input changed. */
+function sensHeldEnd() {
+  const h = SENS.held;
+  SENS.held = false;
+  if (!h || SENS.status !== 'running' || SENS.stop) return;
+  const row = h.c && SENS.rows[h.c.n];
+  if (h.back && SENS.cur === h.c && !sensRowGone(row) && hubVal(row.p).v === row.v0) { try { hubSet(row.p, h.c.x); } catch (er) { /* (as it was set: within its range) */ } sensDerived(); }
+  if (sensInputs() === h.before) return;
   sensStop();
   if (typeof imgToast === 'function') imgToast('The ranking stopped: an input was edited while it ran. Rank them again when you are done.', 'warn');
-}, true);
+}
 /** A value's place: its largest change among its stage's answers, against each answer (or its floor, near zero). */
 function sensScore(row) {
   let best = null;
