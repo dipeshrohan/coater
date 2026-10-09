@@ -17,7 +17,16 @@ const SENS_STAGES = [
     { l: 'Water left at the oven\'s exit', u: '% of the GO', d: 1, floor: 1, get: () => linePick(dryRuns(lineSel())).exit.waterPct }] },
   { k: 'film', phys: 'film', l: 'Peel and wind', secs: 17.9, outs: [
     { l: 'Crack risk', u: '× its toughness', d: 3, floor: 0.05, get: () => { const r = linePick(filmRuns(lineSel())); return r.worst ? r.worst.ratio : 0; } },
-    { l: 'Curl, settled', u: '1/m', d: 2, floor: 0.1, get: () => linePick(filmRuns(lineSel())).curl.settled.kappa }] },
+    { l: 'Curl, settled', u: '1/m', d: 2, floor: 0.1, get: () => linePick(filmRuns(lineSel())).curl.settled.kappa },
+    // (the Line page's other peel and roll checks, so the values only they read -- the hold on the web, the split between
+    //  layers, the film's strength -- are ranked by what they set rather than read 0: the peel force by hand, the stress
+    //  at its front and on the roll against the strength, the blisters against the hold, the hold against the split; the
+    //  values as the Film solve takes them, filmOpts: a material copy assigned to its domain too)
+    { l: 'Peel force by hand', u: 'N/m', d: 2, floor: 0.1, get: () => linePick(filmRuns(lineSel())).peel.hand.f },
+    { l: 'Peel front against its strength', u: '×', d: 3, floor: 0.05, get: () => linePick(filmRuns(lineSel())).peel.hand.sFront / filmOpts().film.sigF },
+    { l: 'On the roll against its strength', u: '×', d: 3, floor: 0.05, get: () => linePick(filmRuns(lineSel())).roll.sMax / filmOpts().film.sigF },
+    { l: 'Blisters', u: '× its hold', d: 3, floor: 0.05, get: () => linePick(filmRuns(lineSel())).blisters.max.ratio },
+    { l: 'Hold on the web against the split between layers', u: '×', d: 3, floor: 0.05, get: () => { const F = filmOpts().film; return F.Gi / F.Gil; } }] },
   { k: 'stack', phys: 'stack', l: 'Pre heat', secs: 50.5, outs: [
     { l: 'Size change out of the stack', u: '% of the piece', d: 3, floor: 0.01, get: () => STACK.res.runs.find(r => r.where === lineWay()).stack.sizeOut[0] * 100 }] },
   { k: 'furn', phys: 'furn', l: 'Furnace', secs: 10.8, outs: [

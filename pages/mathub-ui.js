@@ -57,7 +57,9 @@ function viewMaterials() {
   view.querySelectorAll('[data-hubreset]').forEach(b => { b.onclick = () => {
     const c = b.dataset.hubreset; document.getElementById('hubDefaults').open = false;
     undoHint(`The ${HUB_CARD_T[c]}: back to its defaults`);
-    MAT = { ...MAT, [c]: c === 'rheo' ? { ...matDefaults().rheo, side: MAT.rheo.side } : matDefaults()[c] };
+    // (the alignment's streamline and flake counts are the Coating solver's settings, not the material's: kept)
+    const keep = c === 'orient' && typeof OR_SOLVE !== 'undefined' ? Object.fromEntries(OR_SOLVE.map(([, k]) => [k, MAT.orient[k]]).filter(([, v]) => v)) : {};
+    MAT = { ...MAT, [c]: c === 'rheo' ? { ...matDefaults().rheo, side: MAT.rheo.side } : { ...matDefaults()[c], ...keep } };
     if (c === 'rheo') rheoSync('extras');
     render();
   }; });
