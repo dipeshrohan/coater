@@ -49,7 +49,8 @@ function sensValues() {
     const cp = HUB_SWAP[s.phys] && typeof hubAssignedFor === 'function' ? hubAssignedFor(r0.id, s.phys) : null, rc = cp ? hubInstRec(cp) : null;
     for (const g of (rc || r0).groups) for (const p0 of g.props) {
     const r = rc && p0.b.t === 'card' ? rc : r0, p = rc && p0.b.t !== 'card' ? { ...p0, b: hubPlainB(p0.b) } : p0;
-    if (!['card', 'inp'].includes(p.b.t) || !p.phys.includes(s.phys) || hubOff(p)) continue;
+    // (the slurry's solids while the Mixing recipe sets them: a change would be set back from the recipe before any solve)
+    if (!['card', 'inp'].includes(p.b.t) || !p.phys.includes(s.phys) || hubOff(p) || (typeof hubPhiMix === 'function' && hubPhiMix(p))) continue;
     const id = `${s.k}|${p.b.inst || ''}|${p.b.t === 'card' ? p.b.card + '.' + p.b.k : 'in.' + p.b.k}`, v = hubVal(p);
     if (seen.has(id) || v.prov !== 'assumed' || typeof v.v !== 'number' || !Number.isFinite(v.v) || v.v === 0 || v.def) continue;
     seen.add(id); out.push({ s, r, p, id });

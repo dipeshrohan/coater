@@ -1370,6 +1370,7 @@ let cfdBatch = [];      // the locations with progress bars: those of the runs g
 let meshStudy = null;   // { loc, key, status, runs: [{ name, f, solver, status, progress, r, metrics, ms, error, worker }] }
 const STUDY_STEPS = [['Coarse', 1 / 1.5], ['Medium', 1], ['Fine', 1.5]];
 function runMeshStudy(i) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (meshStudy && meshStudy.status === 'running') return;
   const geo = cfdGeometry(i), base = geo.solver, key = cfdInputsKey(geo), run0 = cfdRuns[i];
   meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : { ...scaleCounts(base, f), ...(base.zones ? { zones: scaleZones(base.zones, f) } : {}) }) }, status: 'running', progress: null, live: { r: [], solves: [], t0: performance.now(), tol: base.tol } })) };

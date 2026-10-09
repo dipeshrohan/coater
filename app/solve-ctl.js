@@ -82,6 +82,7 @@ const MESH_ERR = {};
 const meshError = k => (MESH_ERR[k] && MESH_ERR[k].key === solveSafe(SOLVE_M[k].key, null) ? MESH_ERR[k].error : null);
 /** Mesh (the Mesh step's button): the model's mesh laid out for its inputs as they are -- marked made only once laid out. */
 function meshDo(k) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const key = solveSafe(SOLVE_M[k].key, null);
   if (key == null) return;
   let err = null;
