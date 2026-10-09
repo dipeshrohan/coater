@@ -32,7 +32,7 @@ function sensWetFilm() {
 /** The models whose results a run changes and puts back, each with every field its solve sets (the 1D's across the web
  *  too; the mixing, which a value the coating reads may solve again). */
 const SENS_MODELS = () => [[ONE_D, ['res', 'key', 'across', 'acrossKey', 'error', 'ms']], [MIX, ['res', 'key', 'error', 'ms']], [DRY, ['res', 'key', 'error', 'ms']],
-  [FILM, ['res', 'key', 'error', 'ms']], [SHEET, ['res', 'key', 'error', 'ms']], [STACK, ['res', 'key', 'error', 'ms']], [FURN, ['res', 'key', 'error', 'ms']]];
+  [FILM, ['res', 'key', 'error', 'ms']], [SHEET, ['res', 'key', 'error', 'ms']], [STACK, ['res', 'key', 'error', 'ms']], [FURN, ['res', 'key', 'error', 'ms', 'fit']]];
 /** A row whose value is a material copy's that has since been deleted: no longer ranked, nor shown. */
 const sensRowGone = r => !!(r.p.b.inst && !(MAT.inst && MAT.inst[r.p.b.inst]));
 const sensKeep = () => SENS_MODELS().map(([M, f]) => ({ M, v: Object.fromEntries(f.map(k => [k, M[k]])) }));
@@ -85,7 +85,7 @@ function sensStart() {
   const vals = sensValues();
   SENS.keep = sensKeep();
   const base = Object.fromEntries(SENS_STAGES.map(s => [s.k, s.outs.map(o => { try { return o.get(); } catch (e) { return NaN; } })]));
-  Object.assign(SENS, { status: 'running', stop: false, t0: Date.now(), i: 0, base, key: sensKeyNow(), cur: null, snap: (sensDerived(), sensInputs()), sel: sensSel(),
+  Object.assign(SENS, { status: 'running', stop: false, t0: Date.now(), i: 0, base, key: sensKeyNow(), cur: null, note: typeof RHEO_NOTE === 'string' ? RHEO_NOTE : null, snap: (sensDerived(), sensInputs()), sel: sensSel(),
     rows: vals.map(q => ({ ...q, v0: hubVal(q.p).v, lo: NaN, hi: NaN, yLo: null, yHi: null, err: null })),
     jobs: vals.flatMap((_, n) => [[n, 1 - SENS_F], [n, 1 + SENS_F]]) });
   logCFD(0, `Ranking the assumed values: ${vals.length} values at ±${SENS_F * 100} %, about ${sensClock(sensEstimate(vals))}`);
@@ -147,11 +147,17 @@ function sensRestore(row) {
   if (now != null && (x == null || now === x)) { try { hubSet(row.p, row.v0); } catch (e) { /* (as it was: within its range) */ } }
   sensDerived();
   sensPutBack(SENS.keep);
+  // (an old project's note on its law (rheoMigrate): a change of the law's value clears it; the ranking's own change,
+  //  put back, leaves it as it was -- unless the inputs were changed meanwhile, the user's change then clearing it)
+  if (SENS.note != null && typeof RHEO_NOTE === 'string' && SENS.snap && sensInputs() === SENS.snap) RHEO_NOTE = SENS.note;
 }
 function sensEnd(status) {
   SENS.status = status; SENS.cur = null; SENS.t1 = Date.now();
   sensPutBack(SENS.keep);
   SENS.keep = null;
+  // (a change the user made as it ended -- one that stopped it -- waiting to be a step: a step first, then what the
+  //  ranking set and put back taken as known)
+  if (typeof UNDO === 'object' && UNDO.timer) undoCommit();
   undoSync();
   logCFD(0, `Ranking ${status === 'done' ? 'done' : 'stopped'}: ${SENS.rows.filter(r => r.yLo && r.yHi).length} of ${SENS.rows.length} values in ${sensClock((SENS.t1 - SENS.t0) / 1000)}`);
   if (typeof render === 'function') render();
