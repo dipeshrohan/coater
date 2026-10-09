@@ -634,7 +634,7 @@ function hubWireEditor(r) {
     hubAssign(base, +i, el.value === base ? null : el.value); render();
   }));
   const re = document.getElementById('hubRecExport');
-  if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubExport([r.id]));
+  if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubAsSet(() => hubExport([r.id])));
   if (HUB.tab === 'meas' && r.id === 'slurry') rtDraw();
   // (a copy's plots drawn with its own values in place, MC-2)
   const raf = f => requestAnimationFrame(() => (r.inst ? hubInInst(r.inst, f) : f()));
@@ -735,12 +735,15 @@ function hubDownloadText(name, text, type) {
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
+/** f with the project as set: while the ranking of the assumed values runs, the value under change is not the project's
+ *  (a file saved then holds the project's own). */
+const hubAsSet = f => (typeof sensAsSet === 'function' ? sensAsSet(f) : f());
 function hubSheetFile() {
-  const n = hubSheetRows().length;
-  hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv');
+  const n = hubAsSet(() => hubSheetRows().length);
+  hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubAsSet(hubSheetCSV), 'text/csv');
   imgToast(`Materials CSV: ${n} values. Enter yours under "Your value" (and its unit and source), then Import the file.`);
 }
-function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport()); }
+function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubAsSet(() => hubExport())); }
 function hubImportFile() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,.csv,application/json,text/csv';
