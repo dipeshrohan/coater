@@ -37,9 +37,12 @@ const all = [...H.HUB_RECORDS, ...H.HUB_IFACES], props = r => r.groups.flatMap(g
 {
   const seen = new Map();
   for (const r of all) for (const p of props(r)) if (p.b.t === 'card') { const k = `${p.b.card}.${p.b.k}`; seen.set(k, [...(seen.get(k) || []), `${r.id}.${p.id}`]); }
-  const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`));
+  // (the solver settings among the card values -- the alignment's streamlines and flakes per streamline, 'num' -- are set on
+  // Coating › 2D › Solve, not on a material: none is a material's property)
+  const solverSet = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.filter(q => q[10] === 'num').map(q => `${c}.${q[0]}`));
+  const cards = Object.entries(H.HUB_CARDS).flatMap(([c, rows]) => rows.map(q => `${c}.${q[0]}`)).filter(k => !solverSet.includes(k));
   const missing = cards.filter(k => !seen.has(k)), twice = [...seen].filter(([, v]) => v.length > 1), extra = [...seen.keys()].filter(k => !cards.includes(k));
-  check(`bindings: the ${cards.length} card values (the six stage cards' 117, the material constants' 10, the spec's three materials' 18) each a property of exactly one record`, cards.length === 145 && !missing.length && !twice.length && !extra.length,
+  check(`bindings: the ${cards.length} card values (the six stage cards' 115 besides their two solver settings, the material constants' 10, the spec's three materials' 18) each a property of exactly one record; the solver settings (${solverSet.join(', ')}) of none`, cards.length === 143 && solverSet.length === 2 && !missing.length && !twice.length && !extra.length,
     `missing ${missing.join(', ') || 'none'}; twice ${twice.map(([k, v]) => `${k} (${v.join(', ')})`).join('; ') || 'none'}; unknown ${extra.join(', ') || 'none'}`);
   const dup = all.filter(r => new Set(props(r).map(p => p.id)).size !== props(r).length).map(r => r.id);
   check('  property ids unique within each record; record ids unique', !dup.length && new Set(all.map(r => r.id)).size === all.length, dup.join(', '));

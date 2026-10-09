@@ -57,7 +57,9 @@ function viewMaterials() {
   view.querySelectorAll('[data-hubreset]').forEach(b => { b.onclick = () => {
     const c = b.dataset.hubreset; document.getElementById('hubDefaults').open = false;
     undoHint(`The ${HUB_CARD_T[c]}: back to its defaults`);
-    MAT = { ...MAT, [c]: c === 'rheo' ? { ...matDefaults().rheo, side: MAT.rheo.side } : matDefaults()[c] };
+    // (the alignment's streamline and flake counts are the Coating solver's settings, not the material's: kept)
+    const keep = c === 'orient' && typeof OR_SOLVE !== 'undefined' ? Object.fromEntries(OR_SOLVE.map(([, k]) => [k, MAT.orient[k]]).filter(([, v]) => v)) : {};
+    MAT = { ...MAT, [c]: c === 'rheo' ? { ...matDefaults().rheo, side: MAT.rheo.side } : { ...matDefaults()[c], ...keep } };
     if (c === 'rheo') rheoSync('extras');
     render();
   }; });
@@ -140,7 +142,7 @@ function hubEditorHTML(r) {
 
 // the property table
 function hubPropsHTML(r) {
-  const body = r.groups.map(g => `<tbody class="hub-grp"><tr class="hub-grp-h"><th colspan="7" scope="rowgroup">${hubEsc(g.l)}</th></tr>${g.props.map(p => hubRowHTML(r, p)).join('')}</tbody>`).join('');
+  const body = r.groups.map(g => `<tbody class="hub-grp"><tr class="hub-grp-h"><th colspan="7" scope="rowgroup">${hubEsc(g.l)}</th></tr>${g.props.filter(p => !hubHidden(p)).map(p => hubRowHTML(r, p)).join('')}</tbody>`).join('');
   return `<div class="table-wrap"><table class="hub-table"><thead><tr><th scope="col">Property</th><th scope="col">Symbol</th><th scope="col">Method</th><th scope="col" class="hub-c-v">Value</th><th scope="col">Unit</th><th scope="col" class="hub-c-rng">Valid range</th><th scope="col" class="hub-c-src">Data source</th></tr></thead>${body}</table></div>`;
 }
 /** A property's value cell: its input (an editable value), select or switch, else the value. */
@@ -624,7 +626,7 @@ function hubWireEditor(r) {
   }));
   view.querySelectorAll('input[data-hubdexpr]').forEach(el => el.addEventListener('change', () => defSet(el.dataset.hubdexpr, { kind: 'expr', src: el.value.trim() }, 'expression edited')));
   const du = document.getElementById('hubRecDup');
-  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubDuplicate(r.id); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
+  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubAsSet(() => hubDuplicate(r.id)); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
   const dl = document.getElementById('hubRecDel');
   if (dl) dl.onclick = () => { undoHint(`Delete ${hubName(r)}`); const base = r.base; hubDeleteInst(r.inst); HUB.sel = base; HUB.open = null; render(); };
   // (Domain Assignments: the material each domain takes, MC-2)
@@ -634,7 +636,7 @@ function hubWireEditor(r) {
     hubAssign(base, +i, el.value === base ? null : el.value); render();
   }));
   const re = document.getElementById('hubRecExport');
-  if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubExport([r.id]));
+  if (re) re.onclick = () => hubAsSet(() => hubDownload(`${r.id}.material.json`, hubExport([r.id])));
   if (HUB.tab === 'meas' && r.id === 'slurry') rtDraw();
   // (a copy's plots drawn with its own values in place, MC-2)
   const raf = f => requestAnimationFrame(() => (r.inst ? hubInInst(r.inst, f) : f()));
@@ -680,9 +682,10 @@ function hubReadyHTML() {
         <div class="table-wrap"><table class="cfd-table hub-rdt"><thead><tr><th scope="col">Material</th><th scope="col">Property</th><th scope="col">Value</th><th scope="col">Unit</th><th scope="col">Status</th></tr></thead><tbody>
         ${[...q.rows].sort((a, b) => HUB_RD_ORDER[a.st] - HUB_RD_ORDER[b.st]).map(x => `<tr class="hub-rs-${x.st}"><td>${hubEsc(hubName(x.r))}</td><td><button type="button" class="hub-link" data-hubjump="${x.r.id}|${x.p.id}">${hubEsc(hubPropName(x.r, x.p))}</button></td><td class="num">${typeof x.v.v === 'number' ? hubFmt(x.v.v, x.v.d ?? -4) : hubEsc(x.v.v ?? '')}</td><td>${hubEsc(x.v.u || '')}</td><td>${ST[x.st]}${x.off ? ` <small>(${hubEsc(x.off)})</small>` : ''}</td></tr>`).join('')}</tbody></table></div></td></tr>` : ''}`;
   }).join('');
-  return `<div class="hub-sheet"><div class="table-wrap"><table class="cfd-table hub-ready"><thead><tr><th scope="col">Solver</th><th scope="col">Required, complete</th><th scope="col">Required, missing</th><th scope="col">Optional</th><th scope="col">Not applicable</th><th scope="col">Unsupported definition</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="hub-sheet"><div class="table-wrap"><table class="cfd-table hub-ready"><thead><tr><th scope="col">Solver</th><th scope="col">Required, complete</th><th scope="col">Required, missing</th><th scope="col">Optional</th><th scope="col">Not applicable</th><th scope="col">Unsupported definition</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>${rows}</tbody></table></div>${typeof sensHTML === 'function' ? sensHTML() : ''}</div>`;
 }
 function hubWireReady() {
+  if (typeof sensWire === 'function') sensWire();
   view.querySelectorAll('[data-hubready]').forEach(b => { b.onclick = () => { HUB.readyOpen = HUB.readyOpen === b.dataset.hubready ? null : b.dataset.hubready; hubPaint(); }; });
   view.querySelectorAll('[data-hubgo]').forEach(b => { b.onclick = () => hubGoPhys(b.dataset.hubgo); });
   view.querySelectorAll('[data-hubjump]').forEach(b => { b.onclick = () => { const [r, p] = b.dataset.hubjump.split('|'); HUB.view = 'lib'; HUB.sel = r; HUB.tab = 'props'; HUB.open = p; render(); const row = view.querySelector(`[data-hubrow="${p}"]`); if (row) row.scrollIntoView({ block: 'center' }); }; });
@@ -722,6 +725,7 @@ function hubWireCompare() {
 
 // ---- material files ----
 function hubDownload(name, data) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })); a.download = name;
   document.body.appendChild(a); a.click();
@@ -729,17 +733,21 @@ function hubDownload(name, data) {
 }
 /** A text file to save (the measurement sheet: with a byte-order mark, so spreadsheets read its µ, ³ and ° as written). */
 function hubDownloadText(name, text, type) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF' + text], { type })); a.download = name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
+/** f with the project as set: while the ranking of the assumed values runs, the value under change is not the project's
+ *  (a file saved then holds the project's own). */
+const hubAsSet = f => (typeof sensAsSet === 'function' ? sensAsSet(f) : f());
 function hubSheetFile() {
-  const n = hubSheetRows().length;
-  hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv');
+  const n = hubAsSet(() => hubSheetRows().length);
+  if (hubAsSet(() => hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv')) === false) return;
   imgToast(`Materials CSV: ${n} values. Enter yours under "Your value" (and its unit and source), then Import the file.`);
 }
-function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport()); }
+function hubExportFile() { hubAsSet(() => hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport())); }
 function hubImportFile() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,.csv,application/json,text/csv';

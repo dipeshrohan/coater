@@ -44,9 +44,16 @@ const projReviver = (k, v) => v && typeof v === 'object' && !Array.isArray(v)
 /** What decides "unsaved changes": the inputs, probes, cut lines and the DOE design (not the view, not solving again). */
 // (the SEM images by their name and what was marked on them, not their pixels: a key cheap to make on every redraw)
 const projMatKey = () => ({ ...MAT, sem: MAT.sem ? { tables: MAT.sem.tables, images: MAT.sem.images.map(({ url, auto, ...q }) => ({ ...q, n: url ? url.length : 0, auto: !!auto })) } : null });
-const projKey = () => JSON.stringify([CFG.map(c => P[c.k]), FEED_POS.z, FEED_POS.entry, CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
+// (the project as set: a value the ranking of the assumed values has changed for a moment is not a change of it)
+const projKey = () => (typeof sensAsSet === 'function' ? sensAsSet(projKeyNow) : projKeyNow());
+const projKeyNow = () => JSON.stringify([CFG.map(c => P[c.k]), FEED_POS.z, FEED_POS.entry, CFDG, CFDS, CFD_LOCS.map(l => [l.z, l.over, l.solver]), cfdProbes, cfdCuts, DOE.factors, MEAS.sets.map(({ cfd, ...d }) => d), c3dSetupKey(), ACR, projMatKey(), OVEN]);
 const projDirty = () => PROJ.savedKey != null && projKey() !== PROJ.savedKey;
 function projectData() {
+  // (saved, and kept for the session, as set: a value the ranking of the assumed values has changed for a moment, and
+  //  the results it solved with it, are not the project's)
+  return typeof sensAsSet === 'function' ? sensAsSet(projectDataNow) : projectDataNow();
+}
+function projectDataNow() {
   // (a run's march in time, T-2: its record and kept times, not the fields drawn from them nor the paths traced through them)
   const runOut = r => r.status === 'done' && r.result ? { status: 'done', result: r.result, geo: r.geo, key: r.key, elapsedMs: r.elapsedMs, orientKey: r.orientKey || null,
     ...(r.transient ? { transient: { ...r.transient, cache: undefined, paths: undefined } } : {}) } : null;
@@ -94,6 +101,7 @@ function projStopAll() {
   oneDStop(); acrossCrownStop(); dryStop(); filmStop(); sheetStop(); mpStackStop(); furnStop(); fmpStop(); if (typeof dmpStop === 'function') dmpStop(); if (typeof pmpStop === 'function') pmpStop(); if (typeof gfmStop === 'function') gfmStop(); if (typeof cmStop === 'function') cmStop(); if (typeof xmStop === 'function') xmStop();
   if (typeof poolStop === 'function') poolStop();
   if (typeof su1Stop === 'function') su1Stop();
+  if (typeof sensStop === 'function') sensStop(true);   // (the ranking of the assumed values: its values and results put back)
   if (typeof meshMarksReset === 'function') meshMarksReset();   // (the meshes made: the project being left's)
 }
 /** What is solving now, as the dialog lists it: { where, what, done } (done: its progress, or ''). */
@@ -431,7 +439,7 @@ async function saveProject(as = false) {
       rememberRecent(handle);
     } else {
       if (as || PROJ.name === 'Untitled') { const nm = await askProjectName(PROJ.name); if (nm == null) return false; PROJ.name = nm; }
-      saveBlob(new Blob([text], { type: 'application/json' }), `${PROJ.name}.bcdl`);
+      saveBlob(new Blob([text], { type: 'application/json' }), `${PROJ.name}.bcdl`, true);
     }
   } catch (e) { if (e && e.name === 'AbortError') return false; imgToast(`Could not save: ${e.message}`, 'error'); return false; }
   PROJ.savedKey = projKey(); updateProjectTitle();

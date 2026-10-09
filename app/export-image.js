@@ -453,7 +453,10 @@ function composeImage(ctx, shot, opt, mode) {
 // Files
 // ---------------------------------------------------------------------
 const imgStamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
-function saveBlob(blob, name) {
+/** A file to save. asSet: built from the project as set (the project file, through sensAsSet) -- saved while the ranking
+ *  of the assumed values runs too. */
+function saveBlob(blob, name, asSet) {
+  if (!asSet && typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click();
@@ -565,16 +568,19 @@ async function exportWindow(opt) {
 /** Make the image for a target and save it. */
 async function exportImage(target, opt) {
   const name = `blade-coat-${target.slug}-${imgStamp()}.${opt.fmt}`;
+  // (refused while the ranking of the assumed values runs: said so, and nothing made)
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return;
   imgToast('Saving the image…', 'busy');
   await new Promise(r => setTimeout(r, 30));            // (the message shows before the work)
+  let saved = false;
   try {
     if (target.window) {
       const cv = await exportWindow(opt);
-      if (opt.fmt === 'png') saveBlob(await canvasBlob(cv), name);
+      if (opt.fmt === 'png') saved = saveBlob(await canvasBlob(cv), name);
       else {
         const w = cv.width / opt.scale, h = cv.height / opt.scale;
         const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image width="${w}" height="${h}" xlink:href="${cv.toDataURL('image/png')}"/></svg>\n`;
-        saveBlob(new Blob([svg], { type: 'image/svg+xml' }), name);
+        saved = saveBlob(new Blob([svg], { type: 'image/svg+xml' }), name);
       }
     } else {
       const shot = snapshotTarget(target, opt.scale, opt.bg);
@@ -585,14 +591,14 @@ async function exportImage(target, opt) {
         const ctx = nativeGetContext.call(cv, '2d');
         ctx.setTransform(k, 0, 0, k, 0, 0);
         composeImage(ctx, shot, opt, { k, H });
-        saveBlob(await canvasBlob(cv), name);
+        saved = saveBlob(await canvasBlob(cv), name);
       } else {
         const svg = new SvgCtx(W, H);
         composeImage(svg, shot, opt, { svg: true, H });
-        saveBlob(new Blob([svg.toString()], { type: 'image/svg+xml' }), name);
+        saved = saveBlob(new Blob([svg.toString()], { type: 'image/svg+xml' }), name);
       }
     }
-    imgToast(`Saved ${name}`);
+    if (saved !== false) imgToast(`Saved ${name}`);
   } catch (e) {
     imgToast(`Image not saved: ${e.message}`, 'error');
   }

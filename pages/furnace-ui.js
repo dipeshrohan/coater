@@ -674,6 +674,7 @@ function furnMeasRemove(k) {
 }
 /** Use a value on the Furnace card: measured, its source what it came from. */
 function furnUse(k, v, what) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const row = MAT_FURN.find(q => q[0] === k);
   if (!row || !Number.isFinite(v)) return;
   const [, l, , lo, hi] = row, vv = Math.min(hi, Math.max(lo, v));
@@ -683,6 +684,7 @@ function furnUse(k, v, what) {
 }
 /** A fit in the furnace's worker: the puffed film's way out from a measured thickness, or the open layers' gas way from the first run. */
 function furnFit(what, target, label) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const q = furnInputs();
   if (!q || (FURN.fit && !FURN.fit.error && !FURN.fit.done)) return;
   if (!FURN.fitWorker) FURN.fitWorker = makeWorker('cfd-furnace-worker.js');

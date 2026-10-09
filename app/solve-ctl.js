@@ -82,6 +82,7 @@ const MESH_ERR = {};
 const meshError = k => (MESH_ERR[k] && MESH_ERR[k].key === solveSafe(SOLVE_M[k].key, null) ? MESH_ERR[k].error : null);
 /** Mesh (the Mesh step's button): the model's mesh laid out for its inputs as they are -- marked made only once laid out. */
 function meshDo(k) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const key = solveSafe(SOLVE_M[k].key, null);
   if (key == null) return;
   let err = null;
@@ -113,6 +114,7 @@ function solveState(k) {
 
 /** Ask for models (with what they need first, when not current) and start what can start. */
 function solveArm(...ids) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const add = k => {
     const m = SOLVE_M[k];
     if (!m || SOLVE_ASK.has(k)) return;
@@ -125,6 +127,8 @@ function solveArm(...ids) {
 }
 /** Start each asked model whose inputs are ready (in the line's order); drop an ask whose upstream failed or is not asked. */
 function solvePump() {
+  // (the ranking of the assumed values holds its value under change back while an edit is handled: nothing starts then)
+  if (typeof SENS !== 'undefined' && SENS.held) return;
   for (const k of SOLVE_ORDER) {
     if (!SOLVE_ASK.has(k)) continue;
     const m = SOLVE_M[k];

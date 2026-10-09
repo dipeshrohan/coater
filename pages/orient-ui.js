@@ -61,6 +61,7 @@ function orStatus(i) {
 }
 /** The alignment redone alone on the flow as solved (its grid in the result), with the card as it is now. */
 function orRedo(i) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const run = cfdRuns[i], cur = matOrient();
   if (!run || !run.field || !run.result || !cur || OR.redo[i]) return;
   const r = run.result, grid = { nx: r.nx, ny: r.ny, gx: r.gx, gy: r.gy, u: r.u, v: r.v, psi: r.psi, mu: r.mu, tauXX: r.tauXX, tauXY: r.tauXY, tauYY: r.tauYY, omega: r.omega };

@@ -14,7 +14,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
-| 5 | Materials page: check what is left of the planned redesign | Small | To do | Your answers |
 | 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
 | 8 | Mixing: air bubbles and their removal under vacuum | Medium | To do | Nothing to start |
@@ -69,16 +68,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
   Yours stay at 2.0 g for hours; not yet weighed a day later.
 - **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
-
-## 5. Materials page: check what is left of the planned redesign
-- **Then**: the workflow plan (30 Sep) had a Materials page redesign.
-- **Since**: you specified the material card, now built (tabs, Method column, no source labels).
-- **Maybe still open**: some planned points, for example which assumed values matter most, and engineering names with
-  symbols.
-- **Left**:
-  - compare the plan with the page as it is;
-  - show you screenshots of what differs and ask;
-  - build only what you choose.
 
 ## 6. Dynamic contact angle in the 2D coating flow in time
 - **Now**: not built anywhere. In a steady flow the contact line on the blade's face is at rest, so its angle cannot
@@ -232,6 +221,12 @@ Your rule: every process has thermal, stress and flow solvers.
   - saved parameter sets, inspection, export.
 
 ## Done
+- Materials page, what was left of the planned redesign (was task 5), your choices: the rows of a flow law or
+  alignment model not chosen are hidden; the streamlines through the film and the flakes on each moved to Coating › 2D
+  › Solve; Materials › Readiness ranks the assumed values that matter most (each at −20 % and +20 %, its own stage
+  solved again, by the stage's main answers; about an hour at the defaults, everything put back after). The first full
+  run: the dry film's packing (0.85, +20 % held at its limit 1), the graphitization peak, the GO's density and the
+  stack's vapour permeability move the answers most.
 - Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool
   and feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage
   pages show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's
