@@ -123,6 +123,7 @@ function rtSetCard(k, v, src, loose) {
   MAT.rheo = { ...MAT.rheo, [k]: { v: +cl.toPrecision(Math.max(3, d + 1)), flag: 'measured', src: `${src}${loose ? ' (loose: the test does not pin it down)' : ''}${cl !== v ? ` (fitted ${rtNum(v)}; the card's range ${lo}–${hi})` : ''}` } };
 }
 function rtUseFlow(t, law) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: the law it would be set against is its changed value's)
   const f = rtFit(t).flow[law], a = f.app, src = `fit to ${t.name}`, notes = [];
   undoHint(`Use the ${RHEO_MODELS[law].l} fit of ${t.name}`);
   CFDG.model = law;
@@ -143,6 +144,7 @@ function rtUseFlow(t, law) {
   render();
 }
 function rtUseStruct(t, which) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: the law it would be set against is its changed value's)
   const fit = rtFit(t), f = fit[which], src = `fit to ${t.name}`;
   undoHint(`Use the structure fit of ${t.name}`);
   for (const k of ['tb', 'gdc', 'cy', 'ce']) rtSetCard(k, f.S[k], src, f.loose.includes(k));
@@ -151,6 +153,7 @@ function rtUseStruct(t, which) {
   render();
 }
 function rtUseYield(t, which) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: the law it would be set against is its changed value's)
   const p = rtFit(t).amp[which], src = `${which === 'flow' ? 'flow point (G′ = G″)' : 'yield point (G′ 5 % below its plateau)'} of ${t.name}`;
   undoHint(`Use the ${which === 'flow' ? 'flow' : 'yield'} point of ${t.name} as the yield stress`);
   const note = rtSetSide('ty', p.stress, src);

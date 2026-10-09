@@ -31,6 +31,9 @@ const SENS_STAGES = [
     { l: 'Size change out of the stack', u: '% of the piece', d: 3, floor: 0.01, get: () => STACK.res.runs.find(r => r.where === lineWay()).stack.sizeOut[0] * 100 }] },
   { k: 'furn', phys: 'furn', l: 'Furnace', secs: 10.8, outs: [
     { l: 'Graphene film thickness', u: 'µm', d: 2, floor: 0.1, get: () => furnBatch(FURN.res).h * 1e6 },
+    // (its heat along it, the Graphene film's answer: the values only its correlation reads -- the graphite's own, the
+    //  crystallites' sizes, the scattering length -- ranked by it rather than reading 0)
+    { l: 'Heat along it', u: 'W/(m·K)', d: 0, floor: 1, get: () => furnBatch(FURN.res).kappa },
     { l: 'Crack risk', u: '% of its strength', d: 0, floor: 5, get: () => { const q = furnLights(FURN.res).find(x => x.k === 'crack'); return q && Number.isFinite(q.v) ? q.v * 100 : NaN; } }] },
 ];
 /** The wet film's mean across the web (mm), from the 1D across the web alone: the same model at the base and at each
@@ -53,8 +56,9 @@ const SENS = { status: 'idle', rows: [], jobs: [], i: 0, t0: 0, key: null, keep:
 const SENS_F = 0.2;
 
 /** The values ranked, by stage: each assumed number its stage's solver reads, as set (a law not chosen, a switch off: not
- *  read). zeros: those at 0 instead -- ±20 % of 0 is 0, so they cannot be ranked this way: listed as not ranked. */
-function sensValues(zeros = false) {
+ *  read). which: 'zero' -- those at 0 instead (±20 % of 0 is 0, so they cannot be ranked this way); 'def' -- those given
+ *  as a table or an equation in temperature (a change of 20 % is not one number); both listed as not ranked. */
+function sensValues(which = 'rank') {
   const out = [], seen = new Set();
   for (const s of SENS_STAGES) for (const r0 of [...HUB_RECORDS, ...HUB_IFACES]) {
     // (a copy of the material assigned to this stage's domain: the stage's solver reads its card values, not the record's)
@@ -66,7 +70,7 @@ function sensValues(zeros = false) {
     const key = p.b.t === 'card' ? p.b.card + '.' + p.b.k : 'in.' + p.b.k, id = `${s.k}|${p.b.inst || ''}|${key}`;
     if (s.skip && s.skip.includes(key)) continue;
     const v = hubVal(p);
-    if (seen.has(id) || v.prov !== 'assumed' || typeof v.v !== 'number' || !Number.isFinite(v.v) || (v.v === 0) !== zeros || v.def) continue;
+    if (seen.has(id) || v.prov !== 'assumed' || typeof v.v !== 'number' || !Number.isFinite(v.v) || (v.def ? 'def' : v.v === 0 ? 'zero' : 'rank') !== which) continue;
     seen.add(id); out.push({ s, r, p, id });
     }
   }
@@ -273,7 +277,7 @@ const sensWhyLeft = (left, errs) => [SENS.status === 'stopped' ? 'stopped before
   left.length > errs.length && SENS.status !== 'stopped' ? 'no answer to compare' : ''].filter(Boolean).join('; ');
 /** The card under the Readiness table: the button and its estimate, the run's progress, or the ranking. */
 function sensHTML() {
-  const vals = SENS.status === 'running' ? null : sensValues(), est = vals ? sensEstimate(vals) : 0, zeros = vals ? sensValues(true) : [];
+  const vals = SENS.status === 'running' ? null : sensValues(), est = vals ? sensEstimate(vals) : 0, zeros = vals ? sensValues('zero') : [], defs = vals ? sensValues('def') : [];
   const head = `<div class="hub-sens-h"><h3>${uiBadge('bars')}The assumed values that matter most</h3>`;
   if (SENS.status === 'running') {
     const k = SENS.i, N = SENS.jobs.length, el = (Date.now() - SENS.t0) / 1000, left = k ? el / k * (N - k) : sensEstimate(SENS.rows) - el, row = SENS.cur ? SENS.rows[SENS.cur.n] : null;
@@ -285,7 +289,7 @@ function sensHTML() {
   const left = live.filter(r => !sensScore(r)), errs = left.filter(r => r.err);
   const stale = ranked.length && SENS.key !== sensKeyNow();
   const btn = `<button type="button" class="btn btn-primary btn-sm" id="hubSensRun"${sensBaseReady() ? '' : ' disabled title="Solve the line first: each value\'s change is taken from it"'}>${uiIco('play')}${ranked.length ? 'Rank them again' : 'Rank them'}</button>`;
-  const note = `<p class="hub-sens-note">${vals.length} assumed values, each at −${SENS_F * 100} % and +${SENS_F * 100} %, its own stage solved again: about ${sensClock(est)}.${sensBaseReady() ? '' : ' Solve the line first.'}${stale ? ' <b>Out of date</b>: the inputs changed since it was ranked.' : ''}${zeros.length ? ` <span class="warn-text" title="${hubEsc(zeros.map(z => `${hubPropName(z.r, z.p)} (${z.s.l})`).join('\n'))}">${zeros.length} at 0, not ranked: ±${SENS_F * 100} % of 0 is 0 (${hubEsc(zeros.slice(0, 3).map(z => hubPropName(z.r, z.p)).join(', '))}${zeros.length > 3 ? '…' : ''}).</span>` : ''}${SENS.rows.length && left.length ? ` <span class="warn-text" title="${hubEsc(errs.map(r => `${hubPropName(r.r, r.p)}: ${r.err}`).join('\n'))}">${left.length} not ranked: ${sensWhyLeft(left, errs)}.</span>` : ''}</p>`;
+  const note = `<p class="hub-sens-note">${vals.length} assumed values, each at −${SENS_F * 100} % and +${SENS_F * 100} %, its own stage solved again: about ${sensClock(est)}.${sensBaseReady() ? '' : ' Solve the line first.'}${stale ? ' <b>Out of date</b>: the inputs changed since it was ranked.' : ''}${zeros.length ? ` <span class="warn-text" title="${hubEsc(zeros.map(z => `${hubPropName(z.r, z.p)} (${z.s.l})`).join('\n'))}">${zeros.length} at 0, not ranked: ±${SENS_F * 100} % of 0 is 0 (${hubEsc(zeros.slice(0, 3).map(z => hubPropName(z.r, z.p)).join(', '))}${zeros.length > 3 ? '…' : ''}).</span>` : ''}${defs.length ? ` <span class="warn-text" title="${hubEsc(defs.map(z => `${hubPropName(z.r, z.p)} (${z.s.l})`).join('\n'))}">${defs.length} given in temperature, not ranked: a table or an equation is not one number (${hubEsc(defs.slice(0, 3).map(z => hubPropName(z.r, z.p)).join(', '))}${defs.length > 3 ? '…' : ''}).</span>` : ''}${SENS.rows.length && left.length ? ` <span class="warn-text" title="${hubEsc(errs.map(r => `${hubPropName(r.r, r.p)}: ${r.err}`).join('\n'))}">${left.length} not ranked: ${sensWhyLeft(left, errs)}.</span>` : ''}</p>`;
   if (!ranked.length) return `<section class="hub-sens">${head}${btn}</div>${note}</section>`;
   const show = SENS.all ? ranked : ranked.slice(0, 12), fmt = (v, d) => (Number.isFinite(v) ? v.toFixed(d) : '—');
   const rows = show.map((x, i) => { const { r, sc } = x;
