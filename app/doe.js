@@ -133,7 +133,8 @@ function doeSetMode(m) {
   render();
 }
 /** The key of what the DOE's base case is, as the inputs are (its results go stale when it changes). */
-const doeBaseKey = () => DOE.mode === 'furn' ? (typeof furnKeyNow === 'function' ? furnKeyNow() : null) : cfdInputsKey(cfdGeometry(DOE.loc));
+const doeBaseKey = () => (typeof sensAsSet === 'function' ? sensAsSet(doeBaseKeyNow) : doeBaseKeyNow());
+const doeBaseKeyNow = () => DOE.mode === 'furn' ? (typeof furnKeyNow === 'function' ? furnKeyNow() : null) : cfdInputsKey(cfdGeometry(DOE.loc));
 /** The furnace's options for a run of its DOE: the settings as they are, the run's factors set. */
 function doeFurnOpts(set) {
   const q = furnInputs();
@@ -201,7 +202,10 @@ function doeSetAcross(f, v) {
   else if (f.k === 'endC') ACR.ends = { on: true, left: { ...ACR.ends.left, c: v }, right: { ...ACR.ends.right, c: v } };
 }
 /** A new factor row: levels around the base value (categories: all of them). */
-function doeNewFactor(k, i) {
+/** A new factor row, its range about the project's own value (while the ranking of the assumed values runs: the value it
+ *  is changing put back first -- a range taken from it would stay). */
+const doeNewFactor = (k, i) => (typeof sensAsSet === 'function' ? sensAsSet(() => doeNewFactorNow(k, i)) : doeNewFactorNow(k, i));
+function doeNewFactorNow(k, i) {
   const f = doeFactor(k);
   if (f.cat) return { k, vals: f.cat.slice() };
   const v = doeBase(f, i), span = f.k === 'th' || f.k === 'exitAngle' ? 20 : null;
