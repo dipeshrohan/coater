@@ -14,7 +14,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 |---|---|---|---|---|
 | 2b | Furnace: the weight your piece keeps (1.03 g) | Small to medium | Waiting for your weighing | One piece weighed before and after the furnace, and whether paper sticks to it |
 | 2c | Pre heat: your piece loses 0.4 g, the app only water | Medium | Built; waiting for your weighing | A pre-heated piece weighed a day later |
-| 6 | Dynamic contact angle in the 2D coating flow in time | Medium | To do | Nothing |
 | 7 | Mixing: your measured data, studies, report and help | Medium | To do | Nothing to start; a real log file helps |
 | 8 | Mixing: air bubbles and their removal under vacuum | Medium | To do | Nothing to start |
 | 9 | Mixing 3D checked against OpenFOAM | Medium | To do | Nothing |
@@ -68,15 +67,6 @@ keeps it up to date in each pull request. The order and the tasks change only af
 - **Open**: in the app the pieces take their water back in 1.5 h under the plate (19.6 % when taken out, about 2.38 g).
   Yours stay at 2.0 g for hours; not yet weighed a day later.
 - **Left**: when you can, weigh a pre-heated piece a day later (loose in the room); then match the app to it.
-
-## 6. Dynamic contact angle in the 2D coating flow in time
-- **Now**: not built anywhere. In a steady flow the contact line on the blade's face is at rest, so its angle cannot
-  change there. In time the line moves.
-- **Left**:
-  - the angle changing with the contact line's speed during the 2D march (Cox–Voinov law, its length ratio an editable
-    input);
-  - checked against a meniscus relaxing between plates, using its exact equation;
-  - the Transient page, help, report, tests.
 
 ## 7. Mixing: your measured data, studies, report and help
 - **Built**: the mixer in 1D, 2D and 3D.
@@ -227,6 +217,11 @@ Your rule: every process has thermal, stress and flow solvers.
   solved again, by the stage's main answers; about an hour at the defaults, everything put back after). The first full
   run: the dry film's packing (0.85, +20 % held at its limit 1), the graphitization peak, the GO's density and the
   stack's vapour permeability move the answers most.
+- Dynamic contact angle in the 2D coating flow in time (was task 6), your choice of the viscosity at the process's
+  shear: Coating › 2D › Solve › Time, the contact angle Static or Cox–Voinov (θ³ = θs³ + 9 Ca ln(L/λ), Ca = μ v / σ,
+  the length ratio L/λ an input, the slip length's by default); the angle's history on the Transient page, in the
+  report. Checked against a meniscus relaxing between plates (its exact equation solved apart): at L/λ 50 and 200 the
+  march's climb within 3 % of it.
 - Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool
   and feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage
   pages show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's

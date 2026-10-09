@@ -337,7 +337,7 @@ const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
 // up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
 // the counts given (along the blade empty = from the blade's length, as Medium).
 // (time, T-2 -- cfd-time-ui.js: steady, or the flow in time after a change; never edited in place, replaced)
-const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0 });
+const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0, dyn: false, ratio: null });
 const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null, gdMin: null, time: TIME_DEFAULTS };
 const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' }, adapted: { l: 'Adapted' } };
 /** The presets a shared setting can pick ("Adapted" is a location's own, from meshing to an accuracy). */
