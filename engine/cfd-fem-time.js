@@ -125,7 +125,7 @@ function femMarch(r0, opts = {}) {
     const base = cl.alphaDeg, s1 = hist[0].r.surface.s, two = hist.length > 1;
     const w = two ? h / (hist[0].t - hist[1].t) : 0, s2 = two ? hist[1].r.surface.s : 0;
     const v = two ? q => ((1 + 2 * w) * q - (1 + w) ** 2 * s1 + w * w * s2) / (h * (1 + w)) : q => (q - s1) / h;
-    return { ...cl, alphaDeg: q => (typeof base === 'function' ? base(q) : base) + cvAngle(v(q)) - dyn.thetaS, speed: v };
+    return { ...cl, alphaDeg: q => (typeof base === 'function' ? base(q) : base) + cvAngle(v(q)) - dyn.thetaS, speed: v, alpha0: typeof base === 'function' ? null : base };
   };
   let lastV = 0;
   const record = (t, r, dt, err) => {
@@ -229,6 +229,10 @@ function femMarch(r0, opts = {}) {
       lastV = o.contactLine.speed(r.surface.s);
       const far = mode === 'climbed' && cvOut(lastV);
       if (far) { out.error = `at t = ${tn.toPrecision(6)} s the contact line ${far} at ${(Math.abs(lastV) * 1e3).toPrecision(3)} mm/s, too fast for Cox-Voinov (its angle would leave 0.5 to 179.5 degrees): not followed further`; break; }
+      // (a flat or round face: the surface must leave it between 94 and 175 degrees of face + contact angle, as the steady
+      //  solver's own guard; a dynamic angle taking it outside stops the march there)
+      const a0 = o.contactLine.alpha0, aDyn = a0 != null && mode === 'climbed' ? a0 + cvAngle(lastV) - dyn.thetaS : null;
+      if (aDyn != null && (aDyn < -86 || aDyn > -5)) { out.error = `at t = ${tn.toPrecision(6)} s the contact line moves at ${(lastV * 1e3).toPrecision(3)} mm/s: its dynamic angle ${cvAngle(lastV).toFixed(1)} degrees makes the exit face + contact angle ${(aDyn + 180).toFixed(1)} degrees, outside the 94 to 175 degrees the surface can take here: not followed further`; break; }
     }
     t = tn; out.steps++; fresh = false;
     if (carry) carry.accept(r, t);
