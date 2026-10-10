@@ -518,9 +518,13 @@ async function repMesh() {
 }
 async function repDoe() {
   tab = 5; DOE.dock = 'runs'; render(); await repFrame();
-  const stale = DOE.key && DOE.key !== cfdInputsKey(cfdGeometry(DOE.loc));
+  const stale = DOE.key && DOE.key !== doeBaseKey();
   const des = DOE.design || (DOE.factors || []).map(fs => ({ ...fs, f: doeFactor(fs.k), levels: doeLevels(fs) }));
-  let html = `<h3>Setup</h3><p class="lede">Full factorial at location ${DOE.loc + 1} · z ${CFD_LOCS[DOE.loc].z} mm; every other input as in 2D CFD (the base case).${DOE.design ? '' : ' Not run yet: the design being edited.'}</p>`;
+  // (the DOE shown: the coating's at a location, the furnace's for the film's piece, the mixer's batch)
+  const where = DOE.mode === 'furn' ? 'of the furnace, for the film\'s piece as it is; every other input as on the Furnace tab and card (the base case)'
+    : DOE.mode === 'mix' ? 'of the mixer\'s batch (its 1D); every other input as on the Mixing tab and Materials (the base case)'
+      : `at location ${DOE.loc + 1} · z ${CFD_LOCS[DOE.loc].z} mm; every other input as in 2D CFD (the base case)`;
+  let html = `<h3>Setup</h3><p class="lede">Full factorial ${where}.${DOE.design ? '' : ' Not run yet: the design being edited.'}</p>`;
   html += repRows(des.map(d => [repEsc(doeLabel(d.f || doeFactor(d.k))), repEsc(d.levels.map(v => doeFmt(d.f || doeFactor(d.k), v)).join(' · ')), String(d.levels.length)]), ['Factor', 'Levels', 'Count']);
   if (DOE.runs.length) {
     const done = DOE.runs.filter(r => r.status === 'done').length, bad = DOE.runs.filter(r => r.status === 'error');
