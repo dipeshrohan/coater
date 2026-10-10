@@ -35,7 +35,8 @@
  *     line stays put at the static angle; the bead level stepped up, the line climbs the face, and its place in time
  *     against an independent solution -- the quasi-static meniscus (the static meniscus held at the line's place, its
  *     angle at the face) driving the line at Cox-Voinov's speed, an ODE integrated by RK4 -- the march tending to it as
- *     the line slows (ln(L/lambda) 50 -> 200), and both settling on the steady solve.
+ *     the line slows (L/lambda 1e6 -> 1e12, the inputs' typical and largest ratio), and both settling on the steady
+ *     solve. (What is left between them: the bead's own filling time, about 2 s here, which the quasi-static ODE leaves out.)
  */
 const gap = require('../engine/cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
@@ -348,13 +349,14 @@ section('9. The dynamic contact angle (Cox-Voinov): the line\'s place in time ag
   const r0 = solveCoaterFEM(base), r1 = solveCoaterFEM({ ...base, Pup: rho * g * lev1, fInfGuess: lev1 });
   const inlet = lev => ({ type: 'traction', p: y => rho * g * (lev - y) });
   // nothing changed: the line at rest meets the face at the static angle and stays
-  const mr = femMarch(r0, { at: () => ({ inlet: inlet(lev0) }), tEnd: 1, dt0: 1e-3, tol: 1e-3, faceSlip: slip, dynamic: { thetaS: th0, lnR: 50, mu, gamma } });
+  const mr = femMarch(r0, { at: () => ({ inlet: inlet(lev0) }), tEnd: 1, dt0: 1e-3, tol: 1e-3, faceSlip: slip, dynamic: { thetaS: th0, lnR: Math.log(1e6), mu, gamma } });
   const dR = Math.max(...mr.s.map(q => Math.abs(q - r0.surface.s))), aR = Math.max(...mr.angle.filter(a => a != null).map(a => Math.abs(a - th0)));
   check(r0.converged && mr.completed && dR < 1e-4 * H && aR < 0.05, `nothing changed for 1 s: the line moves ${(dR * 1e6).toFixed(3)} µm, its angle within ${aR.toFixed(4)}° of the static ${th0}°`);
   // the ODE: the static meniscus held at s at the new level meets the face at thQS(s); the line moves at Cox-Voinov's speed for it
   const thQS = q => staticMeniscus({ xe, H, faceDeg: 90, contactDeg: th0, gamma, rho, g, fInf: lev1, xEnd: xe + Ld, mode: 'climbed', sFix: q }).alphaEdge / D + 90;
   const travel = r1.surface.s - r0.surface.s, errs = [];
-  for (const [lnR, tEnd] of [[50, 30], [200, 100]]) {
+  for (const [ratio, tEnd] of [[1e6, 20], [1e12, 40]]) {
+    const lnR = Math.log(ratio);   // (Cox-Voinov takes ln(L/lambda): the ratios the inputs take)
     const vOf = q => gamma / (9 * mu * lnR) * ((thQS(q) * D) ** 3 - (th0 * D) ** 3), hh = 0.02;
     let q = r0.surface.s; const ode = [q];
     for (let k = 0; k * hh < tEnd - 1e-9; k++) { const k1 = vOf(q), k2 = vOf(q + hh / 2 * k1), k3 = vOf(q + hh / 2 * k2), k4 = vOf(q + hh * k3); q += hh / 6 * (k1 + 2 * k2 + 2 * k3 + k4); ode.push(q); }
@@ -363,10 +365,10 @@ section('9. The dynamic contact angle (Cox-Voinov): the line\'s place in time ag
     let e = 0; m.t.forEach((t, k) => { e = Math.max(e, Math.abs(m.s[k] - odeAt(t))); });
     const sE = m.s[m.s.length - 1], half = m.t[m.s.findIndex(x => x - r0.surface.s > travel / 2)], halfO = ode.findIndex(x => x - r0.surface.s > travel / 2) * hh;
     errs.push(e / travel);
-    check(m.completed && sE > r0.surface.s + 0.8 * travel && sE < r1.surface.s + 1e-3 * H && e < (lnR === 50 ? 0.12 : 0.04) * travel,
-      `ln(L/lambda) ${lnR}: the line climbs ${(r0.surface.s * 1e3).toFixed(4)} -> ${(sE * 1e3).toFixed(4)} mm in ${tEnd} s (steady ${(r1.surface.s * 1e3).toFixed(4)} mm), half way at ${half.toFixed(2)} s vs the ODE's ${halfO.toFixed(2)} s; largest gap to the ODE ${(e * 1e6).toFixed(1)} µm (${(e / travel * 100).toFixed(1)}% of the climb), ${m.steps} steps`);
+    check(m.completed && sE > r0.surface.s + 0.8 * travel && sE < r1.surface.s + 2e-3 * H && e < (ratio === 1e6 ? 0.25 : 0.16) * travel,
+      `L/lambda ${ratio.toExponential(0)} (ln ${lnR.toFixed(1)}): the line climbs ${(r0.surface.s * 1e3).toFixed(4)} -> ${(sE * 1e3).toFixed(4)} mm in ${tEnd} s (steady ${(r1.surface.s * 1e3).toFixed(4)} mm, each on its own mesh), half way at ${half.toFixed(2)} s vs the ODE's ${halfO.toFixed(2)} s; largest gap to the ODE ${(e * 1e6).toFixed(1)} µm (${(e / travel * 100).toFixed(1)}% of the climb), ${m.steps} steps`);
   }
-  check(errs[1] < 0.5 * errs[0], `the march tends to the quasi-static ODE as the line slows: ${(errs[0] * 100).toFixed(1)}% -> ${(errs[1] * 100).toFixed(1)}% of the climb`);
+  check(errs[1] < 0.8 * errs[0], `the march tends to the quasi-static ODE as the line slows: ${(errs[0] * 100).toFixed(1)}% -> ${(errs[1] * 100).toFixed(1)}% of the climb`);
 }
 
 console.log('\n' + (allPass ? 'ALL PASS' : 'SOME CHECKS FAILED'));

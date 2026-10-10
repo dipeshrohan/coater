@@ -53,7 +53,8 @@ const femFlows = r => ({ Qin: r.psi[r.NR - 1], Qout: r.psi[(r.NC - 1) * r.NR + r
  *             and uScale (velocities; default the larger of Ur and the fastest speed in the flow)
  *   earlier   { r, dt }: the state at t0 - dt, so the first step is already BDF2 (an exact history)
  *   times     output times: the steps land on them, and frames keeps the result there
- *   keep(r, t, info)  what to keep of the result at an output time (default: r itself); info { mode, meshInfo }: the
+ *   keep(r, t, info)  what to keep of the result at an output time (default: r itself); info { mode, meshInfo, angle (the
+ *             dynamic contact angle there, deg, with opts.dynamic and the line climbed; else null) }: the
  *             contact line's mode and the mesh's layout (solveCoaterFEM's meshInfo) the result is on
  *   maxSteps  (default 20000); maxIter: Newton per step (default 12)
  *   faceSlip  slip length (m) on the exit face below the contact line (solveFEM's faceSlip), for the whole march
@@ -226,7 +227,7 @@ function femMarch(r0, opts = {}) {
     if (carry) carry.accept(r, t);
     hist.unshift({ t, r }); if (hist.length > 3) hist.length = 3;
     record(t, r, h, lte ?? 0);
-    if (iOut < times.length && Math.abs(t - times[iOut]) <= 1e-9 * span) { out.frames.push({ t, r: keep(r, t, { mode, meshInfo: mInfo }) }); iOut++; }
+    if (iOut < times.length && Math.abs(t - times[iOut]) <= 1e-9 * span) { out.frames.push({ t, r: keep(r, t, { mode, meshInfo: mInfo, angle: out.angle.length ? out.angle[out.angle.length - 1] : null }) }); iOut++; }
     if (opts.onStep && opts.onStep({ t, dt: h, err: lte, iterations: r.iterations, steps: out.steps, tEnd, mode }) === false) break;
     if (opts.fixed) dt = opts.dt0;
     else if (lte != null) dt = Math.min(dtMax, h * Math.min(2, Math.max(0.2, 0.9 * Math.pow(tol / Math.max(lte, 1e-300), 1 / 3))));

@@ -88,7 +88,8 @@ function marchInTime(o, fo, r, geo, shapeProf, onStep) {
   const frame = (rr, info) => {
     const full = info ? { ...rr, meshInfo: info.meshInfo, meniscus: { ...r0.meniscus, mode: info.mode, s: rr.surface.s, leaveDeg: leave(rr, info.meshInfo.cCL) } } : rr;
     const st = rr.lam && carry ? { struct: { ...(r.struct || {}), S: o.struct, lamEdge: structColumn(rr, rr.lam, cornerOf(info)), lamEnd: structColumn(rr, rr.lam, rr.NC - 1) } } : {};
-    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full), ...st };
+    // (with the dynamic contact angle: the angle the line meets the face at, at this time)
+    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full), ...st, ...(info && info.angle != null ? { contactNow: info.angle } : {}) };
   };
   const n = Math.max(2, Math.round(T.frames)), times = Array.from({ length: n }, (_, k) => (k + 1) * T.end / n);
   // (the dynamic contact angle, Cox-Voinov: with slip on the face only -- the line moves with the liquid there; the paste's
