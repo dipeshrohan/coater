@@ -93,7 +93,10 @@ function marchInTime(o, fo, r, geo, shapeProf, onStep) {
   const n = Math.max(2, Math.round(T.frames)), times = Array.from({ length: n }, (_, k) => (k + 1) * T.end / n);
   // (the dynamic contact angle, Cox-Voinov: with slip on the face only -- the line moves with the liquid there; the paste's
   //  viscosity at the process shear rate, the web's speed over the gap)
-  const dyn = T.dyn && T.slip > 0 ? { thetaS: o.contactDeg, lnR: Math.log(T.ratio > 1 ? T.ratio : Hr / T.slip), gamma: o.gamma,
+  //  (the length ratio given, or the gap over the slip length: above 1, or the angle would not rise as the line climbs)
+  const lR = T.ratio > 1 ? T.ratio : Hr / T.slip;
+  if (T.dyn && T.slip > 0 && !(lR > 1)) throw new Error(`the dynamic contact angle needs the length ratio L/λ above 1: the slip length (${(T.slip * 1e6).toPrecision(3)} µm) is not below the gap (${(Hr * 1e6).toPrecision(3)} µm) -- give the ratio, or a smaller slip length`);
+  const dyn = T.dyn && T.slip > 0 ? { thetaS: o.contactDeg, lnR: Math.log(lR), gamma: o.gamma,
     mu: fo.mu(Math.max(U1, U0, 1e-6) / Hr) } : null;
   const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0, ...(dyn ? { dynamic: dyn } : {}),
     keep: (rr, t, info) => frame(rr, info), onStep, ...(carry ? { carry, track: (rr, info) => structColumn(rr, rr.lam, cornerOf(info)) } : {}) });
