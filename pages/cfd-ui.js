@@ -337,7 +337,7 @@ const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
 // up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
 // the counts given (along the blade empty = from the blade's length, as Medium).
 // (time, T-2 -- cfd-time-ui.js: steady, or the flow in time after a change; never edited in place, replaced)
-const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0 });
+const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0, dyn: false, ratio: null });
 const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null, gdMin: null, time: TIME_DEFAULTS };
 const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' }, adapted: { l: 'Adapted' } };
 /** The presets a shared setting can pick ("Adapted" is a location's own, from meshing to an accuracy). */
@@ -2531,7 +2531,7 @@ function renderMetrics() {
     ['Min |V| inside the fluid', 'mm/s', r => `${fmtNum(r.metrics.vminInterior * 1000)} ${where(r.field, r.metrics.vminLoc)}`],
     ['Max shear rate', '1/s', r => { const [x, y] = r.metrics.gdMaxLoc; return `${fmtNum(r.metrics.gdMax)} ${Math.hypot(x - r.result.xe, y - r.result.H) < 0.3 * r.result.H ? '<small>next to the metering edge corner, where it is singular: this value depends on the mesh</small>' : where(r.field, r.metrics.gdMaxLoc)}`; }],
     ['Meniscus: contact line', 'on the blade', r => clWhere(r.result) + (r.result.shaped && r.result.shaped.note ? ` <small>${r.result.shaped.note}</small>` : '')],
-    ['Surface leaves the contact line at', '° from the web, machine direction', r => `${r.result.leaveDeg.toFixed(1)} <small>${r.result.mode === 'climbed' ? `= contact angle ${r.geo.contactDeg.toFixed(1)}° off the face` : `pinned: at most ${r.result.alphaMaxDeg.toFixed(1)} (Gibbs)`}</small>`],
+    ['Surface leaves the contact line at', '° from the web, machine direction', r => `${r.result.leaveDeg.toFixed(1)} <small>${r.result.mode === 'climbed' ? (r.result.contactNow != null ? `= dynamic contact angle ${r.result.contactNow.toFixed(1)}° off the face (static ${r.geo.contactDeg.toFixed(1)}°)` : `= contact angle ${r.geo.contactDeg.toFixed(1)}° off the face`) : `pinned: at most ${r.result.alphaMaxDeg.toFixed(1)} (Gibbs)`}</small>`],
     ['Film at the end of the 2D domain', 'mm, ' + 'x from the edge', r => `${(r.result.hEnd * 1000).toFixed(3)} <small>at ${((r.result.xEnd - r.result.xe) * 1000).toFixed(1)} mm</small>`],
     ['Peak pressure', 'Pa, gauge', r => `${fmtNum(r.result.pMax)} ${pAt(r, 'pMaxLoc')}`],
     ['Lowest pressure', 'Pa, gauge', r => r.result.pMin < 0

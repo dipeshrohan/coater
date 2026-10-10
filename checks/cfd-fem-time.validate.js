@@ -31,11 +31,17 @@
  *     with a long-memory structure the march finds the steady structure solve's lambda and, marched with nothing
  *     changed, stays put; a fast-rebuilding structure the same, and after a bead-pressure step settles on the steady
  *     structure solve.
+ *  9. The dynamic contact angle (Cox-Voinov, theta_d^3 = theta_s^3 + 9 Ca ln(L/lambda)): with nothing changed the
+ *     line stays put at the static angle; the bead level stepped up, the line climbs the face, and its place in time
+ *     against an independent solution -- the quasi-static meniscus (the static meniscus held at the line's place, its
+ *     angle at the face) driving the line at Cox-Voinov's speed, an ODE integrated by RK4 -- the march tending to it as
+ *     the line slows (L/lambda 1e6 -> 1e12, the inputs' typical and largest ratio), and both settling on the steady
+ *     solve. (What is left between them: the bead's own filling time, about 2 s here, which the quasi-static ODE leaves out.)
  */
 const gap = require('../engine/cfd-gap-solver.js');
 global.bandFactor = gap.bandFactor;
 global.bandSolve = gap.bandSolve;
-const { solveFEM, solveCoaterFEM } = require('../engine/cfd-fem.js');
+const { solveFEM, solveCoaterFEM, staticMeniscus } = require('../engine/cfd-fem.js');
 const { femMarch, femArea } = require('../engine/cfd-fem-time.js');
 
 let allPass = true;
@@ -332,6 +338,37 @@ section('8. The structure (thixotropy) in time: lambda as the slurry\'s memory a
     check(r1.converged && m.completed && dQ < 5e-4 && dL < 0.03 && dS < 0.02 * H,
       `bead pressure 0 -> ${P1} Pa: after 1 s film ${(L.Q / U * 1e6).toFixed(3)} µm vs the steady structure solve ${(r1.Q / U * 1e6).toFixed(3)} µm (${(dQ * 100).toFixed(4)}%), lambda leaving the edge ${l0.toFixed(5)} -> ${lE.toFixed(5)} vs ${l1.toFixed(5)} (${(dL * 100).toFixed(1)}% of its change), contact line within ${(dS / H * 100).toFixed(2)}% of the gap (each on its own mesh); ${m.steps} steps, ${m.corrected} solved again with the structure they carried`);
   }
+}
+
+section('9. The dynamic contact angle (Cox-Voinov): the line\'s place in time against the quasi-static ODE');
+{
+  // a still web (U = 0), a high gap and a short exit face (the bead fed fast), water-like tension, a viscous liquid
+  const rho = 1020, g = 9.81, gamma = 0.07, H = 3e-3, xe = 1e-3, mu = 1, th0 = 35, Ld = 12e-3, D = Math.PI / 180;
+  const lev0 = 0.5 * H, lev1 = 0.65 * H, slip = 0.03 * H;
+  const base = { hFn: () => H, xe, faceDeg: 90, contactDeg: th0, U: 0, rho, g, gamma, mu: () => mu, Ld, nEb: 10, nEf: 6, nEs: 24, nEy: 6, fInfGuess: lev0, Pup: rho * g * lev0 };
+  const r0 = solveCoaterFEM(base), r1 = solveCoaterFEM({ ...base, Pup: rho * g * lev1, fInfGuess: lev1 });
+  const inlet = lev => ({ type: 'traction', p: y => rho * g * (lev - y) });
+  // nothing changed: the line at rest meets the face at the static angle and stays
+  const mr = femMarch(r0, { at: () => ({ inlet: inlet(lev0) }), tEnd: 1, dt0: 1e-3, tol: 1e-3, faceSlip: slip, dynamic: { thetaS: th0, lnR: Math.log(1e6), mu, gamma } });
+  const dR = Math.max(...mr.s.map(q => Math.abs(q - r0.surface.s))), aR = Math.max(...mr.angle.filter(a => a != null).map(a => Math.abs(a - th0)));
+  check(r0.converged && mr.completed && dR < 1e-4 * H && aR < 0.05, `nothing changed for 1 s: the line moves ${(dR * 1e6).toFixed(3)} µm, its angle within ${aR.toFixed(4)}° of the static ${th0}°`);
+  // the ODE: the static meniscus held at s at the new level meets the face at thQS(s); the line moves at Cox-Voinov's speed for it
+  const thQS = q => staticMeniscus({ xe, H, faceDeg: 90, contactDeg: th0, gamma, rho, g, fInf: lev1, xEnd: xe + Ld, mode: 'climbed', sFix: q }).alphaEdge / D + 90;
+  const travel = r1.surface.s - r0.surface.s, errs = [];
+  for (const [ratio, tEnd] of [[1e6, 20], [1e12, 40]]) {
+    const lnR = Math.log(ratio);   // (Cox-Voinov takes ln(L/lambda): the ratios the inputs take)
+    const vOf = q => gamma / (9 * mu * lnR) * ((thQS(q) * D) ** 3 - (th0 * D) ** 3), hh = 0.02;
+    let q = r0.surface.s; const ode = [q];
+    for (let k = 0; k * hh < tEnd - 1e-9; k++) { const k1 = vOf(q), k2 = vOf(q + hh / 2 * k1), k3 = vOf(q + hh / 2 * k2), k4 = vOf(q + hh * k3); q += hh / 6 * (k1 + 2 * k2 + 2 * k3 + k4); ode.push(q); }
+    const odeAt = t => { const k = Math.min(ode.length - 2, Math.floor(t / hh)), f = t / hh - k; return ode[k] + f * (ode[k + 1] - ode[k]); };
+    const m = femMarch(r0, { at: () => ({ inlet: inlet(lev1) }), tEnd, dt0: 1e-3, tol: 1e-3, faceSlip: slip, dynamic: { thetaS: th0, lnR, mu, gamma } });
+    let e = 0; m.t.forEach((t, k) => { e = Math.max(e, Math.abs(m.s[k] - odeAt(t))); });
+    const sE = m.s[m.s.length - 1], half = m.t[m.s.findIndex(x => x - r0.surface.s > travel / 2)], halfO = ode.findIndex(x => x - r0.surface.s > travel / 2) * hh;
+    errs.push(e / travel);
+    check(m.completed && sE > r0.surface.s + 0.8 * travel && sE < r1.surface.s + 2e-3 * H && e < (ratio === 1e6 ? 0.25 : 0.16) * travel,
+      `L/lambda ${ratio.toExponential(0)} (ln ${lnR.toFixed(1)}): the line climbs ${(r0.surface.s * 1e3).toFixed(4)} -> ${(sE * 1e3).toFixed(4)} mm in ${tEnd} s (steady ${(r1.surface.s * 1e3).toFixed(4)} mm, each on its own mesh), half way at ${half.toFixed(2)} s vs the ODE's ${halfO.toFixed(2)} s; largest gap to the ODE ${(e * 1e6).toFixed(1)} µm (${(e / travel * 100).toFixed(1)}% of the climb), ${m.steps} steps`);
+  }
+  check(errs[1] < 0.8 * errs[0], `the march tends to the quasi-static ODE as the line slows: ${(errs[0] * 100).toFixed(1)}% -> ${(errs[1] * 100).toFixed(1)}% of the climb`);
 }
 
 console.log('\n' + (allPass ? 'ALL PASS' : 'SOME CHECKS FAILED'));
