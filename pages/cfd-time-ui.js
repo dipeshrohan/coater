@@ -339,6 +339,8 @@ function renderTimeCharts() {
     const cv = document.getElementById(id);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const s of series) for (const [x, y] of s.pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    // (a single time -- one sample: a range round it, so the chart's scale stays finite)
+    if (!(x1 > x0)) { const d = Math.max(Math.abs(x0) * 0.05, 1e-6); x0 -= d; x1 += d; }
     const pad = 0.08 * (y1 - y0 || Math.abs(y1) || 1);
     cv.setAttribute('aria-label', o.aria);
     const map = plotChart(cv, 0.36, { x0, x1, y0: o.y0 ?? y0 - pad, y1: y1 + pad, xl: 'time (s)', yl: o.yl, xd: x1 - x0 < 1 ? 3 : x1 - x0 < 10 ? 2 : 1, yd: o.yd ?? 3,

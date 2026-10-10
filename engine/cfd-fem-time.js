@@ -112,9 +112,12 @@ function femMarch(r0, opts = {}) {
   let hist = [{ t: t0, r: r0 }];
   if (opts.earlier) hist.push({ t: t0 - opts.earlier.dt, r: opts.earlier.r });
   const out = { t: [], dt: [], h: [], top: [], s: [], Qin: [], Qout: [], area: [], err: [], iterations: [], mode: [], frames: [], remeshes: [], track: [], angle: [], steps: 0, rejected: 0, failed: 0, corrected: 0, completed: false };
-  // Cox-Voinov: the dynamic angle (deg) at a speed v up the face (m/s); kept between 0.5 and 179.5 deg
+  // Cox-Voinov: the dynamic angle (deg) at a speed v up the face (m/s). Within a step's iterations it is held between 0.5
+  // and 179.5 deg; a step whose line ends faster than that range allows stops the march (cvOut): not clipped silently
   const dyn = opts.dynamic || null, D = Math.PI / 180;
-  const cvAngle = v => { const c = (dyn.thetaS * D) ** 3 + 9 * dyn.mu * v / dyn.gamma * dyn.lnR; return Math.min(179.5, Math.max(0.5, Math.cbrt(c) / D)); };
+  const cvCube = v => (dyn.thetaS * D) ** 3 + 9 * dyn.mu * v / dyn.gamma * dyn.lnR;
+  const cvAngle = v => Math.min(179.5, Math.max(0.5, Math.cbrt(cvCube(v)) / D));
+  const cvOut = v => { const c = cvCube(v); return c < (0.5 * D) ** 3 ? 'recedes' : c > (179.5 * D) ** 3 ? 'advances' : null; };
   // a step's contact line: the static angle's direction plus the dynamic angle's difference from it, at the speed the step
   // gives the line for a place s (BDF2 over the line's last places; the first step after a start or a new mesh, backward Euler)
   const dynLine = (cl, h) => {
@@ -222,7 +225,11 @@ function femMarch(r0, opts = {}) {
       continue;
     }
     // accept
-    if (dyn && o.contactLine && o.contactLine.speed) lastV = o.contactLine.speed(r.surface.s);
+    if (dyn && o.contactLine && o.contactLine.speed) {
+      lastV = o.contactLine.speed(r.surface.s);
+      const far = mode === 'climbed' && cvOut(lastV);
+      if (far) { out.error = `at t = ${tn.toPrecision(6)} s the contact line ${far} at ${(Math.abs(lastV) * 1e3).toPrecision(3)} mm/s, too fast for Cox-Voinov (its angle would leave 0.5 to 179.5 degrees): not followed further`; break; }
+    }
     t = tn; out.steps++; fresh = false;
     if (carry) carry.accept(r, t);
     hist.unshift({ t, r }); if (hist.length > 3) hist.length = 3;
