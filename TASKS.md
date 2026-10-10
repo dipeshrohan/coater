@@ -220,8 +220,9 @@ Your rule: every process has thermal, stress and flow solvers.
 - Dynamic contact angle in the 2D coating flow in time (was task 6), your choice of the viscosity at the process's
   shear: Coating › 2D › Solve › Time, the contact angle Static or Cox–Voinov (θ³ = θs³ + 9 Ca ln(L/λ), Ca = μ v / σ,
   the length ratio L/λ an input, the slip length's by default); the angle's history on the Transient page, in the
-  report. Checked against a meniscus relaxing between plates (its exact equation solved apart): at L/λ 50 and 200 the
-  march's climb within 3 % of it.
+  report. Checked against a meniscus relaxing between plates (its exact equation solved apart), at the ratios the input
+  takes: at L/λ 10⁶ and 10¹² the march's climb within 21 % and 14 % of it, closer as the line slows (the rest is the
+  bead's own filling time, about 2 s, which that equation leaves out).
 - Meshing only when you ask (was task 4b), your choices: every Mesh step has a Mesh button (Coating 2D and 3D, Pool
   and feed 3D, the stages' 1D, 2D and 3D, and the Mesh menu); nothing is meshed until it is pressed (before, the stage
   pages show the parts' outline); a mesh made for other inputs is marked out of date. Run, Solve 3D and each stage's
