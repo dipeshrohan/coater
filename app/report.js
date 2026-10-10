@@ -665,6 +665,8 @@ function printReport(html) {
   document.body.appendChild(f);
 }
 async function makeReport(o, fmt) {
+  // (the ranking of the assumed values runs: the inputs it has under change are not the project's -- no report from them)
+  if (typeof SENS !== 'undefined' && SENS.status === 'running') { imgToast('The ranking of the assumed values is running: stop it first (Materials › Readiness › Stop), then make the report.', 'warn'); return null; }
   try {
     // (Phase 0: nothing solves unasked -- models the sections show that are not solved are asked about first)
     const need = [...(o.sections.includes('proc') ? SOLVE_LINE : o.sections.some(k => ['m0', 'm1', 'm2', 'm3', 'm1d', 'meas'].includes(k)) ? ['1d'] : []), ...(o.sections.includes('pool') ? ['pool2', 'pool3'] : [])];
@@ -672,8 +674,7 @@ async function makeReport(o, fmt) {
     const html = await buildReport(o);
     if (fmt === 'html') {
       const name = `${repSlug(o.title)}-${imgStamp()}.html`;
-      saveBlob(new Blob([html], { type: 'text/html' }), name);
-      imgToast(`Saved ${name}`);
+      if (saveBlob(new Blob([html], { type: 'text/html' }), name) !== false) imgToast(`Saved ${name}`);
     } else {
       printReport(html);
       imgToast('Report ready: in the print dialog choose "Save as PDF", paper A4.');

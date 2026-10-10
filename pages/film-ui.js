@@ -516,6 +516,7 @@ function filmMeasRemove(kind, k) {
 }
 /** Use a value a measurement implies on the Film card: measured, its source what it came from. */
 function filmUse(k, v, what) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: what it shows is its changed value's)
   const row = MAT_FILM.find(q => q[0] === k);
   if (!row || !Number.isFinite(v)) return;
   const [, l, , lo, hi] = row, vv = Math.min(hi, Math.max(lo, v));

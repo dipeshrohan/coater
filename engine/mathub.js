@@ -181,8 +181,8 @@ const HUB_RECORDS = [
       { l: 'Flake alignment (liquid crystal)', key: 'align', props: [
         { id: 'orOn', sym: '', l: 'Alignment', b: { t: 'switch', get: () => MAT.orient.on, set: v => { MAT.orient.on = v; }, on: 'on: computed with each 2D run, along its flow to the film and on the web to the oven', off: 'off: the 2D computes no alignment', id: 'matOrOn' }, phys: ['align'] },
         { id: 'orModel', sym: '', l: 'Model', b: { t: 'orModel' }, phys: ['align'] },
-        { id: 'U', sym: 'U', l: 'Ordering strength (Maier–Saupe)', b: hC('orient', 'U'), phys: ['align'] },
-        { id: 'Dr', sym: 'D_r', l: 'Rotary diffusivity', b: hC('orient', 'Dr'), phys: ['align'] },
+        { id: 'U', sym: 'U', l: 'Ordering strength (Maier–Saupe)', b: hC('orient', 'U'), phys: ['align'], law: true },
+        { id: 'Dr', sym: 'D_r', l: 'Rotary diffusivity', b: hC('orient', 'Dr'), phys: ['align'], law: true },
         { id: 'Ci', sym: 'C_i', l: 'Interaction coefficient', b: hC('orient', 'Ci'), law: true, phys: ['align'] },
         { id: 'Srest', sym: 'S₀', l: 'Order parameter at rest', b: hCalc(() => (MAT.orient.model === 'dh' ? orRestS(MAT.orient.U.v) : NaN), '', 3, 'the liquid crystal at rest (Maier–Saupe, from U): 1 all aligned, 0 isotropic'), law: true, phys: ['align'], off: () => (MAT.orient.model === 'dh' ? '' : 'the liquid crystal\'s (Doi–Hess)') },
       ] },

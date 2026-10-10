@@ -335,6 +335,7 @@ function accEverywhere(i, k) {
 }
 /** Run: each chosen location's loop (they run side by side, each in its own worker). */
 function runAccuracy() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (Object.values(ACC.runs).some(r => r.status === 'running')) return;
   if (!ACC.film && !ACC.cl) { ACC.film = true; }
   const locs = ACC.loc === 'all' ? CFD_LOCS.map((_, i) => i) : [ACC.loc];
@@ -415,6 +416,7 @@ function stopAccuracy() {
  * solve to the same answer, so it is up to date).
  */
 function accUse(i) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const st = ACC.runs[i], last = st && st.cycles[st.cycles.length - 1];
   if (!last) return;
   const s = last.settings, own = { ...CFD_LOCS[i].solver };
@@ -514,6 +516,7 @@ function acc3ZFrac(R) {
   return z.map(v => (v - z[0]) / (z[z.length - 1] - z[0]));
 }
 async function acc3Run() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (ACC3.status === 'running' || C3D_RUN.status === 'running') return;
   Object.assign(ACC3, { status: 'running', stop: false, cycles: [], orig: acc3Snap(), origRes: C3D_RES, final: null, kept: false, error: null, rich: null,
     run: { method: ACC3.method, target: ACC3.target / 100, outs: { film: ACC3.film, cl: ACC3.cl }, max: ACC3.max, region: C3D.region, loc: C3D.loc } });
@@ -578,6 +581,7 @@ function acc3Solve() {
 function acc3Stop() { if (ACC3.status !== 'running') return; ACC3.stop = true; c3dStop(); }
 /** Keep the last mesh: the 3D mesh settings it was solved with, and its result (one undo step). */
 function acc3Use() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const F = ACC3.final;
   if (!F) return;
   undoHint('3D: the mesh from meshing to an accuracy');
@@ -664,6 +668,7 @@ function m3sSolve() {
   });
 }
 async function m3StudyRun() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (M3S.status === 'running' || C3D_RUN.status === 'running' || ACC3.status === 'running' || C3D.region !== 'strip') return;
   const orig = acc3Snap(), origRes = C3D_RES, base = { ...orig, frac3: null, zFrac: null, zFracFor: null, zoneScale: 1 };
   Object.assign(M3S, { status: 'running', runs: [], stop: false, abandon: false, error: null, key: null, when: null, region: 'strip', loc: C3D.loc, width: C3D.stripW, cur: null,

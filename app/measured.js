@@ -341,6 +341,7 @@ function measSolve(ds, over, onUpdate, owner = ds) {
   return out;
 }
 function measRunCfd(ds) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (!ds || !MEAS_KINDS[ds.kind].cfd) return;
   if (ds.cfd && ds.cfd.status === 'running') return;
   logCFD(null, `measured data "${ds.name}": solving ${ds.rows.length} points in the CFD`);
@@ -463,6 +464,7 @@ function measDesign(c, w, levels) {
  * best fit is solved in the CFD to check it (measFitCfdCheck). A promise of the fit (MEAS.fit); stopped: rejected.
  */
 async function measRunFit() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return null;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const sets = MEAS.sets.filter(d => (MEAS.fitSets || [MEAS.sel]).includes(d.id));
   const keys = MEAS.fitKeys.slice(0, 3);
   if (!sets.length || !keys.length) return null;
@@ -514,6 +516,7 @@ async function measRunFit() {
 function measStopFit() { if (!MEAS.fitRun) return; MEAS.fitRun = null; meas1DStop(); renderMeasFit(); }
 /** The fit's check: its datasets solved in the CFD with the fitted inputs. */
 function measFitCfdCheck() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const fit = MEAS.fit;
   if (!fit) return;
   const sets = MEAS.sets.filter(d => fit.sets.includes(d.id) && MEAS_KINDS[d.kind].cfd);
@@ -534,6 +537,7 @@ function measFitCfdCheck() {
   sets.forEach((d, i) => { measSolve(d, fit.vals, o => { parts[i] = o; upd(); }, fit); });
 }
 function measApplyFit() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const fit = MEAS.fit;
   if (!fit) return;
   undoHint(`Apply fit: ${fit.keys.map(k => `${measSetName(k).toLowerCase()} ${fit.vals[k]}`).join(', ')}`);

@@ -515,6 +515,7 @@ function acrossCrownInput() {
 const acrossCrownKey = c => JSON.stringify([c.geos, c.counted, c.p]);
 /** Find the crown (the worker; the page follows its progress). */
 function acrossCrownRun() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (ACR_CROWN.busy) return;
   const c = acrossCrownInput();
   if (c.counted.filter(Boolean).length < 3) { ACR_CROWN.error = 'the edge bands leave fewer than 3 positions to make even: narrower bands'; render(); return; }

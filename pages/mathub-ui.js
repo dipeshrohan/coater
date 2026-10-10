@@ -57,7 +57,9 @@ function viewMaterials() {
   view.querySelectorAll('[data-hubreset]').forEach(b => { b.onclick = () => {
     const c = b.dataset.hubreset; document.getElementById('hubDefaults').open = false;
     undoHint(`The ${HUB_CARD_T[c]}: back to its defaults`);
-    MAT = { ...MAT, [c]: c === 'rheo' ? { ...matDefaults().rheo, side: MAT.rheo.side } : matDefaults()[c] };
+    // (the alignment's streamline and flake counts are the Coating solver's settings, not the material's: kept)
+    const keep = c === 'orient' && typeof OR_SOLVE !== 'undefined' ? Object.fromEntries(OR_SOLVE.map(([, k]) => [k, MAT.orient[k]]).filter(([, v]) => v)) : {};
+    MAT = { ...MAT, [c]: c === 'rheo' ? { ...matDefaults().rheo, side: MAT.rheo.side } : { ...matDefaults()[c], ...keep } };
     if (c === 'rheo') rheoSync('extras');
     render();
   }; });
@@ -624,7 +626,7 @@ function hubWireEditor(r) {
   }));
   view.querySelectorAll('input[data-hubdexpr]').forEach(el => el.addEventListener('change', () => defSet(el.dataset.hubdexpr, { kind: 'expr', src: el.value.trim() }, 'expression edited')));
   const du = document.getElementById('hubRecDup');
-  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubDuplicate(r.id); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
+  if (du) du.onclick = () => { undoHint(`Duplicate ${hubName(r)}`); const id = hubAsSet(() => hubDuplicate(r.id)); HUB.sel = id; HUB.tab = 'overview'; HUB.open = null; render(); };
   const dl = document.getElementById('hubRecDel');
   if (dl) dl.onclick = () => { undoHint(`Delete ${hubName(r)}`); const base = r.base; hubDeleteInst(r.inst); HUB.sel = base; HUB.open = null; render(); };
   // (Domain Assignments: the material each domain takes, MC-2)
@@ -634,7 +636,7 @@ function hubWireEditor(r) {
     hubAssign(base, +i, el.value === base ? null : el.value); render();
   }));
   const re = document.getElementById('hubRecExport');
-  if (re) re.onclick = () => hubDownload(`${r.id}.material.json`, hubExport([r.id]));
+  if (re) re.onclick = () => hubAsSet(() => hubDownload(`${r.id}.material.json`, hubExport([r.id])));
   if (HUB.tab === 'meas' && r.id === 'slurry') rtDraw();
   // (a copy's plots drawn with its own values in place, MC-2)
   const raf = f => requestAnimationFrame(() => (r.inst ? hubInInst(r.inst, f) : f()));
@@ -723,6 +725,7 @@ function hubWireCompare() {
 
 // ---- material files ----
 function hubDownload(name, data) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })); a.download = name;
   document.body.appendChild(a); a.click();
@@ -730,17 +733,21 @@ function hubDownload(name, data) {
 }
 /** A text file to save (the measurement sheet: with a byte-order mark, so spreadsheets read its µ, ³ and ° as written). */
 function hubDownloadText(name, text, type) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF' + text], { type })); a.download = name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
+/** f with the project as set: while the ranking of the assumed values runs, the value under change is not the project's
+ *  (a file saved then holds the project's own). */
+const hubAsSet = f => (typeof sensAsSet === 'function' ? sensAsSet(f) : f());
 function hubSheetFile() {
-  const n = hubSheetRows().length;
-  hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv');
+  const n = hubAsSet(() => hubSheetRows().length);
+  if (hubAsSet(() => hubDownloadText(`materials-${new Date().toISOString().slice(0, 10)}.csv`, hubSheetCSV(), 'text/csv')) === false) return;
   imgToast(`Materials CSV: ${n} values. Enter yours under "Your value" (and its unit and source), then Import the file.`);
 }
-function hubExportFile() { hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport()); }
+function hubExportFile() { hubAsSet(() => hubDownload(`materials-${new Date().toISOString().slice(0, 10)}.json`, hubExport())); }
 function hubImportFile() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,.csv,application/json,text/csv';

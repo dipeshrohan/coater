@@ -642,6 +642,7 @@ function c3dNotMeshedHTML() {
   return `<figure class="pane v3d">${emptyHint(t[0], t[1], `<button type="button" class="btn btn-primary btn-sm" data-mesh3d>${uiIco('mesh')}Mesh</button>`)}</figure>`;
 }
 function c3dRun(stay = false) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (C3D_RUN.status === 'running') return;
   // (Solve needs the 3D mesh, laid out by the user for the inputs as they are; meshing to an accuracy lays out its own)
   if (stay !== 'study' && typeof mesh3DReady === 'function' && !mesh3DReady()) { C3D.step = 'mesh'; render(); return; }

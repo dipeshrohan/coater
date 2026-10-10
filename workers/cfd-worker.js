@@ -88,13 +88,22 @@ function marchInTime(o, fo, r, geo, shapeProf, onStep) {
   const frame = (rr, info) => {
     const full = info ? { ...rr, meshInfo: info.meshInfo, meniscus: { ...r0.meniscus, mode: info.mode, s: rr.surface.s, leaveDeg: leave(rr, info.meshInfo.cCL) } } : rr;
     const st = rr.lam && carry ? { struct: { ...(r.struct || {}), S: o.struct, lamEdge: structColumn(rr, rr.lam, cornerOf(info)), lamEnd: structColumn(rr, rr.lam, rr.NC - 1) } } : {};
-    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full), ...st };
+    // (with the dynamic contact angle: the angle the line meets the face at, at this time)
+    return { ...compactGrid(coaterGrid(full, g0)), Hedge: Hr, ...shapedOut(shapeProf, full), ...st, ...(info && info.angle != null ? { contactNow: info.angle } : {}) };
   };
   const n = Math.max(2, Math.round(T.frames)), times = Array.from({ length: n }, (_, k) => (k + 1) * T.end / n);
-  const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0,
+  // (the dynamic contact angle, Cox-Voinov: with slip on the face only -- the line moves with the liquid there; the paste's
+  //  viscosity at the process shear rate, the web's speed over the gap)
+  //  (the length ratio given, or the gap over the slip length: above 1, or the angle would not rise as the line climbs)
+  const lR = T.ratio > 1 ? T.ratio : Hr / T.slip;
+  if (T.dyn && T.slip > 0 && !(lR > 1)) throw new Error(`the dynamic contact angle needs the length ratio L/λ above 1: the slip length (${(T.slip * 1e6).toPrecision(3)} µm) is not below the gap (${(Hr * 1e6).toPrecision(3)} µm) -- give the ratio, or a smaller slip length`);
+  const dyn = T.dyn && T.slip > 0 ? { thetaS: o.contactDeg, lnR: Math.log(lR), gamma: o.gamma,
+    mu: fo.mu(Math.max(o.U, 1e-6) / Hr) } : null;   // (the inputs' web speed: the process's, whatever the march changes)
+  const m = femMarch(r0, { at, tEnd: T.end, dt0: T.auto ? 1e-3 * T.end : T.dt, fixed: !T.auto, tol: T.tol, times, faceSlip: T.slip > 0 ? T.slip : 0, ...(dyn ? { dynamic: dyn } : {}),
     keep: (rr, t, info) => frame(rr, info), onStep, ...(carry ? { carry, track: (rr, info) => structColumn(rr, rr.lam, cornerOf(info)) } : {}) });
   return {
     scen: T.scen, end: T.end, ramp: T.ramp, P0, P1, U0, U1, slip: T.slip || 0, auto: !!T.auto, tol: T.tol, dtSet: T.dt, ms: Date.now() - t0,
+    ...(dyn ? { dyn: { thetaS: dyn.thetaS, lnR: dyn.lnR, mu: dyn.mu }, angle: m.angle } : {}),
     t: m.t, dt: m.dt, s: m.s, Qin: m.Qin, Qout: m.Qout, area: m.area, err: m.err, iterations: m.iterations, mode: m.mode,
     hOut: m.top.map(q => q.y[q.y.length - 1]), ...(carry ? { lamEdge: m.track, corrected: m.corrected } : {}),
     remeshes: m.remeshes, steps: m.steps, rejected: m.rejected, failed: m.failed, completed: m.completed, error: m.error || null,

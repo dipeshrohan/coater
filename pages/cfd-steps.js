@@ -581,7 +581,9 @@ function mesh2DState(i) {
 /** Whether location i may be solved: its mesh made for the inputs as they are (or its solve current: nothing changed). */
 const mesh2DReady = i => mesh2DState(i) === 'ok' || !!(cfdRuns[i].field && !cfdIsStale(i));
 /** Mesh: the four locations' starting meshes laid out for the inputs as they are (the Mesh step's button, the menu). */
-function mesh2DDo() { requestMeshPreviews(); if (tab === 4 && document.getElementById('cfdWb')) viewCFD(); }
+function mesh2DDo() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
+  requestMeshPreviews(); if (tab === 4 && document.getElementById('cfdWb')) viewCFD(); }
 /** Which mesh the Mesh step shows at location i: the solved one when chosen and up to date, else the starting one. */
 const meshShowOf2D = i => FV.meshShow === 'solved' && cfdRuns[i].field && !cfdIsStale(i) ? 'solved' : 'start';
 /** Location i's mesh as shown: { run, stats, solved } (or { error }), or null while it is laid out. */
@@ -1117,6 +1119,7 @@ function meshMarksReset() {
 const mesh3DReady = () => mesh3DState() === 'ok' || (() => { const S = c3dShown(); return !!(S && S.result && S.key === c3dSolveKey3(S)); })();
 /** Mesh: the 3D mesh laid out for the inputs as they are (the Mesh step's button, the menu). */
 function mesh3DDo() {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const key = c3dMeshKey(); if (!key) return;
   Object.assign(C3D_M, { key, m: null, error: null });
   if (C3D.source === 'made') requestMeshPreview3D();

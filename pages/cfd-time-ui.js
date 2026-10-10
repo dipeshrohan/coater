@@ -49,7 +49,8 @@ function timeEnd(i, T = timeSet()) {
 function timeMsg(i, geo) {
   const T = timeSet(), end = timeEnd(i, T), to = timeTo(i, T);
   return { scen: T.scen, to: T.scen === 'pup' ? to * 1000 : T.scen === 'web' ? to / 60 * Math.cos(skewRad()) : null, ramp: Math.max(0, T.ramp || 0), end,
-    auto: T.auto !== false, tol: T.tol || 1e-3, dt: T.dt > 0 ? T.dt : end / 200, frames: Math.max(5, Math.min(200, Math.round(T.frames || 40))), slip: (T.slip || 0) * 1e-6 };
+    auto: T.auto !== false, tol: T.tol || 1e-3, dt: T.dt > 0 ? T.dt : end / 200, frames: Math.max(5, Math.min(200, Math.round(T.frames || 40))), slip: (T.slip || 0) * 1e-6,
+    ...(T.dyn ? { dyn: true, ratio: T.ratio > 1 ? T.ratio : null } : {}) };
 }
 const timeKey = (i, geo) => JSON.stringify([cfdInputsKey(geo), timeMsg(i, geo)]);
 /** In words: what changes, from what to what, how fast. */
@@ -68,6 +69,8 @@ function timeTake(run, r, i, geo) {
   const tr = r.transient;
   delete r.transient;
   if (!tr) { run.transient = null; return; }
+  // (a march refused before its first step: no record in time, only why)
+  if (!tr.t) { run.transient = null; logCFD(i, `in time: ${tr.error || 'no record'}`, 'warn'); return; }
   run.transient = { ...tr, key: timeKey(i, geo), cache: [] };
   const n = tr.t.length, film = tr.hOut[n - 1];
   logCFD(i, tr.error && !tr.frames.length ? `in time: ${tr.error}` : `in time (${timeWhat(tr, true)}): ${tr.steps} steps to ${fmtT(tr.t[n - 1])} in ${(tr.ms / 1000).toFixed(1)} s${tr.remeshes.length ? `, ${tr.remeshes.length} new mesh${tr.remeshes.length > 1 ? 'es' : ''}` : ''}; film at the end of the 2D ${(film * 1000).toFixed(3)} mm${tr.error ? ` -- stopped: ${tr.error}` : ''}`,
@@ -191,11 +194,15 @@ function timeCardHTML(i) {
       : row('Step', 'tmDt', num('tmDt', T.dt > 0 ? T.dt : '', 'min="0"', `auto ${+(end / 200).toPrecision(2)}`), 's')}
     ${row('Times kept', 'tmFrames', num('tmFrames', T.frames || 40, 'min="5" max="200" step="1"'))}
     ${row('Exit-face slip length', 'tmSlip', num('tmSlip', T.slip || 0, 'min="0"'), 'µm')}
+    ${row('Contact angle', 'tmAngle', `<select id="tmAngle" class="geo-in tm-sel">${opt('static', 'Static', T.dyn ? 'dyn' : 'static')}${opt('dyn', 'Cox–Voinov', T.dyn ? 'dyn' : 'static')}</select>`)}
+    ${T.dyn ? row('Length ratio L/λ', 'tmRatio', num('tmRatio', T.ratio > 1 ? T.ratio : '', 'min="1.01"', (T.slip || 0) > 0 ? (cfdGeometry(i).H / (T.slip * 1e-6) > 1 ? `auto ${+(cfdGeometry(i).H / (T.slip * 1e-6)).toPrecision(3)}` : 'give one: the slip length is not below the gap') : 'auto'), '') : ''}
     </table>
     <p class="side-note">${T.scen === 'rest' ? `From the gap filled at rest (no web speed, the bead at the liquid's own weight), the web and the bead pressure go to the inputs' ${T.ramp > 0 ? `over ${fmtT(T.ramp)}` : 'at once'}`
       : `From the steady flow at ${from} ${unit}, the ${T.scen === 'pup' ? 'bead pressure' : 'web\'s speed'} goes to ${to} ${unit} ${T.ramp > 0 ? `over ${fmtT(T.ramp)}` : 'at once (a step)'}`};
       marched to ${fmtT(end)}${tr ? ` (the web carries the film through the 2D in ${fmtT(tr)})` : ''}, the flow kept at ${T.frames || 40} even times.
       ${(T.slip || 0) > 0 ? `The liquid slides on the exit face below the contact line (slip length ${T.slip} µm).` : 'No slip on the exit face, as the steady solve: a contact line far from its steady place moves slowly.'}
+      ${!T.dyn ? '' : (T.slip || 0) > 0 ? `The contact angle changes with the line's speed (Cox–Voinov): θ³ = θs³ + 9 Ca ln(L/λ), Ca = μ v / γ, μ the paste's viscosity at the process shear rate (web speed over gap).`
+        : '<span class="warn-text">The dynamic angle needs the liquid to slide on the face: set an exit-face slip length; until then the angle stays static.</span>'}
       ${typeof matStruct === 'function' && matStruct() ? `The slurry's structure λ goes with it: rebuilt and broken down along each path as it was in the steady solve (rebuild time ${matStruct().tb} s), so it can take longer than the film to settle.` : ''}</p>`;
 }
 /** Wire the Time toolbar control and card (after the Solve step is drawn). */
@@ -205,6 +212,7 @@ function wireTimeControls() {
   sel('tmScen', 'scen', 'what changes');
   sel('tmStep', 'auto', 'time step', v => v === 'auto');
   sel('tmTol', 'tol', 'error per step', v => +v);
+  sel('tmAngle', 'dyn', 'contact angle', v => v === 'dyn');
   const num = (id, k, o) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -221,6 +229,7 @@ function wireTimeControls() {
   num('tmDt', 'dt', { label: 'Time step', lo: 1e-7, hi: 3600, unit: 's', empty: null });
   num('tmFrames', 'frames', { label: 'Times kept', lo: 5, hi: 200, round: true });
   num('tmSlip', 'slip', { label: 'Exit-face slip length', lo: 0, hi: 1e4, unit: 'µm' });
+  num('tmRatio', 'ratio', { label: 'Length ratio L/λ', lo: 1.01, hi: 1e12, empty: null });
 }
 
 // ---- Results: the time bar ----
@@ -293,7 +302,7 @@ function renderTimeCharts() {
     host.innerHTML = `<p class="cap">${timeSet().on && !why ? 'Transient is set: run the locations (Solve) to march them in time.' : why ? `Transient: ${why}.` : 'No run in time yet: on the Solve step set Time to Transient, choose what changes, and run.'}</p>`;
     return;
   }
-  const T0 = cfdRuns[locs[0]].transient, stale = timeStale, withLam = locs.some(i => cfdRuns[i].transient.lamEdge);
+  const T0 = cfdRuns[locs[0]].transient, stale = timeStale, withLam = locs.some(i => cfdRuns[i].transient.lamEdge), withAng = locs.some(i => (cfdRuns[i].transient.angle || []).some(v => v != null));
   const name = i => `Location ${i + 1}${stale(i) ? ' (out of date)' : ''}`;
   const legend = `<div class="xl-legend">${locs.map(i => `<span class="lg"><i class="xl-sw" style="background:${locColor(i)}"></i>${name(i)}</span>`).join('')}</div>`;
   const chart = id => `<div class="xl-chart"><canvas id="${id}" role="img"></canvas><div class="xl-guide" hidden></div><div class="fv-tip" hidden></div></div>`;
@@ -308,15 +317,19 @@ function renderTimeCharts() {
       <td>${(T.s[0] * 1000).toFixed(3)} → ${(L.s * 1000).toFixed(3)}${L.m === 'pinned' ? ' <small>pinned</small>' : ''}</td><td>${T.steps}<small>${T.rejected ? ` ${T.rejected} redone` : ''}${T.remeshes.length ? ` · ${T.remeshes.length} new mesh` : ''}</small></td><td>${(T.ms / 1000).toFixed(1)} s</td>
       <td>${T.error ? `<span class="warn-text" title="${escAttr(T.error)}">stopped at ${fmtT(L.t)}</span>` : T.completed ? 'done' : 'stopped'}</td></tr>`;
   }).join('');
+  // (the Cox–Voinov numbers: once when every location shares them, else each location's own)
+  const dynL = locs.filter(i => cfdRuns[i].transient.dyn).map(i => { const D = cfdRuns[i].transient.dyn; return [i, `ln(L/λ) ${D.lnR.toFixed(1)}, μ ${fmtNum(D.mu)} Pa·s, static ${+D.thetaS.toFixed(1)}°`]; });
+  const angPars = !dynL.length ? '' : dynL.every(q => q[1] === dynL[0][1]) ? `, ${dynL[0][1]}` : `: ${dynL.map(([i, t]) => `L${i + 1} ${t}`).join('; ')}`;
   host.innerHTML = `${legend}
     <p class="cap t-what-cap"><b>${timeWhat(T0)}</b>${locs.some(stale) ? ' · <span class="warn-text">out of date: the inputs or the time settings changed since</span>' : ''}</p>
     <div class="dock-grid">
     <figure class="dock-fig">${chart('tmFilm')}<p class="cap"><b>Wet film at the end of the 2D domain</b> against time (it then moves on with the web): the change reaches it when the web has carried the new film there.</p></figure>
     <figure class="dock-fig">${chart('tmCL')}<p class="cap"><b>Contact line</b>: how far up the exit face it is (0: pinned at the metering edge).</p></figure>
     <figure class="dock-fig">${chart('tmQ')}<p class="cap"><b>Flow into the gap</b> (solid) <b>and out of the 2D domain</b> (dashed), per metre of width. Their difference fills or drains the bead and the meniscus.</p></figure>
+    ${withAng ? `<figure class="dock-fig">${chart('tmAng')}<p class="cap"><b>Contact angle</b> on the face (Cox–Voinov${angPars}): above the static angle while the line climbs, below it while it falls.</p></figure>` : ''}
     ${withLam ? `<figure class="dock-fig">${chart('tmLam')}<p class="cap"><b>Structure λ leaving the edge</b>, flux weighted (0 broken down, 1 built up): what the film takes away with it.</p></figure>` : ''}
     <figure class="dock-fig tm-wide"><div class="table-wrap"><table class="cfd-table tm-table"><thead><tr><th></th><th>Film at the start<small>mm</small></th><th>Film at the end<small>mm</small></th><th>Settled within 1 %<small>at</small></th><th>Contact line<small>mm up the face</small></th><th>Time steps</th><th>Solve time</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="cap">The march: BDF2 in time on the same finite elements as the steady solve, the free surface and the contact line moving with the flow${T0.auto ? `, each step's error kept under ${+((T0.tol || 1e-3) * 100).toPrecision(2)} % of the gap and of the fastest speed` : `, a fixed step of ${fmtT(T0.dtSet)}`}${T0.slip > 0 ? `; the liquid slides on the exit face below the contact line, slip length ${(T0.slip * 1e6).toPrecision(3)} µm` : '; no slip on the exit face'}.</p></figure>
+      <p class="cap">The march: BDF2 in time on the same finite elements as the steady solve, the free surface and the contact line moving with the flow${T0.auto ? `, each step's error kept under ${+((T0.tol || 1e-3) * 100).toPrecision(2)} % of the gap and of the fastest speed` : `, a fixed step of ${fmtT(T0.dtSet)}`}${T0.slip > 0 ? `; the liquid slides on the exit face below the contact line, slip length ${(T0.slip * 1e6).toPrecision(3)} µm` : '; no slip on the exit face'}${T0.dyn ? `; the contact angle dynamic (Cox–Voinov, ln(L/λ) ${T0.dyn.lnR.toFixed(1)})` : '; the contact angle static'}.</p></figure>
     </div>`;
   const fr = timeFrames(), tNow = FV.tk == null || !fr.length ? null : fr[Math.min(FV.tk, fr.length - 1)].t;
   // (the marker's label left out near the right end, where the series' own labels are)
@@ -326,6 +339,8 @@ function renderTimeCharts() {
     const cv = document.getElementById(id);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const s of series) for (const [x, y] of s.pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    // (a single time -- one sample: a range round it, so the chart's scale stays finite)
+    if (!(x1 > x0)) { const d = Math.max(Math.abs(x0) * 0.05, 1e-6); x0 -= d; x1 += d; }
     const pad = 0.08 * (y1 - y0 || Math.abs(y1) || 1);
     cv.setAttribute('aria-label', o.aria);
     const map = plotChart(cv, 0.36, { x0, x1, y0: o.y0 ?? y0 - pad, y1: y1 + pad, xl: 'time (s)', yl: o.yl, xd: x1 - x0 < 1 ? 3 : x1 - x0 < 10 ? 2 : 1, yd: o.yd ?? 3,
@@ -339,6 +354,8 @@ function renderTimeCharts() {
     { aria: 'Contact line up the exit face against time', yl: 'contact line up the face (mm)', fmt: v => v.toFixed(4) + ' mm' });
   draw('tmQ', locs.flatMap(i => { const T = cfdRuns[i].transient; return [ser(i, T.t.map((t, k) => [t, T.Qin[k] * 1e6])), { ...ser(i, T.t.map((t, k) => [t, T.Qout[k] * 1e6]), true), name: `${name(i)}, out`, short: `L${i + 1} out` }]; }),
     { aria: 'Flow in and out against time', yl: 'flow per width (mm²/s)', fmt: v => fmtNum(v) + ' mm²/s' });
+  if (withAng) draw('tmAng', locs.filter(i => (cfdRuns[i].transient.angle || []).some(v => v != null)).map(i => { const T = cfdRuns[i].transient; return ser(i, T.t.map((t, k) => [t, T.angle[k]]).filter(q => q[1] != null)); }),
+    { aria: 'Contact angle on the face against time', yl: 'contact angle (°)', yd: 2, fmt: v => v.toFixed(2) + '°' });
   if (withLam) draw('tmLam', locs.filter(i => cfdRuns[i].transient.lamEdge).map(i => { const T = cfdRuns[i].transient; return ser(i, T.t.map((t, k) => [t, T.lamEdge[k]])); }),
     { aria: 'Structure leaving the edge against time', yl: 'structure λ leaving the edge', yd: 3, fmt: v => v.toFixed(4) });
 }
@@ -347,6 +364,6 @@ function timeReportRows() {
   return CFD_LOCS.map((_, i) => i).filter(i => cfdRuns[i].transient && cfdRuns[i].transient.t.length > 1).map(i => {
     const T = cfdRuns[i].transient, n = T.t.length;
     return [`L${i + 1}`, timeWhat(T, true), fmtT(T.t[n - 1]), `${(T.hOut[0] * 1000).toFixed(3)} → ${(T.hOut[n - 1] * 1000).toFixed(3)} mm`, `${(T.s[0] * 1000).toFixed(3)} → ${(T.s[n - 1] * 1000).toFixed(3)} mm`,
-      T.error ? `stopped: ${T.error}` : `${T.steps} steps, ${(T.ms / 1000).toFixed(1)} s${timeStale(i) ? ' (out of date)' : ''}`];
+      T.error ? `stopped: ${T.error}` : `${T.steps} steps, ${(T.ms / 1000).toFixed(1)} s${T.dyn ? `, angle Cox–Voinov ${T.angle[0] != null ? T.angle[0].toFixed(1) : '—'} → ${T.angle[n - 1] != null ? T.angle[n - 1].toFixed(1) : '—'}°` : ''}${timeStale(i) ? ' (out of date)' : ''}`];
   });
 }

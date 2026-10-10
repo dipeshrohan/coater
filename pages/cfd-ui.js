@@ -337,7 +337,7 @@ const locInput = (i, k) => CFD_LOCS[i].over[k] ?? locShared(i, k);
 // up the exit face 6; along the free surface 24; across the gap 6) by 1/1.5, 1 or 1.5; 'custom' takes
 // the counts given (along the blade empty = from the blade's length, as Medium).
 // (time, T-2 -- cfd-time-ui.js: steady, or the flow in time after a change; never edited in place, replaced)
-const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0 });
+const TIME_DEFAULTS = Object.freeze({ on: false, scen: 'pup', toP: null, toU: null, ramp: 0, end: null, auto: true, tol: 1e-3, dt: null, frames: 40, slip: 0, dyn: false, ratio: null });
 const SOLVER_DEFAULTS = { mesh: 'medium', nEb: null, nEf: 6, nEs: 24, nEy: 6, gradeB: 1.6, gradeS: 1.4, gradeY: 1.5, tol: 1e-8, maxIter: 60, ldGaps: 8, zones: null, gdMin: null, time: TIME_DEFAULTS };
 const MESH_PRESETS = { coarse: { l: 'Coarse', f: 1 / 1.5 }, medium: { l: 'Medium', f: 1 }, fine: { l: 'Fine', f: 1.5 }, custom: { l: 'Custom' }, adapted: { l: 'Adapted' } };
 /** The presets a shared setting can pick ("Adapted" is a location's own, from meshing to an accuracy). */
@@ -579,6 +579,7 @@ function logCFD(i, text, kind = '') {
 }
 
 function runLocation(i) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   const run = cfdRuns[i];
   if (run.status === 'running') return;
   // (inputs outside what the solver can do: not run, and listed under Problems)
@@ -1013,7 +1014,12 @@ function viewCFD() {
     });
   }
   document.getElementById('cfdTol').addEventListener('change', e => { CFDS.tol = +e.target.value; renderCFD(); });
-  document.getElementById('cfdSolverReset').onclick = () => { undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS); viewCFD(); };
+  document.getElementById('cfdSolverReset').onclick = () => {
+    undoHint('Solver settings back to defaults'); Object.assign(CFDS, SOLVER_DEFAULTS);
+    // (the flake alignment's solver settings, on Solve with the rest: back to theirs too)
+    if (typeof OR_SOLVE !== 'undefined') { const o = { ...MAT.orient }; for (const [, k] of OR_SOLVE) o[k] = { ...o[k], v: MAT_ORIENT.find(r => r[0] === k)[7] }; MAT.orient = o; }
+    viewCFD();
+  };
   // (the mesh study's tab is on the Mesh and Results steps: from another step, the Mesh step)
   document.getElementById('cfdStudyOpen').onclick = () => { if (!STEP_DOCK_2D[step2D()].includes('mesh')) goStep2D('mesh'); FV.dock = 'mesh'; viewCFD(); };
   document.getElementById('cfdZonesOpen').onclick = () => goStep2D('mesh');
@@ -1173,6 +1179,7 @@ function renderCFD() {
 // ---------------------------------------------------------------------
 const csvCell = v => { const t = typeof v === 'number' ? (Number.isFinite(v) ? String(+v.toPrecision(9)) : '') : String(v ?? ''); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
 function downloadCSV(name, rows) {
+  if (typeof sensFileRefused === 'function' && sensFileRefused()) return false;
   const blob = new Blob(['\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
@@ -1364,6 +1371,7 @@ let cfdBatch = [];      // the locations with progress bars: those of the runs g
 let meshStudy = null;   // { loc, key, status, runs: [{ name, f, solver, status, progress, r, metrics, ms, error, worker }] }
 const STUDY_STEPS = [['Coarse', 1 / 1.5], ['Medium', 1], ['Fine', 1.5]];
 function runMeshStudy(i) {
+  if (typeof sensBlocks === 'function' && sensBlocks()) return;   // (the ranking of the assumed values runs: its inputs are not the project's)
   if (meshStudy && meshStudy.status === 'running') return;
   const geo = cfdGeometry(i), base = geo.solver, key = cfdInputsKey(geo), run0 = cfdRuns[i];
   meshStudy = { loc: i, key, status: 'running', t0: Date.now(), runs: STUDY_STEPS.map(([name, f]) => ({ name, f, solver: { ...base, ...(f === 1 ? {} : { ...scaleCounts(base, f), ...(base.zones ? { zones: scaleZones(base.zones, f) } : {}) }) }, status: 'running', progress: null, live: { r: [], solves: [], t0: performance.now(), tol: base.tol } })) };
@@ -1491,7 +1499,8 @@ function saveCase() {
   if (!name) { caseMsg('Give the case a name first.'); el.focus(); return; }
   const list = readCases();
   if (!list) { caseMsg('Local storage is not available in this browser.'); return; }
-  const c = {
+  // (the ranking of the assumed values running: the project's own values saved, not the one under change)
+  const c = (typeof sensAsSet === 'function' ? sensAsSet : f => f())(() => ({
     name, saved: new Date().toISOString(),
     P: Object.fromEntries(CFG.map(q => [q.k, P[q.k]])),
     CFDG: { ...CFDG },
@@ -1502,7 +1511,7 @@ function saveCase() {
     probes: cfdProbes.map(q => ({ ...q })),
     cuts: cfdCuts.map(q => ({ ...q })),
     summary: cfdRuns.map((r, i) => r.field && !cfdIsStale(i) ? { film: r.result.Q / r.geo.U * 1000, mode: r.result.mode, s: r.result.sCL * 1000 } : null),
-  };
+  }));
   const at = list.findIndex(x => x.name === name);
   if (at >= 0) list[at] = c; else list.unshift(c);
   if (!writeCases(list)) { caseMsg('Could not save: local storage is full or blocked.'); return; }
@@ -2522,7 +2531,7 @@ function renderMetrics() {
     ['Min |V| inside the fluid', 'mm/s', r => `${fmtNum(r.metrics.vminInterior * 1000)} ${where(r.field, r.metrics.vminLoc)}`],
     ['Max shear rate', '1/s', r => { const [x, y] = r.metrics.gdMaxLoc; return `${fmtNum(r.metrics.gdMax)} ${Math.hypot(x - r.result.xe, y - r.result.H) < 0.3 * r.result.H ? '<small>next to the metering edge corner, where it is singular: this value depends on the mesh</small>' : where(r.field, r.metrics.gdMaxLoc)}`; }],
     ['Meniscus: contact line', 'on the blade', r => clWhere(r.result) + (r.result.shaped && r.result.shaped.note ? ` <small>${r.result.shaped.note}</small>` : '')],
-    ['Surface leaves the contact line at', '° from the web, machine direction', r => `${r.result.leaveDeg.toFixed(1)} <small>${r.result.mode === 'climbed' ? `= contact angle ${r.geo.contactDeg.toFixed(1)}° off the face` : `pinned: at most ${r.result.alphaMaxDeg.toFixed(1)} (Gibbs)`}</small>`],
+    ['Surface leaves the contact line at', '° from the web, machine direction', r => `${r.result.leaveDeg.toFixed(1)} <small>${r.result.mode === 'climbed' ? (r.result.contactNow != null ? `= dynamic contact angle ${r.result.contactNow.toFixed(1)}° off the face (static ${r.geo.contactDeg.toFixed(1)}°)` : `= contact angle ${r.geo.contactDeg.toFixed(1)}° off the face`) : `pinned: at most ${r.result.alphaMaxDeg.toFixed(1)} (Gibbs)`}</small>`],
     ['Film at the end of the 2D domain', 'mm, ' + 'x from the edge', r => `${(r.result.hEnd * 1000).toFixed(3)} <small>at ${((r.result.xEnd - r.result.xe) * 1000).toFixed(1)} mm</small>`],
     ['Peak pressure', 'Pa, gauge', r => `${fmtNum(r.result.pMax)} ${pAt(r, 'pMaxLoc')}`],
     ['Lowest pressure', 'Pa, gauge', r => r.result.pMin < 0
